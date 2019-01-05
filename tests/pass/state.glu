@@ -3,12 +3,20 @@ let { (<|) } = import! std.function
 let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
 let int = import! std.int
 let state @ { State, put, get, modify, runState, evalState, execState, ? } = import! std.state
-let { Applicative, (*>), ? } = import! std.applicative
+let { Applicative, wrap, (*>), ? } = import! std.applicative
 
 group "state" [
     test "modify execState" <| \_ -> (assert_eq (execState (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8),
     test "modify evalState" <| \_ -> (assert_eq (evalState (modify (\x -> x + 2) *> get) 0) 2),
     test "put get evalState" <| \_ -> (assert_eq (evalState (put "hello" *> get) "") "hello"),
     test "put get runState" <| \_ -> (assert_eq (runState (put "hello" *> get) "").value "hello"),
+
+    /* FIXME
+    test "record unpack runState" <| \_ ->
+        let m : State { x : Int } Int =
+            do { x } = get
+            wrap x
+        assert_eq (evalState m { x = 1 }) 1,
+    */
 ]
 

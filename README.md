@@ -184,9 +184,9 @@ do digits =
     wrap [a, b, c, d]
 
 let print_digits = for digits (\d ->
-        do _ = io.print " "
+        seq io.print " "
         io.print (show d))
-do _ = io.print "Four digits:" *> print_digits *> io.println ""
+seq io.print "Four digits:" *> print_digits *> io.println ""
 
 let guess_loop _ =
     do line = io.read_line

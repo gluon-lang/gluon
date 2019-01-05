@@ -500,7 +500,7 @@ where
                 Token::Rec => Some(Context::Rec),
                 Token::Type => Some(Context::Type),
                 Token::Let => Some(Context::Let),
-                Token::Do => Some(Context::Let),
+                Token::Do | Token::Seq => Some(Context::Let),
                 Token::If => Some(Context::If),
                 Token::Match => Some(Context::Expr),
                 Token::Lambda => Some(Context::Lambda),

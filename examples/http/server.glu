@@ -60,17 +60,17 @@ let sum : Eff (HttpEffect r) Response =
     do body = get_request >>= array_body
     match string.from_utf8 body with
     | Err _ ->
-        do _ = write_response (string.as_bytes "Request contained invalid UTF-8")
+        seq write_response (string.as_bytes "Request contained invalid UTF-8")
         wrap { status = status.bad_request, .. http.response }
     | Ok string_body ->
         match de.deserialize de.deserializer string_body with
         | Ok int_array ->
             let int_array : Array Int = int_array
             let s = foldl (+) 0 int_array 
-            do _ = write_response (string.as_bytes (show s))
+            seq write_response (string.as_bytes (show s))
             wrap { status = status.ok, .. http.response }
         | Err err ->
-            do _ = write_response (string.as_bytes err)
+            seq write_response (string.as_bytes err)
             wrap { status = status.bad_request, .. http.response }
 
 

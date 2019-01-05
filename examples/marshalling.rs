@@ -198,7 +198,7 @@ fn marshal_generic() -> Result<()> {
         let either: forall r . Either String r = Left "hello rust!"
 
         // we can pass the generic Either to the Rust function without an issue
-        do _ = 
+        seq 
             match flip either with
             | Left _ -> error "unreachable!"
             | Right val -> io.println ("Right is: " <> val)

@@ -29,11 +29,11 @@ resume thread
 
 let tests : TestEff r () =
     assert_eq (recv receiver) (Ok 0) *> (
-            do _ = assert_eq (recv receiver) (Err ())
+            seq assert_eq (recv receiver) (Err ())
             resume thread
             assert_eq (recv receiver) (Ok 1)
         ) *> (
-            do _ = assert_eq (recv receiver) (Err ())
+            seq assert_eq (recv receiver) (Err ())
             assert_any_err (resume thread) (Err "Any error message here")
         )
 

@@ -744,6 +744,21 @@ test (x #Int+ 2)
     assert_req!(result.map(support::close_record), expected);
 }
 
+test_check! {
+do_expression_bind_scope,
+r#"
+type Test a = { x : a }
+let flat_map f x : (a -> Test b) -> Test a -> Test b = f x.x
+let test x : a -> Test a = { x }
+
+let f y : () -> Test Int =
+    do y = test 1
+    test (y #Int+ 2)
+f
+"#,
+"() -> test.Test Int"
+}
+
 #[test]
 fn eq_unresolved_constraint_bug() {
     let _ = env_logger::try_init();

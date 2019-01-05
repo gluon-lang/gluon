@@ -73,7 +73,7 @@ let { fold_m } = import! std.foldable
 let scope_state run : Eff (LispEffect r) a -> Eff (LispEffect r) a =
     do original = get
     do x = run
-    do _ = put original
+    seq put original
     wrap x
 
 let primitive name f : String -> _ -> Map String Expr = std_map.singleton name (Primitive f)
@@ -112,7 +112,7 @@ let define xs =
     | Cons (Atom name) (Cons value Nil) ->
         do state = get
         let new_state = std_map.insert name value state
-        do _ = put new_state
+        seq put new_state
         wrap value
     | Cons (List (Cons (Atom name) params)) body ->
         do closure = get
@@ -125,7 +125,7 @@ let define xs =
                 }
         let new_state = std_map.insert name function closure
 
-        do _ = put new_state
+        seq put new_state
 
         wrap function
     | _ -> throw "Unexpected parameters to define `define`"
@@ -141,7 +141,7 @@ let apply f xs : forall r . Expr -> List Expr -> Eff (LispEffect r) Expr =
     let add_args names values : List String -> _ =
         match (names, values) with
         | (Cons name names, Cons value values) ->
-            do _ = modify (\state -> std_map.insert name value state)
+            seq modify (\state -> std_map.insert name value state)
             add_args names values
         | (Nil, _) -> wrap ()
         | _ -> throw "Not enough arguments to function"
@@ -150,7 +150,7 @@ let apply f xs : forall r . Expr -> List Expr -> Eff (LispEffect r) Expr =
     | Primitive primitive -> primitive xs
     | Function function ->
         scope_state (
-            do _ = add_args function.params xs
+            seq add_args function.params xs
             eval_exprs function.body)
     | _ -> throw ("Can\'t call value: " <> show f)
 
