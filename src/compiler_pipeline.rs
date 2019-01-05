@@ -51,6 +51,39 @@ macro_rules! try_future {
 
 pub type SalvageResult<T> = StdResult<T, (Option<T>, Error)>;
 
+fn join_result<T, U, V>(
+    result: SalvageResult<T>,
+    f: impl FnOnce(&mut T) -> SalvageResult<V>,
+    join: impl FnOnce(T) -> U,
+) -> SalvageResult<U> {
+    let mut first_error = None;
+    let mut x = match result {
+        Ok(x) => x,
+        Err((Some(expr), err)) => {
+            first_error = Some(err);
+            expr
+        }
+        Err((None, err)) => return Err((None, err.into())),
+    };
+    let result = f(&mut x)
+        .map(|_| ())
+        .map_err(|(value, err)| (value.map(|_| ()), err));
+    if let Err((value, err)) = result {
+        return Err((
+            value.map(|_| join(x)),
+            if first_error.is_some() {
+                Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into()
+            } else {
+                err
+            },
+        ));
+    }
+    match first_error {
+        Some(err) => Err((Some(join(x)), err)),
+        None => Ok(join(x)),
+    }
+}
+
 /// Result type of successful macro expansion
 pub struct MacroValue<E> {
     pub expr: E,
@@ -99,19 +132,17 @@ impl<'s> MacroExpandable for &'s str {
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        compiler
-            .parse_expr(macros.vm.global_env().type_cache(), file, self)
-            .map_err(|err| (None, err.into()))
-            .and_then(|mut expr| {
-                let result = (&mut expr)
-                    .expand_macro_with(compiler, macros, file, expr_str)
+        join_result(
+            compiler
+                .parse_partial_expr(macros.vm.global_env().type_cache(), file, self)
+                .map_err(|(x, err)| (x, err.into())),
+            |expr| {
+                expr.expand_macro_with(compiler, macros, file, expr_str)
                     .map(|_| ())
-                    .map_err(|(value, err)| (value.map(|_| ()), err));
-                if let Err((value, err)) = result {
-                    return Err((value.map(|_| MacroValue { expr }), err));
-                }
-                Ok(MacroValue { expr })
-            })
+                    .map_err(|(opt, err)| (opt.map(|_| ()), err))
+            },
+            |expr| MacroValue { expr },
+        )
     }
 }
 
