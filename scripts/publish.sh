@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -ex
 
 declare -a PROJECTS=(
@@ -8,8 +8,8 @@ declare -a PROJECTS=(
     completion
     codegen
     vm
-    .
     format
+    .
     c-api
     doc
     repl
