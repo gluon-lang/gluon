@@ -67,7 +67,7 @@ let sum : Eff (HttpEffect r) Response =
         | Ok int_array ->
             let int_array : Array Int = int_array
             let s = foldl (+) 0 int_array 
-            do write_response (string.as_bytes (show s))
+            seq write_response (string.as_bytes (show s))
             wrap { status = status.ok, .. http.response }
         | Err err ->
             seq write_response (string.as_bytes err)
