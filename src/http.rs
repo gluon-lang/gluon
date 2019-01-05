@@ -4,7 +4,7 @@ extern crate native_tls;
 extern crate tokio_tcp;
 extern crate tokio_tls;
 
-use std::{
+use crate::real_std::{
     fmt, fs,
     path::Path,
     sync::{Arc, Mutex},
@@ -224,7 +224,7 @@ fn listen(
     // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
-        .get_global("std.http.http.handle")
+        .get_global("std.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
 
     struct Listen {
@@ -281,7 +281,7 @@ fn listen(
                                     Ok(response)
                                 }
                                 IO::Exception(err) => {
-                                    error!("{}", err);
+                                    info!("{}", err);
                                     Ok(http::Response::builder()
                                         .status(StatusCode::INTERNAL_SERVER_ERROR)
                                         .body("".into())
@@ -290,7 +290,7 @@ fn listen(
                             }
                         }
                         Err(err) => {
-                            error!("{}", err);
+                            info!("{}", err);
                             Ok(http::Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                                 .body("".into())
@@ -349,7 +349,7 @@ fn listen(
             })
             .and_then(|connecting| connecting)
             .for_each(|connection| {
-                hyper::rt::spawn(connection.map_err(|err| error!("{}", err)));
+                hyper::rt::spawn(connection.map_err(|err| info!("{}", err)));
                 Ok(())
             })
             .map(|_| IO::Value(()))
@@ -404,13 +404,19 @@ macro_rules! uri_binds {
     }
 }
 
+mod std {
+    pub(crate) mod http {
+        pub(crate) use crate::http as prim;
+    }
+}
+
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            listen => primitive!(2, async fn listen),
-            read_chunk => primitive!(1, async fn read_chunk),
-            write_response => primitive!(2, async fn write_response),
+            listen => primitive!(2, async fn std::http::prim::listen),
+            read_chunk => primitive!(1, async fn std::http::prim::read_chunk),
+            write_response => primitive!(2, async fn std::http::prim::write_response),
             port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port_part().map(|p| p.as_u16())),
             uri => uri_binds!(path host query to_string)
         },

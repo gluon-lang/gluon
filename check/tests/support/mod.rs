@@ -2,23 +2,25 @@
 #![allow(dead_code)]
 
 extern crate codespan;
+extern crate gluon_base as base;
+extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
-use crate::base::{
-    self,
-    ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
-    error::{Errors, InFile},
-    kind::{ArcKind, Kind, KindEnv},
-    metadata::{Metadata, MetadataEnv},
-    pos::{BytePos, Spanned},
-    symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
-    types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
-};
-
-use crate::parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
-
-use crate::check::{
-    metadata, rename,
-    typecheck::{self, Typecheck},
+use self::{
+    base::{
+        ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
+        error::{Errors, InFile},
+        kind::{ArcKind, Kind, KindEnv},
+        metadata::{Metadata, MetadataEnv},
+        pos::{BytePos, Spanned},
+        symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+        types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+    },
+    check::{
+        metadata, rename,
+        typecheck::{self, Typecheck},
+    },
+    parser::{parse_partial_expr, reparse_infix, ParseErrors},
 };
 
 use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};

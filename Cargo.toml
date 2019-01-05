@@ -1,6 +1,6 @@
 [package]
 name = "gluon"
-version = "0.9.4" # GLUON
+version = "0.10.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 edition = "2018"
@@ -22,12 +22,12 @@ name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.9.4" } # GLUON
-gluon_check = { path = "check", version = "0.9.4" } # GLUON
-gluon_parser = { path = "parser", version = "0.9.4" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.9.4" } # GLUON
-gluon_vm = { path = "vm", version = "0.9.4", default-features = false } # GLUON
-gluon_format = { path = "format", version = "0.9.4", default-features = false } # GLUON
+gluon_base = { path = "base", version = "0.10.0" } # GLUON
+gluon_check = { path = "check", version = "0.10.0" } # GLUON
+gluon_parser = { path = "parser", version = "0.10.0" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.10.0" } # GLUON
+gluon_vm = { path = "vm", version = "0.10.0", default-features = false } # GLUON
+gluon_format = { path = "format", version = "0.10.0", default-features = false } # GLUON
 
 log = "0.4"
 quick-error = "1.0.0"
@@ -59,7 +59,7 @@ rand = { version = "0.6", optional = true }
 rand_xorshift = { version = "0.1", optional = true }
 
 [build-dependencies]
-gluon_base = { path = "base", version = "0.9.4" } # GLUON
+gluon_base = { path = "base", version = "0.10.0" } # GLUON
 
 itertools = "0.8"
 little-skeptic = { version = "0.15.0", optional = true }
@@ -87,8 +87,8 @@ bincode = "1"
 
 pulldown-cmark = "0.2"
 
-gluon_completion = { path = "completion", version = "0.9.4" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.9.4" } # GLUON
+gluon_completion = { path = "completion", version = "0.10.0" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.10.0" } # GLUON
 
 [features]
 default = ["regex", "random"]

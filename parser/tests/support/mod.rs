@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use crate::base::{
     ast::{
         walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument,
-        Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
+        Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
         Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
         TypeBinding, TypedIdent, ValueBinding,
     },
@@ -225,6 +225,23 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
         },
         b,
     ))
+}
+
+pub fn do_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
+    do_2(
+        Some(no_loc(Pattern::Ident(TypedIdent::new(intern(s))))),
+        e,
+        b,
+    )
+}
+
+pub fn do_2(id: Option<SpannedPattern<String>>, e: SpExpr, b: SpExpr) -> SpExpr {
+    no_loc(Expr::Do(Do {
+        id,
+        bound: Box::new(e),
+        body: Box::new(b),
+        flat_map_id: None,
+    }))
 }
 
 pub fn id(s: &str) -> SpExpr {

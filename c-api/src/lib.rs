@@ -1,5 +1,5 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.9.4")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.10.0")] // # GLUON
 
 extern crate gluon;
 #[cfg(not(target_arch = "wasm32"))]

@@ -1,10 +1,9 @@
 #![cfg(feature = "serialization")]
-extern crate futures;
-
 extern crate env_logger;
-
+extern crate futures;
 extern crate serde_json;
 extern crate serde_state as serde;
+extern crate walkdir;
 
 extern crate gluon;
 
@@ -104,27 +103,34 @@ fn roundtrip_std_prelude() {
 
 #[test]
 fn roundtrip_std_libs() {
+    use std::fmt::Write;
+
     let _ = env_logger::try_init();
 
     let thread = new_vm();
     let mut expr = "{\n".to_string();
-    for entry in std::fs::read_dir("std").unwrap() {
-        let path = entry.unwrap().path();
+    for entry in walkdir::WalkDir::new("std") {
+        let entry = entry.unwrap();
+        let path = entry.path();
         // Can't check the extension since vim swap files ".glu.swp" will report ".glu" as the
         // extension
-        let file_stem = path.file_stem().unwrap().to_str();
+        let path_str = path.to_str().unwrap();
         if path.to_str().unwrap().ends_with(".glu") && 
-            file_stem != Some("repl") &&
-            file_stem != Some("stream")
+            path_str.starts_with("std/regex") &&
+            path_str.starts_with("std/repl") &&
+            path_str.starts_with("std/stream") &&
             // floats cannot be roundtripped with serde json
             // https://github.com/serde-rs/json/issues/128
-            && file_stem != Some("float")
+            path_str.starts_with("std/float")
         {
-            expr.push_str(&format!(
+            let module = gluon_base::filename_to_module(path_str);
+            write!(
+                expr,
                 "    {} = import! {:?},\n",
-                path.file_stem().unwrap().to_str().unwrap(),
-                path.display()
-            ));
+                module.replace(".", "_"),
+                module
+            )
+            .unwrap();
         }
     }
     expr.push_str("}\n");

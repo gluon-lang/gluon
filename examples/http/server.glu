@@ -31,7 +31,7 @@ let http @ {
     uri,
 
     ?
-} = import! std.http.http
+} = import! std.http
 
 let hello_world : Eff (HttpEffect r) Response =
     write_response (string.as_bytes "Hello World")
@@ -63,7 +63,7 @@ let sum : Eff (HttpEffect r) Response =
         seq write_response (string.as_bytes "Request contained invalid UTF-8")
         wrap { status = status.bad_request, .. http.response }
     | Ok string_body ->
-        match de.deserialize de.deserializer string_body with
+        match de.deserialize string_body with
         | Ok int_array ->
             let int_array : Array Int = int_array
             let s = foldl (+) 0 int_array 

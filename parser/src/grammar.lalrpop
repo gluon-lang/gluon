@@ -102,9 +102,13 @@ IdentStr: &'input str = {
     "(" <"operator"> ")" => <>,
 };
 
+RecoverError: () = {
+    <!> => errors.push(<>.error),
+};
+
 SkipExtraTokens: () = {
     => (),
-    <!> => errors.push(<>.error),
+    RecoverError,
 };
 
 Ident: Id =
@@ -501,6 +505,7 @@ NoErrorPattern = {
 Pattern = {
     NoErrorPattern,
     <!> => {
+        debug!("Recovering from pattern error");
         errors.push(<>.error);
         Pattern::Error
     },
@@ -599,6 +604,24 @@ PlainValueBinding: ValueBinding<Id> = {
             args,
             expr,
         },
+
+    // Error recovery
+
+    "let" <name: Sp<Ident>> => {
+        let span = pos::Span::new(name.span.end(), name.span.end());
+        errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
+            token: Some((span.start(), Token::In, span.end())),
+            expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
+        });
+        ValueBinding {
+            metadata: Metadata::default(),
+            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
+            typ: None,
+            resolved_type: type_cache.hole(),
+            args: Vec::new(),
+            expr: pos::spanned(span, Expr::Error(None)),
+        }
+    }
 };
 
 RecursiveValueBinding: ValueBinding<Id> = {
@@ -754,13 +777,7 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <bind: DoBinding> <body: InExpr> => {
-        Expr::Do(Do { id: Some(bind.0), bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
-    },
-
-    "seq" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(Do { id: None, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
-    },
+    DoExpression,
 
     BlockExpr,
 
@@ -770,8 +787,30 @@ Expr: Expr<Id> = {
     }
 };
 
+DoExpression: Expr<Id> = {
+    "do" <bind: DoBinding> <body: SpExpr> => {
+        Expr::Do(Do { id: Some(bind.0), bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
+    },
+
+    "seq" <bound: SpExpr> <body: InExpr> => {
+        Expr::Do(Do { id: None, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
+    },
+};
+
+
 DoBinding: (SpannedPattern<Id>, SpannedExpr<Id>) = {
-    <id: Sp<Pattern>> "=" <bound: SpExpr> => (id, bound),
+    <id: Sp<Pattern>> "=" <bound: SpExpr> "in" => (id, bound),
+
+    // Error recovery
+
+    <id: Sp<Pattern>> "in" => {
+        let span = pos::Span::new(id.span.end(), id.span.end());
+        errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
+            token: Some((span.start(), Token::In, span.end())),
+            expected: ["="].iter().map(|s| s.to_string()).collect(),
+        });
+        (id, pos::spanned(span, Expr::Error(None)))
+    },
 };
 
 BlockExpr: Expr<Id> = {

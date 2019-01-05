@@ -21,7 +21,7 @@ use crate::base::filename_to_module;
 use crate::base::fnv::FnvMap;
 use crate::base::pos::{self, BytePos, Span};
 use crate::base::symbol::Symbol;
-use crate::base::types::ArcType;
+use crate::base::types::{ArcType, Type};
 
 use crate::vm::{
     self,
@@ -88,15 +88,21 @@ impl Importer for DefaultImporter {
         use crate::compiler_pipeline::*;
 
         let result = {
-            let expr = &mut expr;
-            let result = MacroValue { expr }
+            let result = MacroValue { expr: &mut expr }
                 .typecheck(compiler, vm, modulename, input)
                 .map_err(|err| err.into());
 
             if result.is_ok() && earlier_errors_exist {
+                trace!(
+                    "Typechecked {} but earlier errors exist, bailing",
+                    modulename
+                );
                 // We must not pass error patterns or expressions to the core translator so break
                 // early. An error will be returned by the macro expander so we can just return Ok
-                return Ok(());
+                return Err((
+                    Some(expr.env_type_of(&*vm.get_env())),
+                    Box::new(crate::Error::Multiple(Errors::default())),
+                ));
             }
 
             result.and_then(|value| {
@@ -268,8 +274,11 @@ impl<I> Import<I> {
 
         let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
 
-        if let Err((_, ref err)) = result {
-            debug!("Import error: {}", err);
+        if let Err((ref typ, ref err)) = result {
+            debug!("Import error {}: {}", module_id, err);
+            if let Some(typ) = typ {
+                debug!("Import got type {}", typ);
+            }
         }
 
         let _ = sender.send(());
@@ -336,7 +345,9 @@ impl<I> Import<I> {
 
                 let macro_result = match result {
                     Ok(m) => m,
-                    Err((None, err)) => return Err((None, err.into())),
+                    Err((None, err)) => {
+                        return Err((None, err.into()));
+                    }
                     Err((Some(m), err)) => {
                         macros.errors.push(pos::spanned(span, err.into()));
                         m
@@ -514,6 +525,7 @@ where
                 .cloned()
             {
                 macros.error_in_expr = true;
+                trace!("Marking error due to {} import", modulename);
                 return Box::new(future::ok(pos::spanned(args[0].span, expr)));
             }
 
@@ -537,6 +549,12 @@ where
                 Ok(None) => (),
                 Err((typ, err)) => {
                     macros.errors.push(pos::spanned(args[0].span, err));
+
+                    trace!(
+                        "Marking error for {}: {}",
+                        modulename,
+                        typ.clone().unwrap_or_else(Type::hole)
+                    );
 
                     let expr = Expr::Error(typ);
                     get_state(macros)

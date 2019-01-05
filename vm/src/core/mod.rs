@@ -618,7 +618,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             }
             | ast::Expr::Annotated(ref expr, _) => self.translate_(expr),
 
-            ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
+            ast::Expr::Error(_) => self.error_expr("Evaluated an invalid exprssion"),
         }
     }
 
@@ -816,6 +816,18 @@ impl<'a, 'e> Translator<'a, 'e> {
             },
             arena.alloc(Expr::Ident(name, span)),
         )
+    }
+
+    fn error_expr(&'a self, msg: &str) -> Expr<'a> {
+        let arena = &self.allocator.arena;
+        let error = arena.alloc(Expr::Ident(
+            TypedIdent::new(Symbol::from("@error")),
+            Span::default(),
+        ));
+        let args = arena.alloc_extend(
+            Some(Expr::Const(Literal::String(msg.into()), Span::default())).into_iter(),
+        );
+        Expr::Call(error, args)
     }
 }
 
@@ -1310,18 +1322,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         equations: &[Equation<'a, 'p>],
     ) -> Expr<'a> {
         let arena = &self.0.allocator.arena;
-        let error = arena.alloc(Expr::Ident(
-            TypedIdent::new(Symbol::from("@error")),
-            Span::default(),
-        ));
-        let args = arena.alloc_extend(
-            Some(Expr::Const(
-                Literal::String("Unmatched pattern".into()),
-                Span::default(),
-            ))
-            .into_iter(),
-        );
-        let default = arena.alloc(Expr::Call(error, args));
+        let default = arena.alloc(self.0.error_expr("Unmatched pattern"));
         match *expr {
             Expr::Ident(..) => self.translate(default, &[expr], equations).clone(),
             _ => {

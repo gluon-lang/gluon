@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.9.4")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.10.0")] // # GLUON
 
 #[cfg(test)]
 extern crate env_logger;
@@ -707,12 +707,21 @@ impl VmBuilder {
         }
         vm.get_macros().insert(String::from("import"), import);
 
+        add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
+
         Compiler::new()
             .implicit_prelude(false)
-            .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
+            .run_expr::<OpaqueValue<&Thread, Hole>>(
+                &vm,
+                "",
+                r#"
+                    let _ = import! std.types
+                    let _ = import! std.prim
+                    ()
+                "#,
+            )
             .unwrap_or_else(|err| panic!("{}", err));
 
-        add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
         add_extern_module(&vm, "std.byte.prim", crate::vm::primitives::load_byte);
         add_extern_module(&vm, "std.int.prim", crate::vm::primitives::load_int);
         add_extern_module(&vm, "std.float.prim", crate::vm::primitives::load_float);
