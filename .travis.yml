@@ -125,3 +125,11 @@ deploy:
       tags: true
       repo: gluon-lang/gluon
       condition: $DEPLOY = 1
+
+after_deploy:
+- CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags || true`
+- >
+    if [[ $CURRENT_TAG != "" ]] && [[ $TRAVIS_RUST_VERSION == "stable" ]]; then
+        cargo login $CRATES_IO_TOKEN
+        ./scripts/publish.sh
+    fi
