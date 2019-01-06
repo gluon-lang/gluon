@@ -8,8 +8,8 @@ declare -a PROJECTS=(
     completion
     codegen
     vm
-    .
     format
+    .
     c-api
     doc
     repl
