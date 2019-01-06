@@ -4,10 +4,13 @@ use std::fmt;
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
-use crate::base::fixed::{FixedMap, FixedVec};
-use crate::base::types::{self, ArcType, Type, Walker};
+use crate::base::{
+    fixed::{FixedMap, FixedVec},
+    types::{self, ArcType, Type, TypeVariable, Walker},
+};
+use crate::typ::RcType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Functor)]
 pub enum Error<T> {
     Occurs(T, T),
 }
@@ -243,6 +246,10 @@ impl<T: Substitutable> Substitution<T> {
         }
     }
 
+    pub fn replace(&mut self, var: u32, t: T) {
+        self.types.insert(var, t.into());
+    }
+
     /// Creates a new variable
     pub fn new_var(&self) -> T
     where
@@ -333,7 +340,7 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
-pub fn is_variable_unified(subs: &Substitution<ArcType>, var: &ArcType) -> bool {
+pub fn is_variable_unified(subs: &Substitution<RcType>, var: &RcType) -> bool {
     match **var {
         Type::Variable(ref var) => subs.find_type_for_var(var.id).is_some(),
         _ => false,
@@ -398,8 +405,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     }
 }
 
-impl Substitution<ArcType> {
-    pub fn zonk(&self, typ: &ArcType) -> ArcType {
+impl Substitution<RcType> {
+    pub fn zonk(&self, typ: &RcType) -> RcType {
         types::walk_move_type(typ.clone(), &mut |typ| match typ.get_var() {
             Some(var) => match self.find_type_for_var(var.get_id()) {
                 Some(t) => Some(self.zonk(t)),
@@ -407,5 +414,33 @@ impl Substitution<ArcType> {
             },
             None => None,
         })
+    }
+
+    pub fn arc_real(&self, typ: &ArcType) -> &RcType {
+        let var = match &**typ {
+            Type::Variable(var) => var,
+            _ => panic!("Expected variable"),
+        };
+        self.real(self.get_var(var.id).expect("Variable"))
+    }
+
+    pub fn bind_arc(&self, typ: &RcType) -> ArcType {
+        if let Some(var) = typ.get_var() {
+            return Type::variable(var.clone());
+        }
+        let id = self.union.borrow_mut().insert(UnionByLevel {
+            ..UnionByLevel::default()
+        });
+        assert!(id == self.variables.len());
+        debug!("New var {}", self.variables.len());
+
+        let var = TypeVariable {
+            id: id as u32,
+            kind: typ.kind().into_owned(),
+        };
+        self.variables.push(Box::new(Type::variable(var.clone()))); // TODO do we need to allocate a variable here?
+        self.insert(id as u32, typ.clone());
+
+        Type::variable(var)
     }
 }

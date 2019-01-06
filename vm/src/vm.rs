@@ -11,7 +11,7 @@ use crate::base::kind::{ArcKind, Kind, KindEnv};
 use crate::base::metadata::{Metadata, MetadataEnv};
 use crate::base::symbol::{Name, Symbol, SymbolRef};
 use crate::base::types::{
-    Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv,
+    Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv, TypeExt,
 };
 use crate::base::DebugLevel;
 
@@ -219,6 +219,8 @@ impl KindEnv for VmEnv {
     }
 }
 impl TypeEnv for VmEnv {
+    type Type = ArcType;
+
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.globals
             .get(id.definition_name())

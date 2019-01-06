@@ -10,11 +10,13 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::{self, Typed};
-use crate::base::kind::Kind;
-use crate::base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
+use crate::base::{
+    ast::{self, Typed},
+    kind::Kind,
+    types::{Alias, AliasData, ArcType, Field, Generic, Type},
+};
 
-use crate::support::{alias, intern, typ, MockEnv};
+use crate::support::*;
 
 #[macro_use]
 #[allow(unused_macros)]

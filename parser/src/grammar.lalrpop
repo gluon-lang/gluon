@@ -18,7 +18,7 @@ use crate::ordered_float::NotNan;
 use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
 grammar<'input, 'env, Id>(input: &'input crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
-    where Id: Clone;
+    where Id: Clone + AsRef<str>;
 
 extern {
     type Location = BytePos;

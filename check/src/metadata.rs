@@ -7,7 +7,7 @@ use crate::base::ast::{
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::{Metadata, MetadataEnv};
 use crate::base::symbol::{Name, Symbol};
-use crate::base::types::row_iter;
+use crate::base::types::{row_iter, TypeExt};
 
 struct Environment<'b> {
     env: &'b MetadataEnv,

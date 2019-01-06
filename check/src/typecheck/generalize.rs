@@ -3,11 +3,12 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type},
+    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeExt},
 };
 
 use crate::{
     substitution::{is_variable_unified, Substitution},
+    typ::RcType,
     typecheck::Typecheck,
 };
 
@@ -36,7 +37,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     pub(crate) fn new(
         level: u32,
         tc: &'a mut Typecheck<'b>,
-        typ: &ArcType,
+        typ: &RcType,
         span: Span<BytePos>,
     ) -> TypeGeneralizer<'a, 'b> {
         TypeGeneralizer {
@@ -89,15 +90,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.visit_ident(&mut id.value)
             }
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                {
-                    let type_cache = &self.generalizer.tc.type_cache;
-                    self.generalizer.tc.type_variables.extend(
-                        typ.forall_params()
-                            .map(|param| (param.id.clone(), type_cache.hole())),
-                    );
-                }
-                if let Some(finished) = self.generalizer.generalize_type(typ) {
-                    *typ = finished;
+                if let Type::Variable(var) = &**typ {
+                    let ref typ = self.generalizer.tc.subs.arc_real(typ).clone();
+                    {
+                        let type_cache = &self.generalizer.tc.type_cache;
+                        self.generalizer.tc.type_variables.extend(
+                            typ.forall_params()
+                                .map(|param| (param.id.clone(), type_cache.hole())),
+                        );
+                    }
+                    if let Some(typ) = self.generalizer.generalize_type(typ) {
+                        self.generalizer.tc.subs.replace(var.id, typ);
+                    }
                 }
             }
         }
@@ -113,7 +117,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         self.tc.type_variables.exit_scope();
     }
 
-    pub(crate) fn generalize_type_top(&mut self, typ: &mut ArcType) {
+    pub(crate) fn generalize_type_top(&mut self, typ: &mut RcType) {
         self.tc.type_variables.enter_scope();
 
         let mut result_type = self.generalize_type(typ);
@@ -140,7 +144,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         debug!("End generalize {}", typ);
     }
 
-    pub(crate) fn generalize_type(&mut self, typ: &ArcType) -> Option<ArcType> {
+    pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
         let replacement = self.subs.replace_variable(typ);
         let mut typ = typ;
         if let Some(ref t) = replacement {
@@ -151,7 +155,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 // Create a prefix if none exists
                 let id = self.variable_generator.next_variable(self.tc);
 
-                let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                let gen: RcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
                 debug!("Gen {} to {}", var.id, gen);
                 self.subs.insert(var.id, gen.clone());
 
@@ -246,7 +250,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                 types::walk_move_type_opt(
                     typ,
-                    &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
+                    &mut types::ControlVisitation(|typ: &RcType| self.generalize_type(typ)),
                 )
                 .map(|t| unroll_typ(&t).unwrap_or(t))
                 .or_else(|| replacement.clone())
@@ -262,15 +266,15 @@ struct TypeVariableGenerator {
 }
 
 impl TypeVariableGenerator {
-    fn new(subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
-        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<ArcType>, typ: &ArcType) {
+    fn new(subs: &Substitution<RcType>, typ: &RcType) -> TypeVariableGenerator {
+        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<RcType>, typ: &RcType) {
             let typ = subs.real(typ);
             if let Type::Forall(ref params, _, _) = **typ {
                 map.extend(params.iter().map(|param| param.id.clone()));
             }
             types::walk_move_type_opt(
                 typ,
-                &mut types::ControlVisitation(|typ: &ArcType| {
+                &mut types::ControlVisitation(|typ: &RcType| {
                     gather_foralls(map, subs, typ);
                     None
                 }),
@@ -312,7 +316,7 @@ impl TypeVariableGenerator {
     }
 }
 
-fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
+fn unroll_typ(typ: &RcType) -> Option<RcType> {
     let mut args = AppVec::new();
     let mut current = match **typ {
         Type::App(ref l, ref rest) => {
@@ -345,7 +349,7 @@ fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
     }
 }
 
-fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
+fn unroll_record(typ: &Type<Symbol, RcType>) -> Option<RcType> {
     let mut new_types = Vec::new();
     let mut new_fields = Vec::new();
     let mut current = match *typ {
@@ -386,8 +390,8 @@ mod tests {
 
     #[test]
     fn unroll_typ_test() {
-        let i: ArcType = Type::int();
-        let s: ArcType = Type::string();
+        let i: RcType = Type::int();
+        let s: RcType = Type::string();
         assert_eq!(
             unroll_typ(&Type::app(
                 Type::app(i.clone(), collect![s.clone()]),
@@ -402,7 +406,7 @@ mod tests {
             )),
             Some(Type::app(i.clone(), collect![i.clone(), s.clone()]))
         );
-        let f: ArcType = Type::builtin(BuiltinType::Function);
+        let f: RcType = Type::builtin(BuiltinType::Function);
         assert_eq!(
             unroll_typ(&Type::app(
                 Type::app(f.clone(), collect![i.clone()]),

@@ -18,7 +18,7 @@ use crate::base::{
     kind::Kind,
     pos, resolve,
     symbol::{Symbol, SymbolModule},
-    types::ArcType,
+    types::{ArcType, TypeExt},
     DebugLevel,
 };
 use crate::parser::{parse_partial_repl_line, ReplLine};

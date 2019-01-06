@@ -50,7 +50,7 @@ use crate::base::{
     pos::{spanned, BytePos, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
-    types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv},
+    types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv, TypeExt},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -249,7 +249,7 @@ impl<'a> Allocator<'a> {
     }
 }
 
-pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+pub fn translate(env: &PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
     // Here we temporarily forget the lifetime of `translator` so it can be moved into a
     // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
     // long as the `CoreExpr` making it safe again
@@ -268,12 +268,12 @@ pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
 
 pub struct Translator<'a, 'e> {
     pub allocator: Allocator<'a>,
-    env: &'e PrimitiveEnv,
+    env: &'e PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a, 'e> Translator<'a, 'e> {
-    pub fn new(env: &'e PrimitiveEnv) -> Translator<'a, 'e> {
+    pub fn new(env: &'e PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
         Translator {
             allocator: Allocator::new(),
             env: env,
@@ -834,7 +834,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
-    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType<Self::Ident>, String> {
+    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<Self::Ident>, String> {
         match *self {
             Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
             Expr::Const(ref literal, _) => literal.try_type_of(env),
@@ -847,7 +847,7 @@ impl<'a> Typed for Expr<'a> {
 }
 
 fn get_return_type(
-    env: &TypeEnv,
+    env: &TypeEnv<Type = ArcType>,
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {
@@ -1403,7 +1403,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .unwrap_or(default),
             Some(_) => {
                 fn bind_variables<'b>(
-                    env: &PrimitiveEnv,
+                    env: &PrimitiveEnv<Type = ArcType>,
                     pat: &ast::SpannedPattern<Symbol>,
                     variable: CExpr<'b>,
                     binder: &mut Binder<'b>,

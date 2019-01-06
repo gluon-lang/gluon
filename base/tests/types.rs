@@ -340,6 +340,8 @@ impl KindEnv for MockEnv {
 }
 
 impl TypeEnv for MockEnv {
+    type Type = ArcType;
+
     fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
         None
     }

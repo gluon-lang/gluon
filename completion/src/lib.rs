@@ -32,7 +32,7 @@ use crate::base::resolve;
 use crate::base::scoped_map::ScopedMap;
 use crate::base::symbol::{Name, Symbol, SymbolRef};
 use crate::base::types::{
-    walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv,
+    walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv, TypeExt,
 };
 
 #[derive(Clone, Debug)]
@@ -122,7 +122,7 @@ struct Suggest<E> {
 
 impl<E> Suggest<E>
 where
-    E: TypeEnv,
+    E: TypeEnv<Type = ArcType>,
 {
     fn new(env: E) -> Suggest<E> {
         Suggest {
@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<E: TypeEnv> OnFound for Suggest<E> {
+impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
     fn on_ident(&mut self, ident: &TypedIdent) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
@@ -792,7 +792,7 @@ pub trait Extract: Sized {
 
 #[derive(Clone, Copy)]
 pub struct TypeAt<'a> {
-    pub env: &'a TypeEnv,
+    pub env: &'a TypeEnv<Type = ArcType>,
 }
 impl<'a> Extract for TypeAt<'a> {
     type Output = Either<ArcKind, ArcType>;
@@ -914,7 +914,7 @@ pub fn find<T>(
     pos: BytePos,
 ) -> Result<Either<ArcKind, ArcType>, ()>
 where
-    T: TypeEnv,
+    T: TypeEnv<Type = ArcType>,
 {
     let extract = TypeAt { env };
     completion(extract, source_span, expr, pos)
@@ -1047,7 +1047,7 @@ pub fn suggest<T>(
     pos: BytePos,
 ) -> Vec<Suggestion>
 where
-    T: TypeEnv,
+    T: TypeEnv<Type = ArcType>,
 {
     SuggestionQuery::default().suggest(env, source_span, expr, pos)
 }
@@ -1142,7 +1142,7 @@ impl SuggestionQuery {
         pos: BytePos,
     ) -> Vec<Suggestion>
     where
-        T: TypeEnv,
+        T: TypeEnv<Type = ArcType>,
     {
         let mut suggest = Suggest::new(env);
 
@@ -1313,7 +1313,7 @@ impl SuggestionQuery {
         context: &Match,
         ident: &str,
     ) where
-        T: TypeEnv,
+        T: TypeEnv<Type = ArcType>,
     {
         result.extend(
             suggest
@@ -1351,7 +1351,7 @@ impl SuggestionQuery {
         context: &Match,
         ident: &str,
     ) where
-        T: TypeEnv,
+        T: TypeEnv<Type = ArcType>,
     {
         result.extend(
             suggest
@@ -1384,7 +1384,7 @@ impl SuggestionQuery {
 
     fn suggest_module_import<T>(&self, env: &T, path: &str, suggestions: &mut Vec<Suggestion>)
     where
-        T: TypeEnv,
+        T: TypeEnv<Type = ArcType>,
     {
         use std::ffi::OsStr;
         let path = Name::new(path);
@@ -1453,7 +1453,7 @@ impl SuggestionQuery {
         name: &'a str,
     ) -> Option<&'a Metadata>
     where
-        T: TypeEnv,
+        T: TypeEnv<Type = ArcType>,
     {
         let mut suggest = Suggest::new(type_env);
         complete_at(&mut suggest, source_span, expr, pos)
@@ -1512,7 +1512,7 @@ pub struct SignatureHelp {
 }
 
 pub fn signature_help(
-    env: &TypeEnv,
+    env: &TypeEnv<Type = ArcType>,
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
@@ -1636,7 +1636,7 @@ pub fn suggest_metadata<'a, T>(
     name: &'a str,
 ) -> Option<&'a Metadata>
 where
-    T: TypeEnv,
+    T: TypeEnv<Type = ArcType>,
 {
     SuggestionQuery::new().suggest_metadata(env, type_env, source_span, expr, pos, name)
 }

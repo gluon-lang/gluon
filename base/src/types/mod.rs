@@ -40,24 +40,29 @@ pub mod pretty_print;
 
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
+    type Type;
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType>;
+    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type>;
 
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    type Type = T::Type;
+
+    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type> {
         (**self).find_type(id)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>> {
         (**self).find_type_info(id)
     }
 }
 
 impl TypeEnv for EmptyEnv<Symbol> {
+    type Type = ArcType;
+
     fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
         None
     }
@@ -341,6 +346,18 @@ where
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
             _typ: Type::alias(data.name, data.args, data.typ),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Id, T> From<AliasRef<Id, T>> for Alias<Id, T>
+where
+    T: From<Type<Id, T>>,
+{
+    fn from(data: AliasRef<Id, T>) -> Alias<Id, T> {
+        Alias {
+            _typ: Type::Alias(data).into(),
             _marker: PhantomData,
         }
     }
@@ -1236,73 +1253,44 @@ where
     }
 }
 
-impl<Id> ArcType<Id> {
-    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType { typ: Arc::new(typ) }
-    }
+pub trait TypeExt<Id>:
+    Deref<Target = Type<Id, Self>> + Clone + From<Type<Id, Self>> + Sized
+{
+    fn new(typ: Type<Id, Self>) -> Self;
 
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
-    pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
+    fn type_field_iter(&self) -> TypeFieldIterator<Self> {
         type_field_iter(self)
     }
 
     /// Returns an iterator over all fields in a record.
     /// `{ Test, Test2, x, y } => [x, y]`
-    pub fn row_iter(&self) -> RowIterator<Self> {
+    fn row_iter(&self) -> RowIterator<Self> {
         row_iter(self)
     }
 
-    pub fn strong_count(typ: &ArcType<Id>) -> usize {
-        Arc::strong_count(&typ.typ)
-    }
-
-    pub fn remove_implicit_args(&self) -> &ArcType<Id> {
+    fn remove_implicit_args<'a>(&'a self) -> &'a Self
+    where
+        Id: 'a,
+    {
         match **self {
             Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_implicit_args(),
             _ => self,
         }
     }
 
-    pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &ArcType<Id>)> {
-        let mut i = 0;
-        let mut typ = self;
-        iter::repeat(()).scan((), move |_, _| {
-            while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-                if i < params.len() {
-                    i += 1;
-                    return Some((&params[i - 1], &vars[i - 1]));
-                } else {
-                    i = 0;
-                    typ = inner_type;
-                }
-            }
-            None
-        })
-    }
-
-    pub fn forall_params(&self) -> impl Iterator<Item = &Generic<Id>> {
-        let mut i = 0;
-        let mut typ = self;
-        iter::repeat(()).scan((), move |_, _| {
-            while let Type::Forall(ref params, ref inner_type, _) = **typ {
-                if i < params.len() {
-                    i += 1;
-                    return Some(&params[i - 1]);
-                } else {
-                    i = 0;
-                    typ = inner_type;
-                }
-            }
-            None
-        })
-    }
-
-    pub fn remove_forall(&self) -> &ArcType<Id> {
+    fn remove_forall<'a>(&'a self) -> &'a Self
+    where
+        Id: 'a,
+    {
         remove_forall(self)
     }
 
-    pub fn remove_forall_and_implicit_args(&self) -> &ArcType<Id> {
+    fn remove_forall_and_implicit_args<'a>(&'a self) -> &'a Self
+    where
+        Id: 'a,
+    {
         match **self {
             Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_forall_and_implicit_args(),
             Type::Forall(_, ref typ, _) => typ.remove_forall_and_implicit_args(),
@@ -1310,35 +1298,38 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn skolemize_in(
+    fn skolemize_in(
         &self,
-        named_variables: &mut FnvMap<Id, ArcType<Id>>,
-        f: impl FnOnce(ArcType<Id>) -> ArcType<Id>,
-    ) -> ArcType<Id>
+        named_variables: &mut FnvMap<Id, Self>,
+        f: impl FnOnce(Self) -> Self,
+    ) -> Self
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         let skolemized = self.skolemize(named_variables);
         let new_type = f(skolemized);
         new_type.with_forall(self)
     }
 
-    pub fn with_forall(self, from: &Self) -> Self
+    fn with_forall(self, from: &Self) -> Self
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         let mut params = Vec::new();
         let mut vars = Vec::new();
-        for (param, var) in from.forall_params_vars() {
+        for (param, var) in forall_params_vars(from) {
             params.push(param.clone());
             vars.push(var.clone());
         }
         Type::forall_with_vars(params, self, Some(vars))
     }
 
-    pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    fn skolemize(&self, named_variables: &mut FnvMap<Id, Self>) -> Self
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         let mut typ = self;
         while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
@@ -1364,9 +1355,10 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    fn skolemize_(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> Option<ArcType<Id>>
+    fn skolemize_(&self, named_variables: &mut FnvMap<Id, Self>) -> Option<Self>
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
@@ -1386,14 +1378,15 @@ impl<Id> ArcType<Id> {
             }
             _ => walk_move_type_opt(
                 self,
-                &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
+                &mut ControlVisitation(|typ: &Self| typ.skolemize_(named_variables)),
             ),
         }
     }
 
-    pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, Self>) -> Self
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         let mut typ = self;
         while let Type::Forall(params, inner_type, Some(vars)) = &**typ {
@@ -1413,12 +1406,10 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn instantiate_generics_(
-        &self,
-        named_variables: &FnvMap<Id, ArcType<Id>>,
-    ) -> Option<ArcType<Id>>
+    fn instantiate_generics_(&self, named_variables: &FnvMap<Id, Self>) -> Option<Self>
     where
         Id: Clone + Eq + Hash,
+        Self: Clone + From<Type<Id, Self>>,
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
@@ -1442,56 +1433,26 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn forall_scope_iter(&self) -> ForallScopeIter<Id> {
+    fn forall_scope_iter(&self) -> ForallScopeIter<Self> {
         ForallScopeIter {
             typ: self,
             offset: 0,
         }
     }
 
-    pub fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
-        Id: AsRef<str>,
+        Id: AsRef<str> + 'a,
         A: Clone,
+        Self: Commented + HasSpan,
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
 
-    pub fn display<A>(&self, width: usize) -> TypeFormatter<Id, Self, A> {
+    fn display<A>(&self, width: usize) -> TypeFormatter<Id, Self, A> {
         TypeFormatter::new(self).width(width)
     }
-}
 
-pub struct ForallScopeIter<'a, Id: 'a> {
-    pub typ: &'a ArcType<Id>,
-    offset: usize,
-}
-
-impl<'a, Id> Iterator for ForallScopeIter<'a, Id> {
-    type Item = (&'a Generic<Id>, &'a ArcType<Id>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match **self.typ {
-            Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                let offset = self.offset;
-                let item = params.get(offset).map(|param| {
-                    self.offset += 1;
-                    (param, &vars[offset])
-                });
-                match item {
-                    Some(_) => item,
-                    None => {
-                        self.typ = typ;
-                        self.next()
-                    }
-                }
-            }
-            _ => None,
-        }
-    }
-}
-
-impl ArcType {
     /// Applies a list of arguments to a parameterised type, returning `Some`
     /// if the substitution was successful.
     ///
@@ -1502,7 +1463,10 @@ impl ArcType {
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    pub fn apply_args(&self, params: &[Generic<Symbol>], args: &[ArcType]) -> Option<ArcType> {
+    fn apply_args(&self, params: &[Generic<Id>], args: &[Self]) -> Option<Self>
+    where
+        Id: Clone + PartialEq,
+    {
         let typ = self.clone();
 
         // It is ok to take the type only if it is fully applied or if it
@@ -1550,6 +1514,92 @@ impl ArcType {
                 _ => None,
             }
         }))
+    }
+}
+
+pub fn forall_params_vars<'a, T, Id>(
+    mut typ: &'a T,
+) -> impl Iterator<Item = (&'a Generic<Id>, &'a T)>
+where
+    Id: 'a,
+    T: Deref<Target = Type<Id, T>>,
+{
+    let mut i = 0;
+    iter::repeat(()).scan((), move |_, _| {
+        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            if i < params.len() {
+                i += 1;
+                return Some((&params[i - 1], &vars[i - 1]));
+            } else {
+                i = 0;
+                typ = inner_type;
+            }
+        }
+        None
+    })
+}
+
+pub fn forall_params<'a, T, Id>(mut typ: &'a T) -> impl Iterator<Item = &'a Generic<Id>>
+where
+    Id: 'a,
+    T: Deref<Target = Type<Id, T>>,
+{
+    let mut i = 0;
+    iter::repeat(()).scan((), move |_, _| {
+        while let Type::Forall(ref params, ref inner_type, _) = **typ {
+            if i < params.len() {
+                i += 1;
+                return Some(&params[i - 1]);
+            } else {
+                i = 0;
+                typ = inner_type;
+            }
+        }
+        None
+    })
+}
+
+impl<Id> TypeExt<Id> for ArcType<Id> {
+    fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        ArcType { typ: Arc::new(typ) }
+    }
+}
+
+impl<Id> ArcType<Id> {
+    pub fn strong_count(typ: &ArcType<Id>) -> usize {
+        Arc::strong_count(&typ.typ)
+    }
+}
+
+pub struct ForallScopeIter<'a, T: 'a> {
+    pub typ: &'a T,
+    offset: usize,
+}
+
+impl<'a, T, Id: 'a> Iterator for ForallScopeIter<'a, T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    type Item = (&'a Generic<Id>, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match **self.typ {
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                let offset = self.offset;
+                let item = params.get(offset).map(|param| {
+                    self.offset += 1;
+                    (param, &vars[offset])
+                });
+                match item {
+                    Some(_) => item,
+                    None => {
+                        self.typ = typ;
+                        self.next()
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 }
 
@@ -1897,7 +1947,8 @@ impl Prec {
     }
 }
 
-fn dt<T>(prec: Prec, typ: &T) -> DisplayType<T> {
+#[doc(hidden)]
+pub fn dt<T>(prec: Prec, typ: &T) -> DisplayType<T> {
     DisplayType { prec, typ }
 }
 
@@ -2712,6 +2763,15 @@ where
     }
 }
 
+pub fn translate_type<Id, T, U>(type_cache: &TypeCache<Id, U>, arc_type: &T) -> U
+where
+    T: Deref<Target = Type<Id, T>>,
+    U: From<Type<Id, U>> + Clone,
+    Id: Clone,
+{
+    translate_type_with(type_cache, arc_type, |typ| translate_type(type_cache, typ))
+}
+
 pub fn translate_type_with<Id, T, U, F>(
     cache: &TypeCache<Id, U>,
     typ: &Type<Id, T>,
@@ -2755,7 +2815,17 @@ where
                 .iter()
                 .map(|field| Field {
                     name: field.name.clone(),
-                    typ: Alias::from(translate_alias(&field.typ, &mut translate)),
+                    typ: Alias::from(AliasRef {
+                        index: field.typ.index,
+                        group: Arc::new(
+                            field
+                                .typ
+                                .group
+                                .iter()
+                                .map(|alias_data| translate_alias(alias_data, &mut translate))
+                                .collect(),
+                        ),
+                    }),
                 })
                 .collect(),
             fields
@@ -2775,7 +2845,17 @@ where
         Type::Generic(ref gen) => Type::generic(gen.clone()),
         Type::Ident(ref id) => Type::ident(id.clone()),
         Type::Projection(ref ids) => Type::projection(ids.clone()),
-        Type::Alias(ref alias) => Type::ident(alias.name.clone()),
+        Type::Alias(ref alias) => Type::Alias(AliasRef {
+            index: alias.index,
+            group: Arc::new(
+                alias
+                    .group
+                    .iter()
+                    .map(|alias_data| translate_alias(alias_data, &mut translate))
+                    .collect(),
+            ),
+        })
+        .into(),
         Type::EmptyRow => cache.empty_row(),
     }
 }

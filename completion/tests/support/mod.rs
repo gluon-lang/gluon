@@ -82,6 +82,8 @@ impl KindEnv for MockEnv {
 }
 
 impl TypeEnv for MockEnv {
+    type Type = ArcType;
+
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.definition_name() {
             "False" | "True" => Some(self.bool.as_type()),

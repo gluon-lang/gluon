@@ -197,6 +197,10 @@ impl SymbolRef {
         self.name() == other.name()
     }
 
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub fn name(&self) -> &Name {
         Name::new(Name::new(&self.0).as_str())
     }

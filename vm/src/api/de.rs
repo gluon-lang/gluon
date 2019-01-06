@@ -7,7 +7,7 @@ use std::result::Result as StdResult;
 
 use crate::base::resolve;
 use crate::base::symbol::Symbol;
-use crate::base::types::{row_iter, ArcType, BuiltinType, Type, TypeEnv};
+use crate::base::types::{row_iter, ArcType, BuiltinType, Type, TypeEnv, TypeExt};
 
 use crate::api::{Getable, ValueRef, VmType};
 use crate::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
@@ -198,7 +198,7 @@ where
 #[derive(Clone)]
 struct State<'de> {
     thread: &'de Thread,
-    env: &'de TypeEnv,
+    env: &'de TypeEnv<Type = ArcType>,
 }
 
 #[derive(Clone)]
@@ -211,7 +211,7 @@ struct Deserializer<'de, 't> {
 impl<'de, 't> Deserializer<'de, 't> {
     fn from_value(
         thread: &'de Thread,
-        env: &'de TypeEnv,
+        env: &'de TypeEnv<Type = ArcType>,
         input: Variants<'de>,
         typ: &'t ArcType,
     ) -> Self {

@@ -383,7 +383,7 @@ pub fn parse_partial_expr<Id, S>(
     input: &S,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
 where
-    Id: Clone,
+    Id: Clone + AsRef<str>,
     S: ?Sized + ParserSource,
 {
     let result_ok_iter;

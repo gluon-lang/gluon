@@ -1,20 +1,26 @@
-use self::Variable::*;
-use crate::base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
-use crate::base::kind::{ArcKind, KindEnv};
-use crate::base::pos::Line;
-use crate::base::resolve;
-use crate::base::scoped_map::ScopedMap;
-use crate::base::source::Source;
-use crate::base::symbol::{Symbol, SymbolModule, SymbolRef};
-use crate::base::types::{Alias, ArcType, BuiltinType, Type, TypeEnv};
-use crate::core::{self, CExpr, Expr, Pattern};
-use crate::interner::InternedStr;
-use crate::source_map::{LocalMap, SourceMap};
-use crate::types::*;
-use crate::vm::GlobalVmState;
 use std::ops::{Deref, DerefMut};
 
-use crate::{Error, Result};
+use crate::base::{
+    ast::{self, DisplayEnv, Literal, Typed, TypedIdent},
+    kind::{ArcKind, KindEnv},
+    pos::Line,
+    resolve,
+    scoped_map::ScopedMap,
+    source::Source,
+    symbol::{Symbol, SymbolModule, SymbolRef},
+    types::{Alias, ArcType, BuiltinType, Type, TypeEnv, TypeExt},
+};
+
+use crate::{
+    core::{self, CExpr, Expr, Pattern},
+    interner::InternedStr,
+    source_map::{LocalMap, SourceMap},
+    types::*,
+    vm::GlobalVmState,
+    Error, Result,
+};
+
+use self::Variable::*;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -426,7 +432,7 @@ impl CompilerEnv for TypeInfos {
 }
 
 pub struct Compiler<'a> {
-    globals: &'a (CompilerEnv + 'a),
+    globals: &'a (CompilerEnv<Type = ArcType> + 'a),
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
@@ -443,6 +449,8 @@ impl<'a> KindEnv for Compiler<'a> {
 }
 
 impl<'a> TypeEnv for Compiler<'a> {
+    type Type = ArcType;
+
     fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
         None
     }
@@ -460,7 +468,7 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 
 impl<'a> Compiler<'a> {
     pub fn new(
-        globals: &'a (CompilerEnv + 'a),
+        globals: &'a (CompilerEnv<Type = ArcType> + 'a),
         vm: &'a GlobalVmState,
         mut symbols: SymbolModule<'a>,
         source: &'a ::codespan::FileMap,

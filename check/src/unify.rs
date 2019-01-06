@@ -3,19 +3,56 @@ use std::fmt;
 use pretty::{Arena, DocAllocator};
 
 use crate::base::error::Errors;
+use crate::base::kind::ArcKind;
 use crate::base::symbol::Symbol;
 use crate::base::types::ToDoc;
 
 use crate::substitution::{self, Substitutable, Substitution};
 
 #[derive(Debug, PartialEq)]
-pub enum Error<T, E> {
+pub enum Error<E, T> {
     TypeMismatch(T, T),
     Substitution(crate::substitution::Error<T>),
     Other(E),
 }
 
-impl<T, E> fmt::Display for Error<T, E>
+impl<I, T> Error<crate::unify_type::TypeError<I, T>, T> {
+    pub fn map_t<U>(
+        self,
+        f: &mut impl FnMut(T) -> U,
+    ) -> Error<crate::unify_type::TypeError<I, U>, U>
+    where
+        T: Clone,
+    {
+        use crate::unify::Error::*;
+
+        match self {
+            TypeMismatch(l, r) => TypeMismatch(f(l), f(r)),
+            Substitution(err) => Substitution(err.map_t(f)),
+            Other(err) => Other(err.map_t(f)),
+        }
+    }
+}
+
+impl<I, T> Error<crate::kindcheck::KindError<I, T>, ArcKind> {
+    pub fn map_t<U>(
+        self,
+        f: &mut impl FnMut(T) -> U,
+    ) -> Error<crate::kindcheck::KindError<I, U>, ArcKind>
+    where
+        T: Clone,
+    {
+        use crate::unify::Error::*;
+
+        match self {
+            TypeMismatch(l, r) => TypeMismatch(l, r),
+            Substitution(err) => Substitution(err),
+            Other(err) => Other(err.map_t(f)),
+        }
+    }
+}
+
+impl<E, T> fmt::Display for Error<E, T>
 where
     T: fmt::Display + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
     E: fmt::Display,
@@ -46,7 +83,7 @@ where
     }
 }
 
-impl<T, E> From<substitution::Error<T>> for Error<T, E> {
+impl<T, E> From<substitution::Error<T>> for Error<E, T> {
     fn from(err: substitution::Error<T>) -> Self {
         Error::Substitution(err)
     }
@@ -63,7 +100,7 @@ where
     Type: Unifiable<S>,
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
-    fn report_error(&mut self, error: Error<Type, Type::Error>);
+    fn report_error(&mut self, error: Error<Type::Error, Type>);
     /// Attempt to unify `l` and `r` using the strategy of `Self`.
     fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
         match self.try_match_res(l, r) {
@@ -78,7 +115,7 @@ where
         &mut self,
         l: &Type,
         r: &Type,
-    ) -> Result<Option<Type>, Error<Type, Type::Error>>;
+    ) -> Result<Option<Type>, Error<Type::Error, Type>>;
 
     /// `true` if the returned type can be replaced by the caller
     fn allow_returned_type_replacement(&self) -> bool {
@@ -104,7 +141,7 @@ pub trait Unifiable<S>: Substitutable + Sized {
         &self,
         other: &Self,
         unifier: &mut UnifierState<S, U>,
-    ) -> Result<Option<Self>, Error<Self, Self::Error>>
+    ) -> Result<Option<Self>, Error<Self::Error, Self>>
     where
         UnifierState<S, U>: Unifier<S, Self>;
 
@@ -121,7 +158,7 @@ pub fn unify<S, T>(
     state: S,
     l: &T,
     r: &T,
-) -> Result<T, Errors<Error<T, T::Error>>>
+) -> Result<T, Errors<Error<T::Error, T>>>
 where
     T: Unifiable<S> + PartialEq + fmt::Display + fmt::Debug + Clone,
     T::Variable: Clone,
@@ -147,7 +184,7 @@ struct Unify<'e, T, E>
 where
     T: Substitutable + 'e,
 {
-    errors: Errors<Error<T, E>>,
+    errors: Errors<Error<E, T>>,
     subs: &'e Substitution<T>,
 }
 
@@ -157,11 +194,11 @@ where
     T::Variable: Clone,
     T::Factory: Clone,
 {
-    fn report_error(&mut self, error: Error<T, T::Error>) {
+    fn report_error(&mut self, error: Error<T::Error, T>) {
         self.unifier.errors.push(error);
     }
 
-    fn try_match_res(&mut self, l_orig: &T, r_orig: &T) -> Result<Option<T>, Error<T, T::Error>> {
+    fn try_match_res(&mut self, l_orig: &T, r_orig: &T) -> Result<Option<T>, Error<T::Error, T>> {
         let subs = self.unifier.subs;
 
         // Retrieve the 'real' types by resolving
@@ -274,7 +311,7 @@ mod test {
             &self,
             other: &Self,
             f: &mut UnifierState<(), F>,
-        ) -> Result<Option<Self>, Error<Self, Self::Error>>
+        ) -> Result<Option<Self>, Error<Self::Error, Self>>
         where
             UnifierState<(), F>: Unifier<(), Self>,
         {
@@ -299,7 +336,7 @@ mod test {
         subs: &Substitution<TType>,
         l: &TType,
         r: &TType,
-    ) -> Result<TType, Errors<Error<TType, ()>>> {
+    ) -> Result<TType, Errors<Error<(), TType>>> {
         super::unify(subs, (), l, r)
     }
 

@@ -28,7 +28,7 @@ codespan-reporting = "0.2"
 strsim = "0.8.0"
 
 gluon_base = { path = "../base", version = "0.10.1" } # GLUON
-gluon_parser = { path = "../parser", version = "0.10.1", optional = true } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.10.1" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.6"

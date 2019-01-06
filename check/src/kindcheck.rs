@@ -6,23 +6,26 @@ use crate::base::{
     merge,
     pos::{self, BytePos, HasSpan, Span, Spanned},
     symbol::Symbol,
-    types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker},
+    types::{self, BuiltinType, Generic, Type, TypeEnv, Walker},
 };
 
-use crate::substitution::{Substitutable, Substitution};
-use crate::unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
+use crate::{
+    substitution::{Substitutable, Substitution},
+    typ::RcType,
+    unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState},
+};
 
-pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
-pub type SpannedError<I> = Spanned<Error<I>, BytePos>;
+pub type Error<I, T = RcType<I>> = UnifyError<KindError<I, T>, ArcKind>;
+pub type SpannedError<I, T> = Spanned<Error<I, T>, BytePos>;
 
-pub type Result<T> = StdResult<T, SpannedError<Symbol>>;
+pub type Result<T> = StdResult<T, SpannedError<Symbol, RcType<Symbol>>>;
 
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
     variables: Vec<Generic<Symbol>>,
     /// Type bindings local to the current kindcheck invocation
     locals: Vec<(Symbol, ArcKind)>,
-    info: &'a (TypeEnv + 'a),
+    info: &'a (TypeEnv<Type = RcType> + 'a),
     idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<ArcKind>,
     kind_cache: KindCache,
@@ -62,7 +65,7 @@ where
 
 impl<'a> KindCheck<'a> {
     pub fn new(
-        info: &'a (TypeEnv + 'a),
+        info: &'a (TypeEnv<Type = RcType> + 'a),
         idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
         kind_cache: KindCache,
     ) -> KindCheck<'a> {
@@ -244,7 +247,7 @@ impl<'a> KindCheck<'a> {
                             return Err(pos::spanned(
                                 arg.span(),
                                 UnifyError::TypeMismatch(self.function1_kind(), kind.clone()),
-                            ))
+                            ));
                         }
                     };
                     prev_span = arg.span();
@@ -381,7 +384,6 @@ impl<'a> KindCheck<'a> {
             }
             return;
         }
-
         match **typ {
             Type::ExtendRow { ref mut types, .. } => types.iter_mut().for_each(|field| {
                 if let Some(alias) = field.typ.try_get_alias_mut() {
@@ -428,16 +430,17 @@ fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&Arc
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking
-#[derive(Debug, PartialEq)]
-pub enum KindError<I> {
+#[derive(Debug, PartialEq, Functor)]
+pub enum KindError<I, T> {
     /// The type is not defined in the current scope
     UndefinedType(I),
-    UndefinedField(ArcType<I>, I),
+    UndefinedField(T, I),
 }
 
-impl<I> fmt::Display for KindError<I>
+impl<I, T> fmt::Display for KindError<I, T>
 where
     I: fmt::Display + AsRef<str>,
+    T: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -449,9 +452,10 @@ where
     }
 }
 
-pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
+pub fn fmt_kind_error<I, T>(error: &Error<I, T>, f: &mut fmt::Formatter) -> fmt::Result
 where
     I: fmt::Display + AsRef<str>,
+    T: fmt::Display,
 {
     use crate::unify::Error::*;
     match *error {
@@ -492,13 +496,13 @@ impl Substitutable for ArcKind {
 }
 
 impl<'a> Unifiable<&'a KindCache> for ArcKind {
-    type Error = KindError<Symbol>;
+    type Error = KindError<Symbol, RcType>;
 
     fn zip_match<U>(
         &self,
         other: &Self,
         unifier: &mut UnifierState<&'a KindCache, U>,
-    ) -> StdResult<Option<Self>, Error<Symbol>>
+    ) -> StdResult<Option<Self>, Error<Symbol, RcType>>
     where
         UnifierState<&'a KindCache, U>: Unifier<&'a KindCache, Self>,
     {

@@ -65,6 +65,10 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
 }
 
 impl<K: Eq + Hash, V: StableDeref> FixedMap<K, V> {
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.map.get_mut().insert(key, value)
+    }
+
     pub fn try_insert(&self, key: K, value: V) -> Result<(), (K, V)> {
         if self.get(&key).is_some() {
             Err((key, value))
@@ -77,7 +81,7 @@ impl<K: Eq + Hash, V: StableDeref> FixedMap<K, V> {
     pub fn get<Q>(&self, k: &Q) -> Option<&V::Target>
     where
         K: Borrow<Q>,
-        Q: Eq + Hash,
+        Q: ?Sized + Eq + Hash,
     {
         self.map
             .borrow()
@@ -98,7 +102,7 @@ impl<K: Eq + Hash, V: StableDeref> FixedMap<K, V> {
 impl<'a, Q, K, V> Index<&'a Q> for FixedMap<K, V>
 where
     K: Eq + Hash + Borrow<Q>,
-    Q: Eq + Hash,
+    Q: ?Sized + Eq + Hash,
     V: StableDeref,
 {
     type Output = V::Target;

@@ -23,6 +23,8 @@ use self::{
     parser::{parse_partial_expr, reparse_infix, ParseErrors},
 };
 
+pub use self::base::types::TypeExt;
+
 use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
 
 quick_error! {
@@ -90,12 +92,16 @@ pub fn typecheck(text: &str) -> Result<ArcType, Error> {
     t
 }
 
-pub struct MockEnv {
-    bool: Alias<Symbol, ArcType>,
+pub struct MockEnv<T> {
+    bool: Alias<Symbol, T>,
+    bool_arc: Alias<Symbol, ArcType>,
 }
 
-impl MockEnv {
-    pub fn new() -> MockEnv {
+impl<T> MockEnv<T>
+where
+    T: TypeExt<Symbol>,
+{
+    pub fn new() -> MockEnv<T> {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
 
@@ -104,11 +110,16 @@ impl MockEnv {
 
         MockEnv {
             bool: Alias::new(bool_sym, Vec::new(), bool_ty),
+            bool_arc: {
+                let bool_sym = interner.symbol("Bool");
+                let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+                Alias::new(bool_sym, Vec::new(), bool_ty)
+            },
         }
     }
 }
 
-impl KindEnv for MockEnv {
+impl<T> KindEnv for MockEnv<T> {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         match id.definition_name() {
             "Bool" => Some(Kind::typ()),
@@ -117,15 +128,19 @@ impl KindEnv for MockEnv {
     }
 }
 
-impl TypeEnv for MockEnv {
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+impl<T> TypeEnv for MockEnv<T>
+where
+    T: TypeExt<Symbol>,
+{
+    type Type = T;
+    fn find_type(&self, id: &SymbolRef) -> Option<&T> {
         match id.definition_name() {
             "False" | "True" => Some(&self.bool.as_type()),
             _ => None,
         }
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, T>> {
         match id.definition_name() {
             "Bool" => Some(&self.bool),
             _ => None,
@@ -133,13 +148,16 @@ impl TypeEnv for MockEnv {
     }
 }
 
-impl PrimitiveEnv for MockEnv {
+impl<T> PrimitiveEnv for MockEnv<T>
+where
+    T: TypeExt<Symbol>,
+{
     fn get_bool(&self) -> &ArcType {
-        &self.bool.as_type()
+        &self.bool_arc.as_type()
     }
 }
 
-impl MetadataEnv for MockEnv {
+impl<T> MetadataEnv for MockEnv<T> {
     fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
     }
