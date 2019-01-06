@@ -220,19 +220,27 @@ impl SymbolRef {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 
 #[allow(derive_hash_xor_eq)]
-#[derive(Debug, Eq, Hash)]
+#[derive(Debug, Eq, Hash, Ord, PartialOrd)]
 pub struct Name(str);
 
 impl PartialEq for Name {
     fn eq(&self, other: &Name) -> bool {
         self.0.as_ptr() == other.0.as_ptr() || self.0 == other.0
+    }
+}
+
+impl ToOwned for Name {
+    type Owned = NameBuf;
+
+    fn to_owned(&self) -> NameBuf {
+        NameBuf::from(self)
     }
 }
 
@@ -370,6 +378,12 @@ impl<'a> From<&'a str> for NameBuf {
 impl From<String> for NameBuf {
     fn from(name: String) -> NameBuf {
         NameBuf(name)
+    }
+}
+
+impl From<NameBuf> for String {
+    fn from(name: NameBuf) -> String {
+        name.0
     }
 }
 

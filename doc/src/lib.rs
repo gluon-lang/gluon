@@ -23,7 +23,7 @@ extern crate log;
 extern crate gluon;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, create_dir_all, File},
     io::{self, Read},
     path::{Path, PathBuf},
@@ -42,12 +42,16 @@ use serde::Deserialize;
 
 use pretty::{Arena, DocAllocator};
 
-use gluon::base::filename_to_module;
-use gluon::base::metadata::Metadata;
-use gluon::base::symbol::Symbol;
-use gluon::base::types::{ArcType, ArgType, Type};
-use gluon::check::metadata::metadata;
-use gluon::{Compiler, Thread};
+use gluon::{
+    base::{
+        filename_to_module,
+        metadata::Metadata,
+        symbol::{Name, Symbol},
+        types::{ArcType, ArgType, Type},
+    },
+    check::metadata::metadata,
+    Compiler, Thread,
+};
 
 pub type Error = failure::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -401,6 +405,7 @@ where
 
 pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
     let mut directories = BTreeMap::<_, BTreeMap<_, Module>>::new();
+    let mut modules = BTreeSet::new();
     let mut content = String::new();
 
     for entry in walkdir::WalkDir::new(path) {
@@ -408,35 +413,6 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         if !entry.file_type().is_file()
             || entry.path().extension().and_then(|ext| ext.to_str()) != Some("glu")
         {
-            if entry.file_type().is_dir() {
-                if !directories.contains_key(&entry.path().with_extension("glu")) {
-                    // Generate a directory module
-                    debug!("Indexing directory, no module: {}", entry.path().display());
-                    let name = filename_to_module(
-                        entry
-                            .path()
-                            .to_str()
-                            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
-                    );
-                    directories
-                        .entry(entry.path().parent().expect("Parent dir").to_owned())
-                        .or_default()
-                        .insert(
-                            name.clone(),
-                            Module {
-                                name,
-                                comment: "".into(),
-                                record: Record::default(),
-                            },
-                        );
-                } else {
-                    debug!(
-                        "Indexing directory with existing module: {}",
-                        entry.path().display()
-                    );
-                    directories.insert(entry.path().to_owned(), BTreeMap::new());
-                }
-            }
             continue;
         }
         debug!("Indexing module: {}", entry.path().display());
@@ -480,10 +456,30 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             comment,
         };
 
+        modules.insert(module.name.clone());
+        let name = Name::new(&module.name);
         directories
-            .entry(entry.path().parent().expect("Parent path").to_owned())
+            .entry(name.module().as_str().to_owned())
             .or_default()
-            .insert(module.name.clone(), module);
+            .insert(name.name().as_str().to_owned(), module);
+    }
+
+    let directory_modules = directories.keys().cloned().collect::<BTreeSet<_>>();
+    for module_name in directory_modules {
+        let name = Name::new(&module_name);
+        directories
+            .entry(name.module().as_str().to_owned())
+            .or_default()
+            .entry(name.name().as_str().to_owned())
+            .or_insert_with(|| {
+                error!("Adding implicit module {}", module_name);
+
+                Module {
+                    name: module_name.into(),
+                    comment: "".into(),
+                    record: Record::default(),
+                }
+            });
     }
 
     let reg = handlebars()?;
@@ -511,7 +507,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                     comment: &module.comment,
                     record: &module.record,
                     sub_modules: directories
-                        .get(&module_path)
+                        .get(&module.name)
                         .iter()
                         .flat_map(|sub_modules| sub_modules.values())
                         .collect(),
@@ -542,6 +538,9 @@ pub struct Opt {
     #[structopt(long = "open")]
     #[structopt(help = "Opens the documentation after it has been generated")]
     pub open: bool,
+    #[structopt(long = "jobs")]
+    #[structopt(help = "How many threads to run in parallel")]
+    pub jobs: Option<usize>,
     #[structopt(help = "Documents the file or directory")]
     pub input: String,
     #[structopt(help = "Outputs the documentation to this directory")]

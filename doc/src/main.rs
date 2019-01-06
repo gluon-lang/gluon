@@ -1,6 +1,7 @@
 extern crate env_logger;
 extern crate failure;
 extern crate opener;
+extern crate rayon;
 extern crate structopt;
 
 extern crate gluon;
@@ -22,6 +23,12 @@ fn main_() -> Result<(), failure::Error> {
     env_logger::init();
 
     let opt = Opt::from_args();
+
+    if let Some(jobs) = opt.jobs {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(jobs)
+            .build_global()?;
+    }
 
     gluon_doc::generate_for_path(&gluon::new_vm(), &opt.input, &opt.output)?;
 
