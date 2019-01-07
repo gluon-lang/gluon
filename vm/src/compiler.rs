@@ -6,7 +6,7 @@ use crate::base::resolve;
 use crate::base::scoped_map::ScopedMap;
 use crate::base::source::Source;
 use crate::base::symbol::{Symbol, SymbolModule, SymbolRef};
-use crate::base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
+use crate::base::types::{Alias, ArcType, BuiltinType, Type, TypeEnv};
 use crate::core::{self, CExpr, Expr, Pattern};
 use crate::interner::InternedStr;
 use crate::source_map::{LocalMap, SourceMap};
@@ -205,7 +205,6 @@ impl FunctionEnvs {
 
     fn start_function(&mut self, compiler: &mut Compiler, args: VmIndex, id: Symbol, typ: ArcType) {
         compiler.stack_types.enter_scope();
-        compiler.stack_constructors.enter_scope();
         self.envs.push(FunctionEnv::new(
             args,
             id,
@@ -217,7 +216,6 @@ impl FunctionEnvs {
 
     fn end_function(&mut self, compiler: &mut Compiler, current_line: Option<Line>) -> FunctionEnv {
         compiler.stack_types.exit_scope();
-        compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
 
         if compiler.emit_debug_info {
@@ -431,7 +429,6 @@ pub struct Compiler<'a> {
     globals: &'a (CompilerEnv + 'a),
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
-    stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
     source: &'a ::codespan::FileMap,
     source_name: String,
@@ -475,7 +472,6 @@ impl<'a> Compiler<'a> {
             vm: vm,
             empty_symbol: symbols.symbol(""),
             symbols: symbols,
-            stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
             source: source,
             source_name: source_name,
@@ -488,39 +484,21 @@ impl<'a> Compiler<'a> {
     }
 
     fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VmIndex>> {
-        self.stack_constructors
-            .iter()
-            .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => row
-                    .row_iter()
-                    .enumerate()
-                    .find(|&(_, field)| field.name == *id),
-                _ => None,
-            })
-            .next()
-            .map(|(tag, field)| {
-                Constructor(
-                    tag as VmIndex,
-                    types::row_iter(&field.typ).count() as VmIndex,
-                )
-            })
+        current
+            .stack
+            .get(id)
+            .map(|&(index, _)| Stack(index))
             .or_else(|| {
-                current
-                    .stack
-                    .get(id)
-                    .map(|&(index, _)| Stack(index))
-                    .or_else(|| {
-                        let i = current.envs.len() - 1;
-                        let (rest, current) = current.envs.split_at_mut(i);
-                        rest.iter()
-                            .rev()
-                            .filter_map(|env| {
-                                env.stack
-                                    .get(id)
-                                    .map(|&(_, ref typ)| UpVar(current[0].upvar(id, typ)))
-                            })
-                            .next()
+                let i = current.envs.len() - 1;
+                let (rest, current) = current.envs.split_at_mut(i);
+                rest.iter()
+                    .rev()
+                    .filter_map(|env| {
+                        env.stack
+                            .get(id)
+                            .map(|&(_, ref typ)| UpVar(current[0].upvar(id, typ)))
                     })
+                    .next()
             })
             .or_else(|| {
                 self.globals
@@ -663,7 +641,6 @@ impl<'a> Compiler<'a> {
             },
             Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
             Expr::Let(ref let_binding, ref body) => {
-                self.stack_constructors.enter_scope();
                 let stack_start = function.stack_size;
                 // Index where the instruction to create the first closure should be at
                 let first_index = function.function.instructions.len();
@@ -867,7 +844,6 @@ impl<'a> Compiler<'a> {
                 // after the alternative
                 let mut end_jumps = Vec::new();
                 for (alt, &start_index) in alts.iter().zip(start_jumps.iter()) {
-                    self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
                     match alt.pattern {
                         Pattern::Constructor(_, ref args) => {
@@ -896,7 +872,6 @@ impl<'a> Compiler<'a> {
                     }
                     self.compile(&alt.expr, function, tail_position)?;
                     let count = function.exit_scope(self);
-                    self.stack_constructors.exit_scope();
                     function.emit(Slide(count));
                     end_jumps.push(function.function.instructions.len());
                     function.emit(Jump(0));
