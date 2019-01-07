@@ -1538,6 +1538,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     ref fields,
                     ..
                 } => {
+                    let typ = remove_aliases_cow(&self.0.env, typ);
                     for (i, field) in fields.iter().enumerate() {
                         if !add_duplicate_ident(
                             &mut replacements,
@@ -1549,7 +1550,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 .value
                                 .as_ref()
                                 .map(|pattern| self.extract_ident(i, &pattern.value).name);
-                            let field_type = remove_aliases_cow(&self.0.env, typ)
+                            let field_type = typ
                                 .row_iter()
                                 .find(|f| f.name.name_eq(&field.name.value))
                                 .map(|f| f.typ.clone())
