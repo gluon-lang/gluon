@@ -896,7 +896,7 @@ enum CType {
 
 use self::optimize::*;
 struct ReplaceVariables<'a, 'b> {
-    replacements: &'b HashMap<Symbol, Symbol>,
+    replacements: &'b FnvMap<Symbol, Symbol>,
     allocator: &'a Allocator<'a>,
 }
 
@@ -924,7 +924,7 @@ impl<'a, 'b> Visitor<'a, 'a> for ReplaceVariables<'a, 'b> {
 
 fn replace_variables<'a, 'b>(
     allocator: &'a Allocator<'a>,
-    replacements: &'b HashMap<Symbol, Symbol>,
+    replacements: &'b FnvMap<Symbol, Symbol>,
     expr: &'a Expr<'a>,
 ) -> &'a Expr<'a> {
     if replacements.is_empty() {
@@ -1456,7 +1456,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     // Gather all the identifiers of top level pattern of each of the `patterns` and create a core
     // pattern.
     // Nested patterns are ignored here.
-    fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> (Pattern, HashMap<Symbol, Symbol>)
+    fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> (Pattern, FnvMap<Symbol, Symbol>)
     where
         I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
     {
@@ -1466,7 +1466,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     fn pattern_identifiers_<'b, 'p: 'b>(
         &self,
         patterns: &mut Iterator<Item = &'b SpannedPattern<Symbol>>,
-    ) -> (Pattern, HashMap<Symbol, Symbol>) {
+    ) -> (Pattern, FnvMap<Symbol, Symbol>) {
         let mut identifiers: Vec<TypedIdent<Symbol>> = Vec::new();
         let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();
         let mut core_pattern = None;
@@ -1479,7 +1479,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         let mut replacements = HashMap::default();
 
         fn add_duplicate_ident(
-            replacements: &mut HashMap<Symbol, Symbol>,
+            replacements: &mut FnvMap<Symbol, Symbol>,
             record_fields: &mut Vec<(TypedIdent<Symbol>, Option<Symbol>)>,
             field: &Symbol,
             pattern: Option<&SpannedPattern<Symbol>>,
