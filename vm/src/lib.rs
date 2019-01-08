@@ -96,7 +96,7 @@ use crate::base::symbol::Symbol;
 use crate::base::types::ArcType;
 use crate::stack::Stacktrace;
 use crate::thread::{RootedThread, RootedValue, Thread};
-use crate::types::VmIndex;
+use crate::types::{VmIndex, VmInt};
 use crate::value::{Value, ValueRepr};
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
@@ -116,6 +116,10 @@ impl<'a> Variants<'a> {
 
     pub(crate) unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
         Variants(value.get_repr(), PhantomData)
+    }
+
+    pub(crate) fn int(i: VmInt) -> Self {
+        Variants(ValueRepr::Int(i), PhantomData)
     }
 
     pub fn get_value(&self) -> Value {

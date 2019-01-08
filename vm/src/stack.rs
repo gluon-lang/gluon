@@ -312,9 +312,12 @@ impl Stack {
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
-        for _ in 0..count {
-            self.values.pop();
-        }
+        let len = self.values.len();
+        self.values.truncate(len - count as usize);
+    }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
     }
 
     pub fn slide(&mut self, count: VmIndex) {
@@ -568,6 +571,11 @@ where
         self.stack.pop_many(count);
     }
 
+    pub fn clear(&mut self) {
+        let len = self.len();
+        self.stack.pop_many(len);
+    }
+
     pub fn slide(&mut self, count: VmIndex) {
         self.stack.slide(count);
     }
@@ -817,6 +825,18 @@ where
 {
     fn index_mut(&mut self, range: RangeFrom<VmIndex>) -> &mut [Value] {
         &mut self.stack.values[(range.start + self.frame.offset) as usize..]
+    }
+}
+
+impl<'c, T> Extend<&'c T> for Stack
+where
+    T: StackPrimitive + 'c,
+{
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = &'c T>,
+    {
+        T::extend_to(iter, self)
     }
 }
 
