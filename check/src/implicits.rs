@@ -4,6 +4,7 @@ use std::{
     fmt,
     hash::{Hash, Hasher},
     rc::Rc,
+    sync::Arc,
 };
 
 use itertools::{Either, Itertools};
@@ -692,7 +693,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
 }
 
 pub struct ImplicitResolver<'a> {
-    pub(crate) metadata: &'a mut FnvMap<Symbol, Metadata>,
+    pub(crate) metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     environment: &'a TypecheckEnv<Type = RcType>,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
@@ -702,7 +703,7 @@ pub struct ImplicitResolver<'a> {
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
         environment: &'a TypecheckEnv<Type = RcType>,
-        metadata: &'a mut FnvMap<Symbol, Metadata>,
+        metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {
             metadata,
@@ -719,7 +720,7 @@ impl<'a> ImplicitResolver<'a> {
         }
         let metadata = self.metadata.get(id);
 
-        let opt = self.try_create_implicit(&id, metadata, &typ, &mut Vec::new());
+        let opt = self.try_create_implicit(&id, metadata.map(|m| &**m), &typ, &mut Vec::new());
 
         if let Some((definition, path, implicit_type)) = opt {
             self.implicit_bindings.last_mut().unwrap().insert(
@@ -769,7 +770,7 @@ impl<'a> ImplicitResolver<'a> {
 
                     let opt = self.try_create_implicit(
                         &field.name,
-                        field_metadata,
+                        field_metadata.map(|m| &**m),
                         &field.typ,
                         &mut path,
                     );
@@ -811,7 +812,7 @@ impl<'a> ImplicitResolver<'a> {
                     self.metadata
                         .get(typename)
                         .or_else(|| self.environment.get_metadata(typename))
-                        .map(has_implicit_attribute)
+                        .map(|m| has_implicit_attribute(m))
                 })
                 .unwrap_or(false);
         }

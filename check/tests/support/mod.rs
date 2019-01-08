@@ -25,7 +25,7 @@ use self::{
 
 pub use self::base::types::TypeExt;
 
-use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc, sync::Arc};
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
@@ -144,7 +144,7 @@ impl PrimitiveEnv for MockEnv {
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
         None
     }
 }

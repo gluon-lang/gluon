@@ -24,6 +24,7 @@ extern crate pretty_assertions;
 use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
+use std::sync::Arc;
 
 use crate::base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use crate::base::error::{AsDiagnostic, Errors};
@@ -491,7 +492,7 @@ where
 }
 
 pub fn reparse_infix<Id>(
-    metadata: &FnvMap<Id, Metadata>,
+    metadata: &FnvMap<Id, Arc<Metadata>>,
     symbols: &IdentEnv<Ident = Id>,
     expr: &mut SpannedExpr<Id>,
 ) -> Result<(), ParseErrors>
@@ -506,7 +507,7 @@ where
     where
         Id: 'b,
     {
-        metadata: &'b FnvMap<Id, Metadata>,
+        metadata: &'b FnvMap<Id, Arc<Metadata>>,
         errors: &'b mut Errors<Spanned<Error, BytePos>>,
         op_table: &'b mut OpTable<Id>,
     }

@@ -1,34 +1,41 @@
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::result::Result as StdResult;
-use std::string::String as StdString;
-use std::sync::{Mutex, RwLock, RwLockReadGuard};
-use std::usize;
-
-use crate::base::ast;
-use crate::base::fnv::FnvMap;
-use crate::base::kind::{ArcKind, Kind, KindEnv};
-use crate::base::metadata::{Metadata, MetadataEnv};
-use crate::base::symbol::{Name, Symbol, SymbolRef};
-use crate::base::types::{
-    Alias, AliasData, AppVec, ArcType, Generic, NullInterner, PrimitiveEnv, Type, TypeCache,
-    TypeEnv, TypeExt,
+use std::{
+    any::{Any, TypeId},
+    borrow::Cow,
+    result::Result as StdResult,
+    string::String as StdString,
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard},
+    usize,
 };
-use crate::base::DebugLevel;
 
-use crate::api::{ValueRef, IO};
-use crate::compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
-use crate::gc::{Gc, GcPtr, Generation, Move, Traverseable};
-use crate::interner::{InternedStr, Interner};
-use crate::lazy::Lazy;
-use crate::macros::MacroEnv;
-use crate::types::*;
-use crate::{Error, Result, Variants};
+use crate::base::{
+    ast,
+    fnv::FnvMap,
+    kind::{ArcKind, Kind, KindEnv},
+    metadata::{Metadata, MetadataEnv},
+    symbol::{Name, Symbol, SymbolRef},
+    types::{
+        Alias, AliasData, AppVec, ArcType, Generic, NullInterner, PrimitiveEnv, Type, TypeCache,
+        TypeEnv, TypeExt,
+    },
+    DebugLevel,
+};
 
-use crate::value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
+use crate::{
+    api::{ValueRef, IO},
+    compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
+    gc::{Gc, GcPtr, Generation, Move, Traverseable},
+    interner::{InternedStr, Interner},
+    lazy::Lazy,
+    macros::MacroEnv,
+    types::*,
+    value::{BytecodeFunction, ClosureData, ClosureDataDef, Value},
+    Error, Result, Variants,
+};
 
-pub use crate::thread::{RootedThread, RootedValue, Status, Thread};
-pub use crate::value::Userdata;
+pub use crate::{
+    thread::{RootedThread, RootedValue, Status, Thread},
+    value::Userdata,
+};
 
 fn new_bytecode(
     env: &VmEnv,
@@ -119,7 +126,7 @@ pub struct Global {
         serde(state_with = "crate::serialization::borrow")
     )]
     pub typ: ArcType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub value: Value,
 }
@@ -259,7 +266,7 @@ impl PrimitiveEnv for VmEnv {
 }
 
 impl MetadataEnv for VmEnv {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
         self.get_metadata_(id.definition_name())
     }
 }
@@ -378,12 +385,12 @@ impl VmEnv {
         Ok((value, typ))
     }
 
-    pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
+    pub fn get_metadata(&self, name_str: &str) -> Result<&Arc<Metadata>> {
         self.get_metadata_(name_str)
             .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))
     }
 
-    fn get_metadata_(&self, name_str: &str) -> Option<&Metadata> {
+    fn get_metadata_(&self, name_str: &str) -> Option<&Arc<Metadata>> {
         let (remaining, global) = self.get_global(name_str)?;
 
         let mut metadata = &global.metadata;
@@ -506,9 +513,9 @@ impl GlobalVmState {
         let globals = &mut env.globals;
         let global = Global {
             id: id.clone(),
-            typ: typ,
-            metadata: metadata,
-            value: value,
+            typ,
+            metadata: Arc::new(metadata),
+            value,
         };
         globals.insert(StdString::from(id.definition_name()), global);
         Ok(())

@@ -11,6 +11,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::mem;
 use std::ops::Deref;
 use std::result::Result as StdResult;
+use std::sync::Arc;
 
 #[cfg(feature = "serde")]
 use either::Either;
@@ -269,8 +270,8 @@ where
 
 pub struct WithMetadata<E> {
     pub expr: E,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait MetadataExtractable: Sized {
@@ -346,8 +347,8 @@ where
 #[derive(Debug)]
 pub struct InfixReparsed<E> {
     pub expr: E,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait InfixReparseable: Sized {
@@ -439,8 +440,8 @@ where
 pub struct TypecheckValue<E> {
     pub expr: E,
     pub typ: ArcType,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait Typecheckable: Sized {
@@ -563,7 +564,7 @@ where
 pub struct CompileValue<E> {
     pub expr: E,
     pub typ: ArcType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
     pub module: CompiledModule,
 }
 
@@ -664,7 +665,7 @@ where
     pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
     pub value: RootedValue<T>,
 }
 
@@ -810,7 +811,7 @@ where
                     vm.set_global(
                         value.id.clone(),
                         value.typ,
-                        value.metadata,
+                        (*value.metadata).clone(),
                         value.value.get_value(),
                     )?;
                     info!("Loaded module `{}` filename", filename);
@@ -842,7 +843,7 @@ pub struct Module {
     )]
     pub typ: ArcType,
 
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
 
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub module: CompiledModule,
@@ -908,7 +909,7 @@ where
         use crate::vm::serialization::DeSeed;
 
         let Global {
-            metadata,
+            mut metadata,
             typ,
             value,
             id: _,
@@ -916,7 +917,12 @@ where
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
         let id = compiler.symbols.symbol(format!("@{}", name));
-        try_future!(vm.set_global(id, typ, metadata, value,));
+        try_future!(vm.set_global(
+            id,
+            typ,
+            mem::replace(Arc::make_mut(&mut metadata), Default::default()),
+            value,
+        ));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))
     }

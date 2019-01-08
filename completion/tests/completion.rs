@@ -82,12 +82,11 @@ fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
     let (expr, _result) = support::typecheck_expr(s);
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name)
-        .cloned()
-        .map(|mut meta| {
-            meta.definition.take();
-            meta
-        })
+    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name).map(|meta| {
+        let mut meta = Metadata::clone(meta);
+        meta.definition.take();
+        meta
+    })
 }
 
 #[test]

@@ -5,6 +5,7 @@ use std::{
     borrow::{BorrowMut, Cow},
     iter::once,
     mem,
+    sync::Arc,
 };
 
 use crate::base::{
@@ -99,7 +100,7 @@ impl<'a> PrimitiveEnv for Environment<'a> {
 }
 
 impl<'a> MetadataEnv for Environment<'a> {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
         self.environment.get_metadata(id)
     }
 }
@@ -146,7 +147,7 @@ impl<'a> Typecheck<'a> {
         symbols: &'a mut Symbols,
         environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
         interner: &TypeCache<Symbol, ArcType>,
-        metadata: &'a mut FnvMap<Symbol, Metadata>,
+        metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let subs = Substitution::new(interner.kind_cache.typ(), interner.clone());

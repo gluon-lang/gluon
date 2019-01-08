@@ -8,7 +8,7 @@ extern crate walkdir;
 
 extern crate gluon_base as base;
 
-use std::{borrow::Cow, cmp::Ordering, iter::once, path::PathBuf};
+use std::{borrow::Cow, cmp::Ordering, iter::once, path::PathBuf, sync::Arc};
 
 use codespan::ByteOffset;
 
@@ -1449,7 +1449,7 @@ impl SuggestionQuery {
 
     pub fn suggest_metadata<'a, T>(
         &self,
-        env: &'a FnvMap<Symbol, Metadata>,
+        env: &'a FnvMap<Symbol, Arc<Metadata>>,
         type_env: &T,
         source_span: Span<BytePos>,
         expr: &SpannedExpr<Symbol>,
@@ -1505,6 +1505,7 @@ impl SuggestionQuery {
                     },
                 }
             })
+            .map(|m| &**m)
     }
 }
 
@@ -1590,7 +1591,7 @@ pub fn signature_help(
 }
 
 pub fn get_metadata<'a>(
-    env: &'a FnvMap<Symbol, Metadata>,
+    env: &'a FnvMap<Symbol, Arc<Metadata>>,
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
@@ -1629,10 +1630,11 @@ pub fn get_metadata<'a>(
             },
             _ => None,
         })
+        .map(|m| &**m)
 }
 
 pub fn suggest_metadata<'a, T>(
-    env: &'a FnvMap<Symbol, Metadata>,
+    env: &'a FnvMap<Symbol, Arc<Metadata>>,
     type_env: &T,
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
