@@ -1029,16 +1029,16 @@ impl<'a> Compiler<'a> {
                                 function.emit(Push(record_index));
                                 function.emit_field(self, &typ, &pattern_field.0.name)?;
 
-                                let field = typ
-                                    .row_iter()
-                                    .find(|field| field.name.name_eq(&pattern_field.0.name))
-                                    .expect("ICE: Record field does not exist");
                                 let field_name = pattern_field
                                     .1
                                     .as_ref()
                                     .unwrap_or(&pattern_field.0.name)
                                     .clone();
-                                function.new_stack_var(self, field_name, field.typ.clone());
+                                function.new_stack_var(
+                                    self,
+                                    field_name,
+                                    pattern_field.0.typ.clone(),
+                                );
                             }
                         } else {
                             function.emit(Split);
