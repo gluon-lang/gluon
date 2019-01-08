@@ -1873,9 +1873,7 @@ impl<'b> ExecuteContext<'b> {
                             }
                         }
                     };
-                    for _ in 0..args {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(args);
                     self.stack.push(d);
                 }
                 NewVariant { tag, args } => {
@@ -1944,9 +1942,7 @@ impl<'b> ExecuteContext<'b> {
                             crate::value::ArrayDef(fields),
                         )?
                     };
-                    for _ in 0..args {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(args);
                     self.stack.push(ValueRepr::Array(d));
                 }
                 GetOffset(i) => match self.stack.pop().get_repr() {
@@ -2013,9 +2009,7 @@ impl<'b> ExecuteContext<'b> {
                 Split => {
                     match self.stack.pop().get_repr() {
                         Data(data) => {
-                            for field in &data.fields {
-                                self.stack.push(field);
-                            }
+                            self.stack.extend(&data.fields);
                         }
                         // Zero argument variant
                         ValueRepr::Tag(_) => (),
@@ -2150,9 +2144,7 @@ impl<'b> ExecuteContext<'b> {
                 Data(excess) => {
                     debug!("Push excess args {:?}", &excess.fields);
                     context.stack.push(result);
-                    for value in &excess.fields {
-                        context.stack.push(value);
-                    }
+                    context.stack.extend(&excess.fields);
                     context
                         .do_call(excess.fields.len() as VmIndex)
                         .map(|x| Async::Ready(Some(x)))
