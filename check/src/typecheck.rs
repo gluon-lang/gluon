@@ -3368,18 +3368,27 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 use crate::substitution::is_variable_unified;
                 trace!("Generalize `{}` {:?}", typ, vars);
+
+                let mut new_params = Vec::new();
                 let typ = {
                     let subs = &self.tc.subs;
                     self.tc.named_variables.clear();
-                    self.tc.named_variables.extend(
-                        params
-                            .iter()
-                            .zip(vars)
-                            .filter(|&(_, var)| is_variable_unified(subs, var))
-                            .map(|(param, var)| (param.id.clone(), var.clone())),
-                    );;
-                    typ.instantiate_generics_(&mut self.tc.named_variables)
-                        .unwrap_or(typ.clone())
+                    for (param, var) in params.iter().zip(vars) {
+                        if is_variable_unified(subs, var) {
+                            self.tc
+                                .named_variables
+                                .insert(param.id.clone(), var.clone());
+                        } else {
+                            new_params.push(param.clone());
+                        }
+                    }
+
+                    if self.tc.named_variables.is_empty() {
+                        typ.clone()
+                    } else {
+                        typ.instantiate_generics_(&mut self.tc.named_variables)
+                            .unwrap_or(typ.clone())
+                    }
                 };
 
                 self.type_variables.enter_scope();
@@ -3396,18 +3405,14 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.type_variables.exit_scope();
 
                 Some(Type::forall(
-                    params
-                        .iter()
-                        .zip(vars)
-                        .filter(|&(_, var)| !is_variable_unified(&self.subs, var))
-                        .map(|(param, _)| param.clone())
-                        .collect(),
+                    new_params,
                     new_type.unwrap_or_else(|| typ.clone()),
                 ))
             }
 
             Type::Skolem(ref skolem) => {
-                if !self.type_variables.contains_key(&skolem.name) {
+                let in_scope = self.type_variables.contains_key(&skolem.name);
+                if !in_scope {
                     self.tc.error(
                         self.span,
                         TypeError::Message(format!(
@@ -3422,7 +3427,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                         kind: skolem.kind.clone(),
                     };
 
-                    if self.type_variables.get(&generic.id).is_none() {
+                    if !in_scope {
                         self.unbound_variables
                             .insert(generic.id.clone(), generic.clone());
                     }
