@@ -3346,50 +3346,10 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                 Some(gen)
             }
-            Type::ExtendRow {
-                ref types,
-                ref fields,
-                ref rest,
-            } => {
-                let new_fields = types::walk_move_types(fields, |field| {
-                    // Make a new name base for any unbound variables in the record field
-                    // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
-                    // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.generalize_type(&field.typ)
-                        .map(|typ| Field::new(field.name.clone(), typ))
-                });
-                let new_rest = self.generalize_type(rest);
-                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                    Type::extend_row(types.clone(), fields, rest)
-                })
-                .or_else(|| replacement.clone())
-            }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 use crate::substitution::is_variable_unified;
                 trace!("Generalize `{}` {:?}", typ, vars);
-
-                let mut new_params = Vec::new();
-                let typ = {
-                    let subs = &self.tc.subs;
-                    self.tc.named_variables.clear();
-                    for (param, var) in params.iter().zip(vars) {
-                        if is_variable_unified(subs, var) {
-                            self.tc
-                                .named_variables
-                                .insert(param.id.clone(), var.clone());
-                        } else {
-                            new_params.push(param.clone());
-                        }
-                    }
-
-                    if self.tc.named_variables.is_empty() {
-                        typ.clone()
-                    } else {
-                        typ.instantiate_generics_(&mut self.tc.named_variables)
-                            .unwrap_or(typ.clone())
-                    }
-                };
 
                 self.type_variables.enter_scope();
                 self.type_variables.extend(
@@ -3405,7 +3365,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.type_variables.exit_scope();
 
                 Some(Type::forall(
-                    new_params,
+                    params
+                        .iter()
+                        .zip(vars)
+                        .filter(|&(_, var)| !is_variable_unified(&self.subs, var))
+                        .map(|(param, _)| param.clone())
+                        .collect(),
                     new_type.unwrap_or_else(|| typ.clone()),
                 ))
             }
@@ -3434,9 +3399,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                     Some(Type::generic(generic))
                 } else {
-                    None
+                    replacement
                 }
             }
+
+            Type::Generic(ref generic) => match self.type_variables.get(&generic.id) {
+                Some(var) => replacement,
+                None => {
+                    self.unbound_variables
+                        .insert(generic.id.clone(), generic.clone());
+                    replacement
+                }
+            },
 
             _ => {
                 if let Type::Forall(ref params, _, None) = **typ {
@@ -3444,22 +3418,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                         .extend(params.iter().map(|param| (param.id.clone(), typ.clone())));
                 }
 
-                let new_type = types::walk_move_type_opt(
+                types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
-                );
-                match **typ {
-                    Type::Generic(ref generic)
-                        if self.type_variables.get(&generic.id).is_none() =>
-                    {
-                        self.unbound_variables
-                            .insert(generic.id.clone(), generic.clone());
-                    }
-                    _ => (),
-                }
-                new_type
-                    .map(|t| unroll_typ(&t).unwrap_or(t))
-                    .or_else(|| replacement.clone())
+                )
+                .map(|t| unroll_typ(&t).unwrap_or(t))
+                .or_else(|| replacement.clone())
             }
         }
     }
