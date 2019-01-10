@@ -331,7 +331,7 @@ impl<'input> Iterator for CharLocations<'input> {
     fn next(&mut self) -> Option<(Location, u8)> {
         self.chars.next().map(|ch| {
             let location = self.location;
-            self.location = self.location.shift(ch);
+            self.location.shift(ch);
             // HACK: The layout algorithm expects `1` indexing for columns -
             // this could be altered in the future though
             if self.location.column == Column::from(0) {

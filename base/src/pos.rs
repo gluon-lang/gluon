@@ -18,7 +18,7 @@ pub struct Location {
 }
 
 impl Location {
-    pub fn shift(mut self, ch: u8) -> Location {
+    pub fn shift(&mut self, ch: u8) {
         if ch == b'\n' {
             self.line += LineOffset(1);
             self.column = Column(1);
@@ -26,7 +26,6 @@ impl Location {
             self.column += ColumnOffset(1);
         }
         self.absolute += ByteOffset(1);
-        self
     }
 }
 
