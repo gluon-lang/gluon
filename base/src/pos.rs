@@ -18,14 +18,14 @@ pub struct Location {
 }
 
 impl Location {
-    pub fn shift(mut self, ch: char) -> Location {
-        if ch == '\n' {
+    pub fn shift(mut self, ch: u8) -> Location {
+        if ch == b'\n' {
             self.line += LineOffset(1);
             self.column = Column(1);
         } else {
             self.column += ColumnOffset(1);
         }
-        self.absolute += ByteOffset(ch.len_utf8() as i64);
+        self.absolute += ByteOffset(1);
         self
     }
 }
