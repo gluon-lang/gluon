@@ -2,15 +2,13 @@ use crate::base::ast::is_operator_byte;
 use crate::base::metadata::{Comment, CommentType};
 use crate::base::pos::{self, BytePos, Column, Line, Location, Spanned};
 
-use std::{
-    fmt, mem,
-    ops::Deref,
-    str::{self, Chars},
-};
+use std::{fmt, str};
 
 use codespan::ByteOffset;
 
 use self::Error::*;
+
+use crate::str_suffix::{self, StrSuffix};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<'input> {
@@ -201,112 +199,9 @@ fn is_hex(ch: u8) -> bool {
     (ch as char).is_digit(16)
 }
 
-#[repr(transparent)]
-struct StrSuffix([u8]);
-
-impl StrSuffix {
-    fn new(s: &str) -> &Self {
-        unsafe { mem::transmute(s) }
-    }
-
-    fn split_first(&self) -> Option<(u8, &Self)> {
-        if self.is_empty() {
-            None
-        } else {
-            Some((self[0], self.suffix(1)))
-        }
-    }
-
-    fn try_as_str(&self) -> Option<&str> {
-        self.get(0)
-    }
-
-    fn get(&self, index: usize) -> Option<&str> {
-        if self.is_char_boundary(index) {
-            Some(unsafe { str::from_utf8_unchecked(&self.0) })
-        } else {
-            None
-        }
-    }
-
-    #[inline(always)]
-    fn is_char_boundary_byte(b: u8) -> bool {
-        // This is bit magic equivalent to: b < 128 || b >= 192
-        (b as i8) >= -0x40
-    }
-
-    fn is_char_boundary(&self, index: usize) -> bool {
-        // From std::str::is_char_boundary
-        if index == 0 || index == self.len() {
-            return true;
-        }
-        match self.as_bytes().get(index) {
-            None => false,
-            Some(&b) => Self::is_char_boundary_byte(b),
-        }
-    }
-
-    fn bytes_prefix(&self) -> &[u8] {
-        for i in 0..(self.len().min(3)) {
-            if Self::is_char_boundary_byte(self[i]) {
-                return &self[..i];
-            }
-        }
-        &self[..0]
-    }
-
-    fn restore_char(&self, prefix: &[u8]) -> char {
-        assert!(prefix.len() <= 4);
-        let mut buf = [0; 4];
-        buf.copy_from_slice(prefix);
-        buf[prefix.len()..].copy_from_slice(self.bytes_prefix());
-        str::from_utf8(&buf)
-            .expect("UTF-8 string")
-            .chars()
-            .next()
-            .expect("char")
-    }
-
-    fn suffix(&self, index: usize) -> &Self {
-        // Any suffix of a StrSuffix is a valid StrSuffix
-        unsafe { mem::transmute(&self.0[index..]) }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    fn iter(&self) -> Iter {
-        Iter(self)
-    }
-}
-
-impl Deref for StrSuffix {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-struct Iter<'a>(&'a StrSuffix);
-
-impl<'a> Iterator for Iter<'a> {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<u8> {
-        if let Some((b, rest)) = self.0.split_first() {
-            self.0 = rest;
-            Some(b)
-        } else {
-            None
-        }
-    }
-}
-
 struct CharLocations<'input> {
     location: Location,
-    chars: Iter<'input>,
+    chars: str_suffix::Iter<'input>,
 }
 
 impl<'input> CharLocations<'input> {
@@ -503,7 +398,7 @@ impl<'input> Tokenizer<'input> {
             Some((_, b't')) => Ok(b'\t'),
             // TODO: Unicode escape codes
             Some((start, ch)) => {
-                let ch = self.chars.chars.0.restore_char(&[ch]);
+                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                 self.error(start, UnexpectedEscapeCode(ch))
             }
             None => self.eof_error(),
@@ -511,23 +406,22 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
-        let content_start = self.next_loc();
+        let mut string = String::new();
         loop {
-            let (end, s) = self.take_until(content_start, |b| b == b'"' || b == b'\\');
-            match self.lookahead {
+            let content_start = self.next_loc();
+            let (_end, s) = self.take_until(content_start, |b| b == b'"' || b == b'\\');
+            string.push_str(s);
+            match self.bump() {
                 Some((_, b'\\')) => {
-                    self.escape_code()?;
+                    string.push(self.escape_code()? as char);
                 }
                 Some((_, b'"')) => {
                     let end = self.next_loc();
-                    let mut content_end = end;
-                    content_end.absolute.0 -= 1;
-                    let string = self.slice(content_start, content_end).into();
 
                     let token = Token::StringLiteral(string);
                     return Ok(pos::spanned2(start, end, token));
                 }
-                ch => break,
+                _ => break,
             }
         }
 
@@ -546,8 +440,8 @@ impl<'input> Tokenizer<'input> {
 
         let content_start = self.next_loc();
         loop {
-            let (end, s) = self.take_until(content_start, |b| b == b'"');
-            match self.lookahead {
+            self.take_until(content_start, |b| b == b'"');
+            match self.bump() {
                 Some((_, b'"')) => {
                     let mut found_delimiters = 0;
                     while let Some((_, ch)) = self.bump() {
@@ -597,7 +491,7 @@ impl<'input> Tokenizer<'input> {
 
         match self.bump() {
             Some((_, b'\'')) => {
-                let ch = self.chars.chars.0.restore_char(&[ch]);
+                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                 Ok(pos::spanned2(
                     start,
                     self.next_loc(),
@@ -618,7 +512,7 @@ impl<'input> Tokenizer<'input> {
                 let (end, float) = self.take_while(start, is_digit);
                 match self.lookahead {
                     Some((_, ch)) if is_ident_start(ch) => {
-                        let ch = self.chars.chars.0.restore_char(&[ch]);
+                        let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                         return self.error(end, UnexpectedChar(ch));
                     }
                     _ => (start, end, Token::FloatLiteral(float.parse().unwrap())),
@@ -631,7 +525,7 @@ impl<'input> Tokenizer<'input> {
                 match int {
                     "0" | "-0" => match self.lookahead {
                         Some((_, ch)) if is_ident_start(ch) => {
-                            let ch = self.chars.chars.0.restore_char(&[ch]);
+                            let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                             return self.error(end, UnexpectedChar(ch));
                         }
                         _ => {
@@ -653,7 +547,7 @@ impl<'input> Tokenizer<'input> {
                 let end = self.next_loc();
                 match self.lookahead {
                     Some((pos, ch)) if is_ident_start(ch) => {
-                        let ch = self.chars.chars.0.restore_char(&[ch]);
+                        let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                         return self.error(pos, UnexpectedChar(ch));
                     }
                     _ => {
@@ -666,7 +560,7 @@ impl<'input> Tokenizer<'input> {
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => {
-                let ch = self.chars.chars.0.restore_char(&[ch]);
+                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                 return self.error(start, UnexpectedChar(ch));
             }
             None | Some(_) => {
@@ -770,7 +664,7 @@ impl<'input> Iterator for Tokenizer<'input> {
                 ch if (ch as char).is_whitespace() => continue, // TODO Unicode whitespace
 
                 ch => {
-                    let ch = self.chars.chars.0.restore_char(&[ch]);
+                    let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                     Some(self.error(start, UnexpectedChar(ch)))
                 }
             };

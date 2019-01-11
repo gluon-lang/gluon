@@ -48,6 +48,7 @@ lalrpop_mod!(
 
 pub mod infix;
 mod layout;
+mod str_suffix;
 mod token;
 
 fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIdent<Id> {

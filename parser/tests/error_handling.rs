@@ -323,7 +323,7 @@ fn incomplete_let_binding_3() {
     "#;
     let result = parse(expr);
     assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
+    let (expr, _err) = result.unwrap_err();
     assert_eq!(
         clear_span(expr.unwrap()),
         let_("test", no_loc(Expr::Error(None)), int(1),)
