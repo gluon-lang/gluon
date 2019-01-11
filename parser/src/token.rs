@@ -240,7 +240,6 @@ impl<'input> Iterator for CharLocations<'input> {
 pub struct Tokenizer<'input> {
     input: &'input str,
     chars: CharLocations<'input>,
-    lookahead: Option<(Location, u8)>,
     start_index: BytePos,
 }
 
@@ -249,24 +248,25 @@ impl<'input> Tokenizer<'input> {
     where
         S: ?Sized + crate::ParserSource,
     {
-        let mut chars = CharLocations::new(input);
+        let chars = CharLocations::new(input);
 
         Tokenizer {
             input: input.src(),
-            lookahead: chars.next(),
-            chars: chars,
+            chars,
             start_index: input.start_index(),
         }
     }
 
     fn bump(&mut self) -> Option<(Location, u8)> {
-        match self.lookahead {
-            Some((location, ch)) => {
-                self.lookahead = self.chars.next();
-                Some((location, ch))
-            }
-            None => None,
-        }
+        self.chars.next()
+    }
+
+    fn lookahead(&self) -> Option<(Location, u8)> {
+        self.chars
+            .chars
+            .as_str_suffix()
+            .first()
+            .map(|b| (self.chars.location, b))
     }
 
     fn skip_to_end(&mut self) {
@@ -279,7 +279,9 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn next_loc(&self) -> Location {
-        self.lookahead.as_ref().map_or(self.chars.location, |l| l.0)
+        self.lookahead()
+            .as_ref()
+            .map_or(self.chars.location, |l| l.0)
     }
 
     fn eof_error<T>(&mut self) -> Result<T, SpError> {
@@ -305,7 +307,7 @@ impl<'input> Tokenizer<'input> {
     where
         F: FnMut(u8) -> bool,
     {
-        while let Some((end, ch)) = self.lookahead {
+        while let Some((end, ch)) = self.lookahead() {
             if terminate(ch) {
                 return (end, self.slice(start, end));
             } else {
@@ -319,7 +321,7 @@ impl<'input> Tokenizer<'input> {
     where
         F: FnMut(u8) -> bool,
     {
-        self.lookahead.map_or(false, |(_, ch)| test(ch))
+        self.lookahead().map_or(false, |(_, ch)| test(ch))
     }
 
     fn line_comment(&mut self, start: Location) -> Option<SpannedToken<'input>> {
@@ -343,7 +345,7 @@ impl<'input> Tokenizer<'input> {
         loop {
             let (_, comment) = self.take_until(start, |ch| ch == b'*');
             self.bump(); // Skip next b'*'
-            match self.lookahead {
+            match self.lookahead() {
                 Some((_, b'/')) => {
                     self.bump();
                     let end = self.next_loc();
@@ -506,11 +508,11 @@ impl<'input> Tokenizer<'input> {
     fn numeric_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let (end, int) = self.take_while(start, is_digit);
 
-        let (start, end, token) = match self.lookahead {
+        let (start, end, token) = match self.lookahead() {
             Some((_, b'.')) => {
                 self.bump(); // Skip b'.'
                 let (end, float) = self.take_while(start, is_digit);
-                match self.lookahead {
+                match self.lookahead() {
                     Some((_, ch)) if is_ident_start(ch) => {
                         let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                         return self.error(end, UnexpectedChar(ch));
@@ -523,7 +525,7 @@ impl<'input> Tokenizer<'input> {
                 let int_start = self.next_loc();
                 let (end, hex) = self.take_while(int_start, is_hex);
                 match int {
-                    "0" | "-0" => match self.lookahead {
+                    "0" | "-0" => match self.lookahead() {
                         Some((_, ch)) if is_ident_start(ch) => {
                             let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                             return self.error(end, UnexpectedChar(ch));
@@ -545,7 +547,7 @@ impl<'input> Tokenizer<'input> {
             Some((_, b'b')) => {
                 self.bump(); // Skip b'b'
                 let end = self.next_loc();
-                match self.lookahead {
+                match self.lookahead() {
                     Some((pos, ch)) if is_ident_start(ch) => {
                         let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                         return self.error(pos, UnexpectedChar(ch));
@@ -577,7 +579,7 @@ impl<'input> Tokenizer<'input> {
 
     fn identifier(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let (mut end, mut ident) = self.take_while(start, is_ident_continue);
-        match self.lookahead {
+        match self.lookahead() {
             Some((_, c)) if c == b'!' => {
                 self.bump();
                 end.column += 1.into();

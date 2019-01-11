@@ -23,6 +23,10 @@ impl StrSuffix {
         self.0.is_empty()
     }
 
+    pub fn first(&self) -> Option<u8> {
+        self.0.first().cloned()
+    }
+
     pub fn split_first(&self) -> Option<(u8, &Self)> {
         if self.is_empty() {
             None
