@@ -475,6 +475,7 @@ where
 
     match result {
         Ok(repl_line) => {
+            let repl_line = repl_line.map(|b| *b);
             if parse_errors.has_errors() {
                 Err((repl_line, transform_errors(input.span(), parse_errors)))
             } else {
