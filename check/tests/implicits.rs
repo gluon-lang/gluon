@@ -874,7 +874,7 @@ f 1
 }
 
 test_check_err! {
-break_infinte_implicit_resolve_early,
+break_infinite_implicit_resolve_early,
     r#"
 #[implicit]
 type Implicit a = { f : a -> String } 
