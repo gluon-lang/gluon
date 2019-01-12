@@ -306,6 +306,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 match resolution_result {
                     Some(Ok(replacement)) => Some(replacement),
                     Some(Err(err)) => {
+                        debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                         self.tc.errors.push(Spanned {
                             span: expr.span,
                             value: TypeError::UnableToResolveImplicit(err).into(),
@@ -329,6 +330,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 }
             }
             Err(err) => {
+                debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                 self.tc.errors.push(Spanned {
                     span: expr.span,
                     value: TypeError::UnableToResolveImplicit(err).into(),

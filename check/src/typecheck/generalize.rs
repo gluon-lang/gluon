@@ -12,6 +12,27 @@ use crate::{
     typecheck::Typecheck,
 };
 
+pub fn generalize_from(tc: &mut Typecheck, level: u32, typ: &RcType) {
+    let mut variable_generator = TypeVariableGenerator::new(&tc.subs, typ);
+    for var in tc
+        .subs
+        .unbound_variables(level)
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        let var = match &*var {
+            Type::Variable(var) => var,
+            _ => unreachable!(),
+        };
+        // Create a prefix if none exists
+        let id = variable_generator.next_variable(tc);
+
+        let gen: RcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
+        debug!("Gen {} to {}", var.id, gen);
+        tc.subs.insert(var.id, gen.clone());
+    }
+}
+
 pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     level: u32,
     unbound_variables: FnvMap<Symbol, Generic<Symbol>>,

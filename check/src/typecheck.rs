@@ -630,10 +630,7 @@ impl<'a> Typecheck<'a> {
                 TypeGeneralizer::new(level, self, &resolved_type, binding.name.span);
             generalizer.generalize_type_top(resolved_type);
 
-            generalizer.generalize_variables(
-                &mut binding.args.iter_mut().map(|arg| &mut arg.name),
-                &mut binding.expr,
-            );
+            self::generalize::generalize_from(self, level, resolved_type);
         }
         self.type_variables.exit_scope();
     }
@@ -644,7 +641,6 @@ impl<'a> Typecheck<'a> {
         args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
-        crate::implicits::resolve(self, expr);
         let typ = self.type_cache.hole();
         TypeGeneralizer::new(level, self, &typ, expr.span).generalize_variables(args, expr)
     }
@@ -778,12 +774,11 @@ impl<'a> Typecheck<'a> {
             }
             // Only the 'tail' expression need to be generalized at this point as all bindings
             // will have already been generalized
-
             let tail = tail_expr(expr);
-            self.generalize_variables(0, &mut [].iter_mut(), tail);
-
+            crate::implicits::resolve(self, tail);
             self.generalize_type(0, &mut typ, tail.span);
         }
+        self.generalize_variables(0, &mut [].iter_mut(), expr);
 
         {
             struct ReplaceVisitor<'a: 'b, 'b> {

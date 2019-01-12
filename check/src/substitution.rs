@@ -403,6 +403,16 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         Ok(resolved_type.cloned())
     }
+
+    pub fn unbound_variables(&self, level: u32) -> impl Iterator<Item = &T> {
+        (level..(self.variables.len() as u32)).filter_map(move |i| {
+            if self.find_type_for_var(i).is_none() && self.get_level(i) >= level {
+                Some(&self.variables[i as usize])
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl Substitution<RcType> {
