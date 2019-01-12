@@ -1,9 +1,10 @@
 use crate::base::{
     ast::{self, MutVisitor, SpannedExpr, SpannedIdent},
     fnv::{FnvMap, FnvSet},
+    merge,
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type},
+    types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type},
 };
 
 use crate::{
@@ -18,7 +19,6 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     context: ArcType,
     span: Span<BytePos>,
-    in_generic_replace: bool,
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -48,7 +48,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             tc,
             context: typ.clone(),
             span,
-            in_generic_replace: false,
         }
     }
 
@@ -150,7 +149,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         if let Some(ref t) = replacement {
             typ = t;
         }
-        trace!("GEN {}", typ);
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
                 // Create a prefix if none exists
@@ -169,6 +167,28 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 trace!("Generalize `{}` {:?}", typ, vars);
 
+                let mut new_params = Vec::new();
+                let typ = {
+                    let subs = &self.tc.subs;
+                    self.tc.named_variables.clear();
+                    for (param, var) in params.iter().zip(vars) {
+                        if is_variable_unified(subs, var) {
+                            self.tc
+                                .named_variables
+                                .insert(param.id.clone(), var.clone());
+                        } else {
+                            new_params.push(param.clone());
+                        }
+                    }
+
+                    if self.tc.named_variables.is_empty() {
+                        typ.clone()
+                    } else {
+                        typ.instantiate_generics_(&mut self.tc.named_variables)
+                            .unwrap_or(typ.clone())
+                    }
+                };
+
                 self.type_variables.enter_scope();
                 self.type_variables.extend(
                     params
@@ -183,12 +203,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.type_variables.exit_scope();
 
                 Some(Type::forall(
-                    params
-                        .iter()
-                        .zip(vars)
-                        .filter(|&(_, var)| !is_variable_unified(&self.subs, var))
-                        .map(|(param, _)| param.clone())
-                        .collect(),
+                    new_params,
                     new_type.unwrap_or_else(|| typ.clone()),
                 ))
             }
@@ -221,25 +236,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 }
             }
 
-            Type::Generic(ref generic) => match self.type_variables.get(&generic.id).cloned() {
-                Some(var) => {
-                    trace!("GEN2 {} => {}", generic.id, var);
-                    if !self.in_generic_replace {
-                        self.in_generic_replace = true;
-                        let new = self.generalize_type(&var).or(replacement);
-                        self.in_generic_replace = false;
-                        new
-                    } else {
-                        replacement
-                    }
-                }
-                None => {
-                    self.unbound_variables
-                        .insert(generic.id.clone(), generic.clone());
-                    replacement
-                }
-            },
-
             _ => {
                 if let Type::Forall(ref params, _, None) = **typ {
                     let type_cache = &self.tc.type_cache;
@@ -250,12 +246,22 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     );
                 }
 
-                types::walk_move_type_opt(
+                let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
-                )
-                .map(|t| unroll_typ(&t).unwrap_or(t))
-                .or_else(|| replacement.clone())
+                );
+                match **typ {
+                    Type::Generic(ref generic)
+                        if self.type_variables.get(&generic.id).is_none() =>
+                    {
+                        self.unbound_variables
+                            .insert(generic.id.clone(), generic.clone());
+                    }
+                    _ => (),
+                }
+                new_type
+                    .map(|t| unroll_typ(&t).unwrap_or(t))
+                    .or_else(|| replacement.clone())
             }
         }
     }
