@@ -731,10 +731,11 @@ impl<'a> Typecheck<'a> {
         let mut typ = self.typecheck_opt(expr, expected_type);
         {
             if let Some(expected_type) = expected_type {
+                let type_cache = &self.type_cache;
                 self.type_variables.extend(
                     expected_type
                         .forall_params()
-                        .map(|param| (param.id.clone(), Type::hole())),
+                        .map(|param| (param.id.clone(), type_cache.hole())),
                 );
             }
             // Only the 'tail' expression need to be generalized at this point as all bindings
@@ -2427,7 +2428,8 @@ impl<'a> Typecheck<'a> {
             }
             Type::Forall(ref params, ref typ, _) => {
                 for param in params {
-                    self.type_variables.insert(param.id.clone(), typ.clone());
+                    self.type_variables
+                        .insert(param.id.clone(), self.type_cache.hole());
                 }
                 let result = self.create_unifiable_signature_(typ);
                 // Remove any implicit variables inserted inside the forall since

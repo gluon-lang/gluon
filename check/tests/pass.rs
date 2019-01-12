@@ -1005,3 +1005,18 @@ Group
     "#,
     "String -> test.TestCase"
 }
+
+#[test]
+fn infix_env_type_of() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+#[infix(left, 4)]
+let (+) x y : a -> a -> a = y
+2 + 2
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Int");
+}

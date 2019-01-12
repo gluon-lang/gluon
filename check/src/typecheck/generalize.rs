@@ -3,11 +3,11 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeVariable},
+    types::{self, AppVec, ArcType, BuiltinType, Generic, Type},
 };
 
 use crate::{
-    substitution::Substitution,
+    substitution::{is_variable_unified, Substitution},
     typecheck::{TypeError, Typecheck},
 };
 
@@ -18,6 +18,7 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     context: ArcType,
     span: Span<BytePos>,
+    in_generic_replace: bool,
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -43,10 +44,11 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         TypeGeneralizer {
             level,
             unbound_variables: FnvMap::default(),
-            variable_generator: TypeVariableGenerator::new(level, &tc.subs, typ),
+            variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
             context: typ.clone(),
             span,
+            in_generic_replace: false,
         }
     }
 
@@ -148,6 +150,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         if let Some(ref t) = replacement {
             typ = t;
         }
+        trace!("GEN {}", typ);
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
                 // Create a prefix if none exists
@@ -164,7 +167,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                use crate::substitution::is_variable_unified;
                 trace!("Generalize `{}` {:?}", typ, vars);
 
                 self.type_variables.enter_scope();
@@ -219,18 +221,33 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 }
             }
 
-            Type::Generic(ref generic) => {
-                if self.type_variables.get(&generic.id).is_none() {
+            Type::Generic(ref generic) => match self.type_variables.get(&generic.id).cloned() {
+                Some(var) => {
+                    trace!("GEN2 {} => {}", generic.id, var);
+                    if !self.in_generic_replace {
+                        self.in_generic_replace = true;
+                        let new = self.generalize_type(&var).or(replacement);
+                        self.in_generic_replace = false;
+                        new
+                    } else {
+                        replacement
+                    }
+                }
+                None => {
                     self.unbound_variables
                         .insert(generic.id.clone(), generic.clone());
+                    replacement
                 }
-                replacement
-            }
+            },
 
             _ => {
                 if let Type::Forall(ref params, _, None) = **typ {
-                    self.type_variables
-                        .extend(params.iter().map(|param| (param.id.clone(), typ.clone())));
+                    let type_cache = &self.tc.type_cache;
+                    self.tc.type_variables.extend(
+                        params
+                            .iter()
+                            .map(|param| (param.id.clone(), type_cache.hole())),
+                    );
                 }
 
                 types::walk_move_type_opt(
@@ -246,13 +263,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
 struct TypeVariableGenerator {
     map: FnvSet<Symbol>,
-    level: u32,
     name: String,
     i: u32,
 }
 
 impl TypeVariableGenerator {
-    fn new(level: u32, subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
+    fn new(subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
         fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<ArcType>, typ: &ArcType) {
             let typ = subs.real(typ);
             if let Type::Forall(ref params, _, _) = **typ {
@@ -272,7 +288,6 @@ impl TypeVariableGenerator {
             map,
             name: "".to_string(),
             i: 0,
-            level,
         }
     }
     /// Generate a generic variable name which is not used in the current scope
@@ -285,13 +300,7 @@ impl TypeVariableGenerator {
             tc.symbols.symbol(&name[..])
         };
         self.map.insert(symbol.clone());
-        tc.type_variables.insert(
-            symbol.clone(),
-            Type::variable(TypeVariable {
-                id: self.level,
-                kind: tc.kind_cache.typ(),
-            }),
-        );
+        tc.type_variables.insert(symbol.clone(), Type::hole());
         symbol
     }
 
