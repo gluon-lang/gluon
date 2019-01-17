@@ -69,14 +69,14 @@ macro_rules! closure_wrapper {
 ///     primitive!(2, test);
 /// }
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! primitive {
     ($arg_count:tt, async fn $name:expr) => {
-        primitive!($arg_count, stringify!($name), async fn $name)
+        primitive!($arg_count, stringify_inner!($name), async fn $name)
     };
 
     ($arg_count:tt, $name:expr) => {
-        primitive!($arg_count, stringify!($name), $name)
+        primitive!($arg_count, stringify_inner!($name), $name)
     };
     ($arg_count:tt, $name:expr, async fn $func:expr) => {
         primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
@@ -96,13 +96,21 @@ macro_rules! primitive {
 
 #[doc(hidden)]
 #[macro_export]
+macro_rules! stringify_inner {
+    ($name:expr) => {
+        stringify!($name)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
 macro_rules! field_decl_inner {
     () => {
     };
 
     ($field: ident) => {
         field_decl_inner!{
-            ($field stringify!($field))
+            ($field stringify_inner!($field))
         }
     };
     (($alias: ident $field: expr)) => {
@@ -122,17 +130,17 @@ macro_rules! field_decl_inner {
         pub struct $field;
         impl $crate::api::record::Field for $field {
             fn name() -> &'static str {
-                stringify!($field)
+                stringify_inner!($field)
             }
             fn args() -> &'static [&'static str] {
-                &[$(stringify!($args)),*]
+                &[$(stringify_inner!($args)),*]
             }
         }
     };
 
     ($field: ident, $($rest: tt)*) => {
         field_decl_inner!{
-            ($field stringify!($field)),
+            ($field stringify_inner!($field)),
             $($rest)*
         }
     };
@@ -155,7 +163,7 @@ macro_rules! field_decl_inner {
 ///
 /// field_decl! {x, y}
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! field_decl {
     ($($tt: tt)*) => {
         mod _field { field_decl_inner!($($tt)*); }
@@ -163,7 +171,7 @@ macro_rules! field_decl {
 }
 
 #[doc(hidden)]
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! field_decl_record {
     ([$($acc: tt)*]) => {
         field_decl!($($acc)*);
@@ -171,7 +179,7 @@ macro_rules! field_decl_record {
 
     ([ $($acc: tt)* ] $field: ident => $ignore: expr) => {
         field_decl_record!{
-            [$($acc)* ($field stringify!($field)),]
+            [$($acc)* ($field stringify_inner!($field)),]
         }
     };
     ([ $($acc: tt)* ] ($alias: ident $field: expr) => $ignore: expr) => {
@@ -187,7 +195,7 @@ macro_rules! field_decl_record {
 
     ([ $($acc: tt)* ] $field: ident => $ignore: expr, $($rest: tt)*) => {
         field_decl_record!{
-            [$($acc)* ($field stringify!($field)),]
+            [$($acc)* ($field stringify_inner!($field)),]
             $($rest)*
         }
     };
@@ -206,7 +214,7 @@ macro_rules! field_decl_record {
 }
 
 #[doc(hidden)]
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_no_decl_inner {
     () => { $crate::frunk_core::hlist::HNil };
     ($field: ident => $value: expr) => {
@@ -234,7 +242,7 @@ macro_rules! record_no_decl_inner {
 }
 
 #[doc(hidden)]
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_no_decl_inner_types {
     () => { $crate::frunk_core::hlist::HNil };
     ($field: ident => $value: expr) => {
@@ -274,7 +282,7 @@ macro_rules! record_no_decl_inner_types {
 ///     record_no_decl!(x => 1, y => 2, name => "Gluon");
 /// }
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_no_decl {
     ($($tt: tt)*) => {
         {
@@ -295,7 +303,7 @@ macro_rules! record_no_decl {
 ///     record!(x => 1, y => 2, name => "Gluon");
 /// }
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record {
     ($($tt: tt)*) => {{
         field_decl_record!([] $($tt)*);
@@ -304,7 +312,7 @@ macro_rules! record {
 }
 
 #[doc(hidden)]
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_type_inner {
     () => { $crate::frunk_core::hlist::HNil };
     ($field: ident => $value: ty) => {
@@ -320,7 +328,7 @@ macro_rules! record_type_inner {
     }
 }
 
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! row_type {
     ($($field: ident => $value: ty),*) => {
         row_type!($($field => $value),* | $crate::api::record::EmptyRow)
@@ -346,7 +354,7 @@ macro_rules! row_type {
 ///     record_no_decl!(x => y, y => y)
 /// }
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_type {
     ($($field: ident => $value: ty),*) => {
         $crate::api::Record<
@@ -357,7 +365,7 @@ macro_rules! record_type {
 }
 
 #[doc(hidden)]
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_p_impl {
     () => { $crate::frunk_core::hlist::HNil };
     ($field: pat) => {
@@ -381,7 +389,7 @@ macro_rules! record_p_impl {
 ///     }
 /// }
 /// ```
-#[macro_export]
+#[macro_export(local_inner_macros)]
 macro_rules! record_p {
     ($($field: pat),*) => {
         $crate::api::Record {
