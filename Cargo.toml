@@ -179,3 +179,5 @@ features = ["docs_rs"]
 [profile.bench]
 debug = true
 
+[profile.release]
+debug = true
