@@ -37,7 +37,7 @@ use crate::{
     implicits,
     kindcheck::{self, Error as KindCheckError, KindCheck, KindError},
     substitution::{self, Substitution},
-    typ::RcType,
+    typ::{translate_interned_type, PtrEq, RcType},
     unify::{self, Error as UnifyError},
     unify_type::{self, new_skolem_scope, Error as UnifyTypeError},
     ArcTypeCacher, TypecheckEnv,
@@ -366,7 +366,9 @@ pub struct Typecheck<'a> {
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, RcType>,
     pub(crate) type_cache: TypeCache<Symbol, RcType>,
+    type_interner: FnvMap<PtrEq<ArcType>, RcType>,
     arc_type_cache: TypeCache<Symbol, ArcType>,
+    arc_type_interner: FnvMap<PtrEq<RcType>, ArcType>,
     kind_cache: KindCache,
 
     pub(crate) implicit_resolver: crate::implicits::ImplicitResolver<'a>,
@@ -401,7 +403,9 @@ impl<'a> Typecheck<'a> {
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
             type_cache: Default::default(),
+            type_interner: Default::default(),
             arc_type_cache,
+            arc_type_interner: Default::default(),
             kind_cache: kind_cache,
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
@@ -421,9 +425,10 @@ impl<'a> Typecheck<'a> {
         self.type_cache.error()
     }
 
-    fn bool(&self) -> RcType {
-        // FIXME Cache
-        self.translate_arc_type(&self.environment.get_bool())
+    // FIXME Cache
+    fn bool(&mut self) -> RcType {
+        let typ = self.environment.get_bool().clone();
+        self.translate_arc_type(&typ)
     }
 
     fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> RcType {
@@ -791,9 +796,9 @@ impl<'a> Typecheck<'a> {
 
                 fn visit_typ(&mut self, typ: &mut ArcType) {
                     *typ = if let Type::Variable(var) = &**typ {
-                        let typ = self.tc.subs.find_type_for_var(var.id).unwrap();
+                        let typ = self.tc.subs.find_type_for_var(var.id).unwrap().clone();
 
-                        self.tc.translate_rc_type(typ)
+                        self.tc.translate_rc_type(&typ)
                     } else {
                         return;
                     }
@@ -1002,9 +1007,10 @@ impl<'a> Typecheck<'a> {
                     )
                 } else {
                     match &*op_name {
-                        "&&" | "||" => self
-                            .type_cache
-                            .function(vec![self.bool(), self.bool()], self.bool()),
+                        "&&" | "||" => {
+                            let b = self.bool();
+                            self.type_cache.function(vec![b.clone(), b.clone()], b)
+                        }
                         _ => self.find_at(op.span, &op.value.name),
                     }
                 };
@@ -1929,16 +1935,12 @@ impl<'a> Typecheck<'a> {
         translate_projected_type(&self.environment, &mut self.symbols, id)
     }
 
-    fn translate_arc_type(&self, arc_type: &ArcType) -> RcType {
-        types::translate_type_with(&self.type_cache, arc_type, |typ| {
-            self.translate_arc_type(typ)
-        })
+    fn translate_arc_type(&mut self, arc_type: &ArcType) -> RcType {
+        translate_interned_type(&mut self.type_interner, &self.type_cache, arc_type)
     }
 
-    fn translate_rc_type(&self, rc_type: &RcType) -> ArcType {
-        types::translate_type_with(&self.arc_type_cache, rc_type, |typ| {
-            self.translate_rc_type(typ)
-        })
+    fn translate_rc_type(&mut self, rc_type: &RcType) -> ArcType {
+        translate_interned_type(&mut self.arc_type_interner, &self.arc_type_cache, rc_type)
     }
 
     fn translate_ast_type(

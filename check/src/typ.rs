@@ -1,16 +1,17 @@
-use std::{fmt, ops::Deref, rc::Rc};
+use std::{borrow::Borrow, fmt, mem, ops::Deref, rc::Rc};
 
 use pretty::{Arena, DocBuilder};
 
 use crate::base::{
     ast::Commented,
+    fnv::FnvMap,
     metadata::Comment,
     pos::{BytePos, HasSpan, Span},
     source::Source,
     symbol::Symbol,
     types::{
-        dt, forall_params, forall_params_vars, pretty_print::Printer, Generic, Prec, ToDoc, Type,
-        TypeExt, TypeFormatter,
+        self, dt, forall_params, forall_params_vars, pretty_print::Printer, ArcType, Generic, Prec,
+        ToDoc, Type, TypeCache, TypeExt, TypeFormatter,
     },
 };
 
@@ -42,6 +43,12 @@ impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
 impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", TypeFormatter::new(self))
+    }
+}
+
+impl<Id> Borrow<Type<Id, RcType<Id>>> for RcType<Id> {
+    fn borrow(&self) -> &Type<Id, RcType<Id>> {
+        &self.typ
     }
 }
 
@@ -110,4 +117,73 @@ where
         let printer = Printer::new(arena, source);
         dt(Prec::Top, self).pretty(&printer)
     }
+}
+
+#[repr(transparent)]
+pub struct PtrEq<T, U = T>(pub T, pub std::marker::PhantomData<U>);
+
+impl<T> PtrEq<Type<Symbol, T>, T> {
+    pub fn new(t: &Type<Symbol, T>) -> &Self {
+        unsafe { mem::transmute(t) }
+    }
+}
+
+impl<T, U> Eq for PtrEq<T, U> where T: Borrow<Type<Symbol, U>> {}
+
+impl<T, U> PartialEq for PtrEq<T, U>
+where
+    T: Borrow<Type<Symbol, U>>,
+{
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq::<Type<_, _>>(self.0.borrow(), other.0.borrow())
+    }
+}
+
+impl<T, U> std::hash::Hash for PtrEq<T, U>
+where
+    T: Borrow<Type<Symbol, U>>,
+{
+    #[inline(always)]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (self.0.borrow() as *const Type<_, _>).hash(state)
+    }
+}
+
+impl Borrow<PtrEq<Type<Symbol, RcType>, RcType>> for PtrEq<RcType, RcType> {
+    #[inline(always)]
+    fn borrow(&self) -> &PtrEq<Type<Symbol, RcType>, RcType> {
+        PtrEq::new(self.0.borrow())
+    }
+}
+
+impl Borrow<PtrEq<Type<Symbol, ArcType>, ArcType>> for PtrEq<ArcType, ArcType> {
+    #[inline(always)]
+    fn borrow(&self) -> &PtrEq<Type<Symbol, ArcType>, ArcType> {
+        PtrEq::new(self.0.borrow())
+    }
+}
+
+pub fn translate_interned_type<T, U>(
+    type_interner: &mut FnvMap<PtrEq<T>, U>,
+    type_cache: &TypeCache<Symbol, U>,
+    typ: &T,
+) -> U
+where
+    T: Clone + Borrow<Type<Symbol, T>> + Deref<Target = Type<Symbol, T>>,
+    U: From<Type<Symbol, U>> + Clone,
+    PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
+{
+    if let Some(t) = type_interner.get(PtrEq::new(typ)) {
+        return t.clone();
+    }
+    let new_type = types::translate_type_with(type_cache, typ, |typ| {
+        translate_interned_type(type_interner, type_cache, typ)
+    });
+
+    type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
+    new_type
 }

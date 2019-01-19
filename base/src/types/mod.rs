@@ -1,5 +1,5 @@
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     fmt,
     hash::Hash,
     iter,
@@ -1191,6 +1191,12 @@ impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
 
 // Safe since `Arc` implements it
 unsafe impl<Id> StableDeref for ArcType<Id> {}
+
+impl<Id> Borrow<Type<Id, ArcType<Id>>> for ArcType<Id> {
+    fn borrow(&self) -> &Type<Id, ArcType<Id>> {
+        &self.typ
+    }
+}
 
 impl<Id> Deref for ArcType<Id> {
     type Target = Type<Id, ArcType<Id>>;
