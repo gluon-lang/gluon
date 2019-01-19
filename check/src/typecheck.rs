@@ -366,6 +366,7 @@ pub struct Typecheck<'a> {
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, RcType>,
     pub(crate) type_cache: TypeCache<Symbol, RcType>,
+    arc_type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
 
     pub(crate) implicit_resolver: crate::implicits::ImplicitResolver<'a>,
@@ -383,7 +384,7 @@ impl<'a> Typecheck<'a> {
         module: String,
         symbols: &'a mut Symbols,
         environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
-        _type_cache: TypeCache<Symbol, ArcType>,
+        arc_type_cache: TypeCache<Symbol, ArcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
@@ -400,6 +401,7 @@ impl<'a> Typecheck<'a> {
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
             type_cache: Default::default(),
+            arc_type_cache,
             kind_cache: kind_cache,
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
@@ -730,11 +732,10 @@ impl<'a> Typecheck<'a> {
         expr: &mut SpannedExpr<Symbol>,
         expected_type: Option<&ArcType>,
     ) -> Result<ArcType, Error> {
-        let cache = TypeCache::default();
-        let expected_type = expected_type.map(|t| types::translate_type(&self.type_cache, t));
+        let expected_type = expected_type.map(|t| self.translate_arc_type(t));
 
         self.typecheck_expr_expected_(expr, expected_type.as_ref())
-            .map(|t| types::translate_type(&cache, &t))
+            .map(|t| self.translate_rc_type(&t))
     }
 
     fn typecheck_expr_expected_(
@@ -783,7 +784,6 @@ impl<'a> Typecheck<'a> {
         {
             struct ReplaceVisitor<'a: 'b, 'b> {
                 tc: &'b mut Typecheck<'a>,
-                cache: TypeCache<Symbol, ArcType>,
             }
 
             impl<'a, 'b, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b> {
@@ -793,7 +793,7 @@ impl<'a> Typecheck<'a> {
                     *typ = if let Type::Variable(var) = &**typ {
                         let typ = self.tc.subs.find_type_for_var(var.id).unwrap();
 
-                        types::translate_type(&self.cache, typ)
+                        self.tc.translate_rc_type(typ)
                     } else {
                         return;
                     }
@@ -801,10 +801,7 @@ impl<'a> Typecheck<'a> {
             }
 
             {
-                let mut visitor = ReplaceVisitor {
-                    tc: self,
-                    cache: Default::default(),
-                };
+                let mut visitor = ReplaceVisitor { tc: self };
                 visitor.visit_expr(expr);
             }
         }
@@ -819,12 +816,11 @@ impl<'a> Typecheck<'a> {
                 errors.pop();
             }
 
-            let cache = TypeCache::default();
             Err(errors
                 .into_iter()
                 .map(|spanned| {
                     spanned.map(|err| crate::base::error::Help {
-                        error: err.error.map_t(&mut |t| types::translate_type(&cache, &t)),
+                        error: err.error.map_t(&mut |t| self.translate_rc_type(&t)),
                         help: err.help,
                     })
                 })
@@ -1298,7 +1294,7 @@ impl<'a> Typecheck<'a> {
                     if let Some(ref mut typ) = field.value {
                         let rc_type = self.translate_arc_type(typ);
                         if let Some(new_type) = self.create_unifiable_signature(&rc_type) {
-                            *typ = types::translate_type(&Default::default(), &new_type);
+                            *typ = self.translate_rc_type(&new_type);
                         }
                     }
 
@@ -1939,6 +1935,12 @@ impl<'a> Typecheck<'a> {
         })
     }
 
+    fn translate_rc_type(&self, rc_type: &RcType) -> ArcType {
+        types::translate_type_with(&self.arc_type_cache, rc_type, |typ| {
+            self.translate_rc_type(typ)
+        })
+    }
+
     fn translate_ast_type(
         &mut self,
         type_cache: &TypeCache<Symbol, RcType>,
@@ -2228,10 +2230,7 @@ impl<'a> Typecheck<'a> {
         let arc_alias_group = Alias::group(
             resolved_aliases
                 .iter()
-                .map(|a| {
-                    let cache = Default::default();
-                    types::translate_alias(&a, |t| types::translate_type(&cache, t))
-                })
+                .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
                 .collect(),
         );
         let alias_group = Alias::group(resolved_aliases);
