@@ -1225,6 +1225,23 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             expr: expr,
         };
 
+        // match x with
+        // | y -> EXPR
+        // // ==>
+        // EXPR // with `y`s replaced by `x`
+        match (&alt.pattern, variables[0]) {
+            (&Pattern::Ident(ref id), &Expr::Ident(ref expr_id, _))
+                if !expr_id.name.is_global() =>
+            {
+                return replace_variables(
+                    &self.0.allocator,
+                    &collect![(id.name.clone(), expr_id.name.clone())],
+                    expr,
+                );
+            }
+            _ => (),
+        }
+
         let expr = Expr::Match(
             variables[0],
             self.0
