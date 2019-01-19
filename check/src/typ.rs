@@ -1,5 +1,7 @@
 use std::{borrow::Borrow, fmt, mem, ops::Deref, rc::Rc};
 
+use bitflags::bitflags;
+
 use pretty::{Arena, DocBuilder};
 
 use crate::base::{
@@ -10,14 +12,95 @@ use crate::base::{
     source::Source,
     symbol::Symbol,
     types::{
-        self, dt, forall_params, forall_params_vars, pretty_print::Printer, ArcType, Generic, Prec,
-        ToDoc, Type, TypeCache, TypeExt, TypeFormatter,
+        self, dt, forall_params, forall_params_vars, pretty_print::Printer, ArcType, Field,
+        Generic, Prec, ToDoc, Type, TypeCache, TypeExt, TypeFormatter,
     },
 };
 
+bitflags! {
+    pub struct Flags: u8 {
+        const HAS_VARIABLES = 1 << 0;
+    }
+}
+
+trait AddFlags {
+    fn add_flags(&self, flags: &mut Flags);
+}
+
+impl<T> AddFlags for [T]
+where
+    T: AddFlags,
+{
+    fn add_flags(&self, flags: &mut Flags) {
+        for t in self {
+            t.add_flags(flags);
+        }
+    }
+}
+
+impl<Id> AddFlags for Field<Id, RcType<Id>> {
+    fn add_flags(&self, flags: &mut Flags) {
+        self.typ.add_flags(flags);
+    }
+}
+
+impl<Id> AddFlags for RcType<Id> {
+    fn add_flags(&self, flags: &mut Flags) {
+        *flags |= self.flags()
+    }
+}
+
+impl<Id> AddFlags for Type<Id, RcType<Id>> {
+    fn add_flags(&self, flags: &mut Flags) {
+        match self {
+            Type::Function(_, arg, ret) => {
+                arg.add_flags(flags);
+                ret.add_flags(flags);
+            }
+            Type::App(ref f, ref args) => {
+                f.add_flags(flags);
+                args.add_flags(flags);
+            }
+            Type::Record(ref typ)
+            | Type::Variant(ref typ)
+            | Type::Effect(ref typ)
+            | Type::Forall(_, ref typ, _) => typ.add_flags(flags),
+            Type::Skolem(_) => (),
+            Type::ExtendRow { fields, rest, .. } => {
+                fields.add_flags(flags);
+                rest.add_flags(flags);
+            }
+            Type::Variable(_) => *flags |= Flags::HAS_VARIABLES,
+            Type::Hole
+            | Type::Opaque
+            | Type::Error
+            | Type::Builtin(..)
+            | Type::Generic(_)
+            | Type::Ident(_)
+            | Type::Projection(_)
+            | Type::Alias(_)
+            | Type::EmptyRow => (),
+        }
+    }
+}
+
+impl Flags {
+    fn from_type<Id>(typ: &Type<Id, RcType<Id>>) -> Self {
+        let mut flags = Flags::empty();
+        typ.add_flags(&mut flags);
+        flags
+    }
+}
+
+#[derive(Eq, PartialEq, Hash)]
+struct RcTypeInner<Id = Symbol> {
+    typ: Type<Id, RcType<Id>>,
+    flags: Flags,
+}
+
 #[derive(Eq, PartialEq, Hash)]
 pub struct RcType<Id = Symbol> {
-    typ: Rc<Type<Id, RcType<Id>>>,
+    typ: Rc<RcTypeInner<Id>>,
 }
 
 impl<Id> Default for RcType<Id> {
@@ -48,7 +131,7 @@ impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
 
 impl<Id> Borrow<Type<Id, RcType<Id>>> for RcType<Id> {
     fn borrow(&self) -> &Type<Id, RcType<Id>> {
-        &self.typ
+        &self.typ.typ
     }
 }
 
@@ -56,7 +139,7 @@ impl<Id> Deref for RcType<Id> {
     type Target = Type<Id, RcType<Id>>;
 
     fn deref(&self) -> &Type<Id, RcType<Id>> {
-        &self.typ
+        &self.typ.typ
     }
 }
 
@@ -80,11 +163,22 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
 
 impl<Id> TypeExt<Id> for RcType<Id> {
     fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
-        RcType { typ: Rc::new(typ) }
+        let flags = Flags::from_type(&typ);
+        RcType {
+            typ: Rc::new(RcTypeInner { typ, flags }),
+        }
     }
 }
 
 impl<Id> RcType<Id> {
+    pub fn flags(&self) -> Flags {
+        self.typ.flags
+    }
+
+    pub fn needs_generalize(&self) -> bool {
+        self.flags().contains(Flags::HAS_VARIABLES)
+    }
+
     pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &Self)> {
         forall_params_vars(self)
     }
