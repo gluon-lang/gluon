@@ -1,10 +1,10 @@
 #[macro_use]
-extern crate bencher;
+extern crate criterion;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
-use bencher::{black_box, Bencher};
+use criterion::{Bencher, Criterion};
 
 use crate::base::symbol::{SymbolModule, Symbols};
 use crate::base::types::TypeCache;
@@ -20,11 +20,14 @@ fn parse_prelude(b: &mut Bencher) {
     b.iter(|| {
         let mut symbols = Symbols::new();
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
-        let expr = parser::parse_expr(&mut symbols, &TypeCache::default(), &text)
-            .unwrap_or_else(|err| panic!("{:?}", err));
-        black_box(expr)
+        parser::parse_expr(&mut symbols, &TypeCache::default(), &text)
+            .unwrap_or_else(|err| panic!("{:?}", err))
     })
 }
 
-benchmark_group!(parser, parse_prelude);
-benchmark_main!(parser);
+fn parse_benchmark(c: &mut Criterion) {
+    c.bench_function("std/prelude", parse_prelude);
+}
+
+criterion_group!(parser, parse_benchmark);
+criterion_main!(parser);

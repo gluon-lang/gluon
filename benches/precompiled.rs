@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate bencher;
+extern crate criterion;
 
 extern crate gluon;
 
@@ -11,7 +11,7 @@ extern crate serde_state;
 use std::fs::File;
 use std::io::Read;
 
-use bencher::{black_box, Bencher};
+use criterion::{Bencher, Criterion};
 
 use futures::Future;
 use gluon::compiler_pipeline::compile_to;
@@ -45,11 +45,10 @@ fn precompiled_prelude(b: &mut Bencher) {
         use gluon::compiler_pipeline::{Executable, Precompiled};
 
         let mut deserializer = serde_json::Deserializer::from_slice(&serialized_prelude);
-        let result = Precompiled(&mut deserializer)
+        Precompiled(&mut deserializer)
             .run_expr(&mut Compiler::new(), &*thread, "std.prelude", "", ())
             .wait()
-            .unwrap();
-        black_box(result)
+            .unwrap()
     })
 }
 
@@ -63,7 +62,7 @@ fn source_prelude(b: &mut Bencher) {
     b.iter(|| {
         use gluon::compiler_pipeline::Executable;
 
-        let result = prelude_source
+        prelude_source
             .run_expr(
                 &mut Compiler::new(),
                 &*thread,
@@ -72,10 +71,14 @@ fn source_prelude(b: &mut Bencher) {
                 None,
             )
             .wait()
-            .unwrap();
-        black_box(result)
+            .unwrap()
     })
 }
 
-benchmark_group!(precompiled, precompiled_prelude, source_prelude);
-benchmark_main!(precompiled);
+fn precompiled_benchmark(c: &mut Criterion) {
+    c.bench_function("source std/prelude", source_prelude);
+    c.bench_function("precompiled std/prelude", precompiled_prelude);
+}
+
+criterion_group!(precompiled, precompiled_benchmark);
+criterion_main!(precompiled);

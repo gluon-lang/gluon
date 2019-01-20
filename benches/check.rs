@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate bencher;
+extern crate criterion;
 
 extern crate gluon;
 extern crate gluon_base as base;
@@ -8,7 +8,7 @@ extern crate gluon_parser as parser;
 
 use std::fs;
 
-use bencher::{black_box, Bencher};
+use criterion::{Bencher, Criterion};
 
 use gluon::compiler_pipeline::*;
 use gluon::{new_vm, Compiler};
@@ -27,7 +27,7 @@ fn typecheck_prelude(b: &mut Bencher) {
             println!("{}", err);
             assert!(false);
         }
-        black_box(result)
+        result
     })
 }
 
@@ -39,7 +39,7 @@ fn clone_prelude(b: &mut Bencher) {
         text.typecheck(&mut compiler, &vm, "std.prelude", &text)
             .unwrap_or_else(|err| panic!("{}", err))
     };
-    b.iter(|| black_box(expr.clone()))
+    b.iter(|| expr.clone())
 }
 
 fn typecheck_24(b: &mut Bencher) {
@@ -56,9 +56,18 @@ fn typecheck_24(b: &mut Bencher) {
             println!("{}", err);
             assert!(false);
         }
-        black_box(result)
+        result
     })
 }
 
-benchmark_group!(check, typecheck_prelude, clone_prelude, typecheck_24);
-benchmark_main!(check);
+fn clone_benchmark(c: &mut Criterion) {
+    c.bench_function("clone prelude", clone_prelude);
+}
+
+fn typecheck_benchmark(c: &mut Criterion) {
+    c.bench_function("std/prelude", typecheck_prelude);
+    c.bench_function("examples/24", typecheck_24);
+}
+
+criterion_group!(check, typecheck_benchmark, clone_benchmark);
+criterion_main!(check);

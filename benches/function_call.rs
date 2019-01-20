@@ -1,9 +1,9 @@
 #[macro_use]
-extern crate bencher;
+extern crate criterion;
 
 extern crate gluon;
 
-use bencher::{black_box, Bencher};
+use criterion::{black_box, Bencher, Criterion};
 
 use gluon::vm::api::{primitive, FunctionRef, Primitive};
 use gluon::vm::thread::{Status, Thread};
@@ -80,10 +80,11 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
     })
 }
 
-benchmark_group!(
-    function_call,
-    factorial,
-    factorial_tail_call,
-    gluon_rust_boundary_overhead
-);
-benchmark_main!(function_call);
+fn function_call_benchmark(c: &mut Criterion) {
+    c.bench_function("factorial", factorial);
+    c.bench_function("factorial tail call", factorial_tail_call);
+    c.bench_function("gluon rust boundary overhead", gluon_rust_boundary_overhead);
+}
+
+criterion_group!(function_call, function_call_benchmark);
+criterion_main!(function_call);
