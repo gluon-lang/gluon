@@ -69,5 +69,9 @@ fn typecheck_benchmark(c: &mut Criterion) {
     c.bench_function("examples/24", typecheck_24);
 }
 
-criterion_group!(check, typecheck_benchmark, clone_benchmark);
+criterion_group!(
+    name = check;
+    config = Criterion::default().sample_size(20).configure_from_args();
+    targets = typecheck_benchmark, clone_benchmark
+);
 criterion_main!(check);
