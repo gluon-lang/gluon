@@ -102,6 +102,12 @@ pub trait Substitutable: Sized {
 
     fn instantiate(&self, subs: &Substitution<Self>) -> Self;
 
+    // Allowed return true even if the type does not contain variables but not false if it does
+    // contain
+    fn contains_variables(&self) -> bool {
+        true
+    }
+
     fn on_union(&self) -> Option<&Self> {
         None
     }
@@ -136,13 +142,18 @@ where
             typ.traverse(self);
         }
     }
-    let mut occurs = Occurs {
-        occurs: false,
-        var: var,
-        subs: subs,
-    };
-    occurs.walk(typ);
-    occurs.occurs
+
+    if typ.contains_variables() {
+        let mut occurs = Occurs {
+            occurs: false,
+            var: var,
+            subs: subs,
+        };
+        occurs.walk(typ);
+        occurs.occurs
+    } else {
+        false
+    }
 }
 
 /// Specialized union implementation which makes sure that variables with a higher level always

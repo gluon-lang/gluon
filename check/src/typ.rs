@@ -73,7 +73,7 @@ where
             | Type::Effect(ref typ)
             | Type::Forall(_, ref typ, None) => typ.add_flags(flags),
             Type::Forall(_, ref typ, Some(_)) => {
-                *flags |= Flags::HAS_VARIABLES; // ?
+                *flags |= Flags::HAS_SKOLEMS; // ?
                 typ.add_flags(flags);
             }
             Type::Generic(_) // TODO Generics only need generalization if they are unbound

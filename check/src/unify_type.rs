@@ -16,7 +16,7 @@ use crate::base::{
 
 use crate::{
     substitution::{Substitutable, Substitution, Variable, VariableFactory},
-    typ::RcType,
+    typ::{Flags, RcType},
     unify::{self, Error as UnifyError, GenericVariant, Unifiable, Unifier},
 };
 
@@ -290,6 +290,10 @@ impl Substitutable for RcType<Symbol> {
 
     fn on_union(&self) -> Option<&Self> {
         unpack_single_forall(self)
+    }
+
+    fn contains_variables(&self) -> bool {
+        self.flags().contains(Flags::HAS_VARIABLES)
     }
 }
 
