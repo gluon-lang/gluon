@@ -20,6 +20,7 @@ use crate::base::{
 bitflags! {
     pub struct Flags: u8 {
         const HAS_VARIABLES = 1 << 0;
+        const HAS_SKOLEMS = 2 << 0;
     }
 }
 
@@ -38,7 +39,10 @@ where
     }
 }
 
-impl<Id> AddFlags for Field<Id, RcType<Id>> {
+impl<Id, T> AddFlags for Field<Id, T>
+where
+    T: AddFlags,
+{
     fn add_flags(&self, flags: &mut Flags) {
         self.typ.add_flags(flags);
     }
@@ -50,7 +54,10 @@ impl<Id> AddFlags for RcType<Id> {
     }
 }
 
-impl<Id> AddFlags for Type<Id, RcType<Id>> {
+impl<Id, T> AddFlags for Type<Id, T>
+where
+    T: AddFlags,
+{
     fn add_flags(&self, flags: &mut Flags) {
         match self {
             Type::Function(_, arg, ret) => {
@@ -64,8 +71,13 @@ impl<Id> AddFlags for Type<Id, RcType<Id>> {
             Type::Record(ref typ)
             | Type::Variant(ref typ)
             | Type::Effect(ref typ)
-            | Type::Forall(_, ref typ, _) => typ.add_flags(flags),
-            Type::Skolem(_) => (),
+            | Type::Forall(_, ref typ, None) => typ.add_flags(flags),
+            Type::Forall(_, ref typ, Some(_)) => {
+                *flags |= Flags::HAS_VARIABLES; // ?
+                typ.add_flags(flags);
+            }
+            Type::Generic(_) // TODO Generics only need generalization if they are unbound
+            | Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
             Type::ExtendRow { fields, rest, .. } => {
                 fields.add_flags(flags);
                 rest.add_flags(flags);
@@ -75,7 +87,6 @@ impl<Id> AddFlags for Type<Id, RcType<Id>> {
             | Type::Opaque
             | Type::Error
             | Type::Builtin(..)
-            | Type::Generic(_)
             | Type::Ident(_)
             | Type::Projection(_)
             | Type::Alias(_)
@@ -85,7 +96,10 @@ impl<Id> AddFlags for Type<Id, RcType<Id>> {
 }
 
 impl Flags {
-    fn from_type<Id>(typ: &Type<Id, RcType<Id>>) -> Self {
+    fn from_type<Id, T>(typ: &Type<Id, T>) -> Self
+    where
+        T: AddFlags,
+    {
         let mut flags = Flags::empty();
         typ.add_flags(&mut flags);
         flags
@@ -176,7 +190,8 @@ impl<Id> RcType<Id> {
     }
 
     pub fn needs_generalize(&self) -> bool {
-        self.flags().contains(Flags::HAS_VARIABLES)
+        self.flags()
+            .intersects(Flags::HAS_VARIABLES | Flags::HAS_SKOLEMS)
     }
 
     pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &Self)> {

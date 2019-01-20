@@ -171,6 +171,13 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         if let Some(ref t) = replacement {
             typ = t;
         }
+        trace!("GEN: {}", typ);
+
+        if !typ.needs_generalize() {
+            trace!("No need to generalize: {}", typ);
+            return replacement;
+        }
+
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
                 // Create a prefix if none exists
