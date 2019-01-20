@@ -1264,6 +1264,8 @@ pub trait TypeExt<Id>:
 {
     fn new(typ: Type<Id, Self>) -> Self;
 
+    fn strong_count(typ: &Self) -> usize;
+
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
     fn type_field_iter(&self) -> TypeFieldIterator<Self> {
@@ -1569,10 +1571,8 @@ impl<Id> TypeExt<Id> for ArcType<Id> {
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
     }
-}
 
-impl<Id> ArcType<Id> {
-    pub fn strong_count(typ: &ArcType<Id>) -> usize {
+    fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
     }
 }

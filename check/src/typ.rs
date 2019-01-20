@@ -182,6 +182,10 @@ impl<Id> TypeExt<Id> for RcType<Id> {
             typ: Rc::new(RcTypeInner { typ, flags }),
         }
     }
+
+    fn strong_count(typ: &Self) -> usize {
+        Rc::strong_count(&typ.typ)
+    }
 }
 
 impl<Id> RcType<Id> {
@@ -282,17 +286,23 @@ pub fn translate_interned_type<T, U>(
     typ: &T,
 ) -> U
 where
-    T: Clone + Borrow<Type<Symbol, T>> + Deref<Target = Type<Symbol, T>>,
+    T: Clone + Borrow<Type<Symbol, T>> + TypeExt<Symbol>,
     U: From<Type<Symbol, U>> + Clone,
     PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
 {
-    if let Some(t) = type_interner.get(PtrEq::new(typ)) {
-        return t.clone();
-    }
-    let new_type = types::translate_type_with(type_cache, typ, |typ| {
-        translate_interned_type(type_interner, type_cache, typ)
-    });
+    if T::strong_count(typ) == 1 {
+        types::translate_type_with(type_cache, typ, |typ| {
+            translate_interned_type(type_interner, type_cache, typ)
+        })
+    } else {
+        if let Some(t) = type_interner.get(PtrEq::new(typ)) {
+            return t.clone();
+        }
+        let new_type = types::translate_type_with(type_cache, typ, |typ| {
+            translate_interned_type(type_interner, type_cache, typ)
+        });
 
-    type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
-    new_type
+        type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
+        new_type
+    }
 }

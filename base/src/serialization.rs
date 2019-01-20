@@ -13,7 +13,7 @@ use crate::serde::ser::{SerializeState, Serializer};
 
 use crate::kind::ArcKind;
 use crate::symbol::Symbol;
-use crate::types::{AliasData, ArcType, Type};
+use crate::types::{AliasData, ArcType, Type, TypeExt};
 
 #[derive(Default)]
 pub struct SeSeed {
