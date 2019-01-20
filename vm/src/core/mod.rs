@@ -50,7 +50,7 @@ use crate::base::{
     pos::{spanned, BytePos, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
-    types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv, TypeExt},
+    types::{arg_iter, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -475,8 +475,12 @@ impl<'a, 'e> Translator<'a, 'e> {
 
                 let base_binding = base.as_ref().map(|base_expr| {
                     let core_base = self.translate_alloc(base_expr);
-                    let typ = remove_aliases_cow(&self.env, &base_expr.env_type_of(&self.env))
-                        .into_owned();
+                    let typ = remove_aliases_cow(
+                        &self.env,
+                        &mut NullInterner,
+                        &base_expr.env_type_of(&self.env),
+                    )
+                    .into_owned();
 
                     let core_base = if needs_bindings {
                         &*arena.alloc(binder.bind(core_base, base_expr.env_type_of(&self.env)))
@@ -723,7 +727,7 @@ impl<'a, 'e> Translator<'a, 'e> {
     fn bool_constructor(&self, variant: bool) -> TypedIdent<Symbol> {
         let b = self.env.get_bool();
         match **b {
-            Type::Alias(ref alias) => match **alias.typ() {
+            Type::Alias(ref alias) => match **alias.typ(&mut NullInterner) {
                 Type::Variant(ref variants) => TypedIdent {
                     name: variants
                         .row_iter()
@@ -854,7 +858,7 @@ fn get_return_type(
     if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
-    let function_type = remove_aliases_cow(env, alias_type);
+    let function_type = remove_aliases_cow(env, &mut NullInterner, alias_type);
 
     let ret = function_type
         .remove_forall()
@@ -1018,8 +1022,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                         // If the field has been renamed we need to go the slo path
                                         // and do a lookup but this should be rare
                                         if record_type.is_none() {
-                                            record_type =
-                                                Some(remove_aliases_cow(&self.0.env, typ));
+                                            record_type = Some(remove_aliases_cow(
+                                                &self.0.env,
+                                                &mut NullInterner,
+                                                typ,
+                                            ));
                                         }
                                         record_type
                                             .as_ref()
@@ -1117,7 +1124,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
         let complete = {
             let t = variables[0].env_type_of(&self.0.env);
-            let t = remove_aliases_cow(&self.0.env, &t);
+            let t = remove_aliases_cow(&self.0.env, &mut NullInterner, &t);
             let mut iter = t.remove_forall().row_iter();
             groups.len() == iter.by_ref().count() && **iter.current_type() == Type::EmptyRow
         };
@@ -1574,7 +1581,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     ref fields,
                     ..
                 } => {
-                    let typ = remove_aliases_cow(&self.0.env, typ);
+                    let typ = remove_aliases_cow(&self.0.env, &mut NullInterner, typ);
 
                     for (i, field) in fields.iter().enumerate() {
                         if !add_duplicate_ident(

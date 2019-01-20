@@ -715,10 +715,12 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             }
         }
 
-        use crate::base::resolve::remove_aliases_cow;
-        use crate::base::types::arg_iter;
+        use crate::base::{
+            resolve::remove_aliases_cow,
+            types::{arg_iter, NullInterner},
+        };
 
-        let typ = remove_aliases_cow(self.env, self.typ);
+        let typ = remove_aliases_cow(self.env, &mut NullInterner, self.typ);
         let arena = self.arena;
         match **typ {
             Type::Record(ref row) => {

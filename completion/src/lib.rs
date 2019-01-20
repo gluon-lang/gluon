@@ -8,10 +8,7 @@ extern crate walkdir;
 
 extern crate gluon_base as base;
 
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::iter::once;
-use std::path::PathBuf;
+use std::{borrow::Cow, cmp::Ordering, iter::once, path::PathBuf};
 
 use codespan::ByteOffset;
 
@@ -19,20 +16,23 @@ use either::Either;
 
 use itertools::Itertools;
 
-use crate::base::ast::{
-    walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent,
-    SpannedPattern, Typed, TypedIdent, Visitor,
-};
-use crate::base::filename_to_module;
-use crate::base::fnv::{FnvMap, FnvSet};
-use crate::base::kind::{ArcKind, Kind};
-use crate::base::metadata::Metadata;
-use crate::base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use crate::base::resolve;
-use crate::base::scoped_map::ScopedMap;
-use crate::base::symbol::{Name, Symbol, SymbolRef};
-use crate::base::types::{
-    walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv, TypeExt,
+use crate::base::{
+    ast::{
+        walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent,
+        SpannedPattern, Typed, TypedIdent, Visitor,
+    },
+    filename_to_module,
+    fnv::{FnvMap, FnvSet},
+    kind::{ArcKind, Kind},
+    metadata::Metadata,
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    resolve,
+    scoped_map::ScopedMap,
+    symbol::{Name, Symbol, SymbolRef},
+    types::{
+        walk_type_, AliasData, ArcType, ControlVisitation, Generic, NullInterner, Type, TypeEnv,
+        TypeExt,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -161,7 +161,7 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
                 ref types,
                 ..
             } => {
-                let unaliased = resolve::remove_aliases(&self.env, typ.clone());
+                let unaliased = resolve::remove_aliases(&self.env, &mut NullInterner, typ.clone());
                 for ast_field in types {
                     if let Some(field) = unaliased
                         .type_field_iter()
@@ -364,6 +364,7 @@ where
                     if ident.span.containment(self.pos) == Ordering::Equal {
                         let typ = resolve::remove_aliases(
                             &crate::base::ast::EmptyEnv::default(),
+                            &mut NullInterner,
                             record_type.clone(),
                         )
                         .row_iter()
@@ -1180,7 +1181,7 @@ impl SuggestionQuery {
                             ..
                         } => {
                             if let Ok(typ) = expr.try_type_of(&env) {
-                                let typ = resolve::remove_aliases(env, typ);
+                                let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
                                 self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
                             }
                             ""
@@ -1202,7 +1203,7 @@ impl SuggestionQuery {
                     Match::Expr(context) => match context.value {
                         Expr::Projection(ref expr, _, _) => {
                             if let Ok(typ) = expr.try_type_of(&env) {
-                                let typ = resolve::remove_aliases(&env, typ);
+                                let typ = resolve::remove_aliases(&env, &mut NullInterner, typ);
                                 let id = ident.as_ref();
 
                                 let iter = typ
@@ -1246,7 +1247,7 @@ impl SuggestionQuery {
                             },
                         ..
                     }) => {
-                        let typ = resolve::remove_aliases_cow(env, typ);
+                        let typ = resolve::remove_aliases_cow(env, &mut NullInterner, typ);
                         self.suggest_fields_of_type(
                             &mut result,
                             types,
@@ -1292,7 +1293,7 @@ impl SuggestionQuery {
                         ..
                     } => {
                         if let Ok(typ) = pattern.try_type_of(env) {
-                            let typ = resolve::remove_aliases(env, typ);
+                            let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
                             self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
                         }
                     }

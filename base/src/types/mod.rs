@@ -1,11 +1,13 @@
 use std::{
     borrow::{Borrow, Cow},
+    cell::RefCell,
     fmt,
     hash::Hash,
     iter,
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -18,7 +20,7 @@ use stable_deref_trait::StableDeref;
 use itertools::Itertools;
 
 use crate::ast::{Commented, EmptyEnv, IdentEnv};
-use crate::fnv::FnvMap;
+use crate::fnv::{FnvMap, FnvSet};
 use crate::kind::{ArcKind, Kind, KindEnv};
 use crate::merge::merge;
 use crate::metadata::Comment;
@@ -156,6 +158,15 @@ where
         Type::poly_effect(fields, rest)
     }
 
+    pub fn array(&self, typ: T) -> T {
+        Type::app(self.array_builtin(), collect![typ])
+    }
+}
+
+impl<Id, T> TypeCache<Id, T>
+where
+    T: Clone,
+{
     pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
             BuiltinType::String => self.string(),
@@ -166,10 +177,6 @@ where
             BuiltinType::Array => self.array_builtin(),
             BuiltinType::Function => self.function_builtin(),
         }
-    }
-
-    pub fn array(&self, typ: T) -> T {
-        Type::app(self.array_builtin(), collect![typ])
     }
 }
 
@@ -392,7 +399,9 @@ where
             })
             .collect()
     }
+}
 
+impl<Id, T> Alias<Id, T> {
     pub fn as_type(&self) -> &T {
         &self._typ
     }
@@ -404,13 +413,13 @@ where
 
 impl<Id, T> Alias<Id, T>
 where
-    T: From<Type<Id, T>> + Deref<Target = Type<Id, T>> + Clone,
+    T: TypeExt<Id> + Clone,
     Id: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
-    pub fn typ(&self) -> Cow<T> {
+    pub fn typ(&self, interner: &mut impl TypeInterner<Id, T>) -> Cow<T> {
         match *self._typ {
-            Type::Alias(ref alias) => alias.typ(),
+            Type::Alias(ref alias) => alias.typ(interner),
             _ => unreachable!(),
         }
     }
@@ -430,7 +439,7 @@ where
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
 /// for cheap conversion back into a type as well.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -459,6 +468,27 @@ pub struct AliasRef<Id, T> {
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
 
+impl<Id, T> Eq for AliasRef<Id, T> where AliasData<Id, T>: Eq {}
+impl<Id, T> PartialEq for AliasRef<Id, T>
+where
+    AliasData<Id, T>: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+impl<Id, T> Hash for AliasRef<Id, T>
+where
+    AliasData<Id, T>: Hash,
+{
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (**self).hash(state)
+    }
+}
+
 impl<Id, T> AliasRef<Id, T> {
     pub fn try_get_alias_mut(&mut self) -> Option<&mut AliasData<Id, T>> {
         let index = self.index;
@@ -472,33 +502,36 @@ impl<Id, T> AliasRef<Id, T> {
 
 impl<Id, T> AliasRef<Id, T>
 where
-    T: From<Type<Id, T>> + Deref<Target = Type<Id, T>> + Clone,
+    T: TypeExt<Id> + Clone,
     Id: Clone + PartialEq,
 {
-    pub fn typ(&self) -> Cow<T> {
-        let opt = walk_move_type_opt(&self.typ, &mut |typ: &T| {
-            match **typ {
-                Type::Ident(ref id) => {
-                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
-                    // needed to resolve the type later on
-                    let replacement =
-                        self.group
+    pub fn typ(&self, interner: &mut impl TypeInterner<Id, T>) -> Cow<T> {
+        let opt = walk_move_type_opt(
+            &self.typ,
+            &mut InternerVisitor::new(interner, |interner, typ: &T| {
+                match **typ {
+                    Type::Ident(ref id) => {
+                        // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
+                        // needed to resolve the type later on
+                        let replacement = self
+                            .group
                             .iter()
                             .position(|alias| alias.name == *id)
                             .map(|index| {
-                                T::from(Type::Alias(AliasRef {
+                                interner.intern(Type::Alias(AliasRef {
                                     index,
                                     group: self.group.clone(),
                                 }))
                             });
-                    if replacement.is_none() {
-                        info!("Alias group were not able to resolve an identifier");
+                        if replacement.is_none() {
+                            info!("Alias group were not able to resolve an identifier");
+                        }
+                        replacement
                     }
-                    replacement
+                    _ => None,
                 }
-                _ => None,
-            }
-        });
+            }),
+        );
         match opt {
             Some(typ) => Cow::Owned(typ),
             None => Cow::Borrowed(&self.typ),
@@ -566,13 +599,7 @@ where
     pub fn aliased_type(&self) -> &T {
         &self.typ
     }
-}
 
-impl<Id, T> AliasData<Id, T>
-where
-    T: From<Type<Id, T>>,
-    T: Deref<Target = Type<Id, T>>,
-{
     pub fn kind(&self) -> Cow<ArcKind> {
         let result_type = self.unresolved_type().kind();
         self.params().iter().rev().fold(result_type, |acc, param| {
@@ -1189,6 +1216,12 @@ impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
     }
 }
 
+impl<Id> fmt::Pointer for ArcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:p}", &**self)
+    }
+}
+
 // Safe since `Arc` implements it
 unsafe impl<Id> StableDeref for ArcType<Id> {}
 
@@ -1259,9 +1292,7 @@ where
     }
 }
 
-pub trait TypeExt<Id>:
-    Deref<Target = Type<Id, Self>> + Clone + From<Type<Id, Self>> + Sized
-{
+pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
     fn new(typ: Type<Id, Self>) -> Self;
 
     fn strong_count(typ: &Self) -> usize;
@@ -1308,6 +1339,7 @@ pub trait TypeExt<Id>:
 
     fn skolemize_in(
         &self,
+        interner: &mut impl TypeInterner<Id, Self>,
         named_variables: &mut FnvMap<Id, Self>,
         f: impl FnOnce(Self) -> Self,
     ) -> Self
@@ -1315,7 +1347,7 @@ pub trait TypeExt<Id>:
         Id: Clone + Eq + Hash,
         Self: Clone + From<Type<Id, Self>>,
     {
-        let skolemized = self.skolemize(named_variables);
+        let skolemized = self.skolemize(interner, named_variables);
         let new_type = f(skolemized);
         new_type.with_forall(self)
     }
@@ -1334,10 +1366,14 @@ pub trait TypeExt<Id>:
         Type::forall_with_vars(params, self, Some(vars))
     }
 
-    fn skolemize(&self, named_variables: &mut FnvMap<Id, Self>) -> Self
+    fn skolemize(
+        &self,
+        interner: &mut impl TypeInterner<Id, Self>,
+        named_variables: &mut FnvMap<Id, Self>,
+    ) -> Self
     where
         Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
+        Self: Clone,
     {
         let mut typ = self;
         while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
@@ -1345,11 +1381,11 @@ pub trait TypeExt<Id>:
                 let var = var.as_variable().unwrap();
                 (
                     param.id.clone(),
-                    Type::skolem(Skolem {
+                    interner.intern(Type::Skolem(Skolem {
                         name: param.id.clone(),
                         id: var.id,
                         kind: var.kind.clone(),
-                    }),
+                    })),
                 )
             });
             named_variables.extend(iter);
@@ -1358,15 +1394,19 @@ pub trait TypeExt<Id>:
         if named_variables.is_empty() {
             typ.clone()
         } else {
-            typ.skolemize_(named_variables)
+            typ.skolemize_(interner, named_variables)
                 .unwrap_or_else(|| typ.clone())
         }
     }
 
-    fn skolemize_(&self, named_variables: &mut FnvMap<Id, Self>) -> Option<Self>
+    fn skolemize_(
+        &self,
+        interner: &mut impl TypeInterner<Id, Self>,
+        named_variables: &mut FnvMap<Id, Self>,
+    ) -> Option<Self>
     where
         Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
+        Self: Clone,
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
@@ -1376,9 +1416,9 @@ pub trait TypeExt<Id>:
                     .flat_map(|param| named_variables.remove_entry(&param.id))
                     .collect();
 
-                let new_typ = typ.skolemize_(named_variables);
-                let new_typ =
-                    new_typ.map(|typ| Type::forall_with_vars(params.clone(), typ, vars.clone()));
+                let new_typ = typ.skolemize_(interner, named_variables);
+                let new_typ = new_typ
+                    .map(|typ| interner.intern(Type::Forall(params.clone(), typ, vars.clone())));
 
                 named_variables.extend(removed);
 
@@ -1386,15 +1426,21 @@ pub trait TypeExt<Id>:
             }
             _ => walk_move_type_opt(
                 self,
-                &mut ControlVisitation(|typ: &Self| typ.skolemize_(named_variables)),
+                &mut InternerVisitor::control(interner, |interner, typ: &Self| {
+                    typ.skolemize_(interner, named_variables)
+                }),
             ),
         }
     }
 
-    fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, Self>) -> Self
+    fn instantiate_generics(
+        &self,
+        interner: &mut impl TypeInterner<Id, Self>,
+        named_variables: &mut FnvMap<Id, Self>,
+    ) -> Self
     where
         Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
+        Self: Clone,
     {
         let mut typ = self;
         while let Type::Forall(params, inner_type, Some(vars)) = &**typ {
@@ -1409,15 +1455,19 @@ pub trait TypeExt<Id>:
         if named_variables.is_empty() {
             typ.clone()
         } else {
-            typ.instantiate_generics_(named_variables)
+            typ.instantiate_generics_(interner, named_variables)
                 .unwrap_or_else(|| typ.clone())
         }
     }
 
-    fn instantiate_generics_(&self, named_variables: &FnvMap<Id, Self>) -> Option<Self>
+    fn instantiate_generics_(
+        &self,
+        interner: &mut impl TypeInterner<Id, Self>,
+        named_variables: &FnvMap<Id, Self>,
+    ) -> Option<Self>
     where
         Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
+        Self: Clone,
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
@@ -1431,12 +1481,14 @@ pub trait TypeExt<Id>:
                     named_variables.remove(&param.id);
                 }
 
-                typ.instantiate_generics_(&named_variables)
-                    .map(|typ| Type::Forall(params.clone(), typ, vars.clone()).into())
+                typ.instantiate_generics_(interner, &named_variables)
+                    .map(|typ| interner.intern(Type::Forall(params.clone(), typ, vars.clone())))
             }
             _ => walk_move_type_opt(
                 self,
-                &mut ControlVisitation(|typ: &Self| typ.instantiate_generics_(named_variables)),
+                &mut InternerVisitor::control(interner, |interner, typ: &Self| {
+                    typ.instantiate_generics_(interner, named_variables)
+                }),
             ),
         }
     }
@@ -1471,9 +1523,14 @@ pub trait TypeExt<Id>:
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    fn apply_args(&self, params: &[Generic<Id>], args: &[Self]) -> Option<Self>
+    fn apply_args(
+        &self,
+        params: &[Generic<Id>],
+        args: &[Self],
+        interner: &mut impl TypeInterner<Id, Self>,
+    ) -> Option<Self>
     where
-        Id: Clone + PartialEq,
+        Id: Clone + Eq + Hash,
     {
         let typ = self.clone();
 
@@ -1503,25 +1560,32 @@ pub trait TypeExt<Id>:
                 .take(arg_types.len() + args.len() - params.len())
                 .cloned()
                 .collect();
-            Type::app(d.cloned().unwrap_or_else(Type::function_builtin), arg_types)
+
+            let d = d
+                .cloned()
+                .unwrap_or_else(|| interner.intern(Type::Builtin(BuiltinType::Function)));
+            interner.app(d, arg_types)
         } else {
             return None;
         };
 
-        Some(walk_move_type(typ.clone(), &mut |typ| {
-            match **typ {
-                Type::Generic(ref generic) => {
-                    // Replace the generic variable with the type from the list
-                    // or if it is not found the make a fresh variable
-                    params
-                        .iter()
-                        .zip(args)
-                        .find(|&(arg, _)| arg.id == generic.id)
-                        .map(|(_, typ)| typ.clone())
+        Some(walk_move_type(
+            typ.clone(),
+            &mut InternerVisitor::new(interner, |_, typ: &Self| {
+                match **typ {
+                    Type::Generic(ref generic) => {
+                        // Replace the generic variable with the type from the list
+                        // or if it is not found the make a fresh variable
+                        params
+                            .iter()
+                            .zip(args)
+                            .find(|&(arg, _)| arg.id == generic.id)
+                            .map(|(_, typ)| typ.clone())
+                    }
+                    _ => None,
                 }
-                _ => None,
-            }
-        }))
+            }),
+        ))
     }
 }
 
@@ -2563,13 +2627,37 @@ where
     a.expect("fold_type")
 }
 
-pub trait TypeVisitor<I, T> {
+pub trait TypeVisitor<Id, T> {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
-        I: Clone,
+        T: Deref<Target = Type<Id, T>> + Clone,
+        Id: Clone,
     {
         walk_move_type_opt(typ, self)
+    }
+
+    fn make(&mut self, typ: Type<Id, T>) -> T;
+
+    fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
+        self.forall_with_vars(params, typ, None)
+    }
+
+    fn forall_with_vars(&mut self, params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
+        if let Some(ref vars) = vars {
+            debug_assert!(vars.len() == params.len());
+        }
+        if params.is_empty() {
+            typ
+        } else {
+            self.make(Type::Forall(params, typ, vars))
+        }
+    }
+    fn app(&mut self, id: T, args: AppVec<T>) -> T {
+        if args.is_empty() {
+            id
+        } else {
+            self.make(Type::App(id, args))
+        }
     }
 }
 
@@ -2580,6 +2668,7 @@ pub trait Walker<'a, T> {
 impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
 where
     F: FnMut(&T) -> Option<T>,
+    T: From<Type<I, T>>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -2590,6 +2679,462 @@ where
         let new_type2 = self(new_type.as_ref().map_or(typ, |t| t));
         new_type2.or(new_type)
     }
+
+    fn make(&mut self, typ: Type<I, T>) -> T {
+        T::from(typ)
+    }
+}
+
+pub struct InternerVisitor<'i, F, T> {
+    interner: &'i mut T,
+    visitor: F,
+}
+
+pub trait TypeInterner<Id, T> {
+    fn intern(&mut self, typ: Type<Id, T>) -> T;
+
+    fn hole(&mut self) -> T {
+        self.intern(Type::Hole)
+    }
+
+    fn opaque(&mut self) -> T {
+        self.intern(Type::Opaque)
+    }
+
+    fn error(&mut self) -> T {
+        self.intern(Type::Error)
+    }
+
+    fn builtin(&mut self, typ: BuiltinType) -> T {
+        self.intern(Type::Builtin(typ))
+    }
+
+    fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
+        self.forall_with_vars(params, typ, None)
+    }
+
+    fn forall_with_vars(&mut self, params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
+        if let Some(ref vars) = vars {
+            debug_assert!(vars.len() == params.len());
+        }
+        if params.is_empty() {
+            typ
+        } else {
+            self.intern(Type::Forall(params, typ, vars))
+        }
+    }
+
+    fn with_forall(&mut self, typ: T, from: &T) -> T
+    where
+        Id: Clone + Eq + Hash,
+        T: TypeExt<Id> + Clone,
+    {
+        let mut params = Vec::new();
+        let mut vars = Vec::new();
+        for (param, var) in forall_params_vars(from) {
+            params.push(param.clone());
+            vars.push(var.clone());
+        }
+        self.forall_with_vars(params, typ, Some(vars))
+    }
+
+    fn array(&mut self, typ: T) -> T {
+        let a = self.array_builtin();
+        self.app(a, collect![typ])
+    }
+
+    fn array_builtin(&mut self) -> T {
+        self.builtin(BuiltinType::Array)
+    }
+
+    fn app(&mut self, id: T, args: AppVec<T>) -> T {
+        if args.is_empty() {
+            id
+        } else {
+            self.intern(Type::App(id, args))
+        }
+    }
+
+    fn variant(&mut self, fields: Vec<Field<Id, T>>) -> T {
+        let empty_row = self.empty_row();
+        self.poly_variant(fields, empty_row)
+    }
+
+    fn poly_variant(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        let row = self.extend_row(Vec::new(), fields, rest);
+        self.intern(Type::Variant(row))
+    }
+
+    fn effect(&mut self, fields: Vec<Field<Id, T>>) -> T {
+        let empty_row = self.empty_row();
+        self.poly_effect(fields, empty_row)
+    }
+
+    fn poly_effect(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        let extend_row = self.extend_row(Vec::new(), fields, rest);
+        self.intern(Type::Effect(extend_row))
+    }
+
+    fn tuple<S, I>(&mut self, symbols: &mut S, elems: I) -> T
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+    {
+        let t = self.tuple_(symbols, elems);
+        self.intern(t)
+    }
+
+    fn tuple_<S, I>(&mut self, symbols: &mut S, elems: I) -> Type<Id, T>
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+    {
+        let empty_row = self.empty_row();
+        Type::Record(
+            self.extend_row(
+                vec![],
+                elems
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, typ)| Field {
+                        name: symbols.from_str(&format!("_{}", i)),
+                        typ,
+                    })
+                    .collect(),
+                empty_row,
+            ),
+        )
+    }
+
+    fn record(&mut self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+        let empty_row = self.empty_row();
+        self.poly_record(types, fields, empty_row)
+    }
+
+    fn poly_record(
+        &mut self,
+        types: Vec<Field<Id, Alias<Id, T>>>,
+        fields: Vec<Field<Id, T>>,
+        rest: T,
+    ) -> T {
+        let row = self.extend_row(types, fields, rest);
+        self.intern(Type::Record(row))
+    }
+
+    fn extend_row(
+        &mut self,
+        types: Vec<Field<Id, Alias<Id, T>>>,
+        fields: Vec<Field<Id, T>>,
+        rest: T,
+    ) -> T {
+        if types.is_empty() && fields.is_empty() {
+            rest
+        } else {
+            self.intern(Type::ExtendRow {
+                types,
+                fields,
+                rest,
+            })
+        }
+    }
+
+    fn empty_row(&mut self) -> T {
+        self.intern(Type::EmptyRow)
+    }
+
+    fn function<I>(&mut self, args: I, ret: T) -> T
+    where
+        T: Clone,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        self.function_type(ArgType::Explicit, args, ret)
+    }
+
+    fn function_implicit<I>(&mut self, args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        self.function_type(ArgType::Implicit, args, ret)
+    }
+
+    fn function_type<I>(&mut self, arg_type: ArgType, args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        args.into_iter().rev().fold(ret, |body, arg| {
+            self.intern(Type::Function(arg_type, arg, body))
+        })
+    }
+
+    fn generic(&mut self, typ: Generic<Id>) -> T {
+        self.intern(Type::Generic(typ))
+    }
+
+    fn skolem(&mut self, typ: Skolem<Id>) -> T {
+        self.intern(Type::Skolem(typ))
+    }
+
+    fn variable(&mut self, typ: TypeVariable) -> T {
+        self.intern(Type::Variable(typ))
+    }
+
+    fn alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+        self.intern(Type::Alias(AliasRef {
+            index: 0,
+            group: Arc::new(vec![AliasData { name, args, typ }]),
+        }))
+    }
+
+    fn ident(&mut self, id: Id) -> T {
+        self.intern(Type::Ident(id))
+    }
+
+    fn projection(&mut self, id: AppVec<Id>) -> T {
+        self.intern(Type::Projection(id))
+    }
+
+    fn function_builtin(&mut self) -> T {
+        self.builtin(BuiltinType::Function)
+    }
+
+    fn string(&mut self) -> T {
+        self.builtin(BuiltinType::String)
+    }
+
+    fn char(&mut self) -> T {
+        self.builtin(BuiltinType::Char)
+    }
+
+    fn byte(&mut self) -> T {
+        self.builtin(BuiltinType::Byte)
+    }
+
+    fn int(&mut self) -> T {
+        self.builtin(BuiltinType::Int)
+    }
+
+    fn float(&mut self) -> T {
+        self.builtin(BuiltinType::Float)
+    }
+
+    fn unit(&mut self) -> T {
+        self.record(vec![], vec![])
+    }
+
+    fn builtin_type(&mut self, typ: BuiltinType) -> T {
+        match typ {
+            BuiltinType::String => self.string(),
+            BuiltinType::Byte => self.byte(),
+            BuiltinType::Char => self.char(),
+            BuiltinType::Int => self.int(),
+            BuiltinType::Float => self.float(),
+            BuiltinType::Array => self.array_builtin(),
+            BuiltinType::Function => self.function_builtin(),
+        }
+    }
+
+    fn new_alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+        Alias {
+            _typ: self.alias(name, args, typ),
+            _marker: PhantomData,
+        }
+    }
+
+    fn new_data_alias(&mut self, data: AliasData<Id, T>) -> Alias<Id, T> {
+        Alias {
+            _typ: self.intern(Type::Alias(AliasRef {
+                index: 0,
+                group: Arc::new(vec![data]),
+            })),
+            _marker: PhantomData,
+        }
+    }
+
+    fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
+        let group = Arc::new(group);
+        (0..group.len())
+            .map(|index| Alias {
+                _typ: self.intern(Type::Alias(AliasRef {
+                    index,
+                    group: group.clone(),
+                })),
+                _marker: PhantomData,
+            })
+            .collect()
+    }
+}
+
+impl<'b, Id, T, V> TypeInterner<Id, T> for &'b Rc<V>
+where
+    for<'a> &'a V: TypeInterner<Id, T>,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        (&***self).intern(typ)
+    }
+}
+
+impl<Id, T, V> TypeInterner<Id, T> for Rc<V>
+where
+    for<'a> &'a V: TypeInterner<Id, T>,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        (&**self).intern(typ)
+    }
+}
+
+impl<'a, Id, T, V> TypeInterner<Id, T> for &'a RefCell<V>
+where
+    V: TypeInterner<Id, T>,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        self.borrow_mut().intern(typ)
+    }
+}
+
+pub type SharedInterner<T> = Rc<RefCell<FnvSet<Interned<T>>>>;
+
+pub struct NullInterner;
+
+impl<Id, T> TypeInterner<Id, T> for NullInterner
+where
+    T: From<Type<Id, T>>,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        T::from(typ)
+    }
+}
+
+#[derive(Default)]
+pub struct Interned<T>(T);
+
+impl<T> Eq for Interned<T>
+where
+    T: Deref,
+    T::Target: Eq,
+{
+}
+
+impl<T> PartialEq for Interned<T>
+where
+    T: Deref,
+    T::Target: PartialEq,
+{
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        *self.0 == *other.0
+    }
+}
+
+impl<T> std::hash::Hash for Interned<T>
+where
+    T: Deref,
+    T::Target: std::hash::Hash,
+{
+    #[inline(always)]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (*self.0).hash(state)
+    }
+}
+
+impl<Id, T> Borrow<Type<Id, T>> for Interned<T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    fn borrow(&self) -> &Type<Id, T> {
+        &self.0
+    }
+}
+
+pub trait TypeInternerAlloc<Id, T> {
+    fn alloc(typ: Type<Id, T>) -> T;
+}
+
+impl<Id, T> TypeInterner<Id, T> for FnvSet<Interned<T>>
+where
+    T: TypeInternerAlloc<Id, T> + TypeExt<Id> + Eq + Hash,
+    Id: Eq + Hash,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        if let Some(t) = self.get(&typ) {
+            return t.0.clone();
+        }
+
+        let typ = T::alloc(typ);
+        self.insert(Interned(typ.clone()));
+        typ
+    }
+}
+
+impl<'i, F, V> InternerVisitor<'i, F, V> {
+    pub fn new<I, T>(interner: &'i mut V, visitor: F) -> Self
+    where
+        F: FnMut(&mut V, &T) -> Option<T>,
+        T: TypeExt<I>,
+        V: TypeInterner<I, T>,
+    {
+        InternerVisitor { interner, visitor }
+    }
+
+    pub fn control<I, T>(
+        interner: &'i mut V,
+        visitor: F,
+    ) -> InternerVisitor<'i, ControlVisitation<F>, V>
+    where
+        F: FnMut(&mut V, &T) -> Option<T>,
+        T: TypeExt<I>,
+        V: TypeInterner<I, T>,
+    {
+        InternerVisitor {
+            interner,
+            visitor: ControlVisitation(visitor),
+        }
+    }
+}
+
+impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, F, V>
+where
+    F: FnMut(&mut V, &T) -> Option<T>,
+    T: TypeExt<I>,
+    V: TypeInterner<I, T>,
+{
+    fn visit(&mut self, typ: &T) -> Option<T>
+    where
+        T: Deref<Target = Type<I, T>> + Clone,
+        I: Clone,
+    {
+        let new_type = walk_move_type_opt(typ, self);
+        let new_type2 = (self.visitor)(self.interner, new_type.as_ref().map_or(typ, |t| t));
+        new_type2.or(new_type)
+    }
+
+    fn make(&mut self, typ: Type<I, T>) -> T {
+        self.interner.intern(typ)
+    }
+}
+
+impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, ControlVisitation<F>, V>
+where
+    F: FnMut(&mut V, &T) -> Option<T>,
+    T: TypeExt<I>,
+    V: TypeInterner<I, T>,
+{
+    fn visit(&mut self, typ: &T) -> Option<T>
+    where
+        T: Deref<Target = Type<I, T>> + Clone,
+        I: Clone,
+    {
+        (self.visitor.0)(self.interner, typ)
+    }
+
+    fn make(&mut self, typ: Type<I, T>) -> T {
+        self.interner.intern(typ)
+    }
 }
 
 /// Wrapper type which allows functions to control how to traverse the members of the type
@@ -2598,6 +3143,7 @@ pub struct ControlVisitation<F: ?Sized>(pub F);
 impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 where
     F: FnMut(&T) -> Option<T>,
+    T: From<Type<I, T>>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -2605,6 +3151,10 @@ where
         I: Clone,
     {
         (self.0)(typ)
+    }
+
+    fn make(&mut self, typ: Type<I, T>) -> T {
+        T::from(typ)
     }
 }
 
@@ -2648,8 +3198,8 @@ where
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
 where
-    F: FnMut(&T) -> Option<T>,
-    T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+    F: TypeVisitor<I, T>,
+    T: Deref<Target = Type<I, T>> + Clone,
     I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
@@ -2658,7 +3208,7 @@ where
 pub fn visit_type_opt<F: ?Sized, I, T>(typ: &T, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
-    T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+    T: Deref<Target = Type<I, T>> + Clone,
     I: Clone,
 {
     f.visit(typ)
@@ -2667,28 +3217,28 @@ where
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
-    T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+    T: Deref<Target = Type<I, T>> + Clone,
     I: Clone,
 {
     match *typ {
         Type::Forall(ref args, ref typ, ref vars) => f
             .visit(typ)
-            .map(|typ| T::from(Type::Forall(args.clone(), typ, vars.clone()))),
+            .map(|typ| f.forall_with_vars(args.clone(), typ, vars.clone())),
 
         Type::Function(arg_type, ref arg, ref ret) => {
             let new_arg = f.visit(arg);
             let new_ret = f.visit(ret);
             merge(arg, new_arg, ret, new_ret, |arg, ret| {
-                T::from(Type::Function(arg_type, arg, ret))
+                f.make(Type::Function(arg_type, arg, ret))
             })
         }
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
-            merge(id, f.visit(id), args, new_args, Type::app)
+            merge(id, f.visit(id), args, new_args, |x, y| f.app(x, y))
         }
-        Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
-        Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
-        Type::Effect(ref row) => f.visit(row).map(|row| T::from(Type::Effect(row))),
+        Type::Record(ref row) => f.visit(row).map(|row| f.make(Type::Record(row))),
+        Type::Variant(ref row) => f.visit(row).map(|row| f.make(Type::Variant(row))),
+        Type::Effect(ref row) => f.visit(row).map(|row| f.make(Type::Effect(row))),
         Type::ExtendRow {
             ref types,
             ref fields,
@@ -2700,7 +3250,11 @@ where
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                Type::extend_row(types.clone(), fields, rest)
+                f.make(Type::ExtendRow {
+                    types: types.clone(),
+                    fields,
+                    rest,
+                })
             })
         }
         Type::Hole
@@ -2758,7 +3312,7 @@ where
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
 where
     T: Deref<Target = Type<Id, T>>,
-    U: From<Type<Id, U>> + Clone,
+    U: Clone,
     Id: Clone,
     F: FnMut(&T) -> U,
 {
@@ -2769,45 +3323,66 @@ where
     }
 }
 
-pub fn translate_type<Id, T, U>(type_cache: &TypeCache<Id, U>, arc_type: &T) -> U
+pub fn translate_type<Id, T, U>(
+    type_cache: &TypeCache<Id, U>,
+    interner: &mut impl TypeInterner<Id, U>,
+    arc_type: &T,
+) -> U
 where
     T: Deref<Target = Type<Id, T>>,
-    U: From<Type<Id, U>> + Clone,
+    U: Clone,
     Id: Clone,
 {
-    translate_type_with(type_cache, arc_type, |typ| translate_type(type_cache, typ))
+    translate_type_with(type_cache, interner, arc_type, |interner, typ| {
+        translate_type(type_cache, interner, typ)
+    })
 }
 
-pub fn translate_type_with<Id, T, U, F>(
+pub fn translate_type_with<Id, T, U, I, F>(
     cache: &TypeCache<Id, U>,
+    interner: &mut I,
     typ: &Type<Id, T>,
     mut translate: F,
 ) -> U
 where
     T: Deref<Target = Type<Id, T>>,
-    U: From<Type<Id, U>> + Clone,
+    U: Clone,
     Id: Clone,
-    F: FnMut(&T) -> U,
+    F: FnMut(&mut I, &T) -> U,
+    I: TypeInterner<Id, U>,
 {
+    macro_rules! intern {
+        ($e: expr) => {{
+            let t = $e;
+            interner.intern(t)
+        }};
+    }
     match *typ {
         Type::Function(arg_type, ref arg, ref ret) => {
-            U::from(Type::Function(arg_type, translate(arg), translate(ret)))
+            let t = Type::Function(arg_type, translate(interner, arg), translate(interner, ret));
+            interner.intern(t)
         }
-        Type::App(ref f, ref args) => Type::app(
-            translate(f),
-            args.iter().map(|typ| translate(typ)).collect(),
-        ),
-        Type::Record(ref row) => U::from(Type::Record(translate(row))),
-        Type::Variant(ref row) => U::from(Type::Variant(translate(row))),
-        Type::Effect(ref row) => U::from(Type::Effect(translate(row))),
-        Type::Forall(ref params, ref typ, ref skolem) => U::from(Type::Forall(
-            params.clone(),
-            translate(typ),
-            skolem
-                .as_ref()
-                .map(|ts| ts.iter().map(|t| translate(t)).collect()),
-        )),
-        Type::Skolem(ref skolem) => U::from(Type::Skolem(Skolem {
+        Type::App(ref f, ref args) => {
+            let t = Type::App(
+                translate(interner, f),
+                args.iter().map(|typ| translate(interner, typ)).collect(),
+            );
+            interner.intern(t)
+        }
+        Type::Record(ref row) => intern!(Type::Record(translate(interner, row))),
+        Type::Variant(ref row) => intern!(Type::Variant(translate(interner, row))),
+        Type::Effect(ref row) => intern!(Type::Effect(translate(interner, row))),
+        Type::Forall(ref params, ref typ, ref skolem) => {
+            let t = Type::Forall(
+                params.clone(),
+                translate(interner, typ),
+                skolem
+                    .as_ref()
+                    .map(|ts| ts.iter().map(|t| translate(interner, t)).collect()),
+            );
+            interner.intern(t)
+        }
+        Type::Skolem(ref skolem) => interner.intern(Type::Skolem(Skolem {
             name: skolem.name.clone(),
             id: skolem.id.clone(),
             kind: skolem.kind.clone(),
@@ -2816,52 +3391,62 @@ where
             ref types,
             ref fields,
             ref rest,
-        } => Type::extend_row(
-            types
+        } => {
+            let types = types
                 .iter()
                 .map(|field| Field {
                     name: field.name.clone(),
-                    typ: Alias::from(AliasRef {
-                        index: field.typ.index,
-                        group: Arc::new(
-                            field
-                                .typ
-                                .group
-                                .iter()
-                                .map(|alias_data| translate_alias(alias_data, &mut translate))
-                                .collect(),
-                        ),
-                    }),
+                    typ: Alias {
+                        _typ: intern!(Type::Alias(AliasRef {
+                            index: field.typ.index,
+                            group: Arc::new(
+                                field
+                                    .typ
+                                    .group
+                                    .iter()
+                                    .map(|alias_data| translate_alias(alias_data, |a| translate(
+                                        interner, a
+                                    )))
+                                    .collect(),
+                            ),
+                        })),
+                        _marker: PhantomData,
+                    },
                 })
-                .collect(),
-            fields
+                .collect();
+
+            let fields = fields
                 .iter()
                 .map(|field| Field {
                     name: field.name.clone(),
-                    typ: translate(&field.typ),
+                    typ: translate(interner, &field.typ),
                 })
-                .collect(),
-            translate(rest),
-        ),
+                .collect();
+
+            let rest = translate(interner, rest);
+
+            interner.extend_row(types, fields, rest)
+        }
         Type::Hole => cache.hole(),
         Type::Opaque => cache.opaque(),
         Type::Error => cache.error(),
         Type::Builtin(ref builtin) => cache.builtin_type(builtin.clone()),
-        Type::Variable(ref var) => Type::variable(var.clone()),
-        Type::Generic(ref gen) => Type::generic(gen.clone()),
-        Type::Ident(ref id) => Type::ident(id.clone()),
-        Type::Projection(ref ids) => Type::projection(ids.clone()),
-        Type::Alias(ref alias) => Type::Alias(AliasRef {
-            index: alias.index,
-            group: Arc::new(
-                alias
-                    .group
-                    .iter()
-                    .map(|alias_data| translate_alias(alias_data, &mut translate))
-                    .collect(),
-            ),
-        })
-        .into(),
+        Type::Variable(ref var) => interner.variable(var.clone()),
+        Type::Generic(ref gen) => interner.generic(gen.clone()),
+        Type::Ident(ref id) => interner.ident(id.clone()),
+        Type::Projection(ref ids) => interner.projection(ids.clone()),
+        Type::Alias(ref alias) => {
+            let group = alias
+                .group
+                .iter()
+                .map(|alias_data| translate_alias(alias_data, |a| translate(interner, a)))
+                .collect();
+
+            interner.intern(Type::Alias(AliasRef {
+                index: alias.index,
+                group: Arc::new(group),
+            }))
+        }
         Type::EmptyRow => cache.empty_row(),
     }
 }

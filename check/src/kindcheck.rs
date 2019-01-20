@@ -6,7 +6,7 @@ use crate::base::{
     merge,
     pos::{self, BytePos, HasSpan, Span, Spanned},
     symbol::Symbol,
-    types::{self, BuiltinType, Generic, Type, TypeEnv, Walker},
+    types::{self, BuiltinType, Generic, NullInterner, Type, TypeEnv, Walker},
 };
 
 use crate::{
@@ -76,7 +76,7 @@ impl<'a> KindCheck<'a> {
             locals: Vec::new(),
             info: info,
             idents: idents,
-            subs: Substitution::new(()),
+            subs: Substitution::new((), Default::default()),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
             kind_cache: kind_cache,
@@ -158,7 +158,7 @@ impl<'a> KindCheck<'a> {
 
     fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
         // Errors get reported in typecheck as well so ignore them here
-        crate::typecheck::translate_projected_type(self.info, self.idents, ids)
+        crate::typecheck::translate_projected_type(self.info, self.idents, &mut NullInterner, ids)
             .ok()
             .map(|typ| typ.kind().into_owned())
     }

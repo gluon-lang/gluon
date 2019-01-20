@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::symbol::Symbol;
-use crate::types::{AliasRef, Type, TypeEnv, TypeExt};
+use crate::types::{AliasRef, Type, TypeEnv, TypeExt, TypeInterner};
 
 quick_error! {
     #[derive(Debug, PartialEq)]
@@ -42,6 +42,7 @@ impl AliasRemover {
     pub fn canonical_alias<'t, F, T>(
         &mut self,
         env: &TypeEnv<Type = T>,
+        interner: &mut impl TypeInterner<Symbol, T>,
         typ: &'t T,
         mut canonical: F,
     ) -> Result<Cow<'t, T>, Error>
@@ -59,13 +60,15 @@ impl AliasRemover {
                 if canonical(alias) {
                     Cow::Borrowed(typ)
                 } else {
-                    match alias
-                        .typ()
-                        .apply_args(alias.params(), &typ.unapplied_args())
-                    {
-                        Some(typ) => {
-                            Cow::Owned(self.canonical_alias(env, &typ, canonical)?.into_owned())
-                        }
+                    match alias.typ(interner).apply_args(
+                        alias.params(),
+                        &typ.unapplied_args(),
+                        interner,
+                    ) {
+                        Some(typ) => Cow::Owned(
+                            self.canonical_alias(env, interner, &typ, canonical)?
+                                .into_owned(),
+                        ),
                         None => Cow::Borrowed(typ),
                     }
                 }
@@ -74,19 +77,29 @@ impl AliasRemover {
         })
     }
 
-    pub fn remove_aliases<T>(&mut self, env: &TypeEnv<Type = T>, mut typ: T) -> Result<T, Error>
+    pub fn remove_aliases<T>(
+        &mut self,
+        env: &TypeEnv<Type = T>,
+        interner: &mut impl TypeInterner<Symbol, T>,
+        mut typ: T,
+    ) -> Result<T, Error>
     where
         T: TypeExt<Symbol>,
     {
         loop {
-            typ = match self.remove_alias(env, &typ)? {
+            typ = match self.remove_alias(env, interner, &typ)? {
                 Some(typ) => typ,
                 None => return Ok(typ),
             };
         }
     }
 
-    pub fn remove_alias<T>(&mut self, env: &TypeEnv<Type = T>, typ: &T) -> Result<Option<T>, Error>
+    pub fn remove_alias<T>(
+        &mut self,
+        env: &TypeEnv<Type = T>,
+        interner: &mut impl TypeInterner<Symbol, T>,
+        typ: &T,
+    ) -> Result<Option<T>, Error>
     where
         T: TypeExt<Symbol>,
     {
@@ -101,8 +114,8 @@ impl AliasRemover {
                     return Ok(None);
                 }
                 Ok(alias
-                    .typ()
-                    .apply_args(alias.params(), &typ.unapplied_args()))
+                    .typ(interner)
+                    .apply_args(alias.params(), &typ.unapplied_args(), interner))
             }
             None => Ok(None),
         }
@@ -110,22 +123,31 @@ impl AliasRemover {
 }
 
 /// Removes type aliases from `typ` until it is an actual type
-pub fn remove_aliases<T>(env: &TypeEnv<Type = T>, mut typ: T) -> T
+pub fn remove_aliases<T>(
+    env: &TypeEnv<Type = T>,
+    interner: &mut impl TypeInterner<Symbol, T>,
+    mut typ: T,
+) -> T
 where
-    T: TypeExt<Symbol>,
+    T: TypeExt<Symbol> + ::std::fmt::Display,
 {
-    while let Ok(Some(new)) = remove_alias(env, &typ) {
+    while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
     }
     typ
 }
 
-pub fn remove_aliases_cow<'t, T>(env: &TypeEnv<Type = T>, typ: &'t T) -> Cow<'t, T>
+pub fn remove_aliases_cow<'t, T>(
+    env: &TypeEnv<Type = T>,
+
+    interner: &mut impl TypeInterner<Symbol, T>,
+    typ: &'t T,
+) -> Cow<'t, T>
 where
-    T: TypeExt<Symbol>,
+    T: TypeExt<Symbol> + ::std::fmt::Display,
 {
-    match remove_alias(env, typ) {
-        Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
+    match remove_alias(env, interner, typ) {
+        Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
         _ => Cow::Borrowed(typ),
     }
 }
@@ -134,6 +156,7 @@ where
 /// type that directly contains that alias
 pub fn canonical_alias<'t, F, T>(
     env: &TypeEnv<Type = T>,
+    interner: &mut impl TypeInterner<Symbol, T>,
     typ: &'t T,
     mut canonical: F,
 ) -> Cow<'t, T>
@@ -147,9 +170,11 @@ where
                 Cow::Borrowed(typ)
             } else {
                 alias
-                    .typ()
-                    .apply_args(alias.params(), &typ.unapplied_args())
-                    .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
+                    .typ(interner)
+                    .apply_args(alias.params(), &typ.unapplied_args(), interner)
+                    .map(|typ| {
+                        Cow::Owned(canonical_alias(env, interner, &typ, canonical).into_owned())
+                    })
                     .unwrap_or_else(|| Cow::Borrowed(typ))
             }
         }
@@ -159,9 +184,13 @@ where
 
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
-pub fn remove_alias<T>(env: &TypeEnv<Type = T>, typ: &T) -> Result<Option<T>, Error>
+pub fn remove_alias<T>(
+    env: &TypeEnv<Type = T>,
+    interner: &mut impl TypeInterner<Symbol, T>,
+    typ: &T,
+) -> Result<Option<T>, Error>
 where
-    T: TypeExt<Symbol>,
+    T: TypeExt<Symbol> + ::std::fmt::Display,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -169,8 +198,8 @@ where
             return None;
         }
         alias
-            .typ()
-            .apply_args(alias.params(), &typ.unapplied_args())
+            .typ(interner)
+            .apply_args(alias.params(), &typ.unapplied_args(), interner)
     }))
 }
 

@@ -60,7 +60,11 @@ macro_rules! type_cache {
                     _marker: ::std::marker::PhantomData,
                 }
             }
+        }
 
+        impl<$($args),*> $name<$($args),*>
+            where $typ: Clone,
+        {
             $(
                 pub fn $id(&self) -> $typ {
                     self.$id.clone()

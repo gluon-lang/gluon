@@ -92,25 +92,17 @@ pub fn typecheck(text: &str) -> Result<ArcType, Error> {
     t
 }
 
-pub struct MockEnv<T> {
-    bool: Alias<Symbol, T>,
-    bool_arc: Alias<Symbol, ArcType>,
+pub struct MockEnv {
+    bool: Alias<Symbol, ArcType>,
 }
 
-impl<T> MockEnv<T>
-where
-    T: TypeExt<Symbol>,
-{
-    pub fn new() -> MockEnv<T> {
+impl MockEnv {
+    pub fn new() -> MockEnv {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
 
-        let bool_sym = interner.symbol("Bool");
-        let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
-
         MockEnv {
-            bool: Alias::new(bool_sym, Vec::new(), bool_ty),
-            bool_arc: {
+            bool: {
                 let bool_sym = interner.symbol("Bool");
                 let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
                 Alias::new(bool_sym, Vec::new(), bool_ty)
@@ -119,7 +111,7 @@ where
     }
 }
 
-impl<T> KindEnv for MockEnv<T> {
+impl KindEnv for MockEnv {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         match id.definition_name() {
             "Bool" => Some(Kind::typ()),
@@ -128,19 +120,16 @@ impl<T> KindEnv for MockEnv<T> {
     }
 }
 
-impl<T> TypeEnv for MockEnv<T>
-where
-    T: TypeExt<Symbol>,
-{
-    type Type = T;
-    fn find_type(&self, id: &SymbolRef) -> Option<&T> {
+impl TypeEnv for MockEnv {
+    type Type = ArcType;
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.definition_name() {
             "False" | "True" => Some(&self.bool.as_type()),
             _ => None,
         }
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, T>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         match id.definition_name() {
             "Bool" => Some(&self.bool),
             _ => None,
@@ -148,16 +137,13 @@ where
     }
 }
 
-impl<T> PrimitiveEnv for MockEnv<T>
-where
-    T: TypeExt<Symbol>,
-{
+impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &ArcType {
-        &self.bool_arc.as_type()
+        &self.bool.as_type()
     }
 }
 
-impl<T> MetadataEnv for MockEnv<T> {
+impl MetadataEnv for MockEnv {
     fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
     }
@@ -334,7 +320,7 @@ pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> A
 /// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ, &mut |typ| match **typ {
+    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::ExtendRow {
             ref types,
             ref fields,

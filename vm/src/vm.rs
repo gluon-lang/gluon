@@ -11,7 +11,8 @@ use crate::base::kind::{ArcKind, Kind, KindEnv};
 use crate::base::metadata::{Metadata, MetadataEnv};
 use crate::base::symbol::{Name, Symbol, SymbolRef};
 use crate::base::types::{
-    Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv, TypeExt,
+    Alias, AliasData, AppVec, ArcType, Generic, NullInterner, PrimitiveEnv, Type, TypeCache,
+    TypeEnv, TypeExt,
 };
 use crate::base::DebugLevel;
 
@@ -353,8 +354,10 @@ impl VmEnv {
                 )));
             }
             typ = match typ {
-                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, typ),
-                Cow::Owned(typ) => Cow::Owned(resolve::remove_aliases(self, typ)),
+                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, &mut NullInterner, typ),
+                Cow::Owned(typ) => {
+                    Cow::Owned(resolve::remove_aliases(self, &mut NullInterner, typ))
+                }
             };
             // HACK Can't return the data directly due to the use of cow on the type
             let next_type = map_cow_option(typ.clone(), |typ| {

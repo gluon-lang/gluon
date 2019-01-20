@@ -24,7 +24,7 @@ use crate::base::metadata::Metadata;
 use crate::base::resolve;
 use crate::base::source::Source;
 use crate::base::symbol::{Name, NameBuf, Symbol, SymbolModule};
-use crate::base::types::{ArcType, Type};
+use crate::base::types::{ArcType, NullInterner, Type};
 
 use crate::check::{metadata, rename};
 
@@ -983,7 +983,8 @@ where
             vm1.execute_io_top(value.get_variant())
                 .map(move |value| {
                     // The type of the new value will be `a` instead of `IO a`
-                    let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);
+                    let actual =
+                        resolve::remove_aliases_cow(&*vm.get_env(), &mut NullInterner, &typ);
                     let actual = match **actual {
                         Type::App(_, ref arg) => arg[0].clone(),
                         _ => ice!("ICE: Expected IO type found: `{}`", actual),

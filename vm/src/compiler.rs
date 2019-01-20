@@ -8,7 +8,7 @@ use crate::base::{
     scoped_map::ScopedMap,
     source::Source,
     symbol::{Symbol, SymbolModule, SymbolRef},
-    types::{Alias, ArcType, BuiltinType, Type, TypeEnv, TypeExt},
+    types::{Alias, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
 };
 
 use crate::{
@@ -521,7 +521,7 @@ impl<'a> Compiler<'a> {
 
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
-        let typ = resolve::remove_aliases_cow(self, typ);
+        let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
         let mut iter = typ.remove_forall().row_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
@@ -538,7 +538,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
-        let x = resolve::remove_aliases_cow(self, typ);
+        let x = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
         match **x.remove_forall() {
             Type::Variant(ref row) => {
                 let mut iter = row.row_iter();
@@ -893,7 +893,8 @@ impl<'a> Compiler<'a> {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
-                let typ = resolve::remove_aliases_cow(self, &id.typ.remove_forall());
+                let typ =
+                    resolve::remove_aliases_cow(self, &mut NullInterner, &id.typ.remove_forall());
                 match **typ.remove_forall() {
                     Type::Record(_) => {
                         let index = function.add_record_map(
@@ -1011,7 +1012,11 @@ impl<'a> Compiler<'a> {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
             }
             Pattern::Record(ref fields) => {
-                let typ = resolve::remove_aliases(self, pattern_type.remove_forall().clone());
+                let typ = resolve::remove_aliases(
+                    self,
+                    &mut NullInterner,
+                    pattern_type.remove_forall().clone(),
+                );
                 let typ = typ.remove_forall();
                 match **typ {
                     Type::Record(_) => {

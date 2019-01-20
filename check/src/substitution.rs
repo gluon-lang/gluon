@@ -1,12 +1,13 @@
-use std::cell::RefCell;
-use std::default::Default;
-use std::fmt;
+use std::{cell::RefCell, default::Default, fmt, hash::Hash, ops::Deref};
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use crate::base::{
     fixed::{FixedMap, FixedVec},
-    types::{self, ArcType, Type, TypeVariable, Walker},
+    types::{
+        self, ArcType, InternerVisitor, SharedInterner, Type, TypeExt, TypeInterner,
+        TypeInternerAlloc, TypeVariable, Walker,
+    },
 };
 use crate::typ::RcType;
 
@@ -44,15 +45,37 @@ where
     /// `&T` from this map safely.
     types: FixedMap<u32, Box<T>>,
     factory: T::Factory,
+    interner: SharedInterner<T>,
+}
+
+impl<'a, Id, T> TypeInterner<Id, T> for Substitution<T>
+where
+    T: Substitutable + TypeExt<Id> + Eq + Hash + TypeInternerAlloc<Id, T>,
+    Id: Eq + Hash,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
+    }
+}
+
+impl<'a, Id, T> TypeInterner<Id, T> for &'a Substitution<T>
+where
+    T: Substitutable + TypeExt<Id> + Eq + Hash + TypeInternerAlloc<Id, T>,
+    Id: Eq + Hash,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
+    }
 }
 
 impl<T> Default for Substitution<T>
 where
-    T: Substitutable,
+    T: Substitutable + Eq + Hash + Deref,
     T::Factory: Default,
+    T::Target: Eq + Hash,
 {
     fn default() -> Substitution<T> {
-        Substitution::new(Default::default())
+        Substitution::new(Default::default(), Default::default())
     }
 }
 
@@ -225,16 +248,23 @@ where
     }
 }
 
-impl<T: Substitutable> Substitution<T> {
-    pub fn new(factory: T::Factory) -> Substitution<T> {
+impl<T> Substitution<T>
+where
+    T: Substitutable + Deref,
+    T::Target: Eq + Hash,
+{
+    pub fn new(factory: T::Factory, interner: SharedInterner<T>) -> Substitution<T> {
         Substitution {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
             factory: factory,
+            interner,
         }
     }
+}
 
+impl<T: Substitutable> Substitution<T> {
     pub fn var_id(&self) -> u32 {
         self.variables.len() as u32
     }
@@ -428,13 +458,16 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
 
 impl Substitution<RcType> {
     pub fn zonk(&self, typ: &RcType) -> RcType {
-        types::walk_move_type(typ.clone(), &mut |typ| match typ.get_var() {
-            Some(var) => match self.find_type_for_var(var.get_id()) {
-                Some(t) => Some(self.zonk(t)),
+        types::walk_move_type(
+            typ.clone(),
+            &mut InternerVisitor::new(&mut &*self, |_, typ: &RcType| match typ.get_var() {
+                Some(var) => match self.find_type_for_var(var.get_id()) {
+                    Some(t) => Some(self.zonk(t)),
+                    None => None,
+                },
                 None => None,
-            },
-            None => None,
-        })
+            }),
+        )
     }
 
     pub fn arc_real(&self, typ: &ArcType) -> &RcType {
@@ -459,7 +492,8 @@ impl Substitution<RcType> {
             id: id as u32,
             kind: typ.kind().into_owned(),
         };
-        self.variables.push(Box::new(Type::variable(var.clone()))); // TODO do we need to allocate a variable here?
+        let var_type = (&mut &*self).variable(var.clone()); // TODO do we need to allocate a variable here?
+        self.variables.push(Box::new(var_type));
         self.insert(id as u32, typ.clone());
 
         Type::variable(var)

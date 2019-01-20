@@ -1,8 +1,10 @@
 use std::{
     borrow::Borrow,
+    cell::RefCell,
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
+    rc::Rc,
 };
 
 use itertools::{Either, Itertools};
@@ -20,12 +22,12 @@ use crate::base::{
     resolve,
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolRef},
-    types::{self, ArcType, ArgType, BuiltinType, Type, TypeExt},
+    types::{self, ArcType, ArgType, BuiltinType, SharedInterner, Type, TypeExt},
 };
 
 use crate::{
     substitution::Substitution,
-    typ::RcType,
+    typ::{PtrEq, RcType},
     typecheck::{TypeError, Typecheck},
     unify_type::{self, Size},
     ArcTypeCacher, TypecheckEnv,
@@ -454,8 +456,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             constraint,
         }));
 
-        let state =
-            crate::unify_type::State::new(&self.tc.environment, &self.tc.subs, &self.tc.type_cache);
+        let state = crate::unify_type::State::new(&self.tc.environment, &self.tc.subs);
         crate::unify_type::subsumes(&self.tc.subs, state, &demand.constraint, &iter.typ).is_ok()
     }
 
@@ -494,11 +495,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                             entry.get().iter().format(", "),
                         );
 
-                        let state = unify_type::State::new(
-                            &self.tc.environment,
-                            &self.tc.subs,
-                            &self.tc.type_cache,
-                        );
+                        let state = unify_type::State::new(&self.tc.environment, &self.tc.subs);
                         if !smallers(state, &new_demands, entry.get()) {
                             return Err(Error {
                                 kind: ErrorKind::LoopInImplicitResolution(vec![candidate_path
@@ -590,11 +587,13 @@ pub struct ImplicitResolver<'a> {
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
         environment: &'a TypecheckEnv<Type = ArcType>,
+        type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
+        interner: SharedInterner<RcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {
             metadata,
-            environment: ArcTypeCacher::new(environment),
+            environment: ArcTypeCacher::new(environment, type_interner, interner),
             implicit_bindings: Vec::new(),
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),
@@ -621,7 +620,7 @@ impl<'a> ImplicitResolver<'a> {
 
     pub fn add_implicits_of_record(
         &mut self,
-        subs: &Substitution<RcType>,
+        mut subs: &Substitution<RcType>,
         id: &Symbol,
         typ: &RcType,
     ) {
@@ -640,12 +639,13 @@ impl<'a> ImplicitResolver<'a> {
         let mut alias_resolver = resolve::AliasRemover::new();
 
         let typ = crate::unify_type::top_skolem_scope(subs, subs.real(typ));
-        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
-        let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
-            Ok(t) => t,
-            // Don't recurse into self recursive aliases
-            Err(_) => return,
-        };
+        let ref typ = typ.instantiate_generics(&mut subs, &mut FnvMap::default());
+        let raw_type =
+            match alias_resolver.remove_aliases(&self.environment, &mut subs, typ.clone()) {
+                Ok(t) => t,
+                // Don't recurse into self recursive aliases
+                Err(_) => return,
+            };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {

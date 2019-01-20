@@ -4,7 +4,6 @@ use pretty::{Arena, DocAllocator};
 
 use crate::base::error::Errors;
 use crate::base::kind::ArcKind;
-use crate::base::symbol::Symbol;
 use crate::base::types::ToDoc;
 
 use crate::substitution::{self, Substitutable, Substitution};
@@ -232,20 +231,13 @@ where
     }
 }
 
-pub trait GenericVariant {
-    fn new_generic(symbol: Symbol, kind: &Self) -> Self;
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
-    use std::fmt;
+    use std::{fmt, ops::Deref};
 
-    use crate::base::error::Errors;
-    use crate::base::merge::merge;
-    use crate::base::symbol::Symbol;
-    use crate::base::types::Walker;
+    use crate::base::{error::Errors, merge::merge, types::Walker};
 
     use crate::substitution::{Substitutable, Substitution};
 
@@ -259,15 +251,16 @@ mod test {
         Arrow(T, T),
     }
 
-    impl fmt::Display for TType {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "{:?}", self)
+    impl Deref for TType {
+        type Target = Type<TType>;
+        fn deref(&self) -> &Self::Target {
+            &self.0
         }
     }
 
-    impl GenericVariant for TType {
-        fn new_generic(symbol: Symbol, _: &TType) -> Self {
-            TType(Box::new(Type::Ident(symbol.to_string())))
+    impl fmt::Display for TType {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
         }
     }
 
@@ -342,7 +335,7 @@ mod test {
 
     #[test]
     fn unify_test() {
-        let subs = Substitution::new(());
+        let subs = Substitution::default();
         let var1 = subs.new_var();
         let var2 = subs.new_var();
 
@@ -360,7 +353,7 @@ mod test {
 
     #[test]
     fn unify_function() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -376,7 +369,7 @@ mod test {
 
     #[test]
     fn unify_real_type() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -397,7 +390,7 @@ mod test {
 
     #[test]
     fn occurs() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));

@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt, mem, ops::Deref, rc::Rc};
+use std::{borrow::Borrow, fmt, hash::Hash, mem, ops::Deref, rc::Rc};
 
 use bitflags::bitflags;
 
@@ -13,7 +13,8 @@ use crate::base::{
     symbol::Symbol,
     types::{
         self, dt, forall_params, forall_params_vars, pretty_print::Printer, ArcType, Field,
-        Generic, Prec, ToDoc, Type, TypeCache, TypeExt, TypeFormatter,
+        Generic, Prec, ToDoc, Type, TypeCache, TypeExt, TypeFormatter, TypeInterner,
+        TypeInternerAlloc,
     },
 };
 
@@ -106,20 +107,31 @@ impl Flags {
     }
 }
 
-#[derive(Eq, PartialEq, Hash)]
 struct RcTypeInner<Id = Symbol> {
     typ: Type<Id, RcType<Id>>,
     flags: Flags,
 }
 
-#[derive(Eq, PartialEq, Hash)]
 pub struct RcType<Id = Symbol> {
     typ: Rc<RcTypeInner<Id>>,
 }
 
-impl<Id> Default for RcType<Id> {
-    fn default() -> Self {
-        Type::hole()
+impl<Id> Eq for RcType<Id> {}
+
+impl<Id> PartialEq for RcType<Id> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq::<RcTypeInner<_>>(&*self.typ, &*other.typ)
+    }
+}
+
+impl<Id> std::hash::Hash for RcType<Id> {
+    #[inline(always)]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (&*self.typ as *const RcTypeInner<_>).hash(state)
     }
 }
 
@@ -137,15 +149,15 @@ impl<Id: fmt::Debug> fmt::Debug for RcType<Id> {
     }
 }
 
-impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
+impl<Id> fmt::Pointer for RcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", TypeFormatter::new(self))
+        write!(f, "{:p}", &**self)
     }
 }
 
-impl<Id> Borrow<Type<Id, RcType<Id>>> for RcType<Id> {
-    fn borrow(&self) -> &Type<Id, RcType<Id>> {
-        &self.typ.typ
+impl<Id: AsRef<str>> fmt::Display for RcType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", TypeFormatter::new(self))
     }
 }
 
@@ -169,6 +181,7 @@ impl<Id> Commented for RcType<Id> {
     }
 }
 
+// TODO Remove this to prevent accidental construction if non interned types
 impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
     fn from(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
         RcType::new(typ)
@@ -280,29 +293,63 @@ impl Borrow<PtrEq<Type<Symbol, ArcType>, ArcType>> for PtrEq<ArcType, ArcType> {
     }
 }
 
+impl TypeInternerAlloc<Symbol, RcType> for RcType {
+    fn alloc(typ: Type<Symbol, Self>) -> Self {
+        Self::new(typ)
+    }
+}
+
 pub fn translate_interned_type<T, U>(
     type_interner: &mut FnvMap<PtrEq<T>, U>,
+    interner: &mut impl TypeInterner<Symbol, U>,
     type_cache: &TypeCache<Symbol, U>,
     typ: &T,
 ) -> U
 where
     T: Clone + Borrow<Type<Symbol, T>> + TypeExt<Symbol>,
-    U: From<Type<Symbol, U>> + Clone,
+    U: Clone,
     PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
 {
     if T::strong_count(typ) == 1 {
-        types::translate_type_with(type_cache, typ, |typ| {
-            translate_interned_type(type_interner, type_cache, typ)
+        types::translate_type_with(type_cache, interner, typ, |interner, typ| {
+            translate_interned_type(type_interner, interner, type_cache, typ)
         })
     } else {
         if let Some(t) = type_interner.get(PtrEq::new(typ)) {
             return t.clone();
         }
-        let new_type = types::translate_type_with(type_cache, typ, |typ| {
-            translate_interned_type(type_interner, type_cache, typ)
+        let new_type = types::translate_type_with(type_cache, interner, typ, |interner, typ| {
+            translate_interned_type(type_interner, interner, type_cache, typ)
         });
 
         type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
+        new_type
+    }
+}
+
+pub fn translate_rc_interned_type<T, U>(
+    type_interner: &mut FnvMap<T, U>,
+    interner: &mut impl TypeInterner<Symbol, U>,
+    type_cache: &TypeCache<Symbol, U>,
+    typ: &T,
+) -> U
+where
+    T: Clone + TypeExt<Symbol> + Eq + Hash,
+    U: Clone,
+{
+    if T::strong_count(typ) == 1 {
+        types::translate_type_with(type_cache, interner, typ, |interner, typ| {
+            translate_rc_interned_type(type_interner, interner, type_cache, typ)
+        })
+    } else {
+        if let Some(t) = type_interner.get(typ) {
+            return t.clone();
+        }
+        let new_type = types::translate_type_with(type_cache, interner, typ, |interner, typ| {
+            translate_rc_interned_type(type_interner, interner, type_cache, typ)
+        });
+
+        type_interner.insert(typ.clone(), new_type.clone());
         new_type
     }
 }

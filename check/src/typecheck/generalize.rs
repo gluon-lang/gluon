@@ -3,7 +3,9 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeExt},
+    types::{
+        self, AppVec, ArcType, BuiltinType, Generic, NullInterner, Type, TypeExt, TypeInterner,
+    },
 };
 
 use crate::{
@@ -51,6 +53,12 @@ impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
 impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b> {
     fn deref_mut(&mut self) -> &mut Typecheck<'b> {
         self.tc
+    }
+}
+
+impl<'a, 'b> TypeInterner<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
+    fn intern(&mut self, typ: Type<Symbol, RcType>) -> RcType {
+        (&self.tc.subs).intern(typ)
     }
 }
 
@@ -183,7 +191,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 // Create a prefix if none exists
                 let id = self.variable_generator.next_variable(self.tc);
 
-                let gen: RcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                let gen: RcType = self.generic(Generic::new(id.clone(), var.kind.clone()));
                 debug!("Gen {} to {}", var.id, gen);
                 self.subs.insert(var.id, gen.clone());
 
@@ -213,7 +221,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     if self.tc.named_variables.is_empty() {
                         typ.clone()
                     } else {
-                        typ.instantiate_generics_(&mut self.tc.named_variables)
+                        typ.instantiate_generics_(&mut NullInterner, &mut self.tc.named_variables)
                             .unwrap_or(typ.clone())
                     }
                 };
@@ -231,10 +239,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 let new_type = self.generalize_type(&typ);
                 self.type_variables.exit_scope();
 
-                Some(Type::forall(
-                    new_params,
-                    new_type.unwrap_or_else(|| typ.clone()),
-                ))
+                Some(self.forall(new_params, new_type.unwrap_or_else(|| typ.clone())))
             }
 
             Type::Skolem(ref skolem) => {
@@ -250,7 +255,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                             .insert(generic.id.clone(), generic.clone());
                     }
 
-                    Some(Type::generic(generic))
+                    Some(self.generic(generic))
                 } else {
                     replacement
                 }
@@ -278,9 +283,11 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                 types::walk_move_type_opt(
                     typ,
-                    &mut types::ControlVisitation(|typ: &RcType| self.generalize_type(typ)),
+                    &mut types::InternerVisitor::control(self, |self_, typ: &RcType| {
+                        self_.generalize_type(typ)
+                    }),
                 )
-                .map(|t| unroll_typ(&t).unwrap_or(t))
+                .map(|t| unroll_typ(self.tc, &t).unwrap_or(t))
                 .or_else(|| replacement.clone())
             }
         }
@@ -344,7 +351,7 @@ impl TypeVariableGenerator {
     }
 }
 
-fn unroll_typ(typ: &RcType) -> Option<RcType> {
+fn unroll_typ(interner: &mut impl TypeInterner<Symbol, RcType>, typ: &RcType) -> Option<RcType> {
     let mut args = AppVec::new();
     let mut current = match **typ {
         Type::App(ref l, ref rest) => {
@@ -357,7 +364,7 @@ fn unroll_typ(typ: &RcType) -> Option<RcType> {
             args.extend(rest.iter().rev().cloned());
             l
         }
-        _ => return unroll_record(typ),
+        _ => return unroll_record(interner, typ),
     };
     while let Type::App(ref l, ref rest) = **current {
         args.extend(rest.iter().rev().cloned());
@@ -370,14 +377,17 @@ fn unroll_typ(typ: &RcType) -> Option<RcType> {
         match **current {
             Type::Builtin(BuiltinType::Function) if args.len() == 2 => {
                 let ret = args.pop().unwrap();
-                Some(Type::function(args.into_iter().collect(), ret))
+                Some(interner.function(args, ret))
             }
-            _ => Some(Type::app(current.clone(), args)),
+            _ => Some(interner.app(current.clone(), args)),
         }
     }
 }
 
-fn unroll_record(typ: &Type<Symbol, RcType>) -> Option<RcType> {
+fn unroll_record(
+    interner: &mut impl TypeInterner<Symbol, RcType>,
+    typ: &Type<Symbol, RcType>,
+) -> Option<RcType> {
     let mut new_types = Vec::new();
     let mut new_fields = Vec::new();
     let mut current = match *typ {
@@ -408,7 +418,7 @@ fn unroll_record(typ: &Type<Symbol, RcType>) -> Option<RcType> {
     if new_types.is_empty() && new_fields.is_empty() {
         None
     } else {
-        Some(Type::extend_row(new_types, new_fields, current.clone()))
+        Some(interner.extend_row(new_types, new_fields, current.clone()))
     }
 }
 
@@ -416,31 +426,44 @@ fn unroll_record(typ: &Type<Symbol, RcType>) -> Option<RcType> {
 mod tests {
     use super::*;
 
+    use crate::base::types::SharedInterner;
+
     #[test]
     fn unroll_typ_test() {
-        let i: RcType = Type::int();
-        let s: RcType = Type::string();
+        let mut interner = SharedInterner::default();
+
+        let i: RcType = interner.int();
+        let s: RcType = interner.string();
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(i.clone(), collect![s.clone()]),
-                collect![i.clone()]
-            )),
-            Some(Type::app(i.clone(), collect![s.clone(), i.clone()]))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(i.clone(), collect![s.clone()]),
+                    collect![i.clone()]
+                )
+            ),
+            Some(interner.app(i.clone(), collect![s.clone(), i.clone()]))
         );
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(i.clone(), collect![i.clone()]),
-                collect![s.clone()]
-            )),
-            Some(Type::app(i.clone(), collect![i.clone(), s.clone()]))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(i.clone(), collect![i.clone()]),
+                    collect![s.clone()]
+                )
+            ),
+            Some(interner.app(i.clone(), collect![i.clone(), s.clone()]))
         );
-        let f: RcType = Type::builtin(BuiltinType::Function);
+        let f: RcType = interner.function_builtin();
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(f.clone(), collect![i.clone()]),
-                collect![s.clone()]
-            )),
-            Some(Type::function(collect![i.clone()], s.clone()))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(f.clone(), collect![i.clone()]),
+                    collect![s.clone()]
+                )
+            ),
+            Some(interner.function(vec![i.clone()], s.clone()))
         );
     }
 }

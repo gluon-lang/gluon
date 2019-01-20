@@ -15,7 +15,9 @@ use crate::metadata::{Comment, Metadata};
 use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
 use crate::resolve::remove_aliases_cow;
 use crate::symbol::Symbol;
-use crate::types::{self, Alias, AliasData, ArcType, ArgType, Type, TypeEnv, TypeExt};
+use crate::types::{
+    self, Alias, AliasData, ArcType, ArgType, NullInterner, Type, TypeEnv, TypeExt,
+};
 use ordered_float::NotNan;
 
 pub trait DisplayEnv {
@@ -933,7 +935,7 @@ fn get_return_type(
     if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
-    let function_type = remove_aliases_cow(env, alias_type);
+    let function_type = remove_aliases_cow(env, &mut NullInterner, alias_type);
 
     let ret = function_type
         .remove_forall_and_implicit_args()

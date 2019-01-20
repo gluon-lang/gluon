@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::ops::Deref;
 
 use crate::base::resolve;
-use crate::base::types::{ArcType, Type};
+use crate::base::types::{ArcType, NullInterner, Type};
 
 use crate::thread::{RootedValue, Thread, VmRoot};
 
@@ -50,6 +50,10 @@ where
     FieldIter {
         value: value,
         index: 0,
-        resolved_type: resolve::remove_aliases_cow(&*thread.global_env().get_env(), typ),
+        resolved_type: resolve::remove_aliases_cow(
+            &*thread.global_env().get_env(),
+            &mut NullInterner,
+            typ,
+        ),
     }
 }
