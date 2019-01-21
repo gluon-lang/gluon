@@ -829,8 +829,8 @@ pub TopExpr: SpannedExpr<Id> = {
     "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
-pub ReplLine: Option<ReplLine<Id>> = {
-    <TopExpr> => Some(ReplLine::Expr(<>)),
-    "block open" <PlainValueBinding> "block close" => Some(ReplLine::Let(<>)),
+pub ReplLine: Option<Box<ReplLine<Id>>> = {
+    <TopExpr> => Some(Box::new(ReplLine::Expr(<>))),
+    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(<>))),
     => None,
 };

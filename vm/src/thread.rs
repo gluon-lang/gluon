@@ -314,9 +314,7 @@ impl<'b> Roots<'b> {
         let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
         let child_threads = self.vm.child_threads.read().unwrap();
-        for child in &*child_threads {
-            Vec::push(&mut stack, *child);
-        }
+        stack.extend(child_threads.iter().cloned());
 
         while let Some(thread_ptr) = stack.pop() {
             if locks.iter().any(|&(_, _, lock_thread)| {
@@ -327,9 +325,7 @@ impl<'b> Roots<'b> {
 
             let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
             let child_threads = thread.child_threads.read().unwrap();
-            for child in &*child_threads {
-                Vec::push(&mut stack, *child);
-            }
+            stack.extend(child_threads.iter().cloned());
 
             let context = thread.context.lock().unwrap();
 
@@ -975,10 +971,9 @@ impl ThreadInternal for Thread {
         debug!("Run IO {:?}", value);
         let mut context = self.context();
         // Dummy value to fill the place of the function for TailCall
-        context.stack.push(Int(0));
-
-        context.stack.push(value);
-        context.stack.push(Int(0));
+        context
+            .stack
+            .extend(&[Variants::int(0), value, Variants::int(0)]);
 
         context.borrow_mut().enter_scope(2, State::Unknown);
         context = match try_future!(self.call_function(context, 1), Either::A) {
@@ -989,9 +984,7 @@ impl ThreadInternal for Thread {
         context.stack.pop();
         {
             let mut context = context.borrow_mut();
-            while context.stack.len() > 0 {
-                context.stack.pop();
-            }
+            context.stack.clear();
         }
         let _ = context.exit_scope();
         Either::A(future::ok(result))
@@ -1787,9 +1780,7 @@ impl<'b> ExecuteContext<'b> {
                         match self.stack.excess_args() {
                             Some(excess) => {
                                 debug!("TailCall: Push excess args {:?}", excess.fields);
-                                for value in &excess.fields {
-                                    self.stack.push(value);
-                                }
+                                self.stack.extend(&excess.fields);
                                 args += excess.fields.len() as VmIndex;
                             }
                             None => ice!("Expected excess args"),
@@ -1873,9 +1864,7 @@ impl<'b> ExecuteContext<'b> {
                             }
                         }
                     };
-                    for _ in 0..args {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(args);
                     self.stack.push(d);
                 }
                 NewVariant { tag, args } => {
@@ -1944,9 +1933,7 @@ impl<'b> ExecuteContext<'b> {
                             crate::value::ArrayDef(fields),
                         )?
                     };
-                    for _ in 0..args {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(args);
                     self.stack.push(ValueRepr::Array(d));
                 }
                 GetOffset(i) => match self.stack.pop().get_repr() {
@@ -2013,9 +2000,7 @@ impl<'b> ExecuteContext<'b> {
                 Split => {
                     match self.stack.pop().get_repr() {
                         Data(data) => {
-                            for field in &data.fields {
-                                self.stack.push(field);
-                            }
+                            self.stack.extend(&data.fields);
                         }
                         // Zero argument variant
                         ValueRepr::Tag(_) => (),
@@ -2150,9 +2135,7 @@ impl<'b> ExecuteContext<'b> {
                 Data(excess) => {
                     debug!("Push excess args {:?}", &excess.fields);
                     context.stack.push(result);
-                    for value in &excess.fields {
-                        context.stack.push(value);
-                    }
+                    context.stack.extend(&excess.fields);
                     context
                         .do_call(excess.fields.len() as VmIndex)
                         .map(|x| Async::Ready(Some(x)))
@@ -2376,8 +2359,7 @@ where
         (T::from_value(vm, l), T::from_value(vm, r))
     };
     let result = f(l, r);
-    stack.pop();
-    stack.pop();
+    stack.pop_many(2);
     stack.stack.push(result);
 }
 

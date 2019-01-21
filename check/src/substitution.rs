@@ -336,7 +336,7 @@ impl<T: Substitutable> Substitution<T> {
 pub fn is_variable_unified(subs: &Substitution<ArcType>, var: &ArcType) -> bool {
     match **var {
         Type::Variable(ref var) => subs.find_type_for_var(var.id).is_some(),
-        _ => unreachable!(),
+        _ => false,
     }
 }
 

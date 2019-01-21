@@ -12,11 +12,11 @@ use either::Either;
 use itertools::Itertools;
 
 use crate::metadata::{Comment, Metadata};
-use ordered_float::NotNan;
 use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
 use crate::resolve::remove_aliases_cow;
 use crate::symbol::Symbol;
 use crate::types::{self, Alias, AliasData, ArcType, ArgType, Type, TypeEnv};
+use ordered_float::NotNan;
 
 pub trait DisplayEnv {
     type Ident;
@@ -939,6 +939,10 @@ fn get_return_type(
 }
 
 pub fn is_operator_char(c: char) -> bool {
+    (c as u32) < 128 && is_operator_byte(c as u8)
+}
+
+pub fn is_operator_byte(c: u8) -> bool {
     macro_rules! match_token {
         ($($x: pat),*) => {
             match c {
@@ -948,26 +952,26 @@ pub fn is_operator_char(c: char) -> bool {
         }
     }
     match_token! {
-        '!',
-        '#',
-        '$',
-        '%',
-        '&',
-        '*',
-        '+',
-        '-',
-        '.',
-        '/',
-        '<',
-        '=',
-        '>',
-        '?',
-        '@',
-        '\\',
-        '^',
-        '|',
-        '~',
-        ':'
+        b'!',
+        b'#',
+        b'$',
+        b'%',
+        b'&',
+        b'*',
+        b'+',
+        b'-',
+        b'.',
+        b'/',
+        b'<',
+        b'=',
+        b'>',
+        b'?',
+        b'@',
+        b'\\',
+        b'^',
+        b'|',
+        b'~',
+        b':'
     }
 }
 

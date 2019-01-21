@@ -9,7 +9,7 @@ use bencher::{black_box, Bencher};
 use crate::base::symbol::{SymbolModule, Symbols};
 use crate::base::types::TypeCache;
 
-fn prelude(b: &mut Bencher) {
+fn parse_prelude(b: &mut Bencher) {
     use std::fs::File;
     use std::io::Read;
     let mut text = String::new();
@@ -26,5 +26,5 @@ fn prelude(b: &mut Bencher) {
     })
 }
 
-benchmark_group!(parser, prelude);
+benchmark_group!(parser, parse_prelude);
 benchmark_main!(parser);

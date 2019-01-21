@@ -468,6 +468,6 @@ fn implicit_prelude_variable_names() {
                 .row_iter()
                 .any(|field| field.name.declared_name() == "+"));
         }
-        _ => panic!(),
+        _ => panic!("{:#?}", f[0]),
     }
 }
