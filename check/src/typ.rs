@@ -107,6 +107,7 @@ impl Flags {
     }
 }
 
+#[derive(Clone)]
 struct RcTypeInner<Id = Symbol> {
     typ: Type<Id, RcType<Id>>,
     flags: Flags,
@@ -114,6 +115,13 @@ struct RcTypeInner<Id = Symbol> {
 
 pub struct RcType<Id = Symbol> {
     typ: Rc<RcTypeInner<Id>>,
+}
+
+// FIXME Remove this as it is not an interned type
+impl<Id> Default for RcType<Id> {
+    fn default() -> Self {
+        RcType::new(Type::Hole)
+    }
 }
 
 impl<Id> Eq for RcType<Id> {}
@@ -293,9 +301,18 @@ impl Borrow<PtrEq<Type<Symbol, ArcType>, ArcType>> for PtrEq<ArcType, ArcType> {
     }
 }
 
-impl TypeInternerAlloc<Symbol, RcType> for RcType {
-    fn alloc(typ: Type<Symbol, Self>) -> Self {
-        Self::new(typ)
+impl TypeInternerAlloc for RcType {
+    type Id = Symbol;
+    fn alloc(into: &mut Self, typ: Type<Symbol, Self>) {
+        match Rc::get_mut(&mut into.typ) {
+            Some(into) => {
+                into.flags = Flags::from_type(&typ);
+                into.typ = typ;
+            }
+            None => {
+                *into = RcType::new(typ);
+            }
+        }
     }
 }
 

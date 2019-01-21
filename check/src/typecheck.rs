@@ -1302,6 +1302,7 @@ impl<'a> Typecheck<'a> {
 
                     let record_type = self.poly_record(vec![], vec![], self.subs.new_var());
                     let base_type = self.unify_span(base.span, &record_type, base_type);
+                    let base_type = self.subs.zonk(&base_type);
 
                     base_types.extend(base_type.type_field_iter().cloned());
                     base_fields.extend(base_type.row_iter().cloned());

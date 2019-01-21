@@ -20,7 +20,7 @@ use stable_deref_trait::StableDeref;
 use itertools::Itertools;
 
 use crate::ast::{Commented, EmptyEnv, IdentEnv};
-use crate::fnv::{FnvMap, FnvSet};
+use crate::fnv::FnvMap;
 use crate::kind::{ArcKind, Kind, KindEnv};
 use crate::merge::merge;
 use crate::metadata::Comment;
@@ -2994,7 +2994,7 @@ where
     }
 }
 
-pub type SharedInterner<T> = Rc<RefCell<FnvSet<Interned<T>>>>;
+pub type SharedInterner<T> = Rc<RefCell<Interner<T>>>;
 
 pub struct NullInterner;
 
@@ -3007,8 +3007,8 @@ where
     }
 }
 
-#[derive(Default)]
-pub struct Interned<T>(T);
+#[derive(Clone, Default)]
+struct Interned<T>(T);
 
 impl<T> Eq for Interned<T>
 where
@@ -3051,23 +3051,45 @@ where
     }
 }
 
-pub trait TypeInternerAlloc<Id, T> {
-    fn alloc(typ: Type<Id, T>) -> T;
+pub trait TypeInternerAlloc: Sized {
+    type Id;
+    fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
 }
 
-impl<Id, T> TypeInterner<Id, T> for FnvSet<Interned<T>>
+pub struct Interner<T> {
+    set: FnvMap<Interned<T>, ()>,
+    scratch: Interned<T>,
+}
+
+impl<T> Default for Interner<T>
 where
-    T: TypeInternerAlloc<Id, T> + TypeExt<Id> + Eq + Hash,
+    T: Default + Deref,
+    T::Target: Eq + Hash,
+{
+    fn default() -> Self {
+        Interner {
+            set: Default::default(),
+            scratch: Default::default(),
+        }
+    }
+}
+
+impl<Id, T> TypeInterner<Id, T> for Interner<T>
+where
+    T: TypeInternerAlloc<Id = Id> + TypeExt<Id> + Eq + Hash + Clone,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
-        if let Some(t) = self.get(&typ) {
-            return t.0.clone();
-        }
+        use std::collections::hash_map::Entry;
 
-        let typ = T::alloc(typ);
-        self.insert(Interned(typ.clone()));
-        typ
+        T::alloc(&mut self.scratch.0, typ);
+        match self.set.entry(self.scratch.clone()) {
+            Entry::Occupied(entry) => return entry.key().0.clone(),
+            Entry::Vacant(entry) => {
+                entry.insert(());
+                self.scratch.0.clone()
+            }
+        }
     }
 }
 

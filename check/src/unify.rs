@@ -241,7 +241,7 @@ mod test {
 
     use crate::substitution::{Substitutable, Substitution};
 
-    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -249,6 +249,12 @@ mod test {
         Variable(u32),
         Ident(String),
         Arrow(T, T),
+    }
+
+    impl<T> Default for Type<T> {
+        fn default() -> Self {
+            Type::Variable(0)
+        }
     }
 
     impl Deref for TType {
