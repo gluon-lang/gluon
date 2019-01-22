@@ -40,6 +40,31 @@ pub use self::pretty_print::{Filter, TypeFormatter};
 
 pub mod pretty_print;
 
+macro_rules! forward_eq_hash {
+    (<$($param: ident),*> for $typ: ty { $field: ident }) => {
+        impl<$($param),*> Eq for $typ where $($param : Eq),* {}
+
+        impl<$($param),*> PartialEq for $typ
+            where $($param : PartialEq),*
+        {
+            fn eq(&self, other: &Self) -> bool {
+                self.$field == other.$field
+            }
+        }
+
+        impl<$($param),*> Hash for $typ
+        where $($param : Hash),*
+        {
+            fn hash<H>(&self, state: &mut H)
+            where
+                H: std::hash::Hasher,
+            {
+                self.$field.hash(state)
+            }
+        }
+    }
+}
+
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     type Type;
@@ -237,7 +262,7 @@ impl BuiltinType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
@@ -248,7 +273,9 @@ pub struct TypeVariable {
     pub id: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+forward_eq_hash! { <> for TypeVariable { id } }
+
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -270,6 +297,10 @@ pub struct Skolem<Id> {
     pub kind: ArcKind,
 }
 
+forward_eq_hash! { <Id> for Skolem<Id> { id } }
+
+/// FIXME Distinguish generic id's so we only need to compare them by `id` (currently they will get
+/// the wrong kind assigned to them otherwise)
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
