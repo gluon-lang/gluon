@@ -41,6 +41,7 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     variable_generator: TypeVariableGenerator,
     tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
+    visited: FnvMap<RcType, RcType>,
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -75,6 +76,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
             span,
+            visited: Default::default(),
         }
     }
 
@@ -186,7 +188,13 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             return replacement;
         }
 
-        match **typ {
+        if RcType::strong_count(&typ) > 2 {
+            if let Some(new_type) = self.visited.get(typ) {
+                return Some(new_type.clone());
+            }
+        }
+
+        let new_type = match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
                 // Create a prefix if none exists
                 let id = self.variable_generator.next_variable(self.tc);
@@ -257,7 +265,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                     Some(self.generic(generic))
                 } else {
-                    replacement
+                    replacement.clone()
                 }
             }
 
@@ -290,7 +298,15 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 .map(|t| unroll_typ(self.tc, &t).unwrap_or(t))
                 .or_else(|| replacement.clone())
             }
+        };
+
+        if let Some(new_type) = &new_type {
+            if RcType::strong_count(&typ) > 2 {
+                self.visited.insert(typ.clone(), new_type.clone());
+            }
         }
+
+        new_type
     }
 }
 
