@@ -210,12 +210,12 @@ where
             (_, Some(r_var)) => {
                 let replacement = subs.union(r_var, l)?;
                 debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
-                Ok(replacement)
+                Ok(None)
             }
             (Some(l_var), _) => {
                 let replacement = subs.union(l_var, r)?;
                 debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
-                Ok(replacement.or_else(|| Some(r.clone())))
+                Ok(None)
             }
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
@@ -380,7 +380,7 @@ mod test {
 
         let string = TType(Box::new(Type::Ident("String".into())));
         let result = unify(&subs, &var1, &string);
-        assert_eq!(result, Ok(string.clone()));
+        assert_eq!(result.as_ref().map(|t| subs.real(t)), Ok(&string));
 
         let int = TType(Box::new(Type::Ident("Int".into())));
         // Check that var1 does not unify with int as it should already be a string

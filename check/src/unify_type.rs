@@ -1337,7 +1337,6 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (&**l, &**r) {
-            (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
 
             (_, &Type::Forall(ref params, ref r, _)) => {
@@ -1357,7 +1356,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
             (&Type::Variable(ref l), _) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(l, r)?;
-                Ok(Some(r.clone()))
+                Ok(None)
             }
 
             (&Type::Forall(_, _, _), _) => Ok(self.subsume_check(l, r)),
