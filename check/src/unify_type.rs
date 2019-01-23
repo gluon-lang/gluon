@@ -119,6 +119,7 @@ pub enum TypeError<I> {
     SelfRecursiveAlias(I),
     UnableToGeneralize(I),
     MissingFields(ArcType<I>, Vec<I>),
+    EscapingSkolem(I),
 }
 
 impl From<ResolveError> for TypeError<Symbol> {
@@ -190,9 +191,10 @@ where
                     Filter::Drop
                 }
             }),
-            TypeError::UndefinedType(_) => Box::new(|_| Filter::Retain),
-            TypeError::SelfRecursiveAlias(_) => Box::new(|_| Filter::Retain),
-            TypeError::UnableToGeneralize(_) => Box::new(|_| Filter::Retain),
+            TypeError::UndefinedType(_)
+            | TypeError::SelfRecursiveAlias(_)
+            | TypeError::UnableToGeneralize(_)
+            | TypeError::EscapingSkolem(_) => Box::new(|_| Filter::Retain),
             TypeError::MissingFields(ref typ, ref fields) => similarity_filter(typ, fields),
         }
     }
@@ -231,6 +233,9 @@ where
                     write!(f, "{}{}", sep, field)?;
                 }
                 Ok(())
+            }
+            TypeError::EscapingSkolem(ref skolem) => {
+                write!(f, "Skolem variable `{}` has escaped its scope", skolem)
             }
         }
     }
@@ -1212,8 +1217,23 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
     fn subsume_check(&mut self, l: &ArcType, r: &ArcType) -> Option<ArcType> {
         let l = new_skolem_scope(self.unifier.subs, &l);
         let l_orig = &l;
-        let l = l.skolemize(&mut FnvMap::default());
+        let mut map = FnvMap::default();
+        let l = l.skolemize(&mut map);
         let typ = self.try_match(&l, r);
+
+        // If a skolem variable we just created somehow appears in the original type it has been
+        // unified with a type variable outside of this skolem scope meaning it has escaped
+        //
+        // Unifying:
+        // forall s . Test s 2 <=> Test 1 1
+        //      ^ skolemize
+        // ==> 1 <=> s@3
+        // ==> 1 <=> 2
+        // ==> s@3 <=> 2
+        //
+        // `l_orig` is still `forall s . Test s 2` so we can detect `s@2` escaping in the
+        // variable `2`
+        self.skolem_escape_check(&map, l_orig);
 
         typ.or(if l_orig.forall_params_vars().next().is_some() {
             Some(l.clone())
@@ -1224,6 +1244,24 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
             self.unifier.allow_returned_type_replacement = false;
             typ.with_forall(l_orig)
         })
+    }
+
+    fn skolem_escape_check(&mut self, skolem_scope: &FnvMap<Symbol, ArcType>, typ: &ArcType) {
+        let typ = self.unifier.subs.real(typ);
+        match **typ {
+            Type::Skolem(ref skolem) => match skolem_scope.get(&skolem.name).map(|t| &**t) {
+                Some(Type::Skolem(other)) if other.id == skolem.id => self.report_error(
+                    UnifyError::Other(TypeError::EscapingSkolem(skolem.name.clone())),
+                ),
+                _ => (),
+            },
+            _ => types::walk_type_(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| {
+                    self.skolem_escape_check(skolem_scope, typ)
+                }),
+            ),
+        }
     }
 
     fn subsume_check_rho(&mut self, l: &ArcType, r: &ArcType) -> Option<ArcType> {

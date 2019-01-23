@@ -1333,7 +1333,7 @@ test_check_err! {
     let new : ST s (Test s) = any ()
     run new
     "#,
-    TypeError::Message(_)
+    TypeError::Unification(..)
 }
 
 test_check! { load_list_skolem_bug,

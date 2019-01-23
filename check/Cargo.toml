@@ -37,5 +37,6 @@ gluon_parser = { path = "../parser", version = "0.10.1" } # GLUON
 gluon_format = { path = "../format", version = ">=0.9" }
 
 collect-mac = "0.1.0"
+difference = "2"
 pretty_assertions = "0.5"
 

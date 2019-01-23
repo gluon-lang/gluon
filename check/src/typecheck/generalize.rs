@@ -1,15 +1,14 @@
 use crate::base::{
     ast::{self, MutVisitor, SpannedExpr, SpannedIdent},
     fnv::{FnvMap, FnvSet},
-    merge,
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type},
+    types::{self, AppVec, ArcType, BuiltinType, Generic, Type},
 };
 
 use crate::{
     substitution::{is_variable_unified, Substitution},
-    typecheck::{TypeError, Typecheck},
+    typecheck::Typecheck,
 };
 
 pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
@@ -17,7 +16,6 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     unbound_variables: FnvMap<Symbol, Generic<Symbol>>,
     variable_generator: TypeVariableGenerator,
     tc: &'a mut Typecheck<'b>,
-    context: ArcType,
     span: Span<BytePos>,
 }
 
@@ -46,7 +44,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             unbound_variables: FnvMap::default(),
             variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
-            context: typ.clone(),
             span,
         }
     }
@@ -210,15 +207,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
             Type::Skolem(ref skolem) => {
                 let in_scope = self.type_variables.contains_key(&skolem.name);
-                if !in_scope {
-                    self.tc.error(
-                        self.span,
-                        TypeError::Message(format!(
-                            "Skolem variable `{}` would escape as it is not bound in `{}`",
-                            skolem.name, self.context
-                        )),
-                    );
-                }
                 if self.subs.get_level(skolem.id) >= self.level {
                     let generic = Generic {
                         id: skolem.name.clone(),
@@ -246,10 +234,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     );
                 }
 
-                let new_type = types::walk_move_type_opt(
-                    typ,
-                    &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
-                );
                 match **typ {
                     Type::Generic(ref generic)
                         if self.type_variables.get(&generic.id).is_none() =>
@@ -259,9 +243,13 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     }
                     _ => (),
                 }
-                new_type
-                    .map(|t| unroll_typ(&t).unwrap_or(t))
-                    .or_else(|| replacement.clone())
+
+                types::walk_move_type_opt(
+                    typ,
+                    &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
+                )
+                .map(|t| unroll_typ(&t).unwrap_or(t))
+                .or_else(|| replacement.clone())
             }
         }
     }

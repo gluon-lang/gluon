@@ -392,9 +392,11 @@ impl<'a> Typecheck<'a> {
     where
         E: Into<HelpError<Symbol>>,
     {
+        let error = error.into();
+        debug!("Error: {}", error);
         self.errors.push(Spanned {
             span: span,
-            value: error.into(),
+            value: error,
         });
         self.type_cache.error()
     }
@@ -1123,9 +1125,15 @@ impl<'a> Typecheck<'a> {
                     .unwrap_or_else(|| self.subs.new_var());
 
                 let start = expr.span.start();
-                let mut typ = self.skolemize_in(&function_type, |self_, function_type| {
-                    self_.typecheck_lambda(function_type, start, &mut lambda.args, &mut lambda.body)
-                });
+                let mut typ =
+                    self.skolemize_in(expr.span, &function_type, |self_, function_type| {
+                        self_.typecheck_lambda(
+                            function_type,
+                            start,
+                            &mut lambda.args,
+                            &mut lambda.body,
+                        )
+                    });
 
                 self.generalize_type(level, &mut typ, expr.span);
                 typ = self.new_skolem_scope(&typ);
@@ -1535,27 +1543,23 @@ impl<'a> Typecheck<'a> {
 
         let body_type = {
             let mut return_type = function_type.clone();
-            let mut iter1 = function_arg_iter(self, function_type.clone());
-
-            let mut next_type_arg = iter1.next();
-
-            let make_new_arg = |tc: &mut Self, span: Span<BytePos>, typ: &mut ArcType| {
-                let (arg, ret) = tc.unify_function(span, typ.clone());
-                *typ = ret;
-                arg
-            };
 
             let mut i = 0;
 
-            while i < args.len() || next_type_arg.is_some() {
-                let (type_implicit, arg_type) = match next_type_arg.take() {
-                    Some((type_implicit, arg_type)) => (type_implicit, Some(arg_type)),
-                    None => (ArgType::Explicit, None),
-                };
+            while i < args.len()
+                || return_type
+                    .as_function_with_type()
+                    .map_or(false, |(arg_type, _, _)| arg_type == ArgType::Implicit)
+            {
+                let span = args
+                    .get(i)
+                    .map(|a| a.name.span)
+                    .unwrap_or_else(|| pos::Span::new(before_args_pos, before_args_pos));
+                let (type_implicit, arg_type, ret_type) =
+                    self.unify_function(span, return_type.clone());
 
                 match type_implicit {
                     ArgType::Implicit => {
-                        let arg_type = arg_type.unwrap();
                         let arg = match args.get(i).map(|t| t.arg_type) {
                             Some(ArgType::Implicit) => {
                                 i += 1;
@@ -1587,12 +1591,9 @@ impl<'a> Typecheck<'a> {
                         };
                         arg.typ = arg_type.clone();
                         arg_types.push(arg_type.clone());
-                        iter1.tc.implicit_resolver.add_implicits_of_record(
-                            &iter1.tc.subs,
-                            &arg.name,
-                            &arg_type,
-                        );
-                        iter1.tc.stack_var(arg.name.clone(), arg_type.clone());
+                        self.implicit_resolver
+                            .add_implicits_of_record(&self.subs, &arg.name, &arg_type);
+                        self.stack_var(arg.name.clone(), arg_type.clone());
                     }
                     ArgType::Explicit => match args.get_mut(i) {
                         Some(&mut Argument {
@@ -1600,7 +1601,7 @@ impl<'a> Typecheck<'a> {
                             name: ref arg,
                         }) => {
                             i += 1;
-                            iter1.tc.error(
+                            self.error(
                                     arg.span,
                                     TypeError::Message(format!(
                                         "Expected implicit argument but an explicit argument was specified"
@@ -1612,20 +1613,16 @@ impl<'a> Typecheck<'a> {
                             name: ref mut arg,
                         }) => {
                             i += 1;
-                            let arg_type = arg_type.unwrap_or_else(|| {
-                                make_new_arg(iter1.tc, arg.span, &mut iter1.typ)
-                            });
                             let arg = &mut arg.value;
 
                             arg.typ = arg_type;
                             arg_types.push(arg.typ.clone());
-                            iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
+                            self.stack_var(arg.name.clone(), arg.typ.clone());
                         }
                         None => break,
                     },
                 }
-                return_type = iter1.typ.clone();
-                next_type_arg = iter1.next();
+                return_type = ret_type;
             }
 
             return_type
@@ -1952,7 +1949,7 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.skolemize_in(&typ, |self_, typ| {
+                self.skolemize_in(bind.expr.span, &typ, |self_, typ| {
                     self_.typecheck_lambda(
                         typ,
                         bind.name.span.end(),
@@ -1973,7 +1970,7 @@ impl<'a> Typecheck<'a> {
                 };
 
                 let typ = self.new_skolem_scope_signature(&typ);
-                self.skolemize_in(&typ, |self_, function_type| {
+                self.skolemize_in(bind.expr.span, &typ, |self_, function_type| {
                     self_.typecheck_lambda(
                         function_type,
                         bind.name.span.end(),
@@ -2527,6 +2524,9 @@ impl<'a> Typecheck<'a> {
         receiver: &mut FnMut(Expr<Symbol>),
     ) -> ArcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
+
+        self.type_variables.enter_scope();
+
         // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
         // specified to have implicit arguments)
         loop {
@@ -2554,9 +2554,22 @@ impl<'a> Typecheck<'a> {
         let original_expected = expected;
         let mut expected = expected.clone();
         let mut resolved_implicit = false;
+
+        let mut skolem_scope = FnvMap::default();
         loop {
             expected = self.new_skolem_scope(&expected);
-            expected = self.skolemize(&expected);
+            self.type_variables
+                .extend(expected.forall_params_vars().map(|(param, var)| {
+                    (
+                        param.id.clone(),
+                        Type::skolem(Skolem {
+                            id: var.as_variable().unwrap().id,
+                            name: param.id.clone(),
+                            kind: param.kind.clone(),
+                        }),
+                    )
+                }));
+            expected = expected.skolemize(&mut skolem_scope);
             expected = match *expected {
                 Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
                     match **self.subs.real(&actual) {
@@ -2589,6 +2602,9 @@ impl<'a> Typecheck<'a> {
             original_expected,
             self.subsumes(span, error_order, &expected, actual),
         );
+
+        self.type_variables.exit_scope();
+
         typ
     }
 
@@ -2695,17 +2711,21 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn unify_function(&mut self, span: Span<BytePos>, actual: ArcType) -> (ArcType, ArcType) {
+    fn unify_function(
+        &mut self,
+        span: Span<BytePos>,
+        actual: ArcType,
+    ) -> (ArgType, ArcType, ArcType) {
         let actual = self.remove_aliases(actual);
-        match actual.as_function() {
-            Some((arg, ret)) => return (arg.clone(), ret.clone()),
+        match actual.as_function_with_type() {
+            Some((arg_type, arg, ret)) => return (arg_type, arg.clone(), ret.clone()),
             None => (),
         }
         let arg = self.subs.new_var();
         let ret = self.subs.new_var();
         let f = self.type_cache.function(Some(arg.clone()), ret.clone());
         self.unify_span(span, &f, actual);
-        (arg, ret)
+        (ArgType::Explicit, arg, ret)
     }
 
     fn unify_span(&mut self, span: Span<BytePos>, expected: &ArcType, actual: ArcType) -> ArcType {
@@ -2751,15 +2771,26 @@ impl<'a> Typecheck<'a> {
         resolve::remove_aliases(&self.environment, typ)
     }
 
+    fn with_forall(from: &ArcType, to: ArcType) -> ArcType {
+        let mut params = Vec::new();
+        let mut vars = Vec::new();
+        for (param, var) in from.forall_params_vars() {
+            params.push(param.clone());
+            vars.push(var.clone());
+        }
+        Type::forall_with_vars(params, to, Some(vars))
+    }
+
     fn skolemize_in(
         &mut self,
-        typ: &ArcType,
+        span: Span<BytePos>,
+        original_type: &ArcType,
         f: impl FnOnce(&mut Self, ArcType) -> ArcType,
     ) -> ArcType {
-        let skolemized = self.skolemize(typ);
+        let skolemized = self.skolemize(original_type);
         self.type_variables.enter_scope();
         self.type_variables
-            .extend(typ.forall_params_vars().map(|(param, var)| {
+            .extend(original_type.forall_params_vars().map(|(param, var)| {
                 (
                     param.id.clone(),
                     Type::skolem(Skolem {
@@ -2770,18 +2801,24 @@ impl<'a> Typecheck<'a> {
                 )
             }));
         let new_type = f(self, skolemized);
-        self.type_variables.exit_scope();
-        Self::with_forall(typ, new_type)
-    }
 
-    fn with_forall(from: &ArcType, to: ArcType) -> ArcType {
-        let mut params = Vec::new();
-        let mut vars = Vec::new();
-        for (param, var) in from.forall_params_vars() {
-            params.push(param.clone());
-            vars.push(var.clone());
-        }
-        Type::forall_with_vars(params, to, Some(vars))
+        let original_type = self.subs.zonk(original_type);
+        types::walk_type(&original_type, &mut |typ: &ArcType| {
+            if let Type::Skolem(skolem) = &**typ {
+                if !self.type_variables.contains_key(&skolem.name) {
+                    self.error(
+                        span,
+                        TypeError::Message(format!(
+                            "Skolem variable `{}` would escape as it is not bound in `{}`",
+                            skolem.name, original_type
+                        )),
+                    );
+                }
+            }
+        });
+
+        self.type_variables.exit_scope();
+        Self::with_forall(&original_type, new_type)
     }
 
     fn skolemize(&mut self, typ: &ArcType) -> ArcType {

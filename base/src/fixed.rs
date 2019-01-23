@@ -84,6 +84,15 @@ impl<K: Eq + Hash, V: StableDeref> FixedMap<K, V> {
             .get(k)
             .map(|x| unsafe { forget_lifetime(&**x) })
     }
+
+    pub fn get_mut<Q>(&mut self, k: &Q) -> Option<&mut V::Target>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+        V: DerefMut,
+    {
+        self.map.get_mut().get_mut(k).map(|x| &mut **x)
+    }
 }
 
 impl<'a, Q, K, V> Index<&'a Q> for FixedMap<K, V>

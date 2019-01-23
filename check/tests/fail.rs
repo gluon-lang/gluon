@@ -5,6 +5,8 @@ extern crate env_logger;
 extern crate pretty_assertions;
 #[macro_use]
 extern crate quick_error;
+#[macro_use]
+extern crate difference;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -291,7 +293,7 @@ let make m =
 make 2
 "#;
     let result = support::typecheck(text);
-    assert!(result.is_err());
+    assert!(result.is_err(), "{}", result.unwrap());
 }
 
 #[test]
@@ -480,7 +482,7 @@ f (Test (Test 1))
 
     let result = support::typecheck(text);
 
-    assert_eq!(
+    assert_diff!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"error: Implicit parameter with type `test.Eq Int` could not be resolved.
 - <test>:11:3
@@ -488,7 +490,9 @@ f (Test (Test 1))
    |   ^^^^^^^^^^^^^^^
 - Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
 - Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
-"#
+"#,
+    "\n",
+    0
     );
 }
 
