@@ -236,6 +236,15 @@ pub enum Entry<'a, K, V> {
     Occupied(OccupiedEntry<'a, K, V>),
 }
 
+impl<'a, K, V> Entry<'a, K, V> {
+    pub fn or_insert_with(self, default: impl FnOnce() -> V) -> &'a mut V {
+        match self {
+            Entry::Vacant(entry) => entry.insert(default()),
+            Entry::Occupied(entry) => entry.into_mut(),
+        }
+    }
+}
+
 pub struct VacantEntry<'a, K, V>(hash_map::VacantEntry<'a, K, Vec<V>>);
 pub struct OccupiedEntry<'a, K, V>(hash_map::OccupiedEntry<'a, K, Vec<V>>);
 

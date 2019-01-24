@@ -252,8 +252,8 @@ impl Substitutable for RcType<Symbol> {
     type Variable = TypeVariable;
     type Factory = ArcKind;
 
-    fn from_variable(var: TypeVariable) -> Self {
-        Type::variable(var)
+    fn from_variable(mut subs: &Substitution<Self>, var: TypeVariable) -> Self {
+        subs.variable(var)
     }
 
     fn get_var(&self) -> Option<&TypeVariable> {
@@ -1122,6 +1122,9 @@ pub fn new_skolem_scope(subs: &Substitution<RcType>, typ: &RcType) -> RcType {
 }
 
 fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<RcType> {
+    if !typ.flags().contains(Flags::HAS_GENERICS) {
+        return None;
+    }
     if let Some((arg_type, arg, ret)) = typ.as_function_with_type() {
         return new_skolem_scope_(subs, ret)
             .map(|ret| subs.function_type(arg_type, Some(arg.clone()), ret));
@@ -1132,7 +1135,7 @@ fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<Rc
             let mut skolem = Vec::new();
             for param in params {
                 let var = subs.new_var_fn(|id| {
-                    Type::variable(TypeVariable {
+                    subs.variable(TypeVariable {
                         id,
                         kind: param.kind.clone(),
                     })
@@ -1147,7 +1150,9 @@ fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<Rc
         }
         _ => types::walk_move_type_opt(
             typ,
-            &mut types::ControlVisitation(|typ: &RcType| new_skolem_scope_(subs, typ)),
+            &mut types::InternerVisitor::control(&mut subs, |subs, typ: &RcType| {
+                new_skolem_scope_(subs, typ)
+            }),
         ),
     }
 }

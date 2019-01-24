@@ -14,35 +14,25 @@ use crate::{
     typecheck::Typecheck,
 };
 
-pub fn generalize_from(tc: &mut Typecheck, level: u32, typ: &RcType) {
-    let mut variable_generator = TypeVariableGenerator::new(&tc.subs, typ);
-    for var in tc
-        .subs
-        .unbound_variables(level)
-        .cloned()
-        .collect::<Vec<_>>()
-    {
-        let var = match &*var {
-            Type::Variable(var) => var,
-            _ => unreachable!(),
-        };
-        // Create a prefix if none exists
-        let id = variable_generator.next_variable(tc);
-
-        let gen: RcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
-        debug!("Gen {} to {}", var.id, gen);
-        tc.subs.insert(var.id, gen.clone());
-    }
-}
-
 pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     level: u32,
-    unbound_variables: FnvMap<Symbol, Generic<Symbol>>,
+    unbound_variables: FnvMap<u32, RcType>,
+    /// We delay updating the substitution until after all recursive bindings have been typechecked
+    /// to ensure that they get can figure out which variable got generalized for each binding
+    delayed_generalizations: Vec<(u32, RcType)>,
     variable_generator: TypeVariableGenerator,
-    tc: &'a mut Typecheck<'b>,
+    pub tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
     visited: FnvMap<RcType, RcType>,
     flags: typ::Flags,
+}
+
+impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b> {
+    fn drop(&mut self) {
+        for (id, gen) in self.delayed_generalizations.drain(..) {
+            self.tc.subs.replace(id, gen);
+        }
+    }
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -73,7 +63,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     ) -> TypeGeneralizer<'a, 'b> {
         TypeGeneralizer {
             level,
-            unbound_variables: FnvMap::default(),
+            unbound_variables: Default::default(),
+            delayed_generalizations: Vec::new(),
             variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
             span,
@@ -164,10 +155,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         }
 
         result_type = result_type.map(|typ| {
+            let delayed_generalizations = &mut self.delayed_generalizations;
             let mut params = self
                 .unbound_variables
                 .drain()
-                .map(|(_, generic)| generic)
+                .map(|(id, generic)| {
+                    let t = match &*generic {
+                        Type::Generic(g) => g.clone(),
+                        _ => unreachable!(),
+                    };
+                    delayed_generalizations.push((id, generic));
+                    t
+                })
                 .collect::<Vec<_>>();
             params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
 
@@ -180,9 +179,13 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     }
 
     pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
-        if RcType::strong_count(&typ) > 2 {
+        if false && RcType::strong_count(&typ) > 2 {
             if let Some(new_type) = self.visited.get(typ) {
-                return Some(new_type.clone());
+                return if new_type == typ {
+                    None
+                } else {
+                    Some(new_type.clone())
+                };
             }
         }
 
@@ -199,20 +202,26 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             trace!("No need to generalize: {}", typ);
             return replacement;
         }
+        // error!("MISS {} {}", RcType::strong_count(&typ), typ);
 
         let new_type = match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
-                // Create a prefix if none exists
-                let id = self.variable_generator.next_variable(self.tc);
+                let Self {
+                    tc,
+                    variable_generator,
+                    ..
+                } = self;
+                let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                    // Create a prefix if none exists
+                    let id = variable_generator.next_variable(tc);
 
-                let gen: RcType = self.generic(Generic::new(id.clone(), var.kind.clone()));
-                debug!("Gen {} to {}", var.id, gen);
-                self.subs.insert(var.id, gen.clone());
+                    let gen: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, gen);
 
-                self.unbound_variables
-                    .insert(id.clone(), Generic::new(id, var.kind.clone()));
+                    gen
+                });
 
-                Some(gen)
+                Some(gen.clone())
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
@@ -259,17 +268,17 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             Type::Skolem(ref skolem) => {
                 let in_scope = self.type_variables.contains_key(&skolem.name);
                 if self.subs.get_level(skolem.id) >= self.level {
-                    let generic = Generic {
+                    let generic = self.generic(Generic {
                         id: skolem.name.clone(),
                         kind: skolem.kind.clone(),
-                    };
+                    });
 
                     if !in_scope {
                         self.unbound_variables
-                            .insert(generic.id.clone(), generic.clone());
+                            .insert(skolem.id.clone(), generic.clone());
                     }
 
-                    Some(self.generic(generic))
+                    Some(generic)
                 } else {
                     replacement.clone()
                 }
@@ -284,16 +293,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                             .iter()
                             .map(|param| (param.id.clone(), type_cache.hole())),
                     );
-                }
-
-                match **typ {
-                    Type::Generic(ref generic)
-                        if self.type_variables.get(&generic.id).is_none() =>
-                    {
-                        self.unbound_variables
-                            .insert(generic.id.clone(), generic.clone());
-                    }
-                    _ => (),
                 }
 
                 types::walk_move_type_opt(

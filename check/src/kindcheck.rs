@@ -474,7 +474,7 @@ impl Substitutable for ArcKind {
     type Variable = u32;
     type Factory = ();
 
-    fn from_variable(x: u32) -> ArcKind {
+    fn from_variable(_: &Substitution<Self>, x: u32) -> ArcKind {
         Kind::variable(x)
     }
 

@@ -644,27 +644,8 @@ impl<'a> Typecheck<'a> {
         resolved_type: &mut RcType,
         binding: &mut ValueBinding<Symbol>,
     ) {
-        crate::implicits::resolve(self, &mut binding.expr);
-
-        self.type_variables.enter_scope();
-
-        {
-            let type_cache = &self.type_cache;
-            self.type_variables.extend(
-                resolved_type
-                    .forall_params()
-                    .map(|param| (param.id.clone(), type_cache.hole())),
-            );
-        }
-
-        {
-            let mut generalizer =
-                TypeGeneralizer::new(level, self, &resolved_type, binding.name.span);
-            generalizer.generalize_type_top(resolved_type);
-
-            self::generalize::generalize_from(self, level, resolved_type);
-        }
-        self.type_variables.exit_scope();
+        let mut generalizer = TypeGeneralizer::new(level, self, resolved_type, binding.name.span);
+        generalize_binding(&mut generalizer, resolved_type, binding);
     }
 
     fn generalize_variables<'i>(
@@ -808,8 +789,8 @@ impl<'a> Typecheck<'a> {
             let tail = tail_expr(expr);
             crate::implicits::resolve(self, tail);
             self.generalize_type(0, &mut typ, tail.span);
+            self.generalize_variables(0, &mut [].iter_mut(), tail);
         }
-        self.generalize_variables(0, &mut [].iter_mut(), expr);
 
         {
             struct ReplaceVisitor<'a: 'b, 'b> {
@@ -2143,15 +2124,33 @@ impl<'a> Typecheck<'a> {
         }
 
         if is_recursive {
-            // Once all variables inside the let has been unified we can quantify them
-            debug!("Generalize at {}", level);
-            for (bind, resolved_type) in bindings.iter_mut().zip(&mut resolved_types) {
-                bind.resolved_type = self.subs.bind_arc(&resolved_type);
-                debug!("Generalize {}", resolved_type);
-                self.generalize_binding(level, resolved_type, bind);
-                self.finish_pattern(level, &mut bind.name, &resolved_type);
-                debug!("Generalized to {}", resolved_type);
+            let hole = self.type_cache.hole();
+            {
+                let mut generalizer =
+                    TypeGeneralizer::new(level, self, &hole, bindings[0].name.span);
+
+                // Once all variables inside the let has been unified we can quantify them
+                debug!("Generalize recursive at {}", level);
+                for (bind, resolved_type) in bindings.iter_mut().zip(&mut resolved_types) {
+                    bind.resolved_type = generalizer.tc.subs.bind_arc(&resolved_type);
+                    debug!(
+                        "Generalize {}: {}",
+                        match bind.name.value {
+                            ast::Pattern::Ident(ref id) => id.name.declared_name(),
+                            _ => "",
+                        },
+                        resolved_type
+                    );
+                    generalize_binding(&mut generalizer, resolved_type, bind);
+                    debug!("Generalize mid {}", resolved_type);
+                    generalizer
+                        .tc
+                        .finish_pattern(level, &mut bind.name, &resolved_type);
+                    debug!("Generalized to {}", resolved_type);
+                }
             }
+
+            debug!("End generalize recursive");
 
             // Update the implicit bindings with the generalized types we just created
             let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
@@ -3305,4 +3304,33 @@ fn expr_check_span(e: &SpannedExpr<Symbol>) -> Span<BytePos> {
         Expr::LetBindings(_, ref b) | Expr::TypeBindings(_, ref b) => expr_check_span(b),
         _ => e.span,
     }
+}
+
+fn generalize_binding(
+    generalizer: &mut TypeGeneralizer,
+    resolved_type: &mut RcType,
+    binding: &mut ValueBinding<Symbol>,
+) {
+    crate::implicits::resolve(generalizer.tc, &mut binding.expr);
+
+    generalizer.tc.type_variables.enter_scope();
+
+    {
+        let type_cache = &generalizer.tc.type_cache;
+        generalizer.tc.type_variables.extend(
+            resolved_type
+                .forall_params()
+                .map(|param| (param.id.clone(), type_cache.hole())),
+        );
+    }
+
+    {
+        generalizer.generalize_type_top(resolved_type);
+
+        generalizer.generalize_variables(
+            &mut binding.args.iter_mut().map(|arg| &mut arg.name),
+            &mut binding.expr,
+        );
+    }
+    generalizer.tc.type_variables.exit_scope();
 }

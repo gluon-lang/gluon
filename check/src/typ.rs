@@ -26,7 +26,7 @@ bitflags! {
 
 
         const NEEDS_REPLACEMENT = Flags::HAS_VARIABLES.bits | Flags::HAS_SKOLEMS.bits;
-        const NEEDS_GENERALIZE = Flags::NEEDS_REPLACEMENT.bits | Flags::HAS_GENERICS.bits;
+        const NEEDS_GENERALIZE = Flags::NEEDS_REPLACEMENT.bits;
     }
 }
 

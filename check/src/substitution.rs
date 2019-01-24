@@ -110,7 +110,7 @@ pub trait Substitutable: Sized {
     type Variable: Variable;
     type Factory: VariableFactory<Variable = Self::Variable>;
     /// Constructs a new object from its variable type
-    fn from_variable(x: Self::Variable) -> Self;
+    fn from_variable(subs: &Substitution<Self>, x: Self::Variable) -> Self;
 
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
@@ -288,6 +288,7 @@ impl<T: Substitutable> Substitution<T> {
     }
 
     pub fn replace(&mut self, var: u32, t: T) {
+        debug_assert!(t.get_id() != Some(var));
         self.types.insert(var, t.into());
     }
 
@@ -296,7 +297,7 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
-        self.new_var_fn(|var| T::from_variable(self.factory.new(var)))
+        self.new_var_fn(|var| T::from_variable(self, self.factory.new(var)))
     }
 
     pub fn new_var_fn<F>(&self, f: F) -> T
@@ -412,7 +413,10 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             return Ok(None);
         }
         if occurs(typ, self, id) {
-            return Err(Error::Occurs(T::from_variable(id.clone()), typ.clone()));
+            return Err(Error::Occurs(
+                T::from_variable(self, id.clone()),
+                typ.clone(),
+            ));
         }
         {
             let id_type = self.find_type_for_var(id.get_id());
@@ -486,7 +490,7 @@ impl Substitution<RcType> {
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
-        debug!("New var {}", self.variables.len());
+        debug!("New arc var {}", self.variables.len());
 
         let var = TypeVariable {
             id: id as u32,
