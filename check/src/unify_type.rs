@@ -9,8 +9,8 @@ use crate::base::{
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
     types::{
-        self, walk_move_type_opt, AppVec, ArgType, Field, Filter, Generic, InternerVisitor,
-        NullInterner, Skolem, Type, TypeEnv, TypeExt, TypeFormatter, TypeInterner, TypeVariable,
+        self, walk_type, AppVec, ArgType, Field, Filter, Generic, InternerVisitor, Skolem, Type,
+        TypeEnv, TypeExt, TypeFormatter, TypeInterner, TypeVariable,
     },
 };
 
@@ -63,7 +63,7 @@ impl<'a> State<'a> {
 
     fn remove_aliases(
         &mut self,
-        subs: &Substitution<RcType>,
+        mut subs: &Substitution<RcType>,
         typ: &RcType,
     ) -> Result<Option<RcType>, TypeError<Symbol, RcType>> {
         if let Some(alias_id) = typ.alias_ident() {
@@ -73,21 +73,18 @@ impl<'a> State<'a> {
             self.reduced_aliases.push(alias_id.clone());
         }
 
-        match resolve::remove_alias(&self.env, &mut NullInterner, typ)? {
+        match resolve::remove_alias(&self.env, &mut subs, typ)? {
             Some(mut typ) => {
                 loop {
                     typ = types::walk_move_type(
                         typ.clone(),
-                        &mut InternerVisitor::new(
-                            &mut NullInterner,
-                            |_, typ: &RcType| match **typ {
-                                Type::Forall(_, _, None) => {
-                                    let typ = new_skolem_scope(subs, typ);
-                                    Some(typ)
-                                }
-                                _ => None,
-                            },
-                        ),
+                        &mut InternerVisitor::new(&mut subs, |subs, typ: &RcType| match **typ {
+                            Type::Forall(_, _, None) => {
+                                let typ = new_skolem_scope(subs, typ);
+                                Some(typ)
+                            }
+                            _ => None,
+                        }),
                     );
                     if let Some(alias_id) = typ.alias_ident() {
                         if self.reduced_aliases.iter().any(|name| name == alias_id) {
@@ -96,7 +93,7 @@ impl<'a> State<'a> {
                         self.reduced_aliases.push(alias_id.clone());
                     }
 
-                    match resolve::remove_alias(&self.env, &mut NullInterner, &typ)? {
+                    match resolve::remove_alias(&self.env, &mut subs, &typ)? {
                         Some(new_typ) => typ = new_typ,
                         None => break,
                     }
@@ -278,8 +275,8 @@ impl Substitutable for RcType<Symbol> {
         types::walk_type_(self, f)
     }
 
-    fn instantiate(&self, subs: &Substitution<Self>) -> Self {
-        new_skolem_scope(subs, self).instantiate_generics(&mut NullInterner, &mut FnvMap::default())
+    fn instantiate(&self, mut subs: &Substitution<Self>) -> Self {
+        new_skolem_scope(subs, self).instantiate_generics(&mut subs, &mut FnvMap::default())
     }
 
     fn on_union(&self) -> Option<&Self> {
@@ -579,9 +576,9 @@ where
             let mut named_variables = FnvMap::default();
 
             if unifier.state.in_alias {
-                let l = expected.skolemize(&mut NullInterner, &mut named_variables);
+                let l = expected.skolemize(&mut subs, &mut named_variables);
                 named_variables.clear();
-                let r = actual.skolemize(&mut NullInterner, &mut named_variables);
+                let r = actual.skolemize(&mut subs, &mut named_variables);
 
                 Ok(unifier.try_match_res(&l, &r)?.map(|inner_type| {
                     reconstruct_forall(unifier.state.subs, params, inner_type, vars)
@@ -599,9 +596,7 @@ where
                         }),
                     )
                 }));
-                let l = expected_iter
-                    .typ
-                    .skolemize(&mut NullInterner, &mut named_variables);
+                let l = expected_iter.typ.skolemize(&mut subs, &mut named_variables);
 
                 named_variables.clear();
                 let mut actual_iter = actual.forall_scope_iter();
@@ -619,9 +614,7 @@ where
                         )
                     },
                 ));
-                let r = actual_iter
-                    .typ
-                    .skolemize(&mut NullInterner, &mut named_variables);
+                let r = actual_iter.typ.skolemize(&mut subs, &mut named_variables);
 
                 Ok(unifier.try_match_res(&l, &r)?.map(|inner_type| {
                     reconstruct_forall(unifier.state.subs, params, inner_type, vars)
@@ -966,6 +959,7 @@ where
     UnifierState<'a, U>: Unifier<State<'a>, RcType>,
 {
     let mut did_alias = false;
+    let mut subs = unifier.state.subs;
     loop {
         l = match l.name() {
             Some(l_id) => {
@@ -984,7 +978,7 @@ where
                         FoundAlias::AlreadyDone
                     });
                 }
-                match resolve::remove_alias(unifier.state.env, &mut NullInterner, &l) {
+                match resolve::remove_alias(unifier.state.env, &mut subs, &l) {
                     Ok(Some(typ)) => {
                         did_alias = true;
                         unifier
@@ -1122,9 +1116,13 @@ pub fn new_skolem_scope(subs: &Substitution<RcType>, typ: &RcType) -> RcType {
 }
 
 fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<RcType> {
-    if !typ.flags().contains(Flags::HAS_GENERICS) {
+    if !typ
+        .flags()
+        .intersects(Flags::HAS_GENERICS | Flags::HAS_FORALL)
+    {
         return None;
     }
+
     if let Some((arg_type, arg, ret)) = typ.as_function_with_type() {
         return new_skolem_scope_(subs, ret)
             .map(|ret| subs.function_type(arg_type, Some(arg.clone()), ret));
@@ -1229,7 +1227,7 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
         let l = new_skolem_scope(self.unifier.subs, &l);
         let l_orig = &l;
         let mut map = FnvMap::default();
-        let l = l.skolemize(&mut NullInterner, &mut map);
+        let l = l.skolemize(&mut self.unifier.subs, &mut map);
         let typ = self.try_match(&l, r);
 
         // If a skolem variable we just created somehow appears in the original type it has been
@@ -1253,7 +1251,7 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
         })
         .map(|typ| {
             self.unifier.allow_returned_type_replacement = false;
-            typ.with_forall(l_orig)
+            self.unifier.subs.with_forall(typ, l_orig)
         })
     }
 
@@ -1334,7 +1332,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         l: &RcType,
         r: &RcType,
     ) -> Result<Option<RcType>, UnifyError<TypeError<Symbol, RcType>, RcType>> {
-        let subs = self.unifier.subs;
+        let mut subs = self.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
@@ -1349,7 +1347,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
                     .collect();
-                let r = r.instantiate_generics(&mut NullInterner, &mut variables);
+                let r = r.instantiate_generics(&mut subs, &mut variables);
                 self.try_match_res(l, &r)
             }
 
@@ -1509,11 +1507,10 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Smaller> {
             _ => match l.zip_match(r, self) {
                 Err(_) => {
                     self.unifier.size = Size::Different;
-                    walk_move_type_opt(r, &mut |inner_type: &RcType| {
+                    walk_type(r, &mut |inner_type: &RcType| {
                         if inner_type == l {
                             self.unifier.size = Size::Smaller
                         }
-                        None
                     });
                     if self.unifier.size == Size::Different {
                         self.unifier.just_encountered_error = true;
@@ -1526,11 +1523,10 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Smaller> {
                         // We ended up finding a mismatch inside this type so we need to try the check
                         // again in case the only cause for the error is that we resolved an alias
                         // which then mismatched
-                        walk_move_type_opt(r, &mut |inner_type: &RcType| {
+                        walk_type(r, &mut |inner_type: &RcType| {
                             if inner_type == l {
                                 self.unifier.size = Size::Smaller
                             }
-                            None
                         });
                     }
                     result

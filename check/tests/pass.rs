@@ -475,7 +475,7 @@ let const x = \_ -> x
 in const #Int+ 1
 ";
     let result = support::typecheck(text);
-    assert!(result.is_err());
+    assert!(result.is_err(), "{}", result.unwrap());
 }
 
 #[test]

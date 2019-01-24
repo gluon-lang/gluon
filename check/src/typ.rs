@@ -23,10 +23,11 @@ bitflags! {
         const HAS_VARIABLES = 1 << 0;
         const HAS_SKOLEMS = 2 << 0;
         const HAS_GENERICS = 3 << 0;
+        const HAS_FORALL = 4 << 0;
 
 
-        const NEEDS_REPLACEMENT = Flags::HAS_VARIABLES.bits | Flags::HAS_SKOLEMS.bits;
-        const NEEDS_GENERALIZE = Flags::NEEDS_REPLACEMENT.bits;
+        const NEEDS_GENERALIZE =
+            Flags::HAS_VARIABLES.bits | Flags::HAS_SKOLEMS.bits;
     }
 }
 
@@ -77,9 +78,12 @@ where
             Type::Record(ref typ)
             | Type::Variant(ref typ)
             | Type::Effect(ref typ)
-            | Type::Forall(_, ref typ, None) => typ.add_flags(flags),
+            | Type::Forall(_, ref typ, None) => {
+                *flags |= Flags::HAS_FORALL;
+                typ.add_flags(flags);
+            }
             Type::Forall(_, ref typ, Some(_)) => {
-                *flags |= Flags::HAS_SKOLEMS; // ?
+                *flags |= Flags::HAS_SKOLEMS | Flags::HAS_FORALL; // ?
                 typ.add_flags(flags);
             }
             Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
@@ -217,6 +221,10 @@ impl<Id> TypeExt<Id> for RcType<Id> {
 impl<Id> RcType<Id> {
     pub fn flags(&self) -> Flags {
         self.typ.flags
+    }
+
+    pub fn needs_generalize(&self) -> bool {
+        self.flags().intersects(Flags::NEEDS_GENERALIZE)
     }
 
     pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &Self)> {

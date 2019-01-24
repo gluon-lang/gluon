@@ -274,7 +274,7 @@ mod test {
         type Variable = u32;
         type Factory = ();
 
-        fn from_variable(var: u32) -> TType {
+        fn from_variable(_: &Substitution<Self>, var: u32) -> TType {
             TType(Box::new(Type::Variable(var)))
         }
         fn get_var(&self) -> Option<&u32> {

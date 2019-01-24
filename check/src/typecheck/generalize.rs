@@ -1,5 +1,3 @@
-use std::mem;
-
 use crate::base::{
     ast::{self, MutVisitor, SpannedExpr, SpannedIdent},
     fnv::{FnvMap, FnvSet},
@@ -10,7 +8,7 @@ use crate::base::{
 
 use crate::{
     substitution::{is_variable_unified, Substitution},
-    typ::{self, RcType},
+    typ::RcType,
     typecheck::Typecheck,
 };
 
@@ -23,8 +21,6 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     variable_generator: TypeVariableGenerator,
     pub tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
-    visited: FnvMap<RcType, RcType>,
-    flags: typ::Flags,
 }
 
 impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b> {
@@ -68,8 +64,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
             span,
-            visited: Default::default(),
-            flags: typ::Flags::NEEDS_REPLACEMENT,
         }
     }
 
@@ -123,8 +117,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                                 .map(|param| (param.id.clone(), type_cache.hole())),
                         );
                     }
+                    debug!("Variable generalize {}", typ);
                     if let Some(typ) = self.generalizer.generalize_type(typ) {
+                        debug!("End generalize {}", typ);
                         self.generalizer.tc.subs.replace(var.id, typ);
+                    } else {
+                        debug!("End variable generalize");
                     }
                 }
             }
@@ -144,9 +142,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     pub(crate) fn generalize_type_top(&mut self, typ: &mut RcType) {
         self.tc.type_variables.enter_scope();
 
-        let flags = mem::replace(&mut self.flags, typ::Flags::NEEDS_GENERALIZE);
         let mut result_type = self.generalize_type(typ);
-        self.flags = flags;
 
         self.tc.type_variables.exit_scope();
 
@@ -170,7 +166,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 .collect::<Vec<_>>();
             params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
 
-            Type::forall(params, typ)
+            self.tc.forall(params, typ)
         });
         if let Some(finished) = result_type {
             *typ = finished;
@@ -179,8 +175,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     }
 
     pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
-        if false && RcType::strong_count(&typ) > 2 {
-            if let Some(new_type) = self.visited.get(typ) {
+        if RcType::strong_count(&typ) > 2 {
+            if let Some(new_type) = self.tc.visited.get(typ) {
                 return if new_type == typ {
                     None
                 } else {
@@ -198,7 +194,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         }
         trace!("GEN: {}", typ);
 
-        if !typ.flags().intersects(self.flags) {
+        if !typ.needs_generalize() {
             trace!("No need to generalize: {}", typ);
             return replacement;
         }
@@ -307,10 +303,11 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         };
 
         if let Some(new_type) = &new_type {
-            if RcType::strong_count(&original_type) > 2 {
-                self.visited.insert(original_type.clone(), new_type.clone());
+            if !new_type.needs_generalize() && RcType::strong_count(&original_type) > 2 {
                 if replacement.is_some() {
-                    self.visited.insert(typ.clone(), new_type.clone());
+                    self.tc
+                        .visited
+                        .insert(original_type.clone(), new_type.clone());
                 }
             }
         }
@@ -332,11 +329,10 @@ impl TypeVariableGenerator {
             if let Type::Forall(ref params, _, _) = **typ {
                 map.extend(params.iter().map(|param| param.id.clone()));
             }
-            types::walk_move_type_opt(
+            types::walk_type_(
                 typ,
                 &mut types::ControlVisitation(|typ: &RcType| {
                     gather_foralls(map, subs, typ);
-                    None
                 }),
             );
         }
@@ -358,7 +354,8 @@ impl TypeVariableGenerator {
             tc.symbols.symbol(&name[..])
         };
         self.map.insert(symbol.clone());
-        tc.type_variables.insert(symbol.clone(), Type::hole());
+        let hole = tc.hole();
+        tc.type_variables.insert(symbol.clone(), hole);
         symbol
     }
 

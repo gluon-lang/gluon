@@ -57,18 +57,15 @@ record.y
     assert_eq!(result, Ok(typ("String")));
 }
 
-#[test]
-fn record_unpack() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
+test_check! {
+    record_unpack,
+    r#"
 let f record =
     let { x, y } = record
     y
 f { y = 1.0, z = 0, x = 123 }
-"#;
-    let result = support::typecheck(text);
-    assert_eq!(result, Ok(typ("Float")));
+"#,
+    "Float"
 }
 
 // Test that arguments that have an applied (`Test a`) type properly unify even if they are not
