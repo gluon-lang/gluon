@@ -1116,10 +1116,7 @@ pub fn new_skolem_scope(subs: &Substitution<RcType>, typ: &RcType) -> RcType {
 }
 
 fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<RcType> {
-    if !typ
-        .flags()
-        .intersects(Flags::HAS_GENERICS | Flags::HAS_FORALL)
-    {
+    if !typ.flags().intersects(Flags::HAS_FORALL) {
         return None;
     }
 
