@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate criterion;
+extern crate env_logger;
 
 extern crate gluon;
 extern crate gluon_base as base;
@@ -61,10 +62,14 @@ fn typecheck_24(b: &mut Bencher) {
 }
 
 fn clone_benchmark(c: &mut Criterion) {
+    let _ = env_logger::try_init();
+
     c.bench_function("clone prelude", clone_prelude);
 }
 
 fn typecheck_benchmark(c: &mut Criterion) {
+    let _ = env_logger::try_init();
+
     c.bench_function("std/prelude", typecheck_prelude);
     c.bench_function("examples/24", typecheck_24);
 }

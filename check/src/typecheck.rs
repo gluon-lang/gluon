@@ -1820,40 +1820,25 @@ impl<'a> Typecheck<'a> {
                     }
                 }
 
-                let mut typ = {
-                    // HACK Since there is no way to unify just the name of the 'type field's we
-                    // need to take the types from the matched type. This leaves the `types`
-                    // list incomplete however since it may miss some fields defined in the
-                    // pattern. These are catched later in this function.
-                    let x = self.remove_alias(match_type.clone());
-                    let types = x
-                        .type_field_iter()
-                        .filter(|field| {
-                            associated_types
-                                .iter()
-                                .any(|other| other.name.value.name_eq(&field.name))
-                        })
-                        .cloned()
-                        .collect();
+                let record_match_type = self.remove_alias(match_type.clone());
 
-                    let fields = fields
-                        .iter()
-                        .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
-                        .collect();
-                    self.poly_record(types, fields, self.subs.new_var())
-                };
-                typ = self.top_skolem_scope(&typ);
-                self.unify_span(span, &typ, match_type.clone());
+                let mut missing_fields_from_match_type = Vec::new();
 
                 for field in fields {
                     let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
-                    let field_type = typ
+                    let field_type = record_match_type
                         .row_iter()
                         .find(|f| f.name.name_eq(name))
-                        .expect("ICE: Expected field to exist in type")
-                        .typ
-                        .clone();
+                        .map(|f| f.typ.clone())
+                        .unwrap_or_else(|| {
+                            let typ = self.subs.new_var();
+                            missing_fields_from_match_type.push(Field {
+                                name: name.clone(),
+                                typ: typ.clone(),
+                            });
+                            typ
+                        });
                     match field.value {
                         Some(ref mut pattern) => {
                             self.typecheck_pattern(pattern, field_type);
@@ -1869,7 +1854,7 @@ impl<'a> Typecheck<'a> {
                     let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
-                    let field_type = typ
+                    let field_type = record_match_type
                         .type_field_iter()
                         .find(|field| field.name.name_eq(&name));
 
@@ -1898,6 +1883,15 @@ impl<'a> Typecheck<'a> {
                     self.stack_type(name, &alias);
                 }
 
+                if !missing_fields_from_match_type.is_empty() {
+                    let expected = self.subs.poly_record(
+                        vec![],
+                        missing_fields_from_match_type,
+                        self.subs.new_var(),
+                    );
+                    self.unify_span(pattern.span, &expected, match_type.clone());
+                }
+
                 if let Some(ref implicit_import) = *implicit_import {
                     self.implicit_resolver.add_implicits_of_record(
                         &self.subs,
@@ -1906,7 +1900,7 @@ impl<'a> Typecheck<'a> {
                     );
                 }
 
-                typ
+                match_type
             }
             Pattern::Tuple {
                 ref mut typ,

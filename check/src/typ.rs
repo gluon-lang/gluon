@@ -22,6 +22,11 @@ bitflags! {
     pub struct Flags: u8 {
         const HAS_VARIABLES = 1 << 0;
         const HAS_SKOLEMS = 2 << 0;
+        const HAS_GENERICS = 3 << 0;
+
+
+        const NEEDS_REPLACEMENT = Flags::HAS_VARIABLES.bits | Flags::HAS_SKOLEMS.bits;
+        const NEEDS_GENERALIZE = Flags::NEEDS_REPLACEMENT.bits | Flags::HAS_GENERICS.bits;
     }
 }
 
@@ -77,13 +82,13 @@ where
                 *flags |= Flags::HAS_SKOLEMS; // ?
                 typ.add_flags(flags);
             }
-            Type::Generic(_) // TODO Generics only need generalization if they are unbound
-            | Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
+            Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
             Type::ExtendRow { fields, rest, .. } => {
                 fields.add_flags(flags);
                 rest.add_flags(flags);
             }
             Type::Variable(_) => *flags |= Flags::HAS_VARIABLES,
+            Type::Generic(_) => *flags |= Flags::HAS_GENERICS,
             Type::Hole
             | Type::Opaque
             | Type::Error
@@ -212,11 +217,6 @@ impl<Id> TypeExt<Id> for RcType<Id> {
 impl<Id> RcType<Id> {
     pub fn flags(&self) -> Flags {
         self.typ.flags
-    }
-
-    pub fn needs_generalize(&self) -> bool {
-        self.flags()
-            .intersects(Flags::HAS_VARIABLES | Flags::HAS_SKOLEMS)
     }
 
     pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &Self)> {

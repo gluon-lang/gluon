@@ -1,16 +1,16 @@
+use std::mem;
+
 use crate::base::{
     ast::{self, MutVisitor, SpannedExpr, SpannedIdent},
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{
-        self, AppVec, ArcType, BuiltinType, Generic, NullInterner, Type, TypeExt, TypeInterner,
-    },
+    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeExt, TypeInterner},
 };
 
 use crate::{
     substitution::{is_variable_unified, Substitution},
-    typ::RcType,
+    typ::{self, RcType},
     typecheck::Typecheck,
 };
 
@@ -42,6 +42,7 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
     visited: FnvMap<RcType, RcType>,
+    flags: typ::Flags,
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -77,6 +78,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             tc,
             span,
             visited: Default::default(),
+            flags: typ::Flags::NEEDS_REPLACEMENT,
         }
     }
 
@@ -151,7 +153,9 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     pub(crate) fn generalize_type_top(&mut self, typ: &mut RcType) {
         self.tc.type_variables.enter_scope();
 
+        let flags = mem::replace(&mut self.flags, typ::Flags::NEEDS_GENERALIZE);
         let mut result_type = self.generalize_type(typ);
+        self.flags = flags;
 
         self.tc.type_variables.exit_scope();
 
@@ -191,7 +195,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         }
         trace!("GEN: {}", typ);
 
-        if !typ.needs_generalize() {
+        if !typ.flags().intersects(self.flags) {
             trace!("No need to generalize: {}", typ);
             return replacement;
         }
@@ -231,7 +235,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     if self.tc.named_variables.is_empty() {
                         typ.clone()
                     } else {
-                        typ.instantiate_generics_(&mut NullInterner, &mut self.tc.named_variables)
+                        typ.instantiate_generics_(&mut &self.tc.subs, &mut self.tc.named_variables)
                             .unwrap_or(typ.clone())
                     }
                 };
@@ -272,6 +276,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             _ => {
+                // Ensure that the forall's variables don't look unbound
                 if let Type::Forall(ref params, _, None) = **typ {
                     let type_cache = &self.tc.type_cache;
                     self.tc.type_variables.extend(
