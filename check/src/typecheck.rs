@@ -377,7 +377,6 @@ pub struct Typecheck<'a> {
 
     pub(crate) implicit_resolver: crate::implicits::ImplicitResolver<'a>,
     unbound_variables: ScopedMap<Symbol, RcType>,
-    visited: FnvMap<RcType, RcType>,
 }
 
 impl<'a> TypeInterner<Symbol, RcType> for Typecheck<'a> {
@@ -432,7 +431,6 @@ impl<'a> Typecheck<'a> {
             unbound_variables: ScopedMap::new(),
             type_interner,
             subs,
-            visited: Default::default(),
         }
     }
 

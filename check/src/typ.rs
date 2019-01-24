@@ -21,9 +21,9 @@ use crate::base::{
 bitflags! {
     pub struct Flags: u8 {
         const HAS_VARIABLES = 1 << 0;
-        const HAS_SKOLEMS = 2 << 0;
-        const HAS_GENERICS = 3 << 0;
-        const HAS_FORALL = 4 << 0;
+        const HAS_SKOLEMS = 1 << 1;
+        const HAS_GENERICS = 1 << 2;
+        const HAS_FORALL = 1 << 3;
 
 
         const NEEDS_GENERALIZE =
@@ -376,5 +376,20 @@ where
 
         type_interner.insert(typ.clone(), new_type.clone());
         new_type
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flags() {
+        let gen = Type::<_, RcType>::generic(Generic::new(Symbol::from("a"), Default::default()));
+        assert_eq!(gen.flags(), Flags::HAS_GENERICS);
+        assert_eq!(
+            Type::function(vec![gen.clone()], gen.clone()).flags(),
+            Flags::HAS_GENERICS
+        );
     }
 }

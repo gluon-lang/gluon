@@ -175,18 +175,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     }
 
     pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
-        if RcType::strong_count(&typ) > 2 {
-            if let Some(new_type) = self.tc.visited.get(typ) {
-                return if new_type == typ {
-                    None
-                } else {
-                    Some(new_type.clone())
-                };
-            }
-        }
-
-        let original_type = typ;
-
         let replacement = self.subs.replace_variable(typ);
         let mut typ = typ;
         if let Some(ref t) = replacement {
@@ -198,7 +186,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             trace!("No need to generalize: {}", typ);
             return replacement;
         }
-        // error!("MISS {} {}", RcType::strong_count(&typ), typ);
 
         let new_type = match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
@@ -301,16 +288,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 .or_else(|| replacement.clone())
             }
         };
-
-        if let Some(new_type) = &new_type {
-            if !new_type.needs_generalize() && RcType::strong_count(&original_type) > 2 {
-                if replacement.is_some() {
-                    self.tc
-                        .visited
-                        .insert(original_type.clone(), new_type.clone());
-                }
-            }
-        }
 
         new_type
     }
