@@ -260,7 +260,11 @@ impl PrimitiveEnv for VmEnv {
 
 impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
-        self.get_metadata(id.definition_name()).ok()
+        if id.is_global() {
+            self.get_metadata(id.definition_name()).ok()
+        } else {
+            None
+        }
     }
 }
 
