@@ -423,7 +423,7 @@ where
     }
 
     pub fn group(group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
-        let group = Arc::new(group);
+        let group = Arc::<[_]>::from(group);
         (0..group.len())
             .map(|index| Alias {
                 _typ: T::from(Type::Alias(AliasRef {
@@ -500,7 +500,7 @@ pub struct AliasRef<Id, T> {
         serde(serialize_state_with = "crate::serialization::shared::serialize")
     )]
     /// The other aliases defined in this group
-    pub group: Arc<Vec<AliasData<Id, T>>>,
+    pub group: Arc<[AliasData<Id, T>]>,
 }
 
 impl<Id, T> Eq for AliasRef<Id, T> where AliasData<Id, T>: Eq {}
@@ -535,7 +535,7 @@ impl<Id, T> AliasRef<Id, T> {
     }
 
     #[doc(hidden)]
-    pub fn new(index: usize, group: Arc<Vec<AliasData<Id, T>>>) -> Self {
+    pub fn new(index: usize, group: Arc<[AliasData<Id, T>]>) -> Self {
         AliasRef { index, group }
     }
 
@@ -985,7 +985,7 @@ where
     pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::new(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData { name, args, typ }]),
         }))
     }
 
@@ -2932,7 +2932,7 @@ pub trait TypeInterner<Id, T> {
     fn alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         self.intern(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::new(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData { name, args, typ }]),
         }))
     }
 
@@ -2995,14 +2995,14 @@ pub trait TypeInterner<Id, T> {
         Alias {
             _typ: self.intern(Type::Alias(AliasRef {
                 index: 0,
-                group: Arc::new(vec![data]),
+                group: Arc::from(vec![data]),
             })),
             _marker: PhantomData,
         }
     }
 
     fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
-        let group = Arc::new(group);
+        let group = Arc::<[_]>::from(group);
         (0..group.len())
             .map(|index| Alias {
                 _typ: self.intern(Type::Alias(AliasRef {
@@ -3533,7 +3533,7 @@ where
         Type::Ident(ref id) => interner.ident(id.clone()),
         Type::Projection(ref ids) => interner.projection(ids.clone()),
         Type::Alias(ref alias) => {
-            let group = alias
+            let group: Vec<_> = alias
                 .group
                 .iter()
                 .map(|alias_data| translate_alias(alias_data, |a| translate(interner, a)))
@@ -3541,7 +3541,7 @@ where
 
             interner.intern(Type::Alias(AliasRef {
                 index: alias.index,
-                group: Arc::new(group),
+                group: Arc::from(group),
             }))
         }
         Type::EmptyRow => interner.empty_row(),

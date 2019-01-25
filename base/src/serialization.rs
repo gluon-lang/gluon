@@ -76,7 +76,7 @@ impl<Id, T> Clone for Seed<Id, T> {
 pub fn deserialize_group<'de, Id, T, D>(
     seed: &mut Seed<Id, T>,
     deserializer: D,
-) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
+) -> Result<Arc<[AliasData<Id, T>]>, D::Error>
 where
     D: crate::serde::Deserializer<'de>,
     T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
@@ -87,7 +87,7 @@ where
 {
     use crate::serialization::SharedSeed;
     let seed = SharedSeed::new(seed);
-    DeserializeSeed::deserialize(seed, deserializer)
+    DeserializeSeed::deserialize(seed, deserializer).map(|vec: Vec<_>| Arc::from(vec))
 }
 
 impl<'a, T> Shared for &'a T {
@@ -110,7 +110,10 @@ impl Shared for crate::kind::ArcKind {
     }
 }
 
-impl<T> Shared for Arc<T> {
+impl<T> Shared for Arc<T>
+where
+    T: ?Sized,
+{
     fn unique(&self) -> bool {
         Arc::strong_count(self) == 1
     }
@@ -255,7 +258,7 @@ enum Lookup {
 
 fn node_to_id<T>(map: &NodeToId, node: &T) -> Lookup
 where
-    T: Shared,
+    T: ?Sized + Shared,
 {
     if Shared::unique(node) {
         return Lookup::Unique;
@@ -326,7 +329,7 @@ pub mod shared {
     pub fn serialize<S, T, Seed>(self_: &T, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
-        T: Shared + Deref,
+        T: ?Sized + Shared + Deref,
         T::Target: SerializeState<Seed>,
         Seed: AsRef<NodeToId>,
     {

@@ -231,11 +231,14 @@ where
 
 #[doc(hidden)]
 pub trait Ptr {
-    type Target;
+    type Target: ?Sized;
     fn as_ptr(&self) -> &Self::Target;
 }
 
-impl<T> Ptr for Arc<T> {
+impl<T> Ptr for Arc<T>
+where
+    T: ?Sized,
+{
     type Target = T;
     fn as_ptr(&self) -> &Self::Target {
         self
@@ -264,9 +267,12 @@ impl<Id, T> Ptr for Type<Id, T> {
 }
 
 #[repr(transparent)]
-pub struct PtrEq<T>(pub T);
+pub struct PtrEq<T: ?Sized>(pub T);
 
-impl<T> PtrEq<T> {
+impl<T> PtrEq<T>
+where
+    T: ?Sized,
+{
     pub fn new(t: &T) -> &Self {
         unsafe { mem::transmute(t) }
     }
@@ -297,7 +303,10 @@ where
     }
 }
 
-impl<T> Borrow<PtrEq<T>> for PtrEq<Arc<T>> {
+impl<T> Borrow<PtrEq<T>> for PtrEq<Arc<T>>
+where
+    T: ?Sized,
+{
     #[inline(always)]
     fn borrow(&self) -> &PtrEq<T> {
         PtrEq::new(self.0.as_ptr())
@@ -335,7 +344,7 @@ impl TypeInternerAlloc for RcType {
 
 pub struct TranslateInterner<T, U> {
     pub type_map: FnvMap<PtrEq<T>, U>,
-    pub alias_map: FnvMap<PtrEq<Arc<Vec<AliasData<Symbol, T>>>>, Arc<Vec<AliasData<Symbol, U>>>>,
+    pub alias_map: FnvMap<PtrEq<Arc<[AliasData<Symbol, T>]>>, Arc<[AliasData<Symbol, U>]>>,
 }
 
 impl<T, U> Default for TranslateInterner<T, U>
@@ -390,7 +399,7 @@ where
             let group = match type_interner.alias_map.get(PtrEq::new(&alias.group)) {
                 Some(group) => group.clone(),
                 None => {
-                    let group = Arc::new(
+                    let group: Arc<[_]> = Arc::from(
                         alias
                             .group
                             .iter()
