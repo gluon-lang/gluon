@@ -2531,7 +2531,12 @@ impl<'a> Typecheck<'a> {
             } => {
                 let new_types = types::walk_move_types(types, |field| {
                     let typ = self
-                        .create_unifiable_signature2(field.typ.unresolved_type())
+                        .create_unifiable_signature_with(
+                            field.typ.params().iter().map(|param| {
+                                (param.id.clone(), field.typ.unresolved_type().clone())
+                            }),
+                            field.typ.unresolved_type(),
+                        )
                         .unwrap_or_else(|| field.typ.unresolved_type().clone());
                     Some(Field::new(
                         field.name.clone(),
