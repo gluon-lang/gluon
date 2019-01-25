@@ -48,7 +48,7 @@ use crate::base::{
     symbol::{Symbol, SymbolRef},
     types::{
         translate_alias, translate_type, Alias, ArcType, PrimitiveEnv, SharedInterner, TypeCache,
-        TypeEnv, TypeExt, TypeInterner,
+        TypeEnv, TypeInterner,
     },
 };
 
@@ -79,7 +79,7 @@ fn check_signature_(
     let subs = Substitution::new(Kind::typ(), interner.clone());
     let state = unify_type::State::new(env, &subs);
     let actual = unify_type::new_skolem_scope(&subs, actual);
-    let actual = actual.instantiate_generics(&mut &*interner, &mut FnvMap::default());
+    let actual = actual.instantiate_generics(&mut &subs, &mut FnvMap::default());
     let result = unify_type::subsumes(&subs, state, signature, &actual);
     if let Err((_, ref err)) = result {
         warn!("Check signature error: {}", err);

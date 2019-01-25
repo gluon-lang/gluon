@@ -3,14 +3,10 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeExt, TypeInterner},
+    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeInterner},
 };
 
-use crate::{
-    substitution::{is_variable_unified, Substitution},
-    typ::RcType,
-    typecheck::Typecheck,
-};
+use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
 
 pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     level: u32,
@@ -207,45 +203,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 Some(gen.clone())
             }
 
-            Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                trace!("Generalize `{}` {:?}", typ, vars);
-
-                let mut new_params = Vec::new();
-                let typ = {
-                    let subs = &self.tc.subs;
-                    self.tc.named_variables.clear();
-                    for (param, var) in params.iter().zip(vars) {
-                        if is_variable_unified(subs, var) {
-                            self.tc
-                                .named_variables
-                                .insert(param.id.clone(), var.clone());
-                        } else {
-                            new_params.push(param.clone());
-                        }
-                    }
-
-                    if self.tc.named_variables.is_empty() {
-                        typ.clone()
-                    } else {
-                        typ.instantiate_generics_(&mut &self.tc.subs, &mut self.tc.named_variables)
-                            .unwrap_or(typ.clone())
-                    }
-                };
-
+            Type::Forall(ref params, ref typ, _) => {
                 self.type_variables.enter_scope();
-                self.type_variables.extend(
-                    params
-                        .iter()
-                        .zip(vars)
-                        .map(|(param, var)| (param.id.clone(), var.clone())),
-                );
+                let hole = self.hole();
+                self.type_variables
+                    .extend(params.iter().map(|param| (param.id.clone(), hole.clone())));
 
                 trace!("Generalize forall => `{}`", typ);
 
                 let new_type = self.generalize_type(&typ);
                 self.type_variables.exit_scope();
 
-                Some(self.forall(new_params, new_type.unwrap_or_else(|| typ.clone())))
+                Some(self.forall(params.clone(), new_type.unwrap_or_else(|| typ.clone())))
             }
 
             Type::Skolem(ref skolem) => {

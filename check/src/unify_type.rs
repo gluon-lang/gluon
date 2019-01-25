@@ -9,8 +9,8 @@ use crate::base::{
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
     types::{
-        self, walk_type, AppVec, ArgType, Field, Filter, Generic, InternerVisitor, Skolem, Type,
-        TypeEnv, TypeExt, TypeFormatter, TypeInterner, TypeVariable,
+        self, walk_type, AppVec, ArgType, Field, Filter, InternerVisitor, Skolem, Type, TypeEnv,
+        TypeExt, TypeFormatter, TypeInterner, TypeVariable,
     },
 };
 
@@ -280,7 +280,7 @@ impl Substitutable for RcType<Symbol> {
     }
 
     fn on_union(&self) -> Option<&Self> {
-        unpack_single_forall(self)
+        None
     }
 
     fn contains_variables(&self) -> bool {
@@ -572,7 +572,7 @@ where
 
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
-        (&Type::Forall(ref params, _, Some(ref vars)), &Type::Forall(_, _, Some(_))) => {
+        (&Type::Forall(ref params, _, _), &Type::Forall(_, _, _)) => {
             let mut named_variables = FnvMap::default();
 
             if unifier.state.in_alias {
@@ -580,19 +580,21 @@ where
                 named_variables.clear();
                 let r = actual.skolemize(&mut subs, &mut named_variables);
 
-                Ok(unifier.try_match_res(&l, &r)?.map(|inner_type| {
-                    reconstruct_forall(unifier.state.subs, params, inner_type, vars)
-                }))
+                Ok(unifier
+                    .try_match_res(&l, &r)?
+                    .map(|inner_type| unifier.state.subs.forall(params.clone(), inner_type)))
             } else {
                 let mut expected_iter = expected.forall_scope_iter();
-                named_variables.extend(expected_iter.by_ref().map(|(l_param, l_var)| {
-                    let l_var = l_var.as_variable().unwrap();
+                named_variables.extend(expected_iter.by_ref().map(|l_param| {
+                    // FIXME Should be the same as the new_var below
+                    let var = subs.new_var(); // TODO Avoid allocating a variable
+                    let var = var.as_variable().unwrap();
                     (
                         l_param.id.clone(),
                         subs.skolem(Skolem {
                             name: l_param.id.clone(),
-                            id: l_var.id,
-                            kind: l_var.kind.clone(),
+                            id: var.id,
+                            kind: l_param.kind.clone(),
                         }),
                     )
                 }));
@@ -601,24 +603,24 @@ where
                 named_variables.clear();
                 let mut actual_iter = actual.forall_scope_iter();
                 named_variables.extend(expected_iter.by_ref().zip(actual_iter.by_ref()).map(
-                    |((_, l_var), (r_param, r_var))| {
-                        let l_var = l_var.as_variable().unwrap();
-                        let r_var = r_var.as_variable().unwrap();
+                    |(_, r_param)| {
+                        let var = subs.new_var(); // TODO Avoid allocating a variable
+                        let var = var.as_variable().unwrap();
                         (
                             r_param.id.clone(),
                             subs.skolem(Skolem {
                                 name: r_param.id.clone(),
-                                id: l_var.id,
-                                kind: r_var.kind.clone(),
+                                id: var.id,
+                                kind: r_param.kind.clone(),
                             }),
                         )
                     },
                 ));
                 let r = actual_iter.typ.skolemize(&mut subs, &mut named_variables);
 
-                Ok(unifier.try_match_res(&l, &r)?.map(|inner_type| {
-                    reconstruct_forall(unifier.state.subs, params, inner_type, vars)
-                }))
+                Ok(unifier
+                    .try_match_res(&l, &r)?
+                    .map(|inner_type| unifier.state.subs.forall(params.clone(), inner_type)))
             }
         }
 
@@ -1083,33 +1085,6 @@ where
     Ok((l, r))
 }
 
-// HACK
-// Currently the substitution assumes that once a variable has been unified to a
-// concrete type it cannot be unified to another type later.
-//
-// This is true in ever case except `forall a . a`, while `forall a . a` looks
-// like a concrete type it can actually turn into just an unknown type variable
-// breaking this assumption (by replacing `a` with the bound unkown variable).
-//
-// So to guard against this we unpack the forall into the unknown variable which
-// might cause some valid programs fail to compile but should not let invalid
-// programs compile
-fn unpack_single_forall(l: &RcType) -> Option<&RcType> {
-    match **l {
-        Type::Forall(ref params, ref l_inner, Some(ref vars)) if params.len() == 1 => {
-            match **l_inner {
-                Type::Skolem(ref skolem) if skolem.name == params[0].id => Some(&vars[0]),
-                // FIXME
-                // Since `Type::Forall` contains `Some` the `Generic` should have
-                // been skolemized
-                Type::Generic(ref gen) if gen.id == params[0].id => Some(&vars[0]),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
 pub fn new_skolem_scope(subs: &Substitution<RcType>, typ: &RcType) -> RcType {
     new_skolem_scope_(subs, typ).unwrap_or_else(|| typ.clone())
@@ -1241,7 +1216,7 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
         // variable `2`
         self.skolem_escape_check(&map, l_orig);
 
-        typ.or(if l_orig.forall_params_vars().next().is_some() {
+        typ.or(if l_orig.forall_params().next().is_some() {
             Some(l.clone())
         } else {
             None
@@ -1383,27 +1358,6 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
     fn error_type(&self) -> RcType {
         RcType::error_type(&self.state)
     }
-}
-
-fn reconstruct_forall(
-    mut subs: &Substitution<RcType>,
-    params: &[Generic<Symbol>],
-    inner_type: RcType,
-    vars: &[RcType],
-) -> RcType {
-    use crate::substitution::is_variable_unified;
-
-    let mut new_params = Vec::new();
-    let mut new_vars = Vec::new();
-    for (param, var) in params
-        .iter()
-        .zip(vars)
-        .filter(|&(_, var)| !is_variable_unified(subs, var))
-    {
-        new_params.push(param.clone());
-        new_vars.push(var.clone());
-    }
-    subs.forall_with_vars(new_params, inner_type, Some(new_vars))
 }
 
 pub fn equal(state: State, l: &RcType, r: &RcType) -> bool {

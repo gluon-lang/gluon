@@ -27,12 +27,12 @@ use crate::base::{
     metadata::{Metadata, MetadataEnv},
     pos::{self, BytePos, Span, Spanned},
     resolve,
-    scoped_map::ScopedMap,
+    scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic, NullInterner,
-        PrimitiveEnv, SharedInterner, Skolem, ToDoc, Type, TypeCache, TypeEnv, TypeExt,
-        TypeFormatter, TypeInterner, TypeVariable,
+        PrimitiveEnv, SharedInterner, ToDoc, Type, TypeCache, TypeEnv, TypeExt, TypeFormatter,
+        TypeInterner, TypeVariable,
     },
 };
 
@@ -1031,6 +1031,8 @@ impl<'a> Typecheck<'a> {
                     }
                 };
 
+                let func_type = self.instantiate_generics(&func_type);
+
                 op.value.typ = self.subs.bind_arc(&func_type);
 
                 self.typecheck_application(
@@ -1633,12 +1635,6 @@ impl<'a> Typecheck<'a> {
         debug!("Checking lambda {:#?}", self.type_variables);
         self.enter_scope();
 
-        self.type_variables.extend(
-            function_type
-                .forall_params_vars()
-                .map(|(param, typ)| (param.id.clone(), typ.clone())),
-        );
-
         let mut arg_types = Vec::new();
 
         let body_type = {
@@ -2082,7 +2078,7 @@ impl<'a> Typecheck<'a> {
                     resolved_types[i] = typ;
                 }
 
-                let typ = self.new_skolem_scope_signature(&resolved_types[i]);
+                let typ = &resolved_types[i];
                 self.skolemize_in(bind.expr.span, &typ, |self_, typ| {
                     self_.typecheck_lambda(
                         typ,
@@ -2103,8 +2099,7 @@ impl<'a> Typecheck<'a> {
                     _ => self.type_cache.error(),
                 };
 
-                let typ = self.new_skolem_scope_signature(&typ);
-                self.skolemize_in(bind.expr.span, &typ, |self_, function_type| {
+                self.skolemize_in_no_scope(bind.expr.span, &typ, |self_, function_type| {
                     self_.typecheck_lambda(
                         function_type,
                         bind.name.span.end(),
@@ -2463,24 +2458,6 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn new_skolem_scope_signature(&mut self, typ: &RcType) -> RcType {
-        let typ = self.new_skolem_scope(typ);
-        let mut subs = &self.subs;
-        // Put all new generic variable names into scope
-        self.type_variables
-            .extend(typ.forall_params_vars().map(|(param, var)| {
-                (
-                    param.id.clone(),
-                    subs.skolem(Skolem {
-                        id: var.as_variable().unwrap().id,
-                        name: param.id.clone(),
-                        kind: param.kind.clone(),
-                    }),
-                )
-            }));
-        typ
-    }
-
     // Replaces `Type::Id` types with the actual `Type::Alias` type it refers to
     // Replaces variant names with the actual symbol they should refer to
     // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
@@ -2734,19 +2711,9 @@ impl<'a> Typecheck<'a> {
         let mut skolem_scope = FnvMap::default();
         loop {
             expected = self.new_skolem_scope(&expected);
-            let mut subs = &self.subs;
-            self.type_variables
-                .extend(expected.forall_params_vars().map(|(param, var)| {
-                    (
-                        param.id.clone(),
-                        subs.skolem(Skolem {
-                            id: var.as_variable().unwrap().id,
-                            name: param.id.clone(),
-                            kind: param.kind.clone(),
-                        }),
-                    )
-                }));
             expected = expected.skolemize(&mut &self.subs, &mut skolem_scope);
+            self.type_variables.extend(skolem_scope.drain());
+
             expected = match *expected {
                 Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
                     match **self.subs.real(&actual) {
@@ -2942,12 +2909,10 @@ impl<'a> Typecheck<'a> {
 
     fn with_forall(&mut self, from: &RcType, to: RcType) -> RcType {
         let mut params = Vec::new();
-        let mut vars = Vec::new();
-        for (param, var) in from.forall_params_vars() {
+        for param in from.forall_params() {
             params.push(param.clone());
-            vars.push(var.clone());
         }
-        self.forall_with_vars(params, to, Some(vars))
+        self.forall_with_vars(params, to, None)
     }
 
     fn skolemize_in(
@@ -2956,20 +2921,20 @@ impl<'a> Typecheck<'a> {
         original_type: &RcType,
         f: impl FnOnce(&mut Self, RcType) -> RcType,
     ) -> RcType {
-        let skolemized = self.skolemize(original_type);
         self.type_variables.enter_scope();
-        let mut subs = &self.subs;
-        self.type_variables
-            .extend(original_type.forall_params_vars().map(|(param, var)| {
-                (
-                    param.id.clone(),
-                    subs.skolem(Skolem {
-                        id: var.as_variable().unwrap().id,
-                        name: param.id.clone(),
-                        kind: param.kind.clone(),
-                    }),
-                )
-            }));
+        let t = self.skolemize_in_no_scope(span, original_type, f);
+
+        self.type_variables.exit_scope();
+        t
+    }
+
+    fn skolemize_in_no_scope(
+        &mut self,
+        span: Span<BytePos>,
+        original_type: &RcType,
+        f: impl FnOnce(&mut Self, RcType) -> RcType,
+    ) -> RcType {
+        let skolemized = self.skolemize(original_type);
         let new_type = f(self, skolemized);
 
         let original_type = self.subs.zonk(original_type);
@@ -2987,7 +2952,6 @@ impl<'a> Typecheck<'a> {
             }
         });
 
-        self.type_variables.exit_scope();
         self.with_forall(&original_type, new_type)
     }
 
@@ -2998,7 +2962,20 @@ impl<'a> Typecheck<'a> {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone())),
         );
-        typ.skolemize(&mut &self.subs, &mut self.named_variables)
+        let new_type = typ.skolemize(&mut &self.subs, &mut self.named_variables);
+        for (id, typ) in self.named_variables.drain() {
+            match self.type_variables.entry(id) {
+                scoped_map::Entry::Vacant(e) => {
+                    e.insert(typ);
+                }
+                scoped_map::Entry::Occupied(mut e) => {
+                    if *e.get() != typ {
+                        e.insert(typ);
+                    }
+                }
+            }
+        }
+        new_type
     }
 
     pub(crate) fn instantiate_generics(&mut self, typ: &RcType) -> RcType {

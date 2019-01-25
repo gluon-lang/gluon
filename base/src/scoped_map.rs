@@ -44,6 +44,10 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         ScopedMap::default()
     }
 
+    pub fn num_scopes(&self) -> usize {
+        self.scopes.iter().filter(|s| s.is_none()).count() + 1
+    }
+
     /// Introduces a new scope
     pub fn enter_scope(&mut self) {
         self.scopes.push(None);
@@ -132,8 +136,20 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     pub fn entry(&mut self, key: K) -> Entry<K, V> {
         match self.map.entry(key) {
-            hash_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
-            hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
+            hash_map::Entry::Occupied(entry) => {
+                if entry.get().is_empty() {
+                    Entry::Vacant(VacantEntry(InnerVacantEntry::Occupied(OccupiedEntry(
+                        entry,
+                        &mut self.scopes,
+                    ))))
+                } else {
+                    Entry::Occupied(OccupiedEntry(entry, &mut self.scopes))
+                }
+            }
+            hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(InnerVacantEntry::Vacant(
+                entry,
+                &mut self.scopes,
+            ))),
         }
     }
 
@@ -149,6 +165,12 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     /// Shadowed elements are not counted
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    /// Returns the number of elements in the container.
+    /// Shadowed elements are counted
+    pub fn full_len(&self) -> usize {
+        self.map.values().map(|v| v.len()).sum()
     }
 
     /// Returns true if this map is empty
@@ -200,10 +222,16 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     pub fn insert(&mut self, k: K, v: V) -> bool {
-        let vec = self.map.entry(k.clone()).or_default();
-        vec.push(v);
-        self.scopes.push(Some(k));
-        vec.len() == 1
+        match self.entry(k) {
+            Entry::Occupied(mut entry) => {
+                entry.insert(v);
+                true
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(v);
+                false
+            }
+        }
     }
 }
 
@@ -237,7 +265,10 @@ pub enum Entry<'a, K, V> {
 }
 
 impl<'a, K, V> Entry<'a, K, V> {
-    pub fn or_insert_with(self, default: impl FnOnce() -> V) -> &'a mut V {
+    pub fn or_insert_with(self, default: impl FnOnce() -> V) -> &'a mut V
+    where
+        K: Clone,
+    {
         match self {
             Entry::Vacant(entry) => entry.insert(default()),
             Entry::Occupied(entry) => entry.into_mut(),
@@ -245,12 +276,31 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 }
 
-pub struct VacantEntry<'a, K, V>(hash_map::VacantEntry<'a, K, Vec<V>>);
-pub struct OccupiedEntry<'a, K, V>(hash_map::OccupiedEntry<'a, K, Vec<V>>);
+pub enum InnerVacantEntry<'a, K, V> {
+    Vacant(hash_map::VacantEntry<'a, K, Vec<V>>, &'a mut Vec<Option<K>>),
+    Occupied(OccupiedEntry<'a, K, V>),
+}
+pub struct VacantEntry<'a, K, V>(InnerVacantEntry<'a, K, V>);
+pub struct OccupiedEntry<'a, K, V>(
+    hash_map::OccupiedEntry<'a, K, Vec<V>>,
+    &'a mut Vec<Option<K>>,
+);
 
 impl<'a, K, V> VacantEntry<'a, K, V> {
-    pub fn insert(self, value: V) -> &'a mut V {
-        &mut self.0.insert(vec![value])[0]
+    pub fn insert(self, value: V) -> &'a mut V
+    where
+        K: Clone,
+    {
+        match self.0 {
+            InnerVacantEntry::Vacant(entry, scopes) => {
+                scopes.push(Some(entry.key().clone()));
+                &mut entry.insert(vec![value])[0]
+            }
+            InnerVacantEntry::Occupied(mut entry) => {
+                entry.insert(value);
+                entry.into_mut()
+            }
+        }
     }
 }
 
@@ -271,7 +321,11 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
         self.0.into_mut().last_mut().unwrap()
     }
 
-    pub fn insert(&mut self, value: V) {
+    pub fn insert(&mut self, value: V)
+    where
+        K: Clone,
+    {
+        self.1.push(Some(self.key().clone()));
         self.0.get_mut().push(value);
     }
 }

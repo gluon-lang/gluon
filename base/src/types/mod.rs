@@ -1368,69 +1368,7 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
         }
     }
 
-    fn skolemize_in(
-        &self,
-        interner: &mut impl TypeInterner<Id, Self>,
-        named_variables: &mut FnvMap<Id, Self>,
-        f: impl FnOnce(Self) -> Self,
-    ) -> Self
-    where
-        Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
-    {
-        let skolemized = self.skolemize(interner, named_variables);
-        let new_type = f(skolemized);
-        new_type.with_forall(self)
-    }
-
-    fn with_forall(self, from: &Self) -> Self
-    where
-        Id: Clone + Eq + Hash,
-        Self: Clone + From<Type<Id, Self>>,
-    {
-        let mut params = Vec::new();
-        let mut vars = Vec::new();
-        for (param, var) in forall_params_vars(from) {
-            params.push(param.clone());
-            vars.push(var.clone());
-        }
-        Type::forall_with_vars(params, self, Some(vars))
-    }
-
-    fn skolemize(
-        &self,
-        interner: &mut impl TypeInterner<Id, Self>,
-        named_variables: &mut FnvMap<Id, Self>,
-    ) -> Self
-    where
-        Id: Clone + Eq + Hash,
-        Self: Clone,
-    {
-        let mut typ = self;
-        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-            let iter = params.iter().zip(vars).map(|(param, var)| {
-                let var = var.as_variable().unwrap();
-                (
-                    param.id.clone(),
-                    interner.intern(Type::Skolem(Skolem {
-                        name: param.id.clone(),
-                        id: var.id,
-                        kind: var.kind.clone(),
-                    })),
-                )
-            });
-            named_variables.extend(iter);
-            typ = inner_type;
-        }
-        if named_variables.is_empty() {
-            typ.clone()
-        } else {
-            typ.skolemize_(interner, named_variables)
-                .unwrap_or_else(|| typ.clone())
-        }
-    }
-
-    fn skolemize_(
+    fn replace_generics(
         &self,
         interner: &mut impl TypeInterner<Id, Self>,
         named_variables: &mut FnvMap<Id, Self>,
@@ -1447,7 +1385,7 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
                     .flat_map(|param| named_variables.remove_entry(&param.id))
                     .collect();
 
-                let new_typ = typ.skolemize_(interner, named_variables);
+                let new_typ = typ.replace_generics(interner, named_variables);
                 let new_typ = new_typ
                     .map(|typ| interner.intern(Type::Forall(params.clone(), typ, vars.clone())));
 
@@ -1458,67 +1396,7 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
             _ => walk_move_type_opt(
                 self,
                 &mut InternerVisitor::control(interner, |interner, typ: &Self| {
-                    typ.skolemize_(interner, named_variables)
-                }),
-            ),
-        }
-    }
-
-    fn instantiate_generics(
-        &self,
-        interner: &mut impl TypeInterner<Id, Self>,
-        named_variables: &mut FnvMap<Id, Self>,
-    ) -> Self
-    where
-        Id: Clone + Eq + Hash,
-        Self: Clone,
-    {
-        let mut typ = self;
-        while let Type::Forall(params, inner_type, Some(vars)) = &**typ {
-            named_variables.extend(
-                params
-                    .iter()
-                    .zip(vars)
-                    .map(|(param, var)| (param.id.clone(), var.clone())),
-            );
-            typ = inner_type;
-        }
-        if named_variables.is_empty() {
-            typ.clone()
-        } else {
-            typ.instantiate_generics_(interner, named_variables)
-                .unwrap_or_else(|| typ.clone())
-        }
-    }
-
-    fn instantiate_generics_(
-        &self,
-        interner: &mut impl TypeInterner<Id, Self>,
-        named_variables: &FnvMap<Id, Self>,
-    ) -> Option<Self>
-    where
-        Id: Clone + Eq + Hash,
-        Self: Clone,
-    {
-        match **self {
-            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            Type::Forall(ref params, ref typ, ref vars) => {
-                // TODO This clone is inneficient
-                let mut named_variables = named_variables.clone();
-                // forall a . { x : forall a . a -> a } -> a
-                // Should not instantiate the `a -> a` part so we must remove the parameters
-                // before visiting that part
-                for param in params {
-                    named_variables.remove(&param.id);
-                }
-
-                typ.instantiate_generics_(interner, &named_variables)
-                    .map(|typ| interner.intern(Type::Forall(params.clone(), typ, vars.clone())))
-            }
-            _ => walk_move_type_opt(
-                self,
-                &mut InternerVisitor::control(interner, |interner, typ: &Self| {
-                    typ.instantiate_generics_(interner, named_variables)
+                    typ.replace_generics(interner, named_variables)
                 }),
             ),
         }
@@ -1620,28 +1498,6 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
     }
 }
 
-pub fn forall_params_vars<'a, T, Id>(
-    mut typ: &'a T,
-) -> impl Iterator<Item = (&'a Generic<Id>, &'a T)>
-where
-    Id: 'a,
-    T: Deref<Target = Type<Id, T>>,
-{
-    let mut i = 0;
-    iter::repeat(()).scan((), move |_, _| {
-        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-            if i < params.len() {
-                i += 1;
-                return Some((&params[i - 1], &vars[i - 1]));
-            } else {
-                i = 0;
-                typ = inner_type;
-            }
-        }
-        None
-    })
-}
-
 pub fn forall_params<'a, T, Id>(mut typ: &'a T) -> impl Iterator<Item = &'a Generic<Id>>
 where
     Id: 'a,
@@ -1681,15 +1537,15 @@ impl<'a, T, Id: 'a> Iterator for ForallScopeIter<'a, T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
-    type Item = (&'a Generic<Id>, &'a T);
+    type Item = &'a Generic<Id>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match **self.typ {
-            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+            Type::Forall(ref params, ref typ, _) => {
                 let offset = self.offset;
                 let item = params.get(offset).map(|param| {
                     self.offset += 1;
-                    (param, &vars[offset])
+                    param
                 });
                 match item {
                     Some(_) => item,
@@ -2761,12 +2617,10 @@ pub trait TypeInterner<Id, T> {
         T: TypeExt<Id> + Clone,
     {
         let mut params = Vec::new();
-        let mut vars = Vec::new();
-        for (param, var) in forall_params_vars(from) {
+        for param in forall_params(from) {
             params.push(param.clone());
-            vars.push(var.clone());
         }
-        self.forall_with_vars(params, typ, Some(vars))
+        self.forall_with_vars(params, typ, None)
     }
 
     fn array(&mut self, typ: T) -> T {
