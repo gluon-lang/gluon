@@ -2552,6 +2552,189 @@ where
     }
 }
 
+#[macro_export(local_inner_macros)]
+macro_rules! expr {
+    ($self: ident, $id: ident, $expr: expr) => {{
+        let $id = $self;
+        $expr
+    }};
+}
+
+#[macro_export(local_inner_macros)]
+macro_rules! forward_type_interner_methods_no_arg {
+    ($typ: ty, [$($tokens: tt)+] $id: ident $($rest : ident)* ) => {
+        fn $id(&mut self) -> $typ {
+            $crate::expr!(self, $($tokens)+).$id()
+        }
+        $crate::forward_type_interner_methods_no_arg!($typ, [$($tokens)+] $($rest)*);
+    };
+
+    ($typ: ty, [$($tokens: tt)+]) => {
+    }
+}
+
+#[macro_export]
+macro_rules! forward_type_interner_methods {
+    ($id: ty, $typ: ty, $($tokens: tt)+ ) => {
+        fn intern(&mut self, typ: $crate::types::Type<$id, $typ>) -> $typ {
+            $crate::expr!(self, $($tokens)+).intern(typ)
+        }
+
+        fn builtin(&mut self, typ: $crate::types::BuiltinType) -> $typ {
+            $crate::expr!(self, $($tokens)+).builtin(typ)
+        }
+
+        fn forall(&mut self, params: Vec<$crate::types::Generic<$id>>, typ: $typ) -> $typ {
+            $crate::expr!(self, $($tokens)+).forall(params, typ)
+        }
+
+        fn with_forall(&mut self, typ: $typ, from: &$typ) -> $typ
+        where
+            $id: Clone + Eq + std::hash::Hash,
+            $typ: $crate::types::TypeExt<Id = $id> + Clone,
+        {
+            $crate::expr!(self, $($tokens)+).with_forall(typ, from)
+        }
+
+        fn array(&mut self, typ: $typ) -> $typ {
+            $crate::expr!(self, $($tokens)+).array(typ)
+        }
+
+        fn app(&mut self, id: $typ, args: $crate::types::AppVec<$typ>) -> $typ {
+            $crate::expr!(self, $($tokens)+).app(id, args)
+        }
+
+        fn variant(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+            $crate::expr!(self, $($tokens)+).variant(fields)
+        }
+
+        fn poly_variant(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>, rest: $typ) -> $typ {
+            $crate::expr!(self, $($tokens)+).poly_variant(fields, rest)
+        }
+
+        fn effect(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+            $crate::expr!(self, $($tokens)+).effect(fields)
+        }
+
+        fn poly_effect(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>, rest: $typ) -> $typ {
+            $crate::expr!(self, $($tokens)+).poly_effect(fields, rest)
+        }
+
+        fn record(&mut self, types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+            $crate::expr!(self, $($tokens)+).record(types, fields)
+        }
+
+        fn poly_record(
+            &mut self,
+            types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
+            fields: Vec<$crate::types::Field<$id, $typ>>,
+            rest: $typ,
+        ) -> $typ {
+            $crate::expr!(self, $($tokens)+).poly_record(types, fields, rest)
+        }
+
+        fn extend_row(
+            &mut self,
+            types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
+            fields: Vec<$crate::types::Field<$id, $typ>>,
+            rest: $typ,
+        ) -> $typ {
+            $crate::expr!(self, $($tokens)+).extend_row(types, fields, rest)
+        }
+
+        fn generic(&mut self, typ: $crate::types::Generic<$id>) -> $typ {
+            $crate::expr!(self, $($tokens)+).generic(typ)
+        }
+
+        fn skolem(&mut self, typ: $crate::types::Skolem<$id>) -> $typ {
+            $crate::expr!(self, $($tokens)+).skolem(typ)
+        }
+
+        fn variable(&mut self, typ: $crate::types::TypeVariable) -> $typ {
+            $crate::expr!(self, $($tokens)+).variable(typ)
+        }
+
+        fn alias(&mut self, name: $id, args: Vec<$crate::types::Generic<$id>>, typ: $typ) -> $typ {
+            $crate::expr!(self, $($tokens)+).alias(name, args, typ)
+        }
+
+        fn ident(&mut self, id: $id) -> $typ {
+            $crate::expr!(self, $($tokens)+).ident(id)
+        }
+
+        fn projection(&mut self, id: $crate::types::AppVec<$id>) -> $typ {
+            $crate::expr!(self, $($tokens)+).projection(id)
+        }
+
+        fn builtin_type(&mut self, typ: $crate::types::BuiltinType) -> $typ {
+            $crate::expr!(self, $($tokens)+).builtin_type(typ)
+        }
+
+        fn new_alias(&mut self, name: $id, args: Vec<$crate::types::Generic<$id>>, typ: $typ) -> $crate::types::Alias<$id, $typ> {
+            $crate::expr!(self, $($tokens)+).new_alias(name, args, typ)
+        }
+
+        fn new_data_alias(&mut self, data: $crate::types::AliasData<$id, $typ>) -> $crate::types::Alias<$id, $typ> {
+            $crate::expr!(self, $($tokens)+).new_data_alias(data)
+        }
+
+        fn alias_group(&mut self, group: Vec<$crate::types::AliasData<$id, $typ>>) -> Vec<$crate::types::Alias<$id, $typ>> {
+            $crate::expr!(self, $($tokens)+).alias_group(group)
+        }
+
+        /*
+           Avoid forwarding methods that take an iterator as they can cause panics when using `RefCell`
+
+        fn tuple<S, I>(&mut self, symbols: &mut S, elems: I) -> $typ
+        where
+            S: ?Sized + $crate::ast::IdentEnv<Ident = $id>,
+            I: IntoIterator<Item = $typ>,
+        {
+            $crate::expr!(self, $($tokens)+).tuple(symbols, elems)
+        }
+
+        fn tuple_<S, I>(&mut self, symbols: &mut S, elems: I) -> $crate::types::Type<$id, $typ>
+        where
+            S: ?Sized + $crate::ast::IdentEnv<Ident = $id>,
+            I: IntoIterator<Item = $typ>,
+        {
+            $crate::expr!(self, $($tokens)+).tuple_(symbols, elems)
+        }
+
+        fn function<I>(&mut self, args: I, ret: $typ) -> $typ
+        where
+            $typ: Clone,
+            I: IntoIterator<Item = $typ>,
+            I::IntoIter: DoubleEndedIterator<Item = $typ>,
+        {
+            $crate::expr!(self, $($tokens)+).function( args, ret)
+        }
+
+        fn function_implicit<I>(&mut self, args: I, ret: $typ) -> $typ
+        where
+            I: IntoIterator<Item = $typ>,
+            I::IntoIter: DoubleEndedIterator<Item = $typ>,
+        {
+            $crate::expr!(self, $($tokens)+).function_implicit(args, ret)
+        }
+
+        fn function_type<I>(&mut self, arg_type: $crate::types::ArgType, args: I, ret: $typ) -> $typ
+        where
+            I: IntoIterator<Item = $typ>,
+            I::IntoIter: DoubleEndedIterator<Item = $typ>,
+        {
+            $crate::expr!(self, $($tokens)+).function_type(arg_type, args, ret)
+        }
+        */
+
+        $crate::forward_type_interner_methods_no_arg!(
+            $typ,
+            [$($tokens)+]
+            hole opaque error array_builtin empty_row function_builtin string char byte int float unit
+        );
+    }
+}
+
 pub struct InternerVisitor<'i, F, T> {
     interner: &'i mut T,
     visitor: F,
@@ -2826,27 +3009,21 @@ impl<'b, Id, T, V> TypeInterner<Id, T> for &'b Rc<V>
 where
     for<'a> &'a V: TypeInterner<Id, T>,
 {
-    fn intern(&mut self, typ: Type<Id, T>) -> T {
-        (&***self).intern(typ)
-    }
+    forward_type_interner_methods!(Id, T, self_, &***self_);
 }
 
 impl<Id, T, V> TypeInterner<Id, T> for Rc<V>
 where
     for<'a> &'a V: TypeInterner<Id, T>,
 {
-    fn intern(&mut self, typ: Type<Id, T>) -> T {
-        (&**self).intern(typ)
-    }
+    forward_type_interner_methods!(Id, T, self_, &**self_);
 }
 
 impl<'a, Id, T, V> TypeInterner<Id, T> for &'a RefCell<V>
 where
     V: TypeInterner<Id, T>,
 {
-    fn intern(&mut self, typ: Type<Id, T>) -> T {
-        self.borrow_mut().intern(typ)
-    }
+    forward_type_interner_methods!(Id, T, self_, self_.borrow_mut());
 }
 
 pub type SharedInterner<Id, T> = Rc<RefCell<Interner<Id, T>>>;

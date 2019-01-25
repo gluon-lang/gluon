@@ -379,9 +379,7 @@ pub struct Typecheck<'a> {
 }
 
 impl<'a> TypeInterner<Symbol, RcType> for Typecheck<'a> {
-    fn intern(&mut self, typ: Type<Symbol, RcType>) -> RcType {
-        (&self.subs).intern(typ)
-    }
+    gluon_base::forward_type_interner_methods!(Symbol, RcType, self_, &self_.subs);
 }
 
 /// Error returned when unsuccessfully typechecking an expression

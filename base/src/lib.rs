@@ -100,6 +100,7 @@ pub mod scoped_map;
 pub mod serialization;
 pub mod source;
 pub mod symbol;
+#[macro_use]
 pub mod types;
 
 pub fn filename_to_module(filename: &str) -> String {

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, default::Default, fmt, hash::Hash, ops::Deref};
+use std::{cell::RefCell, default::Default, fmt, hash::Hash};
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
@@ -61,9 +61,7 @@ where
         + From<Type<Symbol, T>>,
     T::Target: Eq + Hash,
 {
-    fn intern(&mut self, typ: Type<Symbol, T>) -> T {
-        TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
-    }
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, self_.interner.borrow_mut());
 }
 
 impl<'a, T> TypeInterner<Symbol, T> for &'a Substitution<T>
@@ -78,16 +76,14 @@ where
         + From<Type<Symbol, T>>,
     T::Target: Eq + Hash,
 {
-    fn intern(&mut self, typ: Type<Symbol, T>) -> T {
-        TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
-    }
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, self_.interner.borrow_mut());
 }
 
 impl<T> Default for Substitution<T>
 where
-    T: Substitutable + Eq + Hash + Deref + Default + Clone + From<Type<Symbol, T>>,
+    T: Substitutable,
     T::Factory: Default,
-    T::Target: Eq + Hash,
+    T::Interner: Default,
 {
     fn default() -> Substitution<T> {
         Substitution::new(Default::default(), Default::default())
@@ -269,8 +265,7 @@ where
 
 impl<T> Substitution<T>
 where
-    T: Substitutable + Deref,
-    T::Target: Eq + Hash,
+    T: Substitutable,
 {
     pub fn new(factory: T::Factory, interner: T::Interner) -> Substitution<T> {
         Substitution {
@@ -281,9 +276,7 @@ where
             interner,
         }
     }
-}
 
-impl<T: Substitutable> Substitution<T> {
     pub fn var_id(&self) -> u32 {
         self.variables.len() as u32
     }

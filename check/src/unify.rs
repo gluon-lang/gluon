@@ -237,7 +237,11 @@ mod test {
 
     use std::{fmt, ops::Deref};
 
-    use crate::base::{error::Errors, merge::merge, types::Walker};
+    use crate::base::{
+        error::Errors,
+        merge::merge,
+        types::{NullInterner, Walker},
+    };
 
     use crate::substitution::{Substitutable, Substitution};
 
@@ -273,6 +277,7 @@ mod test {
     impl Substitutable for TType {
         type Variable = u32;
         type Factory = ();
+        type Interner = NullInterner;
 
         fn from_variable(_: &Substitution<Self>, var: u32) -> TType {
             TType(Box::new(Type::Variable(var)))
