@@ -1368,6 +1368,9 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
         Id: Clone + Eq + Hash,
         Self: Clone,
     {
+        if !self.has_generics() {
+            return None;
+        }
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
             Type::Forall(ref params, ref typ) => {
@@ -1468,23 +1471,19 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
             return None;
         };
 
-        Some(walk_move_type(
-            typ.clone(),
-            &mut InternerVisitor::new(interner, |_, typ: &Self| {
-                match **typ {
-                    Type::Generic(ref generic) => {
-                        // Replace the generic variable with the type from the list
-                        // or if it is not found the make a fresh variable
-                        params
-                            .iter()
-                            .zip(args)
-                            .find(|&(arg, _)| arg.id == generic.id)
-                            .map(|(_, typ)| typ.clone())
-                    }
-                    _ => None,
-                }
-            }),
-        ))
+        let mut map = params
+            .iter()
+            .map(|g| g.id.clone())
+            .zip(args.iter().cloned())
+            .collect();
+        Some(
+            typ.replace_generics(interner, &mut map)
+                .unwrap_or_else(|| typ.clone()),
+        )
+    }
+
+    fn has_generics(&self) -> bool {
+        true
     }
 }
 

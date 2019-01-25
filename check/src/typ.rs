@@ -213,6 +213,10 @@ impl<Id> TypeExt<Id> for RcType<Id> {
     fn strong_count(typ: &Self) -> usize {
         Rc::strong_count(&typ.typ)
     }
+
+    fn has_generics(&self) -> bool {
+        self.flags().intersects(Flags::HAS_GENERICS)
+    }
 }
 
 impl<Id> RcType<Id> {
