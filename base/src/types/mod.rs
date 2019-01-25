@@ -2862,6 +2862,30 @@ where
     }
 }
 
+macro_rules! forward_to_cache {
+    ($($id: ident)*) => {
+        $(
+            fn $id(&mut self) -> T {
+                TypeCache::$id(*self)
+            }
+        )*
+    }
+}
+
+impl<'a, Id, T> TypeInterner<Id, T> for &'a TypeCache<Id, T>
+where
+    T: From<Type<Id, T>> + Clone,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        T::from(typ)
+    }
+
+    forward_to_cache! {
+        hole opaque error int byte float string char
+        function_builtin array_builtin unit empty_row
+    }
+}
+
 #[derive(Clone, Default)]
 struct Interned<T>(T);
 
@@ -3198,23 +3222,18 @@ where
     }
 }
 
-pub fn translate_type<Id, T, U>(
-    type_cache: &TypeCache<Id, U>,
-    interner: &mut impl TypeInterner<Id, U>,
-    arc_type: &T,
-) -> U
+pub fn translate_type<Id, T, U>(interner: &mut impl TypeInterner<Id, U>, arc_type: &T) -> U
 where
     T: Deref<Target = Type<Id, T>>,
     U: Clone,
     Id: Clone,
 {
-    translate_type_with(type_cache, interner, arc_type, |interner, typ| {
-        translate_type(type_cache, interner, typ)
+    translate_type_with(interner, arc_type, |interner, typ| {
+        translate_type(interner, typ)
     })
 }
 
 pub fn translate_type_with<Id, T, U, I, F>(
-    cache: &TypeCache<Id, U>,
     interner: &mut I,
     typ: &Type<Id, T>,
     mut translate: F,
@@ -3296,10 +3315,10 @@ where
 
             interner.extend_row(types, fields, rest)
         }
-        Type::Hole => cache.hole(),
-        Type::Opaque => cache.opaque(),
-        Type::Error => cache.error(),
-        Type::Builtin(ref builtin) => cache.builtin_type(builtin.clone()),
+        Type::Hole => interner.hole(),
+        Type::Opaque => interner.opaque(),
+        Type::Error => interner.error(),
+        Type::Builtin(ref builtin) => interner.builtin_type(builtin.clone()),
         Type::Variable(ref var) => interner.variable(var.clone()),
         Type::Generic(ref gen) => interner.generic(gen.clone()),
         Type::Ident(ref id) => interner.ident(id.clone()),
@@ -3316,6 +3335,6 @@ where
                 group: Arc::new(group),
             }))
         }
-        Type::EmptyRow => cache.empty_row(),
+        Type::EmptyRow => interner.empty_row(),
     }
 }

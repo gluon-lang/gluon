@@ -47,8 +47,8 @@ use crate::base::{
     metadata::{Metadata, MetadataEnv},
     symbol::{Symbol, SymbolRef},
     types::{
-        translate_alias, translate_type, Alias, ArcType, PrimitiveEnv, SharedInterner, TypeCache,
-        TypeEnv, TypeInterner,
+        translate_alias, translate_type, Alias, ArcType, PrimitiveEnv, SharedInterner, TypeEnv,
+        TypeInterner,
     },
 };
 
@@ -65,8 +65,8 @@ pub fn check_signature(
 ) -> bool {
     let interner = SharedInterner::default();
     let env = ArcTypeCacher::new(env, Default::default(), interner.clone());
-    let signature = translate_type(&env.type_cache, &mut &interner, signature);
-    let actual = translate_type(&env.type_cache, &mut &*interner, actual);
+    let signature = translate_type(&mut &interner, signature);
+    let actual = translate_type(&mut &*interner, actual);
     check_signature_(&env, &interner, &signature, &actual)
 }
 
@@ -96,7 +96,6 @@ pub struct ArcTypeCacher<'a> {
     environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
     types: FixedMap<String, Box<RcType>>,
     aliases: FixedMap<String, Box<Alias<Symbol, RcType>>>,
-    type_cache: TypeCache<Symbol, RcType>,
     type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
     interner: SharedInterner<RcType>,
 }
@@ -111,7 +110,6 @@ impl<'a> ArcTypeCacher<'a> {
             environment,
             types: Default::default(),
             aliases: Default::default(),
-            type_cache: Default::default(),
             type_interner,
             interner,
         }
@@ -128,7 +126,6 @@ impl<'a> KindEnv for ArcTypeCacher<'a> {
                 translate_interned_type(
                     &mut self.type_interner.borrow_mut(),
                     &mut &*self.interner,
-                    &self.type_cache,
                     t,
                 )
             });
@@ -157,7 +154,6 @@ impl<'a> TypeEnv for ArcTypeCacher<'a> {
             let rc_type = translate_interned_type(
                 &mut self.type_interner.borrow_mut(),
                 &mut &*self.interner,
-                &self.type_cache,
                 arc_type,
             );
             self.types
@@ -176,7 +172,6 @@ impl<'a> TypeEnv for ArcTypeCacher<'a> {
                 translate_interned_type(
                     &mut self.type_interner.borrow_mut(),
                     &mut &*self.interner,
-                    &self.type_cache,
                     t,
                 )
             });

@@ -107,7 +107,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 if let Type::Variable(var) = &**typ {
                     let ref typ = self.generalizer.tc.subs.arc_real(typ).clone();
                     {
-                        let type_cache = &self.generalizer.tc.type_cache;
+                        let mut type_cache = &self.generalizer.tc.subs;
                         self.generalizer.tc.type_variables.extend(
                             typ.forall_params()
                                 .map(|param| (param.id.clone(), type_cache.hole())),
@@ -226,7 +226,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.type_variables.enter_scope();
                 // Ensure that the forall's variables don't look unbound
                 if let Type::Forall(ref params, _) = **typ {
-                    let type_cache = &self.tc.type_cache;
+                    let mut type_cache = &self.tc.subs;
                     self.tc.type_variables.extend(
                         params
                             .iter()

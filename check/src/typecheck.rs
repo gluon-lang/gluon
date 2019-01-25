@@ -30,9 +30,9 @@ use crate::base::{
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
-        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic, NullInterner,
-        PrimitiveEnv, SharedInterner, ToDoc, Type, TypeCache, TypeEnv, TypeExt, TypeFormatter,
-        TypeInterner, TypeVariable,
+        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic, PrimitiveEnv,
+        SharedInterner, ToDoc, Type, TypeCache, TypeEnv, TypeExt, TypeFormatter, TypeInterner,
+        TypeVariable,
     },
 };
 
@@ -368,7 +368,6 @@ pub struct Typecheck<'a> {
     pub(crate) errors: Errors<SpannedTypeError<Symbol, RcType<Symbol>>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, RcType>,
-    pub(crate) type_cache: TypeCache<Symbol, RcType>,
     type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
     arc_type_cache: TypeCache<Symbol, ArcType>,
     arc_type_interner: FnvMap<RcType, ArcType>,
@@ -418,7 +417,6 @@ impl<'a> Typecheck<'a> {
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
-            type_cache: Default::default(),
             arc_type_cache,
             arc_type_interner: Default::default(),
             kind_cache: kind_cache,
@@ -444,7 +442,7 @@ impl<'a> Typecheck<'a> {
             span: span,
             value: error,
         });
-        self.type_cache.error()
+        self.subs.error()
     }
 
     // FIXME Cache
@@ -488,8 +486,8 @@ impl<'a> Typecheck<'a> {
                     span: span,
                     value: err.into(),
                 });
-                self.subs
-                    .new_alias(id.clone(), Vec::new(), self.type_cache.hole())
+                let hole = self.subs.hole();
+                self.subs.new_alias(id.clone(), Vec::new(), hole)
             }
         }
     }
@@ -658,7 +656,7 @@ impl<'a> Typecheck<'a> {
         args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
-        let typ = self.type_cache.hole();
+        let typ = self.subs.hole();
         TypeGeneralizer::new(level, self, &typ, expr.span).generalize_variables(args, expr)
     }
 
@@ -781,7 +779,7 @@ impl<'a> Typecheck<'a> {
         let mut typ = self.typecheck_opt(expr, expected_type);
         {
             if let Some(expected_type) = expected_type {
-                let type_cache = &self.type_cache;
+                let mut type_cache = &self.subs;
                 self.type_variables.extend(
                     expected_type
                         .forall_params()
@@ -934,7 +932,7 @@ impl<'a> Typecheck<'a> {
                     }
                 }
                 Err(err) => {
-                    returned_type = self.type_cache.error();
+                    returned_type = self.subs.error();
                     self.errors.push(Spanned {
                         span: expr_check_span(expr),
                         value: err.into(),
@@ -967,11 +965,11 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::TypeImplicit(typ, args))
             }
             Expr::Literal(ref lit) => Ok(TailCall::Type(match *lit {
-                Literal::Int(_) => self.type_cache.int(),
-                Literal::Byte(_) => self.type_cache.byte(),
-                Literal::Float(_) => self.type_cache.float(),
-                Literal::String(_) => self.type_cache.string(),
-                Literal::Char(_) => self.type_cache.char(),
+                Literal::Int(_) => self.subs.int(),
+                Literal::Byte(_) => self.subs.byte(),
+                Literal::Float(_) => self.subs.float(),
+                Literal::String(_) => self.subs.string(),
+                Literal::Char(_) => self.subs.char(),
             })),
             Expr::App {
                 ref mut func,
@@ -1427,7 +1425,7 @@ impl<'a> Typecheck<'a> {
                                     help: Some(Help::UndefinedFlatMapInDo),
                                 },
                             );
-                            self.type_cache.error()
+                            self.subs.error()
                         }
                     },
                     _ => ice!("flat_map_id not inserted during renaming"),
@@ -1847,8 +1845,8 @@ impl<'a> Typecheck<'a> {
                             );
                             // We still define the type so that any uses later on in the program
                             // won't error on UndefinedType
-                            alias =
-                                self.new_alias(name.clone(), Vec::new(), self.type_cache.hole());
+                            let hole = self.subs.hole();
+                            alias = self.new_alias(name.clone(), Vec::new(), hole);
                             &alias
                         }
                     };
@@ -1934,7 +1932,6 @@ impl<'a> Typecheck<'a> {
         translate_interned_type(
             &mut *RefCell::borrow_mut(&self.type_interner),
             &mut &self.subs,
-            &self.type_cache,
             arc_type,
         )
     }
@@ -1942,25 +1939,20 @@ impl<'a> Typecheck<'a> {
     fn translate_rc_type(&mut self, rc_type: &RcType) -> ArcType {
         translate_rc_interned_type(
             &mut self.arc_type_interner,
-            &mut NullInterner,
-            &self.arc_type_cache,
+            &mut &self.arc_type_cache,
             rc_type,
         )
     }
 
-    fn translate_ast_type(
-        &mut self,
-        type_cache: &TypeCache<Symbol, RcType>,
-        ast_type: &AstType<Symbol>,
-    ) -> RcType {
+    fn translate_ast_type(&mut self, ast_type: &AstType<Symbol>) -> RcType {
         use crate::base::pos::HasSpan;
 
         match **ast_type {
             // Undo the hack in kindchecking that inserts a dummy alias wrapping a generic
             Type::Alias(ref alias) => match **alias.unresolved_type() {
                 Type::Generic(ref gen) if gen.id == alias.name => self.ident(alias.name.clone()),
-                _ => types::translate_type_with(type_cache, self, ast_type, |self_, typ| {
-                    self_.translate_ast_type(type_cache, typ)
+                _ => types::translate_type_with(self, ast_type, |self_, typ| {
+                    self_.translate_ast_type(typ)
                 }),
             },
 
@@ -1977,7 +1969,7 @@ impl<'a> Typecheck<'a> {
                             self.find_type_info_at(field.typ.unresolved_type().span(), &field.name)
                         } else {
                             let alias_data = types::translate_alias(&field.typ, |typ| {
-                                self.translate_ast_type(type_cache, typ)
+                                self.translate_ast_type(typ)
                             });
                             self.new_data_alias(alias_data)
                         },
@@ -1988,11 +1980,11 @@ impl<'a> Typecheck<'a> {
                     .iter()
                     .map(|field| Field {
                         name: field.name.clone(),
-                        typ: self.translate_ast_type(type_cache, &field.typ),
+                        typ: self.translate_ast_type(&field.typ),
                     })
                     .collect();
 
-                let rest = self.translate_ast_type(type_cache, rest);
+                let rest = self.translate_ast_type(rest);
 
                 self.extend_row(types, fields, rest)
             }
@@ -2002,8 +1994,8 @@ impl<'a> Typecheck<'a> {
                 Err(err) => self.error(ast_type.span(), err),
             },
 
-            _ => types::translate_type_with(type_cache, self, ast_type, |self_, typ| {
-                self_.translate_ast_type(type_cache, typ)
+            _ => types::translate_type_with(self, ast_type, |self_, typ| {
+                self_.translate_ast_type(typ)
             }),
         }
     }
@@ -2020,13 +2012,12 @@ impl<'a> Typecheck<'a> {
             for (i, bind) in bindings.iter_mut().enumerate() {
                 let typ = {
                     if let Some(ref mut typ) = bind.typ {
-                        let type_cache = self.type_cache.clone();
-                        let rc_type = self.translate_ast_type(&type_cache, typ);
+                        let rc_type = self.translate_ast_type(typ);
                         self.kindcheck(typ);
 
                         resolved_types.push(rc_type);
                     } else {
-                        resolved_types.push(self.type_cache.hole());
+                        resolved_types.push(self.subs.hole());
                     }
 
                     let typ = self.create_unifiable_signature(&resolved_types[i]);
@@ -2051,13 +2042,12 @@ impl<'a> Typecheck<'a> {
             // recursive
             let typ = if !is_recursive {
                 if let Some(ref mut typ) = bind.typ {
-                    let type_cache = self.type_cache.clone();
-                    let rc_type = self.translate_ast_type(&type_cache, typ);
+                    let rc_type = self.translate_ast_type(typ);
                     self.kindcheck(typ);
 
                     resolved_types.push(rc_type);
                 } else {
-                    resolved_types.push(self.type_cache.hole());
+                    resolved_types.push(self.subs.hole());
                 }
 
                 let typ = self.create_unifiable_signature(&resolved_types[i]);
@@ -2077,13 +2067,13 @@ impl<'a> Typecheck<'a> {
             } else {
                 let typ = match bind.name.value {
                     Pattern::Ident(ref id) => {
-                        let type_cache = &self.type_cache;
+                        let mut type_cache = &self.subs;
                         self.environment
                             .stack
                             .get(&id.name)
                             .map_or_else(|| type_cache.error(), |b| b.typ.clone())
                     }
-                    _ => self.type_cache.error(),
+                    _ => self.subs.error(),
                 };
 
                 self.skolemize_in_no_scope(bind.expr.span, &typ, |self_, function_type| {
@@ -2114,7 +2104,7 @@ impl<'a> Typecheck<'a> {
         }
 
         if is_recursive {
-            let hole = self.type_cache.hole();
+            let hole = self.subs.hole();
             {
                 let mut generalizer =
                     TypeGeneralizer::new(level, self, &hole, bindings[0].name.span);
@@ -2167,7 +2157,7 @@ impl<'a> Typecheck<'a> {
             self.type_variables.enter_scope();
 
             {
-                let type_cache = &self.type_cache;
+                let mut type_cache = &self.subs;
                 self.type_variables.extend(
                     bind.alias
                         .value
@@ -2234,10 +2224,8 @@ impl<'a> Typecheck<'a> {
         for bind in &mut *bindings {
             self.type_variables.enter_scope();
 
-            let mut alias = types::translate_alias(&bind.alias.value, |typ| {
-                let type_cache = self.type_cache.clone();
-                self.translate_ast_type(&type_cache, typ)
-            });
+            let mut alias =
+                types::translate_alias(&bind.alias.value, |typ| self.translate_ast_type(typ));
 
             let replacement = self.create_unifiable_signature_with(
                 // alias.unresolved_type() is a dummy in this context
@@ -2311,7 +2299,7 @@ impl<'a> Typecheck<'a> {
             }
             _ => {
                 if let Type::Forall(ref params, ..) = **typ {
-                    let type_cache = &self.type_cache;
+                    let mut type_cache = &self.subs;
                     self.type_variables
                         .extend(params.iter().map(|gen| (gen.id.clone(), type_cache.hole())));
                 }
@@ -2567,7 +2555,7 @@ impl<'a> Typecheck<'a> {
             Type::Forall(ref params, ref typ) => {
                 for param in params {
                     self.type_variables
-                        .insert(param.id.clone(), self.type_cache.hole());
+                        .insert(param.id.clone(), self.subs.hole());
                 }
                 let result = self.create_unifiable_signature_(typ);
                 // Remove any implicit variables inserted inside the forall since
@@ -2860,7 +2848,7 @@ impl<'a> Typecheck<'a> {
                     // TODO Help what caused this unification failure
                     value: err.into(),
                 });
-                self.type_cache.error()
+                self.subs.error()
             }
         }
     }
@@ -3277,7 +3265,7 @@ fn generalize_binding(
     generalizer.tc.type_variables.enter_scope();
 
     {
-        let type_cache = &generalizer.tc.type_cache;
+        let mut type_cache = &generalizer.tc.subs;
         generalizer.tc.type_variables.extend(
             resolved_type
                 .forall_params()

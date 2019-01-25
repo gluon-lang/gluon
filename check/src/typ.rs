@@ -11,7 +11,7 @@ use crate::base::{
     symbol::Symbol,
     types::{
         self, dt, forall_params, pretty_print::Printer, ArcType, Generic, Prec, Skolem, ToDoc,
-        Type, TypeCache, TypeExt, TypeFormatter, TypeInterner, TypeInternerAlloc,
+        Type, TypeExt, TypeFormatter, TypeInterner, TypeInternerAlloc,
     },
 };
 
@@ -294,7 +294,6 @@ impl TypeInternerAlloc for RcType {
 pub fn translate_interned_type<T, U>(
     type_interner: &mut FnvMap<PtrEq<T>, U>,
     interner: &mut impl TypeInterner<Symbol, U>,
-    type_cache: &TypeCache<Symbol, U>,
     typ: &T,
 ) -> U
 where
@@ -303,15 +302,15 @@ where
     PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
 {
     if T::strong_count(typ) == 1 {
-        types::translate_type_with(type_cache, interner, typ, |interner, typ| {
-            translate_interned_type(type_interner, interner, type_cache, typ)
+        types::translate_type_with(interner, typ, |interner, typ| {
+            translate_interned_type(type_interner, interner, typ)
         })
     } else {
         if let Some(t) = type_interner.get(PtrEq::new(typ)) {
             return t.clone();
         }
-        let new_type = types::translate_type_with(type_cache, interner, typ, |interner, typ| {
-            translate_interned_type(type_interner, interner, type_cache, typ)
+        let new_type = types::translate_type_with(interner, typ, |interner, typ| {
+            translate_interned_type(type_interner, interner, typ)
         });
 
         type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
@@ -322,7 +321,6 @@ where
 pub fn translate_rc_interned_type<T, U>(
     type_interner: &mut FnvMap<T, U>,
     interner: &mut impl TypeInterner<Symbol, U>,
-    type_cache: &TypeCache<Symbol, U>,
     typ: &T,
 ) -> U
 where
@@ -330,15 +328,15 @@ where
     U: Clone,
 {
     if T::strong_count(typ) == 1 {
-        types::translate_type_with(type_cache, interner, typ, |interner, typ| {
-            translate_rc_interned_type(type_interner, interner, type_cache, typ)
+        types::translate_type_with(interner, typ, |interner, typ| {
+            translate_rc_interned_type(type_interner, interner, typ)
         })
     } else {
         if let Some(t) = type_interner.get(typ) {
             return t.clone();
         }
-        let new_type = types::translate_type_with(type_cache, interner, typ, |interner, typ| {
-            translate_rc_interned_type(type_interner, interner, type_cache, typ)
+        let new_type = types::translate_type_with(interner, typ, |interner, typ| {
+            translate_rc_interned_type(type_interner, interner, typ)
         });
 
         type_interner.insert(typ.clone(), new_type.clone());
