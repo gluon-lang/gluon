@@ -443,7 +443,6 @@ impl<'a> Typecheck<'a> {
         self.subs.error()
     }
 
-    // FIXME Cache
     fn bool(&mut self) -> RcType {
         let typ = self.environment.get_bool().clone();
         self.translate_arc_type(&typ)
