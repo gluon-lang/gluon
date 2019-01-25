@@ -678,6 +678,7 @@ name = "gluon_base"
 version = "0.10.1"
 dependencies = [
  "anymap 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -709,7 +710,6 @@ dependencies = [
 name = "gluon_check"
 version = "0.10.1"
 dependencies = [
- "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",

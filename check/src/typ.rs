@@ -1,7 +1,5 @@
 use std::{borrow::Borrow, fmt, hash::Hash, mem, ops::Deref, rc::Rc};
 
-use bitflags::bitflags;
-
 use pretty::{Arena, DocBuilder};
 
 use crate::base::{
@@ -12,106 +10,14 @@ use crate::base::{
     source::Source,
     symbol::Symbol,
     types::{
-        self, dt, forall_params, pretty_print::Printer, ArcType, Field, Generic, Prec, Skolem,
-        ToDoc, Type, TypeCache, TypeExt, TypeFormatter, TypeInterner, TypeInternerAlloc,
+        self, dt, forall_params, pretty_print::Printer, ArcType, Generic, Prec, Skolem, ToDoc,
+        Type, TypeCache, TypeExt, TypeFormatter, TypeInterner, TypeInternerAlloc,
     },
 };
 
 use crate::substitution::Substitution;
 
-bitflags! {
-    pub struct Flags: u8 {
-        const HAS_VARIABLES = 1 << 0;
-        const HAS_SKOLEMS = 1 << 1;
-        const HAS_GENERICS = 1 << 2;
-        const HAS_FORALL = 1 << 3;
-
-
-        const NEEDS_GENERALIZE =
-            Flags::HAS_VARIABLES.bits | Flags::HAS_SKOLEMS.bits;
-    }
-}
-
-trait AddFlags {
-    fn add_flags(&self, flags: &mut Flags);
-}
-
-impl<T> AddFlags for [T]
-where
-    T: AddFlags,
-{
-    fn add_flags(&self, flags: &mut Flags) {
-        for t in self {
-            t.add_flags(flags);
-        }
-    }
-}
-
-impl<Id, T> AddFlags for Field<Id, T>
-where
-    T: AddFlags,
-{
-    fn add_flags(&self, flags: &mut Flags) {
-        self.typ.add_flags(flags);
-    }
-}
-
-impl<Id> AddFlags for RcType<Id> {
-    fn add_flags(&self, flags: &mut Flags) {
-        *flags |= self.flags()
-    }
-}
-
-impl<Id, T> AddFlags for Type<Id, T>
-where
-    T: AddFlags,
-{
-    fn add_flags(&self, flags: &mut Flags) {
-        match self {
-            Type::Function(_, arg, ret) => {
-                arg.add_flags(flags);
-                ret.add_flags(flags);
-            }
-            Type::App(ref f, ref args) => {
-                f.add_flags(flags);
-                args.add_flags(flags);
-            }
-            Type::Record(ref typ)
-            | Type::Variant(ref typ)
-            | Type::Effect(ref typ)
-            | Type::Forall(_, ref typ) => {
-                *flags |= Flags::HAS_FORALL;
-                typ.add_flags(flags);
-            }
-            Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
-            Type::ExtendRow { fields, rest, .. } => {
-                fields.add_flags(flags);
-                rest.add_flags(flags);
-            }
-            Type::Variable(_) => *flags |= Flags::HAS_VARIABLES,
-            Type::Generic(_) => *flags |= Flags::HAS_GENERICS,
-            Type::Hole
-            | Type::Opaque
-            | Type::Error
-            | Type::Builtin(..)
-            | Type::Ident(_)
-            | Type::Projection(_)
-            | Type::Alias(_)
-            | Type::EmptyRow => (),
-        }
-    }
-}
-
-impl Flags {
-    fn from_type<Id, T>(typ: &Type<Id, T>) -> Self
-    where
-        T: AddFlags,
-    {
-        let mut flags = Flags::empty();
-        typ.add_flags(&mut flags);
-        flags
-    }
-}
+pub use crate::base::types::Flags;
 
 #[derive(Clone)]
 struct RcTypeInner<Id = Symbol> {
@@ -202,7 +108,9 @@ impl<Id> From<Type<Id, RcType<Id>>> for RcType<Id> {
     }
 }
 
-impl<Id> TypeExt<Id> for RcType<Id> {
+impl<Id> TypeExt for RcType<Id> {
+    type Id = Id;
+
     fn new(typ: Type<Id, RcType<Id>>) -> RcType<Id> {
         let flags = Flags::from_type(&typ);
         RcType {
@@ -214,16 +122,13 @@ impl<Id> TypeExt<Id> for RcType<Id> {
         Rc::strong_count(&typ.typ)
     }
 
-    fn has_generics(&self) -> bool {
-        self.flags().intersects(Flags::HAS_GENERICS)
+    #[inline(always)]
+    fn flags(&self) -> Flags {
+        self.typ.flags
     }
 }
 
 impl<Id> RcType<Id> {
-    pub fn flags(&self) -> Flags {
-        self.typ.flags
-    }
-
     pub fn needs_generalize(&self) -> bool {
         self.flags().intersects(Flags::NEEDS_GENERALIZE)
     }
@@ -393,7 +298,7 @@ pub fn translate_interned_type<T, U>(
     typ: &T,
 ) -> U
 where
-    T: Clone + Borrow<Type<Symbol, T>> + TypeExt<Symbol>,
+    T: Clone + Borrow<Type<Symbol, T>> + TypeExt<Id = Symbol>,
     U: Clone,
     PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
 {
@@ -421,7 +326,7 @@ pub fn translate_rc_interned_type<T, U>(
     typ: &T,
 ) -> U
 where
-    T: Clone + TypeExt<Symbol> + Eq + Hash,
+    T: Clone + TypeExt<Id = Symbol> + Eq + Hash,
     U: Clone,
 {
     if T::strong_count(typ) == 1 {

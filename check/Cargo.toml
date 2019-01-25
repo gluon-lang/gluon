@@ -12,7 +12,6 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
-bitflags = "1"
 collect-mac = "0.1.0"
 log = "0.4"
 itertools = "0.8"

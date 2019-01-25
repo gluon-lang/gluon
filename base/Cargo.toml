@@ -12,6 +12,7 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
+bitflags = "1"
 log = "0.4"
 quick-error = "1.0.0"
 fnv = "1.0.3"

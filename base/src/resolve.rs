@@ -48,7 +48,7 @@ impl AliasRemover {
     ) -> Result<Cow<'t, T>, Error>
     where
         F: FnMut(&AliasRef<Symbol, T>) -> bool,
-        T: TypeExt<Symbol> + Clone,
+        T: TypeExt<Id = Symbol> + Clone,
     {
         Ok(match peek_alias(env, typ) {
             Ok(Some(alias)) => {
@@ -84,7 +84,7 @@ impl AliasRemover {
         mut typ: T,
     ) -> Result<T, Error>
     where
-        T: TypeExt<Symbol>,
+        T: TypeExt<Id = Symbol>,
     {
         loop {
             typ = match self.remove_alias(env, interner, &typ)? {
@@ -101,7 +101,7 @@ impl AliasRemover {
         typ: &T,
     ) -> Result<Option<T>, Error>
     where
-        T: TypeExt<Symbol>,
+        T: TypeExt<Id = Symbol>,
     {
         match peek_alias(env, &typ)? {
             Some(alias) => {
@@ -129,7 +129,7 @@ pub fn remove_aliases<T>(
     mut typ: T,
 ) -> T
 where
-    T: TypeExt<Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
     while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
@@ -144,7 +144,7 @@ pub fn remove_aliases_cow<'t, T>(
     typ: &'t T,
 ) -> Cow<'t, T>
 where
-    T: TypeExt<Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
     match remove_alias(env, interner, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
@@ -162,7 +162,7 @@ pub fn canonical_alias<'t, F, T>(
 ) -> Cow<'t, T>
 where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
-    T: TypeExt<Symbol> + Clone,
+    T: TypeExt<Id = Symbol> + Clone,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -190,7 +190,7 @@ pub fn remove_alias<T>(
     typ: &T,
 ) -> Result<Option<T>, Error>
 where
-    T: TypeExt<Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -208,7 +208,7 @@ pub fn peek_alias<'t, T>(
     typ: &'t T,
 ) -> Result<Option<&'t AliasRef<Symbol, T>>, Error>
 where
-    T: TypeExt<Symbol>,
+    T: TypeExt<Id = Symbol>,
 {
     let maybe_alias = typ.applied_alias();
 

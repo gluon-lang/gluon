@@ -117,7 +117,7 @@ impl<I, T> From<crate::recursion_check::Error> for TypeError<I, T> {
 impl<I, T> fmt::Display for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
-    T: TypeExt<I>
+    T: TypeExt<Id = I>
         + fmt::Display
         + ast::Commented
         + pos::HasSpan
@@ -245,7 +245,7 @@ where
 impl<I, T> AsDiagnostic for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
-    T: TypeExt<I>
+    T: TypeExt<Id = I>
         + fmt::Display
         + ast::Commented
         + pos::HasSpan

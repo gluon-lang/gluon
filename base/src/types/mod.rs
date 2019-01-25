@@ -36,8 +36,12 @@ use crate::serde::ser::SerializeState;
 use crate::serialization::{SeSeed, Seed};
 
 use self::pretty_print::Printer;
-pub use self::pretty_print::{Filter, TypeFormatter};
+pub use self::{
+    flags::Flags,
+    pretty_print::{Filter, TypeFormatter},
+};
 
+mod flags;
 pub mod pretty_print;
 
 macro_rules! forward_eq_hash {
@@ -444,7 +448,7 @@ impl<Id, T> Alias<Id, T> {
 
 impl<Id, T> Alias<Id, T>
 where
-    T: TypeExt<Id> + Clone,
+    T: TypeExt<Id = Id> + Clone,
     Id: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
@@ -533,39 +537,45 @@ impl<Id, T> AliasRef<Id, T> {
 
 impl<Id, T> AliasRef<Id, T>
 where
-    T: TypeExt<Id> + Clone,
+    T: TypeExt<Id = Id> + Clone,
     Id: Clone + PartialEq,
 {
     pub fn typ(&self, interner: &mut impl TypeInterner<Id, T>) -> Cow<T> {
-        let opt = walk_move_type_opt(
-            &self.typ,
-            &mut InternerVisitor::new(interner, |interner, typ: &T| {
-                match **typ {
-                    Type::Ident(ref id) => {
-                        // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
-                        // needed to resolve the type later on
-                        let replacement = self
-                            .group
-                            .iter()
-                            .position(|alias| alias.name == *id)
-                            .map(|index| {
-                                interner.intern(Type::Alias(AliasRef {
-                                    index,
-                                    group: self.group.clone(),
-                                }))
-                            });
-                        if replacement.is_none() {
-                            info!("Alias group were not able to resolve an identifier");
-                        }
-                        replacement
-                    }
-                    _ => None,
-                }
-            }),
-        );
-        match opt {
+        match self.typ_(interner, &self.typ) {
             Some(typ) => Cow::Owned(typ),
             None => Cow::Borrowed(&self.typ),
+        }
+    }
+
+    fn typ_(&self, interner: &mut impl TypeInterner<Id, T>, typ: &T) -> Option<T> {
+        if !typ.flags().intersects(Flags::HAS_IDENTS) {
+            return None;
+        }
+        match **typ {
+            Type::Ident(ref id) => {
+                // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
+                // needed to resolve the type later on
+                let replacement =
+                    self.group
+                        .iter()
+                        .position(|alias| alias.name == *id)
+                        .map(|index| {
+                            interner.intern(Type::Alias(AliasRef {
+                                index,
+                                group: self.group.clone(),
+                            }))
+                        });
+                if replacement.is_none() {
+                    info!("Alias group were not able to resolve an identifier");
+                }
+                replacement
+            }
+            _ => walk_move_type_opt(
+                typ,
+                &mut InternerVisitor::control(interner, |interner, typ: &T| {
+                    self.typ_(interner, typ)
+                }),
+            ),
         }
     }
 }
@@ -1314,8 +1324,10 @@ where
     }
 }
 
-pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
-    fn new(typ: Type<Id, Self>) -> Self;
+pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + Sized {
+    type Id;
+
+    fn new(typ: Type<Self::Id, Self>) -> Self;
 
     fn strong_count(typ: &Self) -> usize;
 
@@ -1331,27 +1343,18 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
         row_iter(self)
     }
 
-    fn remove_implicit_args<'a>(&'a self) -> &'a Self
-    where
-        Id: 'a,
-    {
+    fn remove_implicit_args<'a>(&'a self) -> &'a Self {
         match **self {
             Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_implicit_args(),
             _ => self,
         }
     }
 
-    fn remove_forall<'a>(&'a self) -> &'a Self
-    where
-        Id: 'a,
-    {
+    fn remove_forall<'a>(&'a self) -> &'a Self {
         remove_forall(self)
     }
 
-    fn remove_forall_and_implicit_args<'a>(&'a self) -> &'a Self
-    where
-        Id: 'a,
-    {
+    fn remove_forall_and_implicit_args<'a>(&'a self) -> &'a Self {
         match **self {
             Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_forall_and_implicit_args(),
             Type::Forall(_, ref typ) => typ.remove_forall_and_implicit_args(),
@@ -1361,14 +1364,14 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
 
     fn replace_generics(
         &self,
-        interner: &mut impl TypeInterner<Id, Self>,
-        named_variables: &mut FnvMap<Id, Self>,
+        interner: &mut impl TypeInterner<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
     ) -> Option<Self>
     where
-        Id: Clone + Eq + Hash,
+        Self::Id: Clone + Eq + Hash,
         Self: Clone,
     {
-        if !self.has_generics() {
+        if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
         }
         match **self {
@@ -1404,14 +1407,14 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
 
     fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
-        Id: AsRef<str> + 'a,
+        Self::Id: AsRef<str> + 'a,
         A: Clone,
         Self: Commented + HasSpan,
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
 
-    fn display<A>(&self, width: usize) -> TypeFormatter<Id, Self, A> {
+    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A> {
         TypeFormatter::new(self).width(width)
     }
 
@@ -1427,12 +1430,12 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
     /// ```
     fn apply_args(
         &self,
-        params: &[Generic<Id>],
+        params: &[Generic<Self::Id>],
         args: &[Self],
-        interner: &mut impl TypeInterner<Id, Self>,
+        interner: &mut impl TypeInterner<Self::Id, Self>,
     ) -> Option<Self>
     where
-        Id: Clone + Eq + Hash,
+        Self::Id: Clone + Eq + Hash,
     {
         let typ = self.clone();
 
@@ -1482,8 +1485,8 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
         )
     }
 
-    fn has_generics(&self) -> bool {
-        true
+    fn flags(&self) -> Flags {
+        Flags::all()
     }
 }
 
@@ -1507,7 +1510,9 @@ where
     })
 }
 
-impl<Id> TypeExt<Id> for ArcType<Id> {
+impl<Id> TypeExt for ArcType<Id> {
+    type Id = Id;
+
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
     }
@@ -2582,7 +2587,7 @@ pub trait TypeInterner<Id, T> {
     fn with_forall(&mut self, typ: T, from: &T) -> T
     where
         Id: Clone + Eq + Hash,
-        T: TypeExt<Id> + Clone,
+        T: TypeExt<Id = Id> + Clone,
     {
         let params = forall_params(from).cloned().collect();
         self.forall(params, typ)
@@ -2926,7 +2931,7 @@ where
 
 impl<Id, T> TypeInterner<Id, T> for Interner<T>
 where
-    T: TypeInternerAlloc<Id = Id> + TypeExt<Id> + Eq + Hash + Clone,
+    T: TypeInternerAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
@@ -2947,7 +2952,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
     pub fn new<I, T>(interner: &'i mut V, visitor: F) -> Self
     where
         F: FnMut(&mut V, &T) -> Option<T>,
-        T: TypeExt<I>,
+        T: TypeExt<Id = I>,
         V: TypeInterner<I, T>,
     {
         InternerVisitor { interner, visitor }
@@ -2959,7 +2964,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
     ) -> InternerVisitor<'i, ControlVisitation<F>, V>
     where
         F: FnMut(&mut V, &T) -> Option<T>,
-        T: TypeExt<I>,
+        T: TypeExt<Id = I>,
         V: TypeInterner<I, T>,
     {
         InternerVisitor {
@@ -2972,7 +2977,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
 impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, F, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
-    T: TypeExt<I>,
+    T: TypeExt<Id = I>,
     V: TypeInterner<I, T>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
@@ -2993,7 +2998,7 @@ where
 impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, ControlVisitation<F>, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
-    T: TypeExt<I>,
+    T: TypeExt<Id = I>,
     V: TypeInterner<I, T>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>

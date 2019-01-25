@@ -50,7 +50,7 @@ where
 
 impl<'a, Id, T> TypeInterner<Id, T> for Substitution<T>
 where
-    T: Substitutable + TypeExt<Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
+    T: Substitutable + TypeExt<Id = Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
@@ -60,7 +60,7 @@ where
 
 impl<'a, Id, T> TypeInterner<Id, T> for &'a Substitution<T>
 where
-    T: Substitutable + TypeExt<Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
+    T: Substitutable + TypeExt<Id = Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
