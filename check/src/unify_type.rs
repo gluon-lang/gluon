@@ -9,8 +9,8 @@ use crate::base::{
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
     types::{
-        self, walk_type, AppVec, ArgType, Field, Filter, Skolem, Type, TypeEnv, TypeExt,
-        TypeFormatter, TypeInterner, TypeVariable,
+        self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeEnv,
+        TypeExt, TypeFormatter, TypeInterner, TypeVariable,
     },
 };
 
@@ -237,7 +237,10 @@ impl Variable for TypeVariable {
 
 impl Substitutable for RcType<Symbol> {
     type Variable = TypeVariable;
+
     type Factory = ArcKind;
+
+    type Interner = SharedInterner<Symbol, Self>;
 
     fn from_variable(mut subs: &Substitution<Self>, var: TypeVariable) -> Self {
         subs.variable(var)

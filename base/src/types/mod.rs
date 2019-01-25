@@ -2849,8 +2849,9 @@ where
     }
 }
 
-pub type SharedInterner<T> = Rc<RefCell<Interner<T>>>;
+pub type SharedInterner<Id, T> = Rc<RefCell<Interner<Id, T>>>;
 
+#[derive(Default)]
 pub struct NullInterner;
 
 impl<Id, T> TypeInterner<Id, T> for NullInterner
@@ -2935,25 +2936,53 @@ pub trait TypeInternerAlloc: Sized {
     fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
 }
 
-pub struct Interner<T> {
+pub struct Interner<Id, T> {
     set: FnvMap<Interned<T>, ()>,
     scratch: Interned<T>,
+    type_cache: TypeCache<Id, T>,
 }
 
-impl<T> Default for Interner<T>
+impl<Id, T> Default for Interner<Id, T>
 where
-    T: Default + Deref,
+    T: Default + Deref + From<Type<Id, T>> + Clone,
     T::Target: Eq + Hash,
 {
     fn default() -> Self {
-        Interner {
+        let mut interner = Interner {
             set: Default::default(),
             scratch: Default::default(),
+            type_cache: Default::default(),
+        };
+
+        macro_rules! populate_builtins {
+            ($($id: ident)*) => {
+                $(
+                    let x = interner.type_cache.$id();
+                    interner.set.insert(Interned(x), ());
+                )*
+            }
         }
+
+        populate_builtins! {
+            hole opaque error int byte float string char
+            function_builtin array_builtin unit empty_row
+        }
+
+        interner
     }
 }
 
-impl<Id, T> TypeInterner<Id, T> for Interner<T>
+macro_rules! forward_to_intern_cache {
+    ($($id: ident)*) => {
+        $(
+            fn $id(&mut self) -> T {
+                self.type_cache.$id()
+            }
+        )*
+    }
+}
+
+impl<Id, T> TypeInterner<Id, T> for Interner<Id, T>
 where
     T: TypeInternerAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
     Id: Eq + Hash,
@@ -2969,6 +2998,11 @@ where
                 self.scratch.0.clone()
             }
         }
+    }
+
+    forward_to_intern_cache! {
+        hole opaque error int byte float string char
+        function_builtin array_builtin unit empty_row
     }
 }
 

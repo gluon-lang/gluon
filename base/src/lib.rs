@@ -41,7 +41,7 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> Default for $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>> + Clone,
+            where $typ: From<$inner_type<$($args,)*>>,
         {
             fn default() -> Self {
                 $name::new()
@@ -49,7 +49,7 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>> + Clone,
+            where $typ: From<$inner_type<$($args,)*>>,
         {
             pub fn new() -> Self {
                 $name {

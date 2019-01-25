@@ -4,6 +4,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use crate::base::{
     fixed::{FixedMap, FixedVec},
+    symbol::Symbol,
     types::{
         self, ArcType, InternerVisitor, SharedInterner, Type, TypeExt, TypeInterner,
         TypeInternerAlloc, TypeVariable, Walker,
@@ -45,32 +46,46 @@ where
     /// `&T` from this map safely.
     types: FixedMap<u32, Box<T>>,
     factory: T::Factory,
-    interner: SharedInterner<T>,
+    interner: T::Interner,
 }
 
-impl<'a, Id, T> TypeInterner<Id, T> for Substitution<T>
+impl<'a, T> TypeInterner<Symbol, T> for Substitution<T>
 where
-    T: Substitutable + TypeExt<Id = Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
-    Id: Eq + Hash,
+    T: Substitutable<Interner = SharedInterner<Symbol, T>>
+        + Eq
+        + Hash
+        + TypeExt<Id = Symbol>
+        + TypeInternerAlloc<Id = Symbol>
+        + Default
+        + Clone
+        + From<Type<Symbol, T>>,
+    T::Target: Eq + Hash,
 {
-    fn intern(&mut self, typ: Type<Id, T>) -> T {
+    fn intern(&mut self, typ: Type<Symbol, T>) -> T {
         TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
     }
 }
 
-impl<'a, Id, T> TypeInterner<Id, T> for &'a Substitution<T>
+impl<'a, T> TypeInterner<Symbol, T> for &'a Substitution<T>
 where
-    T: Substitutable + TypeExt<Id = Id> + Eq + Hash + TypeInternerAlloc<Id = Id>,
-    Id: Eq + Hash,
+    T: Substitutable<Interner = SharedInterner<Symbol, T>>
+        + Eq
+        + Hash
+        + TypeExt<Id = Symbol>
+        + TypeInternerAlloc<Id = Symbol>
+        + Default
+        + Clone
+        + From<Type<Symbol, T>>,
+    T::Target: Eq + Hash,
 {
-    fn intern(&mut self, typ: Type<Id, T>) -> T {
+    fn intern(&mut self, typ: Type<Symbol, T>) -> T {
         TypeInterner::intern(&mut *self.interner.borrow_mut(), typ)
     }
 }
 
 impl<T> Default for Substitution<T>
 where
-    T: Substitutable + Eq + Hash + Deref + Default,
+    T: Substitutable + Eq + Hash + Deref + Default + Clone + From<Type<Symbol, T>>,
     T::Factory: Default,
     T::Target: Eq + Hash,
 {
@@ -108,7 +123,11 @@ impl VariableFactory for () {
 /// Trait implemented on types which may contain substitutable variables
 pub trait Substitutable: Sized {
     type Variable: Variable;
+
     type Factory: VariableFactory<Variable = Self::Variable>;
+
+    type Interner: Default;
+
     /// Constructs a new object from its variable type
     fn from_variable(subs: &Substitution<Self>, x: Self::Variable) -> Self;
 
@@ -253,7 +272,7 @@ where
     T: Substitutable + Deref,
     T::Target: Eq + Hash,
 {
-    pub fn new(factory: T::Factory, interner: SharedInterner<T>) -> Substitution<T> {
+    pub fn new(factory: T::Factory, interner: T::Interner) -> Substitution<T> {
         Substitution {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),

@@ -587,7 +587,7 @@ impl<'a> ImplicitResolver<'a> {
     pub fn new(
         environment: &'a TypecheckEnv<Type = ArcType>,
         type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
-        interner: SharedInterner<RcType>,
+        interner: SharedInterner<Symbol, RcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {

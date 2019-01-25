@@ -472,7 +472,10 @@ where
 
 impl Substitutable for ArcKind {
     type Variable = u32;
+
     type Factory = ();
+
+    type Interner = NullInterner;
 
     fn from_variable(_: &Substitution<Self>, x: u32) -> ArcKind {
         Kind::variable(x)

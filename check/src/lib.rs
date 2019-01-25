@@ -72,7 +72,7 @@ pub fn check_signature(
 
 fn check_signature_(
     env: &TypeEnv<Type = RcType>,
-    interner: &SharedInterner<RcType>,
+    interner: &SharedInterner<Symbol, RcType>,
     signature: &RcType,
     actual: &RcType,
 ) -> bool {
@@ -97,14 +97,14 @@ pub struct ArcTypeCacher<'a> {
     types: FixedMap<String, Box<RcType>>,
     aliases: FixedMap<String, Box<Alias<Symbol, RcType>>>,
     type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
-    interner: SharedInterner<RcType>,
+    interner: SharedInterner<Symbol, RcType>,
 }
 
 impl<'a> ArcTypeCacher<'a> {
     pub fn new(
         environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
         type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
-        interner: SharedInterner<RcType>,
+        interner: SharedInterner<Symbol, RcType>,
     ) -> ArcTypeCacher<'a> {
         ArcTypeCacher {
             environment,
