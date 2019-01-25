@@ -734,7 +734,7 @@ where
                 ));
             }
 
-            Type::Forall(ref params, ref typ, _) => {
+            Type::Forall(ref params, ref typ) => {
                 for param in params {
                     self.on_found.on_type_ident(param);
                 }

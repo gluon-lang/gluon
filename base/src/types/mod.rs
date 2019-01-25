@@ -736,7 +736,6 @@ pub enum Type<Id, T = ArcType<Id>> {
     Forall(
         #[cfg_attr(feature = "serde_derive", serde(state))] Vec<Generic<Id>>,
         #[cfg_attr(feature = "serde_derive", serde(state))] T,
-        #[cfg_attr(feature = "serde_derive", serde(state))] Option<Vec<T>>,
     ),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
@@ -828,17 +827,10 @@ where
     }
 
     pub fn forall(params: Vec<Generic<Id>>, typ: T) -> T {
-        Type::forall_with_vars(params, typ, None)
-    }
-
-    pub fn forall_with_vars(params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
-        if let Some(ref vars) = vars {
-            debug_assert!(vars.len() == params.len());
-        }
         if params.is_empty() {
             typ
         } else {
-            T::from(Type::Forall(params, typ, vars))
+            T::from(Type::Forall(params, typ))
         }
     }
 
@@ -1113,7 +1105,6 @@ where
     pub fn params(&self) -> &[Generic<Id>] {
         match *self {
             Type::Alias(ref alias) => alias.typ.params(),
-            Type::Forall(ref params, _, _) => params,
             _ => &[],
         }
     }
@@ -1136,7 +1127,7 @@ where
                 let t = Kind::typ();
                 Cow::Owned(Kind::function(t.clone(), t))
             }
-            Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
+            Type::Forall(_, ref typ) => typ.kind_(applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
@@ -1303,7 +1294,7 @@ where
     Id: 'a,
 {
     match **typ {
-        Type::Forall(_, ref typ, _) => remove_forall(typ),
+        Type::Forall(_, ref typ) => remove_forall(typ),
         _ => typ,
     }
 }
@@ -1313,9 +1304,9 @@ where
     T: DerefMut<Target = Type<Id, T>>,
     Id: 'a,
 {
-    if let Type::Forall(_, _, _) = **typ {
+    if let Type::Forall(_, _) = **typ {
         match **typ {
-            Type::Forall(_, ref mut typ, _) => remove_forall_mut(typ),
+            Type::Forall(_, ref mut typ) => remove_forall_mut(typ),
             _ => unreachable!(),
         }
     } else {
@@ -1363,7 +1354,7 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
     {
         match **self {
             Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_forall_and_implicit_args(),
-            Type::Forall(_, ref typ, _) => typ.remove_forall_and_implicit_args(),
+            Type::Forall(_, ref typ) => typ.remove_forall_and_implicit_args(),
             _ => self,
         }
     }
@@ -1379,15 +1370,14 @@ pub trait TypeExt<Id>: Deref<Target = Type<Id, Self>> + Clone + Sized {
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            Type::Forall(ref params, ref typ, ref vars) => {
+            Type::Forall(ref params, ref typ) => {
                 let removed: AppVec<_> = params
                     .iter()
                     .flat_map(|param| named_variables.remove_entry(&param.id))
                     .collect();
 
                 let new_typ = typ.replace_generics(interner, named_variables);
-                let new_typ = new_typ
-                    .map(|typ| interner.intern(Type::Forall(params.clone(), typ, vars.clone())));
+                let new_typ = new_typ.map(|typ| interner.intern(Type::Forall(params.clone(), typ)));
 
                 named_variables.extend(removed);
 
@@ -1505,7 +1495,7 @@ where
 {
     let mut i = 0;
     iter::repeat(()).scan((), move |_, _| {
-        while let Type::Forall(ref params, ref inner_type, _) = **typ {
+        while let Type::Forall(ref params, ref inner_type) = **typ {
             if i < params.len() {
                 i += 1;
                 return Some(&params[i - 1]);
@@ -1541,7 +1531,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match **self.typ {
-            Type::Forall(ref params, ref typ, _) => {
+            Type::Forall(ref params, ref typ) => {
                 let offset = self.offset;
                 let item = params.get(offset).map(|param| {
                     self.offset += 1;
@@ -1997,21 +1987,13 @@ where
             Type::Hole => arena.text("_"),
             Type::Error => arena.text("!"),
             Type::Opaque => arena.text("<opaque>"),
-            Type::Forall(ref args, ref typ, ref vars) => {
+            Type::Forall(ref args, ref typ) => {
                 let doc = chain![arena;
                     chain![arena;
                         "forall ",
                         arena.concat(args.iter().map(|arg| {
                             arena.text(arg.id.as_ref()).append(arena.space())
                         })),
-                        if let Some(var) = vars.as_ref().and_then(|vars| vars.first()) {
-                            chain![arena;
-                                ": ",
-                                top(var).pretty(printer)
-                            ]
-                        } else {
-                            arena.nil()
-                        },
                         "."
                     ].group(),
                     arena.space(),
@@ -2413,7 +2395,7 @@ where
     I: 'a,
 {
     match **typ {
-        Type::Forall(_, ref typ, _) => f.walk(typ),
+        Type::Forall(_, ref typ) => f.walk(typ),
         Type::Function(_, ref arg, ref ret) => {
             f.walk(arg);
             f.walk(ret);
@@ -2458,7 +2440,7 @@ where
     T: DerefMut<Target = Type<I, T>>,
 {
     match **typ {
-        Type::Forall(_, ref mut typ, _) => f.walk_mut(typ),
+        Type::Forall(_, ref mut typ) => f.walk_mut(typ),
         Type::Function(_, ref mut arg, ref mut ret) => {
             f.walk_mut(arg);
             f.walk_mut(ret);
@@ -2526,19 +2508,13 @@ pub trait TypeVisitor<Id, T> {
     fn make(&mut self, typ: Type<Id, T>) -> T;
 
     fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
-        self.forall_with_vars(params, typ, None)
-    }
-
-    fn forall_with_vars(&mut self, params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
-        if let Some(ref vars) = vars {
-            debug_assert!(vars.len() == params.len());
-        }
         if params.is_empty() {
             typ
         } else {
-            self.make(Type::Forall(params, typ, vars))
+            self.make(Type::Forall(params, typ))
         }
     }
+
     fn app(&mut self, id: T, args: AppVec<T>) -> T {
         if args.is_empty() {
             id
@@ -2597,17 +2573,10 @@ pub trait TypeInterner<Id, T> {
     }
 
     fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
-        self.forall_with_vars(params, typ, None)
-    }
-
-    fn forall_with_vars(&mut self, params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
-        if let Some(ref vars) = vars {
-            debug_assert!(vars.len() == params.len());
-        }
         if params.is_empty() {
             typ
         } else {
-            self.intern(Type::Forall(params, typ, vars))
+            self.intern(Type::Forall(params, typ))
         }
     }
 
@@ -2616,11 +2585,8 @@ pub trait TypeInterner<Id, T> {
         Id: Clone + Eq + Hash,
         T: TypeExt<Id> + Clone,
     {
-        let mut params = Vec::new();
-        for param in forall_params(from) {
-            params.push(param.clone());
-        }
-        self.forall_with_vars(params, typ, None)
+        let params = forall_params(from).cloned().collect();
+        self.forall(params, typ)
     }
 
     fn array(&mut self, typ: T) -> T {
@@ -3128,9 +3094,7 @@ where
     I: Clone,
 {
     match *typ {
-        Type::Forall(ref args, ref typ, ref vars) => f
-            .visit(typ)
-            .map(|typ| f.forall_with_vars(args.clone(), typ, vars.clone())),
+        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| f.forall(args.clone(), typ)),
 
         Type::Function(arg_type, ref arg, ref ret) => {
             let new_arg = f.visit(arg);
@@ -3279,14 +3243,8 @@ where
         Type::Record(ref row) => intern!(Type::Record(translate(interner, row))),
         Type::Variant(ref row) => intern!(Type::Variant(translate(interner, row))),
         Type::Effect(ref row) => intern!(Type::Effect(translate(interner, row))),
-        Type::Forall(ref params, ref typ, ref skolem) => {
-            let t = Type::Forall(
-                params.clone(),
-                translate(interner, typ),
-                skolem
-                    .as_ref()
-                    .map(|ts| ts.iter().map(|t| translate(interner, t)).collect()),
-            );
+        Type::Forall(ref params, ref typ) => {
+            let t = Type::Forall(params.clone(), translate(interner, typ));
             interner.intern(t)
         }
         Type::Skolem(ref skolem) => interner.intern(Type::Skolem(Skolem {

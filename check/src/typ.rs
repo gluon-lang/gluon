@@ -79,12 +79,8 @@ where
             Type::Record(ref typ)
             | Type::Variant(ref typ)
             | Type::Effect(ref typ)
-            | Type::Forall(_, ref typ, None) => {
+            | Type::Forall(_, ref typ) => {
                 *flags |= Flags::HAS_FORALL;
-                typ.add_flags(flags);
-            }
-            Type::Forall(_, ref typ, Some(_)) => {
-                *flags |= Flags::HAS_SKOLEMS | Flags::HAS_FORALL; // ?
                 typ.add_flags(flags);
             }
             Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
@@ -240,7 +236,7 @@ impl RcType {
         named_variables: &mut FnvMap<Symbol, Self>,
     ) -> Self {
         let mut typ = self;
-        while let Type::Forall(params, inner_type, _) = &**typ {
+        while let Type::Forall(params, inner_type) = &**typ {
             named_variables.extend(
                 params
                     .iter()
@@ -262,7 +258,7 @@ impl RcType {
         named_variables: &mut FnvMap<Symbol, Self>,
     ) -> Self {
         let mut typ = self;
-        while let Type::Forall(ref params, ref inner_type, _) = **typ {
+        while let Type::Forall(ref params, ref inner_type) = **typ {
             let iter = params.iter().map(|param| {
                 let var = interner.new_var(); // TODO Avoid allocating a variable
                 let var = var.as_variable().unwrap();

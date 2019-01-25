@@ -78,7 +78,6 @@ fn check_signature_(
 ) -> bool {
     let subs = Substitution::new(Kind::typ(), interner.clone());
     let state = unify_type::State::new(env, &subs);
-    let actual = unify_type::new_skolem_scope(&subs, actual);
     let actual = actual.instantiate_generics(&mut &subs, &mut FnvMap::default());
     let result = unify_type::subsumes(&subs, state, signature, &actual);
     if let Err((_, ref err)) = result {

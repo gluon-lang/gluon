@@ -44,7 +44,7 @@ impl SymbolKey {
             Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
             Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
             Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-            Type::Forall(_, ref typ, _) => SymbolKey::new(typ),
+            Type::Forall(_, ref typ) => SymbolKey::new(typ),
             _ => None,
         }
     }
@@ -447,7 +447,6 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             binding_type,
         );
 
-        let binding_type = self.tc.new_skolem_scope(binding_type);
         let binding_type = self.tc.instantiate_generics(&binding_type);
         to_resolve.clear();
         let mut iter = types::implicit_arg_iter(&binding_type);
@@ -638,7 +637,7 @@ impl<'a> ImplicitResolver<'a> {
         let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
-        let typ = crate::unify_type::top_skolem_scope(subs, subs.real(typ));
+        let typ = subs.real(typ).clone();
         let ref typ = typ.instantiate_generics(&mut subs, &mut FnvMap::default());
         let raw_type =
             match alias_resolver.remove_aliases(&self.environment, &mut subs, typ.clone()) {

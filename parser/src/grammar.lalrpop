@@ -404,8 +404,7 @@ Type_ = {
         Type::Forall(args.into_iter()
                          .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                          .collect(),
-                     ty,
-                     None),
+                     ty),
 
     <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
         Type::Function(

@@ -154,7 +154,7 @@ impl<Id> AstType<Id> {
 
     pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {
         match self._typ.typ.value {
-            Type::Forall(_, ref mut typ, _) => typ,
+            Type::Forall(_, ref mut typ) => typ,
             _ => self,
         }
     }
@@ -776,13 +776,8 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
 ) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
-        Type::Forall(_, ref $($mut)* ast_type, ref $($mut)* ast_types) => {
+        Type::Forall(_, ref $($mut)* ast_type) => {
             v.visit_ast_type(&$($mut)* ast_type._typ.typ);
-            if let Some(ref $($mut)* ast_types) = *ast_types {
-                for ast_type in ast_types {
-                    v.visit_ast_type(&$($mut)* ast_type._typ.typ);
-                }
-            }
         }
         Type::Function(_, ref $($mut)* arg, ref $($mut)* ret) => {
             v.visit_ast_type(&$($mut)* arg._typ.typ);

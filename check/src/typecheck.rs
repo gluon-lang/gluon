@@ -42,7 +42,7 @@ use crate::{
     substitution::{self, Substitution},
     typ::{translate_interned_type, translate_rc_interned_type, PtrEq, RcType},
     unify::{self, Error as UnifyError},
-    unify_type::{self, new_skolem_scope, Error as UnifyTypeError},
+    unify_type::{self, Error as UnifyTypeError},
     ArcTypeCacher, TypecheckEnv,
 };
 
@@ -464,7 +464,6 @@ impl<'a> Typecheck<'a> {
         match self.environment.find_type(id).map(RcType::clone) {
             Some(typ) => {
                 self.named_variables.clear();
-                let typ = new_skolem_scope(&self.subs, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
                 Ok(typ)
             }
@@ -614,7 +613,7 @@ impl<'a> Typecheck<'a> {
                 _ => (Cow::Borrowed(&[]), &**alias, Cow::Borrowed(func)),
             },
             Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ(&mut &self.subs)),
-            Type::Forall(ref params, ref typ, None) => {
+            Type::Forall(ref params, ref typ) => {
                 let mut params = Cow::Borrowed(&params[..]);
                 let (more_params, canonical_alias, inner_type) =
                     self.unpack_canonical_alias(alias, typ);
@@ -865,7 +864,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_opt(
         &mut self,
         mut expr: &mut SpannedExpr<Symbol>,
-        expected_type: Option<&RcType>,
+        mut expected_type: Option<&RcType>,
     ) -> RcType {
         fn moving<T>(t: T) -> T {
             t
@@ -873,8 +872,6 @@ impl<'a> Typecheck<'a> {
         // How many scopes that have been entered in this "tailcall" loop
         let mut scope_count = 0;
         let returned_type;
-        let expected_type = expected_type.map(|t| self.new_skolem_scope(&t));
-        let mut expected_type = expected_type.as_ref();
         loop {
             match self.typecheck_(expr, &mut expected_type) {
                 Ok(tailcall) => {
@@ -1082,7 +1079,6 @@ impl<'a> Typecheck<'a> {
                             scrutinee_type.clone(),
                         );
                         let typ = self.remove_aliases(scrutinee_type);
-                        let typ = self.new_skolem_scope(&typ);
                         self.instantiate_generics(&typ)
                     }
                     _ => scrutinee_type.clone(),
@@ -1154,7 +1150,6 @@ impl<'a> Typecheck<'a> {
                     self.symbols.string(field_id)
                 );
                 self.subs.make_real(&mut expr_typ);
-                expr_typ = self.new_skolem_scope(&expr_typ);
                 expr_typ = self.instantiate_generics(&expr_typ);
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
@@ -1165,8 +1160,7 @@ impl<'a> Typecheck<'a> {
                             .map(|field| field.typ.clone());
                         let mut implicit_args = Vec::new();
                         let new_ast_field_type = match field_type {
-                            Some(mut typ) => {
-                                typ = self.new_skolem_scope(&typ);
+                            Some(typ) => {
                                 let (args, typ) =
                                     self.instantiate_sigma(expr.span, &typ, expected_type);
                                 implicit_args = args;
@@ -1228,9 +1222,8 @@ impl<'a> Typecheck<'a> {
                     });
 
                 self.generalize_type(level, &mut typ, expr.span);
-                let new_type = self.new_skolem_scope(&typ);
-                lambda.id.typ = self.subs.bind_arc(&new_type);
-                Ok(TailCall::Type(new_type))
+                lambda.id.typ = self.subs.bind_arc(&typ);
+                Ok(TailCall::Type(typ.clone()))
             }
             Expr::TypeBindings(ref mut bindings, ref expr) => {
                 self.typecheck_type_bindings(bindings, expr);
@@ -1251,9 +1244,8 @@ impl<'a> Typecheck<'a> {
                         &mut &self.subs,
                         &expected_type,
                     );
-                    let typ = self.new_skolem_scope(&typ);
-                    match *typ {
-                        Type::Record(_) => Some(typ),
+                    match **typ {
+                        Type::Record(_) => Some(typ.into_owned()),
                         _ => None,
                     }
                 });
@@ -1388,7 +1380,6 @@ impl<'a> Typecheck<'a> {
                         }
                     };
                     self.generalize_type(level, &mut typ, field.name.span);
-                    typ = self.new_skolem_scope(&typ);
 
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         match base_record_fields.get(field.name.value.declared_name()) {
@@ -1556,7 +1547,6 @@ impl<'a> Typecheck<'a> {
 
         let args_len = args.len() as u32;
 
-        func_type = self.new_skolem_scope(&func_type);
         func_type = self.instantiate_generics(&func_type);
 
         for arg in &mut **implicit_args {
@@ -1765,7 +1755,6 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Constructor(ref mut id, ref mut args) => {
-                match_type = self.new_skolem_scope(&match_type);
                 match_type = self.subs.real(&match_type).clone();
                 match_type = self.instantiate_generics(&match_type);
                 // Find the enum constructor and return the types for its arguments
@@ -1785,7 +1774,6 @@ impl<'a> Typecheck<'a> {
                 ref implicit_import,
             } => {
                 let uninstantiated_match_type = match_type.clone();
-                match_type = self.new_skolem_scope(&match_type);
                 match_type = self.instantiate_generics(&match_type);
                 *curr_typ = self.subs.bind_arc(&match_type);
 
@@ -1891,7 +1879,6 @@ impl<'a> Typecheck<'a> {
                 ref mut typ,
                 ref mut elems,
             } => {
-                match_type = self.new_skolem_scope(&match_type);
                 let tuple_type = {
                     let subs = &mut self.subs;
                     (&*subs).tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
@@ -2383,7 +2370,6 @@ impl<'a> Typecheck<'a> {
                 debug!("{{ .. }}: {}", final_type);
 
                 self.generalize_type(level, &mut typ, pattern.span);
-                let typ = self.top_skolem_scope(&typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
 
@@ -2408,7 +2394,6 @@ impl<'a> Typecheck<'a> {
                 *typ = self.subs.bind_arc(final_type);
                 let typ = final_type.clone();
 
-                let typ = self.top_skolem_scope(&typ);
                 let typ = self.instantiate_generics(&typ);
                 for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
                     let mut field_type = field.typ.clone();
@@ -2504,7 +2489,6 @@ impl<'a> Typecheck<'a> {
             let result = self.intern(Type::Forall(
                 params,
                 result_type.unwrap_or_else(|| typ.clone()),
-                None,
             ));
             debug!("Signature scope END: {}", result);
             Some(result)
@@ -2575,7 +2559,7 @@ impl<'a> Typecheck<'a> {
                     },
                 )
             }
-            Type::Forall(ref params, ref typ, _) => {
+            Type::Forall(ref params, ref typ) => {
                 for param in params {
                     self.type_variables
                         .insert(param.id.clone(), self.type_cache.hole());
@@ -2586,7 +2570,7 @@ impl<'a> Typecheck<'a> {
                 for param in params {
                     self.type_variables.remove(&param.id);
                 }
-                result.map(|typ| self.intern(Type::Forall(params.clone(), typ, None)))
+                result.map(|typ| self.intern(Type::Forall(params.clone(), typ)))
             }
             Type::Generic(ref generic) => {
                 if let Some(typ) = self.type_variables.get(&generic.id) {
@@ -2683,7 +2667,6 @@ impl<'a> Typecheck<'a> {
         // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
         // specified to have implicit arguments)
         loop {
-            actual = self.new_skolem_scope(&actual);
             actual = self.instantiate_generics(&actual);
             actual = match *actual {
                 Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
@@ -2710,7 +2693,6 @@ impl<'a> Typecheck<'a> {
 
         let mut skolem_scope = FnvMap::default();
         loop {
-            expected = self.new_skolem_scope(&expected);
             expected = expected.skolemize(&mut &self.subs, &mut skolem_scope);
             self.type_variables.extend(skolem_scope.drain());
 
@@ -2912,7 +2894,7 @@ impl<'a> Typecheck<'a> {
         for param in from.forall_params() {
             params.push(param.clone());
         }
-        self.forall_with_vars(params, to, None)
+        self.forall(params, to)
     }
 
     fn skolemize_in(
@@ -2983,14 +2965,6 @@ impl<'a> Typecheck<'a> {
         typ.instantiate_generics(&mut &self.subs, &mut self.named_variables)
     }
 
-    pub(crate) fn new_skolem_scope(&mut self, typ: &RcType) -> RcType {
-        new_skolem_scope(&self.subs, typ)
-    }
-
-    fn top_skolem_scope(&mut self, typ: &RcType) -> RcType {
-        crate::unify_type::top_skolem_scope(&self.subs, typ)
-    }
-
     fn error_on_duplicated_field(
         &mut self,
         duplicated_fields: &mut FnvSet<String>,
@@ -3032,7 +3006,7 @@ impl<'a> Typecheck<'a> {
 
                         let unaliased = self.remove_aliases(typ.clone());
                         let valid_type = match *unaliased {
-                            Type::Forall(ref params, ref variant, _) => match **variant {
+                            Type::Forall(ref params, ref variant) => match **variant {
                                 Type::Variant(ref variant) => {
                                     let mut iter = variant.row_iter();
                                     for _ in iter.by_ref() {}
@@ -3086,7 +3060,6 @@ impl<'a> Typecheck<'a> {
                                                 collect![type_args[0].clone()],
                                             );
                                             let typ = self.remove_alias(typ);
-                                            let typ = self.new_skolem_scope(&typ);
                                             let typ = self.instantiate_generics(&typ);
 
                                             self.subsumes(
@@ -3237,7 +3210,6 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut last_alias = None;
         loop {
-            self.typ = self.tc.new_skolem_scope(&self.typ);
             self.typ = self.tc.skolemize(&self.typ);
             let (arg, new) = match self.typ.as_function_with_type() {
                 Some((arg_type, arg, ret)) => (Some((arg_type, arg.clone())), ret.clone()),

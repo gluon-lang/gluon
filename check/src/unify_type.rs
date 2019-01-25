@@ -9,8 +9,8 @@ use crate::base::{
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
     types::{
-        self, walk_type, AppVec, ArgType, Field, Filter, InternerVisitor, Skolem, Type, TypeEnv,
-        TypeExt, TypeFormatter, TypeInterner, TypeVariable,
+        self, walk_type, AppVec, ArgType, Field, Filter, Skolem, Type, TypeEnv, TypeExt,
+        TypeFormatter, TypeInterner, TypeVariable,
     },
 };
 
@@ -76,16 +76,6 @@ impl<'a> State<'a> {
         match resolve::remove_alias(&self.env, &mut subs, typ)? {
             Some(mut typ) => {
                 loop {
-                    typ = types::walk_move_type(
-                        typ.clone(),
-                        &mut InternerVisitor::new(&mut subs, |subs, typ: &RcType| match **typ {
-                            Type::Forall(_, _, None) => {
-                                let typ = new_skolem_scope(subs, typ);
-                                Some(typ)
-                            }
-                            _ => None,
-                        }),
-                    );
                     if let Some(alias_id) = typ.alias_ident() {
                         if self.reduced_aliases.iter().any(|name| name == alias_id) {
                             return Err(TypeError::SelfRecursiveAlias(alias_id.clone()));
@@ -276,7 +266,7 @@ impl Substitutable for RcType<Symbol> {
     }
 
     fn instantiate(&self, mut subs: &Substitution<Self>) -> Self {
-        new_skolem_scope(subs, self).instantiate_generics(&mut subs, &mut FnvMap::default())
+        self.instantiate_generics(&mut subs, &mut FnvMap::default())
     }
 
     fn on_union(&self) -> Option<&Self> {
@@ -572,7 +562,7 @@ where
 
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
-        (&Type::Forall(ref params, _, _), &Type::Forall(_, _, _)) => {
+        (&Type::Forall(ref params, _), &Type::Forall(_, _)) => {
             let mut named_variables = FnvMap::default();
 
             if unifier.state.in_alias {
@@ -1085,61 +1075,6 @@ where
     Ok((l, r))
 }
 
-/// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
-pub fn new_skolem_scope(subs: &Substitution<RcType>, typ: &RcType) -> RcType {
-    new_skolem_scope_(subs, typ).unwrap_or_else(|| typ.clone())
-}
-
-fn new_skolem_scope_(mut subs: &Substitution<RcType>, typ: &RcType) -> Option<RcType> {
-    if !typ.flags().intersects(Flags::HAS_FORALL) {
-        return None;
-    }
-
-    if let Some((arg_type, arg, ret)) = typ.as_function_with_type() {
-        return new_skolem_scope_(subs, ret)
-            .map(|ret| subs.function_type(arg_type, Some(arg.clone()), ret));
-    }
-
-    match **typ {
-        Type::Forall(ref params, ref inner_type, None) => {
-            let mut skolem = Vec::new();
-            for param in params {
-                let var = subs.new_var_fn(|id| {
-                    subs.variable(TypeVariable {
-                        id,
-                        kind: param.kind.clone(),
-                    })
-                });
-                skolem.push(var.clone());
-            }
-            Some(subs.intern(Type::Forall(
-                params.clone(),
-                new_skolem_scope_(subs, inner_type).unwrap_or_else(|| inner_type.clone()),
-                Some(skolem),
-            )))
-        }
-        _ => types::walk_move_type_opt(
-            typ,
-            &mut types::InternerVisitor::control(&mut subs, |subs, typ: &RcType| {
-                new_skolem_scope_(subs, typ)
-            }),
-        ),
-    }
-}
-
-pub fn top_skolem_scope(mut subs: &Substitution<RcType>, typ: &RcType) -> RcType {
-    if let Type::Forall(ref params, ref inner_type, None) = **typ {
-        let skolem = params.iter().map(|_| subs.new_var()).collect();
-        subs.intern(Type::Forall(
-            params.clone(),
-            inner_type.clone(),
-            Some(skolem),
-        ))
-    } else {
-        typ.clone()
-    }
-}
-
 /// Performs subsumption between `l` and `r` (`r` is-a `l`)
 pub fn subsumes(
     subs: &Substitution<RcType>,
@@ -1196,7 +1131,6 @@ struct Subsume<'e> {
 
 impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
     fn subsume_check(&mut self, l: &RcType, r: &RcType) -> Option<RcType> {
-        let l = new_skolem_scope(self.unifier.subs, &l);
         let l_orig = &l;
         let mut map = FnvMap::default();
         let l = l.skolemize(&mut self.unifier.subs, &mut map);
@@ -1314,7 +1248,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         match (&**l, &**r) {
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
 
-            (_, &Type::Forall(ref params, ref r, _)) => {
+            (_, &Type::Forall(ref params, ref r)) => {
                 let mut variables = params
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
@@ -1334,7 +1268,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 Ok(None)
             }
 
-            (&Type::Forall(_, _, _), _) => Ok(self.subsume_check(l, r)),
+            (&Type::Forall(_, _), _) => Ok(self.subsume_check(l, r)),
 
             _ if l.as_explicit_function().is_some() => {
                 let (arg_l, ret_l) = l.as_explicit_function().unwrap();

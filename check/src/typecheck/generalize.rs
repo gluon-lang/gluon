@@ -203,7 +203,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 Some(gen.clone())
             }
 
-            Type::Forall(ref params, ref typ, _) => {
+            Type::Forall(ref params, ref typ) => {
                 self.type_variables.enter_scope();
                 let hole = self.hole();
                 self.type_variables
@@ -238,7 +238,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
             _ => {
                 // Ensure that the forall's variables don't look unbound
-                if let Type::Forall(ref params, _, None) = **typ {
+                if let Type::Forall(ref params, _) = **typ {
                     let type_cache = &self.tc.type_cache;
                     self.tc.type_variables.extend(
                         params
@@ -272,7 +272,7 @@ impl TypeVariableGenerator {
     fn new(subs: &Substitution<RcType>, typ: &RcType) -> TypeVariableGenerator {
         fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<RcType>, typ: &RcType) {
             let typ = subs.real(typ);
-            if let Type::Forall(ref params, _, _) = **typ {
+            if let Type::Forall(ref params, _) = **typ {
                 map.extend(params.iter().map(|param| param.id.clone()));
             }
             types::walk_type_(
