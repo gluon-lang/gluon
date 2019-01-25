@@ -203,20 +203,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 Some(gen.clone())
             }
 
-            Type::Forall(ref params, ref typ) => {
-                self.type_variables.enter_scope();
-                let hole = self.hole();
-                self.type_variables
-                    .extend(params.iter().map(|param| (param.id.clone(), hole.clone())));
-
-                trace!("Generalize forall => `{}`", typ);
-
-                let new_type = self.generalize_type(&typ);
-                self.type_variables.exit_scope();
-
-                Some(self.forall(params.clone(), new_type.unwrap_or_else(|| typ.clone())))
-            }
-
             Type::Skolem(ref skolem) => {
                 let in_scope = self.type_variables.contains_key(&skolem.name);
                 if self.subs.get_level(skolem.id) >= self.level {
@@ -237,6 +223,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             _ => {
+                self.type_variables.enter_scope();
                 // Ensure that the forall's variables don't look unbound
                 if let Type::Forall(ref params, _) = **typ {
                     let type_cache = &self.tc.type_cache;
@@ -247,14 +234,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                     );
                 }
 
-                types::walk_move_type_opt(
+                let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::InternerVisitor::control(self, |self_, typ: &RcType| {
                         self_.generalize_type(typ)
                     }),
                 )
                 .map(|t| unroll_typ(self.tc, &t).unwrap_or(t))
-                .or_else(|| replacement.clone())
+                .or_else(|| replacement.clone());
+
+                self.type_variables.exit_scope();
+
+                new_type
             }
         };
 
