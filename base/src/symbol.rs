@@ -87,7 +87,7 @@ impl Borrow<SymbolRef> for Symbol {
 
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
-        self.0.as_str()
+        self.0.as_pretty_str()
     }
 }
 
@@ -197,12 +197,20 @@ impl SymbolRef {
         self.name() == other.name()
     }
 
+    pub fn as_pretty_str(&self) -> &str {
+        Name::new(&self.0).as_pretty_str()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     pub fn name(&self) -> &Name {
-        Name::new(Name::new(&self.0).as_str())
+        Name::new(Name::new(&self.0).as_pretty_str())
+    }
+
+    pub fn raw_name(&self) -> &Name {
+        Name::new(&self.0)
     }
 
     /// Returns the name of this symbol as it was originally declared (strips location information
@@ -212,7 +220,7 @@ impl SymbolRef {
     }
 
     pub fn definition_name(&self) -> &str {
-        self.name().definition_name()
+        Name::new(&self.0).definition_name()
     }
 
     pub fn is_global(&self) -> bool {
@@ -279,9 +287,14 @@ impl Name {
         unsafe { &*(n.as_ref() as *const str as *const Name) }
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn as_pretty_str(&self) -> &str {
         let name = &self.0;
         name.split(':').next().unwrap_or(name)
+    }
+
+    pub fn as_str(&self) -> &str {
+        debug_assert!(!self.0.contains(':'), "Did you mean to call as_pretty_str?");
+        &self.0
     }
 
     pub fn components(&self) -> Components {
@@ -305,7 +318,7 @@ impl Name {
     }
 
     pub fn definition_name(&self) -> &str {
-        let name = self.as_str().trim_start_matches('@');
+        let name = self.0.trim_start_matches('@');
         name.split(':').next().unwrap_or(name)
     }
 }

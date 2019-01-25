@@ -9,7 +9,7 @@ extern crate gluon_parser as parser;
 
 use std::fs;
 
-use criterion::{Bencher, Criterion, ParameterizedBenchmark};
+use criterion::{Bencher, Criterion};
 
 use gluon::{compiler_pipeline::*, new_vm, Compiler};
 

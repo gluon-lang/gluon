@@ -177,7 +177,7 @@ impl RcType {
                     interner.intern(Type::Skolem(Skolem {
                         name: param.id.clone(),
                         id: var.id,
-                        kind: var.kind.clone(),
+                        kind: param.kind.clone(),
                     })),
                 )
             });

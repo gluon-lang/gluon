@@ -260,11 +260,7 @@ impl PrimitiveEnv for VmEnv {
 
 impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
-        if id.is_global() {
-            self.get_metadata(id.definition_name()).ok()
-        } else {
-            None
-        }
+        self.get_metadata_(id.definition_name())
     }
 }
 
@@ -383,18 +379,18 @@ impl VmEnv {
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
-        let (remaining, global) = self
-            .get_global(name_str)
-            .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
+        self.get_metadata_(name_str)
+            .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))
+    }
+
+    fn get_metadata_(&self, name_str: &str) -> Option<&Metadata> {
+        let (remaining, global) = self.get_global(name_str)?;
 
         let mut metadata = &global.metadata;
         for field_name in remaining.components() {
-            metadata = metadata
-                .module
-                .get(field_name)
-                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
+            metadata = metadata.module.get(field_name)?
         }
-        Ok(metadata)
+        Some(metadata)
     }
 }
 

@@ -650,7 +650,7 @@ impl<'a> ImplicitResolver<'a> {
                 for field in raw_type.row_iter() {
                     let field_metadata = metadata
                         .as_ref()
-                        .and_then(|metadata| metadata.module.get(field.name.declared_name()));
+                        .and_then(|metadata| metadata.module.get(field.name.as_pretty_str()));
 
                     self.try_add_implicit(
                         &field.name,
