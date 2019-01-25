@@ -533,6 +533,16 @@ impl<Id, T> AliasRef<Id, T> {
         let index = self.index;
         Some(&self.group[index])
     }
+
+    #[doc(hidden)]
+    pub fn new(index: usize, group: Arc<Vec<AliasData<Id, T>>>) -> Self {
+        AliasRef { index, group }
+    }
+
+    #[doc(hidden)]
+    pub fn index(&self) -> usize {
+        self.index
+    }
 }
 
 impl<Id, T> AliasRef<Id, T>
@@ -3496,19 +3506,7 @@ where
                 .map(|field| Field {
                     name: field.name.clone(),
                     typ: Alias {
-                        _typ: intern!(Type::Alias(AliasRef {
-                            index: field.typ.index,
-                            group: Arc::new(
-                                field
-                                    .typ
-                                    .group
-                                    .iter()
-                                    .map(|alias_data| translate_alias(alias_data, |a| translate(
-                                        interner, a
-                                    )))
-                                    .collect(),
-                            ),
-                        })),
+                        _typ: translate(interner, &field.typ.as_type()),
                         _marker: PhantomData,
                     },
                 })

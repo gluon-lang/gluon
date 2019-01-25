@@ -96,14 +96,14 @@ pub struct ArcTypeCacher<'a> {
     environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
     types: FixedMap<String, Box<RcType>>,
     aliases: FixedMap<String, Box<Alias<Symbol, RcType>>>,
-    type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
+    type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
     interner: SharedInterner<Symbol, RcType>,
 }
 
 impl<'a> ArcTypeCacher<'a> {
     pub fn new(
         environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
-        type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
+        type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
         interner: SharedInterner<Symbol, RcType>,
     ) -> ArcTypeCacher<'a> {
         ArcTypeCacher {
@@ -131,10 +131,10 @@ impl<'a> KindEnv for ArcTypeCacher<'a> {
             });
             let rc_alias = (&self.interner).new_data_alias(rc_alias_data);
 
-            self.type_interner.borrow_mut().insert(
-                PtrEq(alias.as_type().clone(), Default::default()),
-                rc_alias.as_type().clone(),
-            );
+            self.type_interner
+                .borrow_mut()
+                .type_map
+                .insert(PtrEq(alias.as_type().clone()), rc_alias.as_type().clone());
             self.aliases
                 .try_insert(type_name.as_str().into(), Box::new(rc_alias.clone()))
                 .unwrap();
@@ -177,10 +177,10 @@ impl<'a> TypeEnv for ArcTypeCacher<'a> {
             });
             let rc_alias = (&self.interner).new_data_alias(rc_alias_data);
 
-            self.type_interner.borrow_mut().insert(
-                PtrEq(alias.as_type().clone(), Default::default()),
-                rc_alias.as_type().clone(),
-            );
+            self.type_interner
+                .borrow_mut()
+                .type_map
+                .insert(PtrEq(alias.as_type().clone()), rc_alias.as_type().clone());
             self.aliases
                 .try_insert(id.as_str().into(), Box::new(rc_alias.clone()))
                 .unwrap();

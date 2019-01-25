@@ -27,7 +27,7 @@ use crate::base::{
 
 use crate::{
     substitution::Substitution,
-    typ::{PtrEq, RcType},
+    typ::{self, RcType},
     typecheck::{TypeError, Typecheck},
     unify_type::{self, Size},
     ArcTypeCacher, TypecheckEnv,
@@ -586,7 +586,7 @@ pub struct ImplicitResolver<'a> {
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
         environment: &'a TypecheckEnv<Type = ArcType>,
-        type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
+        type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
         interner: SharedInterner<Symbol, RcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> ImplicitResolver<'a> {

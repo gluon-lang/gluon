@@ -40,7 +40,7 @@ use crate::{
     implicits,
     kindcheck::{self, Error as KindCheckError, KindCheck, KindError},
     substitution::{self, Substitution},
-    typ::{translate_interned_type, translate_rc_interned_type, PtrEq, RcType},
+    typ::{translate_interned_type, RcType, TranslateInterner},
     unify::{self, Error as UnifyError},
     unify_type::{self, Error as UnifyTypeError},
     ArcTypeCacher, TypecheckEnv,
@@ -368,9 +368,9 @@ pub struct Typecheck<'a> {
     pub(crate) errors: Errors<SpannedTypeError<Symbol, RcType<Symbol>>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, RcType>,
-    type_interner: Rc<RefCell<FnvMap<PtrEq<ArcType>, RcType>>>,
+    type_interner: Rc<RefCell<TranslateInterner<ArcType, RcType>>>,
     arc_type_cache: TypeCache<Symbol, ArcType>,
-    arc_type_interner: FnvMap<RcType, ArcType>,
+    arc_type_interner: TranslateInterner<RcType, ArcType>,
 
     kind_cache: KindCache,
 
@@ -400,7 +400,7 @@ impl<'a> Typecheck<'a> {
         let kind_cache = KindCache::new();
         let interner = SharedInterner::default();
         let subs = Substitution::new(kind_cache.typ(), interner.clone());
-        let type_interner = Rc::new(RefCell::new(FnvMap::default()));
+        let type_interner = Rc::new(RefCell::new(Default::default()));
         Typecheck {
             environment: Environment {
                 environment: ArcTypeCacher::new(
@@ -1935,7 +1935,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn translate_rc_type(&mut self, rc_type: &RcType) -> ArcType {
-        translate_rc_interned_type(
+        translate_interned_type(
             &mut self.arc_type_interner,
             &mut &self.arc_type_cache,
             rc_type,

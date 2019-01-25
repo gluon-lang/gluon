@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt, hash::Hash, mem, ops::Deref, rc::Rc};
+use std::{borrow::Borrow, fmt, hash::Hash, mem, ops::Deref, rc::Rc, sync::Arc};
 
 use pretty::{Arena, DocBuilder};
 
@@ -10,8 +10,9 @@ use crate::base::{
     source::Source,
     symbol::Symbol,
     types::{
-        self, dt, forall_params, pretty_print::Printer, ArcType, Generic, Prec, Skolem, ToDoc,
-        Type, TypeExt, TypeFormatter, TypeInterner, TypeInternerAlloc,
+        self, dt, forall_params, pretty_print::Printer, translate_alias, AliasData, AliasRef,
+        ArcType, Generic, Prec, Skolem, ToDoc, Type, TypeExt, TypeFormatter, TypeInterner,
+        TypeInternerAlloc,
     },
 };
 
@@ -228,50 +229,91 @@ where
     }
 }
 
-#[repr(transparent)]
-pub struct PtrEq<T, U = T>(pub T, pub std::marker::PhantomData<U>);
+#[doc(hidden)]
+pub trait Ptr {
+    type Target;
+    fn as_ptr(&self) -> &Self::Target;
+}
 
-impl<T> PtrEq<Type<Symbol, T>, T> {
-    pub fn new(t: &Type<Symbol, T>) -> &Self {
+impl<T> Ptr for Arc<T> {
+    type Target = T;
+    fn as_ptr(&self) -> &Self::Target {
+        self
+    }
+}
+
+impl<T> Ptr for RcType<T> {
+    type Target = Type<T, Self>;
+    fn as_ptr(&self) -> &Self::Target {
+        self
+    }
+}
+
+impl<T> Ptr for ArcType<T> {
+    type Target = Type<T, Self>;
+    fn as_ptr(&self) -> &Self::Target {
+        self
+    }
+}
+
+impl<Id, T> Ptr for Type<Id, T> {
+    type Target = Self;
+    fn as_ptr(&self) -> &Self::Target {
+        self
+    }
+}
+
+#[repr(transparent)]
+pub struct PtrEq<T>(pub T);
+
+impl<T> PtrEq<T> {
+    pub fn new(t: &T) -> &Self {
         unsafe { mem::transmute(t) }
     }
 }
 
-impl<T, U> Eq for PtrEq<T, U> where T: Borrow<Type<Symbol, U>> {}
+impl<T> Eq for PtrEq<T> where T: Ptr {}
 
-impl<T, U> PartialEq for PtrEq<T, U>
+impl<T> PartialEq for PtrEq<T>
 where
-    T: Borrow<Type<Symbol, U>>,
+    T: Ptr,
 {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq::<Type<_, _>>(self.0.borrow(), other.0.borrow())
+        std::ptr::eq::<<T as Ptr>::Target>(self.0.as_ptr(), other.0.as_ptr())
     }
 }
 
-impl<T, U> std::hash::Hash for PtrEq<T, U>
+impl<T> std::hash::Hash for PtrEq<T>
 where
-    T: Borrow<Type<Symbol, U>>,
+    T: Ptr,
 {
     #[inline(always)]
     fn hash<H>(&self, state: &mut H)
     where
         H: std::hash::Hasher,
     {
-        (self.0.borrow() as *const Type<_, _>).hash(state)
+        (self.0.as_ptr() as *const T::Target).hash(state)
     }
 }
 
-impl Borrow<PtrEq<Type<Symbol, RcType>, RcType>> for PtrEq<RcType, RcType> {
+impl<T> Borrow<PtrEq<T>> for PtrEq<Arc<T>> {
     #[inline(always)]
-    fn borrow(&self) -> &PtrEq<Type<Symbol, RcType>, RcType> {
+    fn borrow(&self) -> &PtrEq<T> {
+        PtrEq::new(self.0.as_ptr())
+    }
+}
+
+impl Borrow<PtrEq<Type<Symbol, RcType>>> for PtrEq<RcType> {
+    #[inline(always)]
+    fn borrow(&self) -> &PtrEq<Type<Symbol, RcType>> {
         PtrEq::new(self.0.borrow())
     }
 }
 
-impl Borrow<PtrEq<Type<Symbol, ArcType>, ArcType>> for PtrEq<ArcType, ArcType> {
+impl Borrow<PtrEq<Type<Symbol, ArcType>>> for PtrEq<ArcType> {
     #[inline(always)]
-    fn borrow(&self) -> &PtrEq<Type<Symbol, ArcType>, ArcType> {
+    fn borrow(&self) -> &PtrEq<Type<Symbol, ArcType>> {
         PtrEq::new(self.0.borrow())
     }
 }
@@ -291,56 +333,86 @@ impl TypeInternerAlloc for RcType {
     }
 }
 
+pub struct TranslateInterner<T, U> {
+    pub type_map: FnvMap<PtrEq<T>, U>,
+    pub alias_map: FnvMap<PtrEq<Arc<Vec<AliasData<Symbol, T>>>>, Arc<Vec<AliasData<Symbol, U>>>>,
+}
+
+impl<T, U> Default for TranslateInterner<T, U>
+where
+    T: Ptr,
+{
+    fn default() -> Self {
+        TranslateInterner {
+            type_map: Default::default(),
+            alias_map: Default::default(),
+        }
+    }
+}
+
 pub fn translate_interned_type<T, U>(
-    type_interner: &mut FnvMap<PtrEq<T>, U>,
+    type_interner: &mut TranslateInterner<T, U>,
     interner: &mut impl TypeInterner<Symbol, U>,
     typ: &T,
 ) -> U
 where
-    T: Clone + Borrow<Type<Symbol, T>> + TypeExt<Id = Symbol>,
+    T: Clone + TypeExt<Id = Symbol>,
     U: Clone,
-    PtrEq<T>: Borrow<PtrEq<Type<Symbol, T>, T>>,
+    PtrEq<T>: Eq + Hash,
 {
     if T::strong_count(typ) == 1 {
-        types::translate_type_with(interner, typ, |interner, typ| {
-            translate_interned_type(type_interner, interner, typ)
-        })
+        perform_translation(type_interner, interner, typ)
     } else {
-        if let Some(t) = type_interner.get(PtrEq::new(typ)) {
+        if let Some(t) = type_interner.type_map.get(PtrEq::new(typ)) {
             return t.clone();
         }
-        let new_type = types::translate_type_with(interner, typ, |interner, typ| {
-            translate_interned_type(type_interner, interner, typ)
-        });
+        let new_type = perform_translation(type_interner, interner, typ);
 
-        type_interner.insert(PtrEq(typ.clone(), Default::default()), new_type.clone());
+        type_interner
+            .type_map
+            .insert(PtrEq(typ.clone()), new_type.clone());
         new_type
     }
 }
 
-pub fn translate_rc_interned_type<T, U>(
-    type_interner: &mut FnvMap<T, U>,
+fn perform_translation<T, U>(
+    type_interner: &mut TranslateInterner<T, U>,
     interner: &mut impl TypeInterner<Symbol, U>,
     typ: &T,
 ) -> U
 where
-    T: Clone + TypeExt<Id = Symbol> + Eq + Hash,
+    T: Clone + TypeExt<Id = Symbol>,
     U: Clone,
+    PtrEq<T>: Eq + Hash,
 {
-    if T::strong_count(typ) == 1 {
-        types::translate_type_with(interner, typ, |interner, typ| {
-            translate_rc_interned_type(type_interner, interner, typ)
-        })
-    } else {
-        if let Some(t) = type_interner.get(typ) {
-            return t.clone();
-        }
-        let new_type = types::translate_type_with(interner, typ, |interner, typ| {
-            translate_rc_interned_type(type_interner, interner, typ)
-        });
+    match **typ {
+        Type::Alias(ref alias) => {
+            let group = match type_interner.alias_map.get(PtrEq::new(&alias.group)) {
+                Some(group) => group.clone(),
+                None => {
+                    let group = Arc::new(
+                        alias
+                            .group
+                            .iter()
+                            .map(|alias_data| {
+                                translate_alias(alias_data, |a| {
+                                    translate_interned_type(type_interner, interner, a)
+                                })
+                            })
+                            .collect::<Vec<_>>(),
+                    );
+                    type_interner
+                        .alias_map
+                        .insert(PtrEq(alias.group.clone()), group.clone());
+                    group
+                }
+            };
 
-        type_interner.insert(typ.clone(), new_type.clone());
-        new_type
+            interner.intern(Type::Alias(AliasRef::new(alias.index(), group)))
+        }
+        _ => types::translate_type_with(interner, typ, |interner, typ| {
+            translate_interned_type(type_interner, interner, typ)
+        }),
     }
 }
 
