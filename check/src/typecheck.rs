@@ -32,7 +32,6 @@ use crate::base::{
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic, PrimitiveEnv,
         SharedInterner, ToDoc, Type, TypeCache, TypeEnv, TypeExt, TypeFormatter, TypeInterner,
-        TypeVariable,
     },
 };
 
@@ -375,7 +374,7 @@ pub struct Typecheck<'a> {
     kind_cache: KindCache,
 
     pub(crate) implicit_resolver: crate::implicits::ImplicitResolver<'a>,
-    unbound_variables: ScopedMap<Symbol, RcType>,
+    unbound_variables: ScopedMap<Symbol, ArcKind>,
 }
 
 impl<'a> TypeInterner<Symbol, RcType> for Typecheck<'a> {
@@ -2461,10 +2460,7 @@ impl<'a> Typecheck<'a> {
         let mut params = self
             .unbound_variables
             .exit_scope()
-            .map(|(id, var)| {
-                let kind = var.kind().into_owned();
-                Generic::new(id.clone(), kind)
-            })
+            .map(|(id, kind)| Generic::new(id, kind))
             .collect::<Vec<_>>();
         params.retain(|generic| !self.unbound_variables.contains_key(&generic.id));
 
@@ -2496,6 +2492,7 @@ impl<'a> Typecheck<'a> {
                     .find_type_info(&alias.name)
                     .map(|alias| alias.clone().into_type())
             }
+
             Type::Variant(ref row) => {
                 let replacement = types::visit_type_opt(
                     row,
@@ -2507,6 +2504,7 @@ impl<'a> Typecheck<'a> {
                     .clone()
                     .map(|row| self.intern(Type::Variant(row)))
             }
+
             Type::Hole => Some(self.subs.new_var()),
 
             Type::ExtendRow {
@@ -2549,19 +2547,21 @@ impl<'a> Typecheck<'a> {
                     },
                 )
             }
+
             Type::Forall(ref params, ref typ) => {
-                for param in params {
-                    self.type_variables
-                        .insert(param.id.clone(), self.subs.hole());
-                }
+                self.type_variables.enter_scope();
+
+                let mut subs = &self.subs;
+                self.type_variables
+                    .extend(params.iter().map(|param| (param.id.clone(), subs.hole())));
+
                 let result = self.create_unifiable_signature_(typ);
-                // Remove any implicit variables inserted inside the forall since
-                // they were actually bound at this stage
-                for param in params {
-                    self.type_variables.remove(&param.id);
-                }
+
+                self.type_variables.exit_scope();
+
                 result.map(|typ| self.intern(Type::Forall(params.clone(), typ)))
             }
+
             Type::Generic(ref generic) => {
                 if let Some(typ) = self.type_variables.get(&generic.id) {
                     match **typ {
@@ -2569,26 +2569,13 @@ impl<'a> Typecheck<'a> {
                         _ => None,
                     }
                 } else {
-                    match self.unbound_variables.get(&generic.id).cloned() {
-                        Some(typ) => match *typ {
-                            Type::Variable(_) => None,
-                            _ => Some(typ.clone()),
-                        },
-                        None => {
-                            let kind = typ.kind().into_owned();
-                            let mut subs = &self.subs;
-                            let var = subs.new_var_fn(|id| {
-                                subs.variable(TypeVariable {
-                                    kind: kind.clone(),
-                                    id: id,
-                                })
-                            });
-                            self.unbound_variables.insert(generic.id.clone(), var);
-                            None
-                        }
-                    }
+                    self.unbound_variables
+                        .entry(generic.id.clone())
+                        .or_insert_with(|| generic.kind.clone());
+                    None
                 }
             }
+
             _ => types::walk_move_type_opt(
                 typ,
                 &mut types::InternerVisitor::control(self, |self_: &mut Self, typ: &RcType| {
