@@ -9,10 +9,9 @@ extern crate gluon_parser as parser;
 
 use std::fs;
 
-use criterion::{Bencher, Criterion};
+use criterion::{Bencher, Criterion, ParameterizedBenchmark};
 
-use gluon::compiler_pipeline::*;
-use gluon::{new_vm, Compiler};
+use gluon::{compiler_pipeline::*, new_vm, Compiler};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
@@ -61,6 +60,36 @@ fn typecheck_24(b: &mut Bencher) {
     })
 }
 
+fn typecheck_file(b: &mut Bencher, file: &str) {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+    let reparsed = {
+        let text = fs::read_to_string(file).unwrap();
+        text.reparse_infix(&mut compiler, &vm, &base::filename_to_module(file), &text)
+            .unwrap_or_else(|(_, err)| panic!("{}", err))
+    };
+    let InfixReparsed {
+        metadata,
+        metadata_map,
+        expr,
+    } = &reparsed;
+    b.iter_with_setup(
+        || InfixReparsed {
+            metadata: metadata.clone(),
+            metadata_map: metadata_map.clone(),
+            expr: expr.clone(),
+        },
+        |input| {
+            let result = input.typecheck(&mut compiler, &vm, "<top>", "");
+            if let Err(ref err) = result {
+                println!("{}", err);
+                assert!(false);
+            }
+            result
+        },
+    )
+}
+
 fn clone_benchmark(c: &mut Criterion) {
     let _ = env_logger::try_init();
 
@@ -72,6 +101,10 @@ fn typecheck_benchmark(c: &mut Criterion) {
 
     c.bench_function("std/prelude", typecheck_prelude);
     c.bench_function("examples/24", typecheck_24);
+
+    c.bench_function("typecheck_only_24", move |b| {
+        typecheck_file(b, "examples/24.glu")
+    });
 }
 
 criterion_group!(

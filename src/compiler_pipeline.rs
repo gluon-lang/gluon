@@ -343,6 +343,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct InfixReparsed<E> {
     pub expr: E,
     pub metadata_map: FnvMap<Symbol, Metadata>,
