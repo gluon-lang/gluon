@@ -578,32 +578,24 @@ where
                     .map(|inner_type| unifier.state.subs.forall(params.clone(), inner_type)))
             } else {
                 let mut expected_iter = expected.forall_scope_iter();
+
+                let mut ids = SmallVec::<[_; 5]>::new();
                 named_variables.extend(expected_iter.by_ref().map(|l_param| {
-                    // FIXME Should be the same as the new_var below
-                    let var = subs.new_var(); // TODO Avoid allocating a variable
-                    let var = var.as_variable().unwrap();
-                    (
-                        l_param.id.clone(),
-                        subs.skolem(Skolem {
-                            name: l_param.id.clone(),
-                            id: var.id,
-                            kind: l_param.kind.clone(),
-                        }),
-                    )
+                    let skolem = subs.new_skolem(l_param.id.clone(), l_param.kind.clone());
+                    ids.push(skolem.get_id().expect("Skolem"));
+                    (l_param.id.clone(), skolem)
                 }));
                 let l = expected_iter.typ.skolemize(&mut subs, &mut named_variables);
 
                 named_variables.clear();
                 let mut actual_iter = actual.forall_scope_iter();
-                named_variables.extend(expected_iter.by_ref().zip(actual_iter.by_ref()).map(
-                    |(_, r_param)| {
-                        let var = subs.new_var(); // TODO Avoid allocating a variable
-                        let var = var.as_variable().unwrap();
+                named_variables.extend(ids.iter().zip(actual_iter.by_ref()).map(
+                    |(&id, r_param)| {
                         (
                             r_param.id.clone(),
                             subs.skolem(Skolem {
                                 name: r_param.id.clone(),
-                                id: var.id,
+                                id,
                                 kind: r_param.kind.clone(),
                             }),
                         )

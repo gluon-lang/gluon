@@ -1,12 +1,18 @@
-use std::{cell::RefCell, default::Default, fmt, hash::Hash};
+use std::{
+    cell::{Cell, RefCell},
+    default::Default,
+    fmt,
+    hash::Hash,
+};
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use crate::base::{
     fixed::{FixedMap, FixedVec},
+    kind::ArcKind,
     symbol::Symbol,
     types::{
-        self, ArcType, InternerVisitor, SharedInterner, Type, TypeExt, TypeInterner,
+        self, ArcType, InternerVisitor, SharedInterner, Skolem, Type, TypeExt, TypeInterner,
         TypeInternerAlloc, TypeVariable, Walker,
     },
 };
@@ -45,6 +51,7 @@ where
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
     types: FixedMap<u32, Box<T>>,
+    next_skolem_id: Cell<u32>,
     factory: T::Factory,
     interner: T::Interner,
 }
@@ -272,6 +279,7 @@ where
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
+            next_skolem_id: Default::default(),
             factory: factory,
             interner,
         }
@@ -473,6 +481,12 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
 }
 
 impl Substitution<RcType> {
+    pub fn new_skolem(&self, name: Symbol, kind: ArcKind) -> RcType {
+        let id = self.next_skolem_id.get();
+        self.next_skolem_id.set(id + 1);
+        (&*self).skolem(Skolem { name, id, kind })
+    }
+
     pub fn zonk(&self, typ: &RcType) -> RcType {
         types::walk_move_type(
             typ.clone(),
