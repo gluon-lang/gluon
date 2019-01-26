@@ -104,22 +104,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.visit_ident(&mut id.value)
             }
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                if let Type::Variable(var) = &**typ {
-                    let ref typ = self.generalizer.tc.subs.arc_real(typ).clone();
-                    {
-                        let mut type_cache = &self.generalizer.tc.subs;
-                        self.generalizer.tc.type_variables.extend(
-                            typ.forall_params()
-                                .map(|param| (param.id.clone(), type_cache.hole())),
-                        );
-                    }
-                    debug!("Variable generalize {}", typ);
-                    if let Some(typ) = self.generalizer.generalize_type(typ) {
-                        debug!("End generalize {}", typ);
-                        self.generalizer.tc.subs.replace(var.id, typ);
-                    } else {
-                        debug!("End variable generalize");
-                    }
+                debug!("Variable generalize {}", typ);
+                if let Some(new_type) = self.generalizer.generalize_type(typ) {
+                    *typ = new_type;
+                    debug!("End generalize {}", typ);
+                } else {
+                    debug!("End variable generalize");
                 }
             }
         }

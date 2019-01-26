@@ -486,8 +486,8 @@ impl<'a> Typecheck<'a> {
             let tail = tail_expr(expr);
             crate::implicits::resolve(self, tail);
             self.generalize_type(0, &mut typ, tail.span);
-            self.generalize_variables(0, &mut [].iter_mut(), tail);
         }
+        self.generalize_variables(0, &mut [].iter_mut(), expr);
 
         {
             struct ReplaceVisitor<'a: 'b, 'b> {
@@ -2939,24 +2939,5 @@ fn generalize_binding(
 ) {
     crate::implicits::resolve(generalizer.tc, &mut binding.expr);
 
-    generalizer.tc.type_variables.enter_scope();
-
-    {
-        let mut type_cache = &generalizer.tc.subs;
-        generalizer.tc.type_variables.extend(
-            resolved_type
-                .forall_params()
-                .map(|param| (param.id.clone(), type_cache.hole())),
-        );
-    }
-
-    {
-        generalizer.generalize_type_top(resolved_type);
-
-        generalizer.generalize_variables(
-            &mut binding.args.iter_mut().map(|arg| &mut arg.name),
-            &mut binding.expr,
-        );
-    }
-    generalizer.tc.type_variables.exit_scope();
+    generalizer.generalize_type_top(resolved_type);
 }

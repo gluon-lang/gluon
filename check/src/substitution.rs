@@ -6,7 +6,7 @@ use crate::base::{
     fixed::{FixedMap, FixedVec},
     kind::ArcKind,
     symbol::Symbol,
-    types::{self, ArcType, InternerVisitor, Skolem, Type, TypeInterner, TypeVariable, Walker},
+    types::{self, ArcType, InternerVisitor, Skolem, Type, TypeInterner, Walker},
 };
 use crate::typ::RcType;
 
@@ -483,32 +483,8 @@ impl Substitution<RcType> {
         )
     }
 
-    pub fn arc_real(&self, typ: &ArcType) -> &RcType {
-        let var = match &**typ {
-            Type::Variable(var) => var,
-            _ => panic!("Expected variable"),
-        };
-        self.real(self.get_var(var.id).expect("Variable"))
-    }
-
+    // Stub kept in case multiple types are attempted again
     pub fn bind_arc(&self, typ: &RcType) -> ArcType {
-        if let Some(var) = typ.get_var() {
-            return Type::variable(var.clone());
-        }
-        let id = self.union.borrow_mut().insert(UnionByLevel {
-            ..UnionByLevel::default()
-        });
-        assert!(id == self.variables.len());
-        debug!("New arc var {}", self.variables.len());
-
-        let var = TypeVariable {
-            id: id as u32,
-            kind: typ.kind().into_owned(),
-        };
-        let var_type = (&mut &*self).variable(var.clone()); // TODO do we need to allocate a variable here?
-        self.variables.push(var_type);
-        self.insert(id as u32, typ.clone());
-
-        Type::variable(var)
+        typ.clone()
     }
 }

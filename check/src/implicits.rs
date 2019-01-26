@@ -673,7 +673,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                 .get(&id.name)
                 .cloned();
             if let Some(implicit_bindings) = implicit_bindings {
-                let typ = self.tc.subs.arc_real(&id.typ).clone();
+                let typ = id.typ.clone();
                 let id = TypedIdent {
                     name: id.name.clone(),
                     typ: typ,
