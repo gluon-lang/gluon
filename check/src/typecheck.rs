@@ -254,7 +254,7 @@ impl<'a> Typecheck<'a> {
     fn stack_var(&mut self, id: Symbol, typ: RcType) {
         debug!("Insert {} : {}", id, typ);
 
-        self.implicit_resolver.on_stack_var(&id, &typ);
+        self.implicit_resolver.on_stack_var(&self.subs, &id, &typ);
 
         // HACK
         // Insert the non_renamed symbol so that type projections in types can be translated (see
@@ -2070,7 +2070,7 @@ impl<'a> Typecheck<'a> {
     fn update_var(&mut self, id: &Symbol, typ: &RcType) {
         if let Some(bind) = self.environment.stack.get_mut(id) {
             if let Type::Variable(_) = *bind.typ {
-                self.implicit_resolver.on_stack_var(id, typ);
+                self.implicit_resolver.on_stack_var(&self.subs, id, typ);
             }
             bind.typ = typ.clone();
         }
