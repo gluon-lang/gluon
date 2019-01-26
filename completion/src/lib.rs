@@ -209,7 +209,10 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
         }
         self.type_stack.insert(
             alias.name.clone(),
-            alias.unresolved_type().kind().into_owned(),
+            alias
+                .unresolved_type()
+                .kind(&Default::default())
+                .into_owned(),
         );
     }
 }
@@ -609,7 +612,7 @@ where
                                 self.found = MatchState::Found(Match::Type(
                                     bind.name.span,
                                     &bind.alias.value.name,
-                                    bind.alias.value.kind().into_owned(),
+                                    bind.alias.value.kind(&Default::default()).into_owned(),
                                 ));
                             } else {
                                 for param in bind.alias.value.params() {
@@ -718,7 +721,7 @@ where
                 self.found = MatchState::Found(Match::Type(
                     typ.span(),
                     builtin.symbol(),
-                    typ.kind().into_owned(),
+                    typ.kind(&Default::default()).into_owned(),
                 ));
             }
 
@@ -730,7 +733,7 @@ where
                 self.found = MatchState::Found(Match::Type(
                     typ.span(),
                     &alias.name,
-                    typ.kind().into_owned(),
+                    typ.kind(&Default::default()).into_owned(),
                 ));
             }
 

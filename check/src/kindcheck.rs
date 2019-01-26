@@ -160,7 +160,7 @@ impl<'a> KindCheck<'a> {
         // Errors get reported in typecheck as well so ignore them here
         crate::typecheck::translate_projected_type(self.info, self.idents, &mut NullInterner, ids)
             .ok()
-            .map(|typ| typ.kind().into_owned())
+            .map(|typ| typ.kind(&self.kind_cache).into_owned())
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`

@@ -62,13 +62,14 @@ pub(crate) struct Environment<'a> {
     stack: ScopedMap<Symbol, StackBinding>,
     /// Types which exist in some scope (`type Test = ... in ...`)
     stack_types: ScopedMap<Symbol, (RcType, Alias<Symbol, RcType>)>,
+    kind_cache: KindCache,
 }
 
 impl<'a> KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         self.stack_types
             .get(type_name)
-            .map(|&(_, ref alias)| alias.kind().into_owned())
+            .map(|&(_, ref alias)| alias.kind(&self.kind_cache).into_owned())
             .or_else(|| self.environment.find_kind(type_name))
     }
 }
@@ -148,19 +149,19 @@ impl<'a> Typecheck<'a> {
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
-        let kind_cache = KindCache::new();
-        let subs = Substitution::new(kind_cache.typ(), interner.clone());
+        let subs = Substitution::new(interner.kind_cache.typ(), interner.clone());
         Typecheck {
             environment: Environment {
                 environment,
                 stack: ScopedMap::new(),
                 stack_types: ScopedMap::new(),
+                kind_cache: interner.kind_cache.clone(),
             },
             symbols: symbols,
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
-            kind_cache: kind_cache,
+            kind_cache: interner.kind_cache.clone(),
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
             subs,

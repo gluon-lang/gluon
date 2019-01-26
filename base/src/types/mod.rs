@@ -19,21 +19,22 @@ use stable_deref_trait::StableDeref;
 
 use itertools::Itertools;
 
-use crate::ast::{Commented, EmptyEnv, IdentEnv};
-use crate::fnv::FnvMap;
-use crate::kind::{ArcKind, Kind, KindEnv};
-use crate::merge::merge;
-use crate::metadata::Comment;
-use crate::pos::{BytePos, HasSpan, Span};
-use crate::source::Source;
-use crate::symbol::{Name, Symbol, SymbolRef};
+use crate::{
+    ast::{Commented, EmptyEnv, IdentEnv},
+    fnv::FnvMap,
+    kind::{ArcKind, Kind, KindCache, KindEnv},
+    merge::merge,
+    metadata::Comment,
+    pos::{BytePos, HasSpan, Span},
+    source::Source,
+    symbol::{Name, Symbol, SymbolRef},
+};
 
 #[cfg(feature = "serde")]
-use crate::serde::de::DeserializeState;
-#[cfg(feature = "serde")]
-use crate::serde::ser::SerializeState;
-#[cfg(feature = "serde")]
-use crate::serialization::{SeSeed, Seed};
+use crate::{
+    serde::{de::DeserializeState, ser::SerializeState},
+    serialization::{SeSeed, Seed},
+};
 
 use self::pretty_print::Printer;
 pub use self::{
@@ -667,8 +668,8 @@ where
         &self.typ
     }
 
-    pub fn kind(&self) -> Cow<ArcKind> {
-        let result_type = self.unresolved_type().kind();
+    pub fn kind<'k>(&'k self, cache: &'k KindCache) -> Cow<'k, ArcKind> {
+        let result_type = self.unresolved_type().kind(cache);
         self.params().iter().rev().fold(result_type, |acc, param| {
             Cow::Owned(Kind::function(param.kind.clone(), acc.into_owned()))
         })
@@ -1145,16 +1146,16 @@ where
         }
     }
 
-    pub fn kind(&self) -> Cow<ArcKind> {
-        self.kind_(0)
+    pub fn kind<'k>(&'k self, cache: &'k KindCache) -> Cow<'k, ArcKind> {
+        self.kind_(cache, 0)
     }
 
-    fn kind_(&self, applied_args: usize) -> Cow<ArcKind> {
+    fn kind_<'k>(&'k self, cache: &'k KindCache, applied_args: usize) -> Cow<'k, ArcKind> {
         let mut immediate_kind = match *self {
-            Type::Function(_, _, _) => Cow::Owned(Kind::typ()),
-            Type::App(ref t, ref args) => t.kind_(args.len()),
-            Type::Error => Cow::Owned(Kind::error()),
-            Type::Hole => Cow::Owned(Kind::hole()),
+            Type::Function(_, _, _) => Cow::Borrowed(&cache.typ),
+            Type::App(ref t, ref args) => t.kind_(cache, args.len()),
+            Type::Error => Cow::Borrowed(&cache.error),
+            Type::Hole => Cow::Borrowed(&cache.hole),
             Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
@@ -1163,17 +1164,17 @@ where
                 let t = Kind::typ();
                 Cow::Owned(Kind::function(t.clone(), t))
             }
-            Type::Forall(_, ref typ) => typ.kind_(applied_args),
+            Type::Forall(_, ref typ) => typ.kind_(cache, applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
-            Type::Ident(_) | Type::Projection(_) => Cow::Owned(Kind::typ()),
+            Type::Ident(_) | Type::Projection(_) => Cow::Owned(cache.typ()),
             Type::Alias(ref alias) => {
                 return if alias.params().len() < applied_args {
-                    alias.typ.kind_(applied_args - alias.params().len())
+                    alias.typ.kind_(cache, applied_args - alias.params().len())
                 } else {
-                    let mut kind = alias.typ.kind_(0).into_owned();
+                    let mut kind = alias.typ.kind_(cache, 0).into_owned();
                     for arg in &alias.params()[applied_args..] {
                         kind = Kind::function(arg.kind.clone(), kind)
                     }
