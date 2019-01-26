@@ -2527,7 +2527,6 @@ where
     I: 'a,
 {
     match **typ {
-        Type::Forall(_, ref typ) => f.walk(typ),
         Type::Function(_, ref arg, ref ret) => {
             f.walk(arg);
             f.walk(ret);
@@ -2538,7 +2537,10 @@ where
                 f.walk(a);
             }
         }
-        Type::Record(ref row) | Type::Variant(ref row) | Type::Effect(ref row) => f.walk(row),
+        Type::Forall(_, ref typ)
+        | Type::Record(ref typ)
+        | Type::Variant(ref typ)
+        | Type::Effect(ref typ) => f.walk(typ),
         Type::ExtendRow {
             ref types,
             ref fields,
@@ -3442,9 +3444,24 @@ where
     }
 }
 
-impl<'a, I, T, F: ?Sized> Walker<'a, T> for F
+pub struct FlagsVisitor<F: ?Sized>(pub Flags, pub F);
+
+impl<'a, T, F> Walker<'a, T> for FlagsVisitor<F>
 where
-    F: FnMut(&'a T),
+    F: ?Sized + FnMut(&'a T),
+    T: TypeExt + 'a,
+{
+    fn walk(&mut self, typ: &'a T) {
+        if self.0.intersects(typ.flags()) {
+            (self.1)(typ);
+            walk_type_(typ, self);
+        }
+    }
+}
+
+impl<'a, I, T, F> Walker<'a, T> for F
+where
+    F: ?Sized + FnMut(&'a T),
     T: Deref<Target = Type<I, T>> + 'a,
     I: 'a,
 {

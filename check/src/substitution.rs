@@ -158,7 +158,7 @@ where
         T: Substitutable,
     {
         fn walk(&mut self, typ: &'t T) {
-            if self.occurs {
+            if !typ.contains_variables() || self.occurs {
                 return;
             }
             let typ = self.subs.real(typ);
@@ -174,17 +174,13 @@ where
         }
     }
 
-    if typ.contains_variables() {
-        let mut occurs = Occurs {
-            occurs: false,
-            var: var,
-            subs: subs,
-        };
-        occurs.walk(typ);
-        occurs.occurs
-    } else {
-        false
-    }
+    let mut occurs = Occurs {
+        occurs: false,
+        var: var,
+        subs: subs,
+    };
+    occurs.walk(typ);
+    occurs.occurs
 }
 
 /// Specialized union implementation which makes sure that variables with a higher level always
