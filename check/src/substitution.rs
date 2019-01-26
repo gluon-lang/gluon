@@ -38,11 +38,11 @@ where
     union: RefCell<QuickFindUf<UnionByLevel>>,
     /// Vector containing all created variables for this substitution. Needed for the `real` method
     /// which needs to always be able to return a `&T` reference
-    variables: FixedVec<Box<T>>,
+    variables: FixedVec<T>,
     /// For variables which have been infered to have a real type (not a variable) their types are
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
-    types: FixedMap<u32, Box<T>>,
+    types: FixedMap<u32, T>,
     factory: T::Factory,
     interner: T::Interner,
 }
@@ -506,7 +506,7 @@ impl Substitution<RcType> {
             kind: typ.kind().into_owned(),
         };
         let var_type = (&mut &*self).variable(var.clone()); // TODO do we need to allocate a variable here?
-        self.variables.push(Box::new(var_type));
+        self.variables.push(var_type);
         self.insert(id as u32, typ.clone());
 
         Type::variable(var)
