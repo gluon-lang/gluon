@@ -110,7 +110,7 @@ type ImplicitVector = ::rpds::Vector<ImplicitBinding>;
 
 #[derive(Debug)]
 struct Partition<T> {
-    partition: ::rpds::RedBlackTreeMap<SymbolKey, Partition<T>>,
+    partition: ::rpds::HashTrieMap<SymbolKey, Partition<T>>,
     rest: ::rpds::Vector<T>,
 }
 
@@ -249,7 +249,7 @@ impl Partition<ImplicitBinding> {
 #[derive(Clone, Default, Debug)]
 pub(crate) struct ImplicitBindings {
     partition: Partition<ImplicitBinding>,
-    definitions: ::rpds::RedBlackTreeSet<Symbol>,
+    definitions: ::rpds::HashTrieSet<Symbol>,
 }
 
 impl ImplicitBindings {
