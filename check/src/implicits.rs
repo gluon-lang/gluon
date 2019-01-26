@@ -717,18 +717,18 @@ impl<'a> ImplicitResolver<'a> {
         if self.implicit_bindings.is_empty() {
             self.implicit_bindings.push(ImplicitBindings::new());
         }
-        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
         let metadata = self.metadata.get(id);
-        self.try_add_implicit(
-            &id,
-            metadata,
-            &typ,
-            &mut Vec::new(),
-            &mut |definition, path, implicit_type| {
-                bindings.insert(subs, definition, path, implicit_type);
-            },
-        );
-        *self.implicit_bindings.last_mut().unwrap() = bindings;
+
+        let opt = self.try_create_implicit(&id, metadata, &typ, &mut Vec::new());
+
+        if let Some((definition, path, implicit_type)) = opt {
+            self.implicit_bindings.last_mut().unwrap().insert(
+                subs,
+                definition,
+                path,
+                &implicit_type,
+            );
+        }
     }
 
     pub fn add_implicits_of_record(
@@ -742,13 +742,7 @@ impl<'a> ImplicitResolver<'a> {
         if self.implicit_bindings.is_empty() {
             self.implicit_bindings.push(ImplicitBindings::new());
         }
-        let mut bindings = self.implicit_bindings.last().unwrap().clone();
 
-        let mut path = vec![TypedIdent {
-            name: id.clone(),
-            typ: typ.clone(),
-        }];
-        let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
         let typ = subs.real(typ).clone();
@@ -761,35 +755,46 @@ impl<'a> ImplicitResolver<'a> {
             };
         match *raw_type {
             Type::Record(_) => {
+                let metadata = self.metadata.get(id);
+
+                let mut path = vec![TypedIdent {
+                    name: id.clone(),
+                    typ: typ.clone(),
+                }];
+
                 for field in raw_type.row_iter() {
                     let field_metadata = metadata
                         .as_ref()
                         .and_then(|metadata| metadata.module.get(field.name.as_pretty_str()));
 
-                    self.try_add_implicit(
+                    let opt = self.try_create_implicit(
                         &field.name,
                         field_metadata,
                         &field.typ,
                         &mut path,
-                        &mut |definition, path, implicit_type| {
-                            bindings.insert(subs, definition, path, implicit_type);
-                        },
                     );
+
+                    if let Some((definition, path, implicit_type)) = opt {
+                        self.implicit_bindings.last_mut().unwrap().insert(
+                            subs,
+                            definition,
+                            path,
+                            &implicit_type,
+                        );
+                    }
                 }
             }
             _ => (),
         }
-        *self.implicit_bindings.last_mut().unwrap() = bindings;
     }
 
-    pub fn try_add_implicit(
+    pub fn try_create_implicit<'m>(
         &self,
         id: &Symbol,
-        metadata: Option<&Metadata>,
+        metadata: Option<&'m Metadata>,
         typ: &RcType,
         path: &mut Vec<TypedIdent<Symbol, RcType>>,
-        consumer: &mut FnMut(Option<&Symbol>, Vec<TypedIdent<Symbol, RcType>>, &RcType),
-    ) {
+    ) -> Option<(Option<&'m Symbol>, Vec<TypedIdent<Symbol, RcType>>, RcType)> {
         let has_implicit_attribute =
             |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
         let mut is_implicit = metadata.map(&has_implicit_attribute).unwrap_or(false);
@@ -823,7 +828,7 @@ impl<'a> ImplicitResolver<'a> {
                         .definitions
                         .contains(definition)
                     {
-                        return;
+                        return None;
                     }
                 }
             }
@@ -833,7 +838,13 @@ impl<'a> ImplicitResolver<'a> {
                 name: id.clone(),
                 typ: typ.clone(),
             });
-            consumer(metadata.and_then(|m| m.definition.as_ref()), path, typ);
+            Some((
+                metadata.and_then(|m| m.definition.as_ref()),
+                path,
+                typ.clone(),
+            ))
+        } else {
+            None
         }
     }
 
