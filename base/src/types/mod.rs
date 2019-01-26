@@ -458,6 +458,34 @@ where
             _ => unreachable!(),
         }
     }
+
+    pub fn unpack_canonical_alias<'b>(
+        &'b self,
+        canonical_alias_type: &'b T,
+        mut un_alias: impl FnMut(&'b AliasRef<Id, T>) -> Cow<'b, T>,
+    ) -> (Cow<'b, [Generic<Id>]>, &'b AliasRef<Id, T>, Cow<'b, T>) {
+        match **canonical_alias_type {
+            Type::App(ref func, _) => match **func {
+                Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, un_alias(alias)),
+                _ => (Cow::Borrowed(&[]), &**self, Cow::Borrowed(func)),
+            },
+            Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, un_alias(alias)),
+            Type::Forall(ref params, ref typ) => {
+                let mut params = Cow::Borrowed(&params[..]);
+                let (more_params, canonical_alias, inner_type) =
+                    self.unpack_canonical_alias(typ, un_alias);
+                if !more_params.is_empty() {
+                    params.to_mut().extend(more_params.iter().cloned());
+                }
+                (params, canonical_alias, inner_type)
+            }
+            _ => (
+                Cow::Borrowed(&[]),
+                &**self,
+                Cow::Borrowed(canonical_alias_type),
+            ),
+        }
+    }
 }
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows

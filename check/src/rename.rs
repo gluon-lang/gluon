@@ -115,7 +115,6 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     if !id.name.declared_name().starts_with(char::is_uppercase) =>
                 {
                     if let Some(new_id) = self.rename(&id.name) {
-                        debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
                     }
                 }
@@ -299,6 +298,12 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                                 alias.name = new_name;
                             }
                         }
+                    }
+                }
+                Type::Projection(ref mut ids) => {
+                    // The first id refers to a local variable so we need to rename it
+                    if let Some(new_id) = self.rename(&mut ids[0]) {
+                        ids[0] = new_id;
                     }
                 }
                 Type::Ident(ref mut id) => {

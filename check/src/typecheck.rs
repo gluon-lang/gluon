@@ -237,14 +237,6 @@ impl<'a> Typecheck<'a> {
 
         self.implicit_resolver.on_stack_var(&self.subs, &id, &typ);
 
-        // HACK
-        // Insert the non_renamed symbol so that type projections in types can be translated (see
-        // translate_projected_type)
-        let non_renamed_symbol = self.symbols.symbol(id.declared_name());
-        self.environment
-            .stack
-            .insert(non_renamed_symbol, StackBinding { typ: typ.clone() });
-
         self.environment.stack.insert(id, StackBinding { typ });
     }
 
@@ -276,7 +268,7 @@ impl<'a> Typecheck<'a> {
             });
 
         let (outer_params, canonical_alias, inner_type) =
-            self.unpack_canonical_alias(alias, &canonical_alias_type);
+            alias.unpack_canonical_alias(&canonical_alias_type, |a| a.typ(&mut &self.subs));
 
         if let Type::Variant(ref variants) = **inner_type {
             for field in variants.row_iter().cloned() {
@@ -307,7 +299,8 @@ impl<'a> Typecheck<'a> {
                     ctor_type,
                 );
 
-                self.stack_var(field.name, typ);
+                let symbol = self.symbols.symbols().symbol(field.name.as_str());
+                self.stack_var(symbol, typ);
             }
         }
 
@@ -328,38 +321,6 @@ impl<'a> Typecheck<'a> {
         self.environment
             .stack_types
             .insert(id, (typ, alias.clone()));
-    }
-
-    fn unpack_canonical_alias<'b>(
-        &mut self,
-        alias: &'b Alias<Symbol, RcType>,
-        canonical_alias_type: &'b RcType,
-    ) -> (
-        Cow<'b, [Generic<Symbol>]>,
-        &'b AliasRef<Symbol, RcType>,
-        Cow<'b, RcType>,
-    ) {
-        match **canonical_alias_type {
-            Type::App(ref func, _) => match **func {
-                Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ(&mut &self.subs)),
-                _ => (Cow::Borrowed(&[]), &**alias, Cow::Borrowed(func)),
-            },
-            Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ(&mut &self.subs)),
-            Type::Forall(ref params, ref typ) => {
-                let mut params = Cow::Borrowed(&params[..]);
-                let (more_params, canonical_alias, inner_type) =
-                    self.unpack_canonical_alias(alias, typ);
-                if !more_params.is_empty() {
-                    params.to_mut().extend(more_params.iter().cloned());
-                }
-                (params, canonical_alias, inner_type)
-            }
-            _ => (
-                Cow::Borrowed(&[]),
-                &**alias,
-                Cow::Borrowed(canonical_alias_type),
-            ),
-        }
     }
 
     fn enter_scope(&mut self) {
