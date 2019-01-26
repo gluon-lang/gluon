@@ -292,9 +292,6 @@ impl<'a> Unifiable<State<'a>> for RcType {
     where
         UnifierState<'a, U>: Unifier<State<'a>, Self>,
     {
-        if self == other {
-            return Ok(None);
-        }
         let reduced_aliases = unifier.state.reduced_aliases.len();
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
@@ -1436,7 +1433,7 @@ mod tests {
     fn detect_multiple_type_errors_in_single_type() {
         let _ = ::env_logger::try_init();
         let (x, y) = (intern("x"), intern("y"));
-        let mut interner = SharedInterner::default();
+        let interner = SharedInterner::default();
         let l: RcType = interner.record(
             vec![],
             vec![

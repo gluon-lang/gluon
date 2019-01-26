@@ -1,6 +1,5 @@
 use std::{
     borrow::Borrow,
-    cell::RefCell,
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
@@ -17,20 +16,20 @@ use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent},
     error::AsDiagnostic,
     fnv::FnvMap,
-    metadata::{Metadata, MetadataEnv},
+    metadata::Metadata,
     pos::{self, BytePos, Span, Spanned},
     resolve,
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolRef},
-    types::{self, ArcType, ArgType, BuiltinType, SharedInterner, Type, TypeExt},
+    types::{self, ArgType, BuiltinType, Type, TypeExt},
 };
 
 use crate::{
     substitution::Substitution,
-    typ::{self, RcType},
+    typ::RcType,
     typecheck::{TypeError, Typecheck},
     unify_type::{self, Size},
-    ArcTypeCacher, TypecheckEnv,
+    TypecheckEnv,
 };
 
 impl SymbolKey {
@@ -694,7 +693,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
 
 pub struct ImplicitResolver<'a> {
     pub(crate) metadata: &'a mut FnvMap<Symbol, Metadata>,
-    environment: ArcTypeCacher<'a>,
+    environment: &'a TypecheckEnv<Type = RcType>,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
@@ -702,14 +701,12 @@ pub struct ImplicitResolver<'a> {
 
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
-        environment: &'a TypecheckEnv<Type = ArcType>,
-        type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
-        interner: SharedInterner<Symbol, RcType>,
+        environment: &'a TypecheckEnv<Type = RcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {
             metadata,
-            environment: ArcTypeCacher::new(environment, type_interner, interner),
+            environment,
             implicit_bindings: Vec::new(),
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),

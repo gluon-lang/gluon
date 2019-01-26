@@ -1,9 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    default::Default,
-    fmt,
-    hash::Hash,
-};
+use std::{cell::RefCell, default::Default, fmt};
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
@@ -11,10 +6,7 @@ use crate::base::{
     fixed::{FixedMap, FixedVec},
     kind::ArcKind,
     symbol::Symbol,
-    types::{
-        self, ArcType, InternerVisitor, SharedInterner, Skolem, Type, TypeExt, TypeInterner,
-        TypeInternerAlloc, TypeVariable, Walker,
-    },
+    types::{self, ArcType, InternerVisitor, Skolem, Type, TypeInterner, TypeVariable, Walker},
 };
 use crate::typ::RcType;
 
@@ -55,37 +47,23 @@ where
     interner: T::Interner,
 }
 
-impl<'a, T> TypeInterner<Symbol, T> for Substitution<T>
+impl<T> TypeInterner<Symbol, T> for Substitution<T>
 where
-    T: Substitutable<Interner = SharedInterner<Symbol, T>>
-        + Eq
-        + Hash
-        + TypeExt<Id = Symbol>
-        + TypeInternerAlloc<Id = Symbol>
-        + Default
-        + Clone
-        + From<Type<Symbol, T>>,
-    T::Target: Eq + Hash,
+    T: Substitutable + From<Type<Symbol, T>>,
+    for<'a> &'a T::Interner: TypeInterner<Symbol, T>,
 {
-    gluon_base::forward_type_interner_methods!(Symbol, T, self_, self_.interner.borrow_mut());
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);
 }
 
 impl<'a, T> TypeInterner<Symbol, T> for &'a Substitution<T>
 where
-    T: Substitutable<Interner = SharedInterner<Symbol, T>>
-        + Eq
-        + Hash
-        + TypeExt<Id = Symbol>
-        + TypeInternerAlloc<Id = Symbol>
-        + Default
-        + Clone
-        + From<Type<Symbol, T>>,
-    T::Target: Eq + Hash,
+    T: Substitutable + From<Type<Symbol, T>>,
+    &'a T::Interner: TypeInterner<Symbol, T>,
 {
-    gluon_base::forward_type_interner_methods!(Symbol, T, self_, self_.interner.borrow_mut());
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);
 }
 
-impl<'a> types::Substitution<Symbol, RcType> for &'a Substitution<RcType> where {
+impl<'a> types::Substitution<Symbol, RcType> for &'a Substitution<RcType> {
     fn new_var(&mut self) -> RcType {
         Substitution::new_var(*self)
     }

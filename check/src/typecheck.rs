@@ -3,10 +3,8 @@
 //! checking of types are done in the `unify_type` and `kindcheck` modules.
 use std::{
     borrow::{BorrowMut, Cow},
-    cell::RefCell,
     iter::once,
     mem,
-    rc::Rc,
 };
 
 use crate::base::{
@@ -25,8 +23,8 @@ use crate::base::{
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
-        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Generic, PrimitiveEnv,
-        SharedInterner, Type, TypeCache, TypeEnv, TypeExt, TypeInterner,
+        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Generic, PrimitiveEnv, Type,
+        TypeCache, TypeEnv, TypeExt, TypeInterner,
     },
 };
 
@@ -34,8 +32,8 @@ use crate::{
     implicits,
     kindcheck::KindCheck,
     substitution::{self, Substitution},
-    typ::{translate_interned_type, RcType, TranslateInterner},
-    unify, unify_type, ArcTypeCacher, TypecheckEnv,
+    typ::RcType,
+    unify, unify_type, TypecheckEnv,
 };
 
 use self::generalize::TypeGeneralizer;
@@ -59,7 +57,7 @@ struct StackBinding {
 
 pub(crate) struct Environment<'a> {
     /// The global environment which the typechecker extracts types from
-    environment: ArcTypeCacher<'a>,
+    environment: &'a (TypecheckEnv<Type = RcType> + 'a),
     /// Stack allocated variables
     stack: ScopedMap<Symbol, StackBinding>,
     /// Types which exist in some scope (`type Test = ... in ...`)
@@ -124,9 +122,6 @@ pub struct Typecheck<'a> {
     pub(crate) errors: Errors<SpannedTypeError<Symbol, RcType<Symbol>>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, RcType>,
-    type_interner: Rc<RefCell<TranslateInterner<ArcType, RcType>>>,
-    arc_type_cache: TypeCache<Symbol, ArcType>,
-    arc_type_interner: TranslateInterner<RcType, ArcType>,
 
     kind_cache: KindCache,
 
@@ -149,21 +144,15 @@ impl<'a> Typecheck<'a> {
         module: String,
         symbols: &'a mut Symbols,
         environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
-        arc_type_cache: TypeCache<Symbol, ArcType>,
+        interner: &TypeCache<Symbol, ArcType>,
         metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let kind_cache = KindCache::new();
-        let interner = SharedInterner::default();
         let subs = Substitution::new(kind_cache.typ(), interner.clone());
-        let type_interner = Rc::new(RefCell::new(Default::default()));
         Typecheck {
             environment: Environment {
-                environment: ArcTypeCacher::new(
-                    environment,
-                    type_interner.clone(),
-                    interner.clone(),
-                ),
+                environment,
                 stack: ScopedMap::new(),
                 stack_types: ScopedMap::new(),
             },
@@ -171,17 +160,9 @@ impl<'a> Typecheck<'a> {
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
-            arc_type_cache,
-            arc_type_interner: Default::default(),
             kind_cache: kind_cache,
-            implicit_resolver: crate::implicits::ImplicitResolver::new(
-                environment,
-                type_interner.clone(),
-                interner.clone(),
-                metadata,
-            ),
+            implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
-            type_interner,
             subs,
         }
     }
@@ -1647,7 +1628,7 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Literal(ref l) => {
-                let typ = l.env_type_of(&self.environment.environment.environment);
+                let typ = l.env_type_of(&self.environment);
                 let typ = self.translate_arc_type(&typ);
                 self.unify_span(span, &match_type, typ);
                 match_type
@@ -1681,20 +1662,14 @@ impl<'a> Typecheck<'a> {
         translate_projected_type(&self.environment, &mut self.symbols, &mut &self.subs, id)
     }
 
+    // Stub kept in case multiple types are attempted again
     fn translate_arc_type(&mut self, arc_type: &ArcType) -> RcType {
-        translate_interned_type(
-            &mut *RefCell::borrow_mut(&self.type_interner),
-            &mut &self.subs,
-            arc_type,
-        )
+        arc_type.clone()
     }
 
+    // Stub kept in case multiple types are attempted again
     fn translate_rc_type(&mut self, rc_type: &RcType) -> ArcType {
-        translate_interned_type(
-            &mut self.arc_type_interner,
-            &mut &self.arc_type_cache,
-            rc_type,
-        )
+        rc_type.clone()
     }
 
     fn translate_ast_type(&mut self, ast_type: &AstType<Symbol>) -> RcType {

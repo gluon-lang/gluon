@@ -136,7 +136,7 @@ pub fn typecheck_expr_expected(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -187,7 +187,7 @@ pub fn typecheck_partial_expr(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -231,7 +231,7 @@ where
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ, &mut |typ| match **typ {
+    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::ExtendRow {
             ref types,
             ref fields,

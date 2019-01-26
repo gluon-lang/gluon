@@ -530,7 +530,7 @@ where
                     file.into(),
                     &mut compiler.symbols,
                     &*env,
-                    thread.global_env().type_cache().clone(),
+                    &thread.global_env().type_cache(),
                     &mut metadata_map,
                 );
 

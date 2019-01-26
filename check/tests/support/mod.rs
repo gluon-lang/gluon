@@ -212,7 +212,7 @@ pub fn typecheck_expr_expected(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -253,7 +253,7 @@ pub fn typecheck_partial_expr(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 

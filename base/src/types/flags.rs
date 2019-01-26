@@ -3,6 +3,7 @@ use super::{Field, Type, TypeExt};
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Deserialize, Serialize)]
     pub struct Flags: u8 {
         const HAS_VARIABLES = 1 << 0;
         const HAS_SKOLEMS = 1 << 1;

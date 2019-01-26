@@ -38,24 +38,15 @@ pub mod unify_type;
 
 mod implicits;
 
-use std::{cell::RefCell, rc::Rc};
-
 use crate::base::{
-    fixed::FixedMap,
     fnv::FnvMap,
-    kind::{ArcKind, Kind, KindEnv},
-    metadata::{Metadata, MetadataEnv},
-    symbol::{Symbol, SymbolRef},
-    types::{
-        translate_alias, translate_type, Alias, ArcType, PrimitiveEnv, SharedInterner, TypeEnv,
-        TypeExt, TypeInterner,
-    },
+    kind::Kind,
+    metadata::MetadataEnv,
+    symbol::Symbol,
+    types::{translate_type, ArcType, PrimitiveEnv, SharedInterner, TypeEnv, TypeExt},
 };
 
-use crate::{
-    substitution::Substitution,
-    typ::{translate_interned_type, PtrEq, RcType},
-};
+use crate::{substitution::Substitution, typ::RcType};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(
@@ -64,9 +55,8 @@ pub fn check_signature(
     actual: &ArcType,
 ) -> bool {
     let interner = SharedInterner::default();
-    let env = ArcTypeCacher::new(env, Default::default(), interner.clone());
     let signature = translate_type(&mut &interner, signature);
-    let actual = translate_type(&mut &*interner, actual);
+    let actual = translate_type(&mut &interner, actual);
     check_signature_(&env, &interner, &signature, &actual)
 }
 
@@ -89,118 +79,6 @@ fn check_signature_(
 pub trait TypecheckEnv: PrimitiveEnv + MetadataEnv {}
 
 impl<T> TypecheckEnv for T where T: PrimitiveEnv + MetadataEnv {}
-
-// Exposed for tests
-#[doc(hidden)]
-pub struct ArcTypeCacher<'a> {
-    environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
-    types: FixedMap<String, Box<RcType>>,
-    aliases: FixedMap<String, Box<Alias<Symbol, RcType>>>,
-    type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
-    interner: SharedInterner<Symbol, RcType>,
-}
-
-impl<'a> ArcTypeCacher<'a> {
-    pub fn new(
-        environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
-        type_interner: Rc<RefCell<typ::TranslateInterner<ArcType, RcType>>>,
-        interner: SharedInterner<Symbol, RcType>,
-    ) -> ArcTypeCacher<'a> {
-        ArcTypeCacher {
-            environment,
-            types: Default::default(),
-            aliases: Default::default(),
-            type_interner,
-            interner,
-        }
-    }
-}
-
-impl<'a> KindEnv for ArcTypeCacher<'a> {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
-        if let Some(k) = self.aliases.get(type_name.as_str()) {
-            return Some(k.kind().into_owned());
-        }
-        self.environment.find_type_info(type_name).map(|alias| {
-            let rc_alias_data = translate_alias(alias, |t| {
-                translate_interned_type(
-                    &mut self.type_interner.borrow_mut(),
-                    &mut &*self.interner,
-                    t,
-                )
-            });
-            let rc_alias = (&self.interner).new_data_alias(rc_alias_data);
-
-            self.type_interner
-                .borrow_mut()
-                .type_map
-                .insert(PtrEq(alias.as_type().clone()), rc_alias.as_type().clone());
-            self.aliases
-                .try_insert(type_name.as_str().into(), Box::new(rc_alias.clone()))
-                .unwrap();
-
-            self.find_kind(type_name).unwrap()
-        })
-    }
-}
-
-impl<'a> TypeEnv for ArcTypeCacher<'a> {
-    type Type = RcType;
-    fn find_type(&self, id: &SymbolRef) -> Option<&RcType> {
-        if let Some(t) = self.types.get(id.as_str()) {
-            return Some(t);
-        }
-        self.environment.find_type(id).map(|arc_type| {
-            let rc_type = translate_interned_type(
-                &mut self.type_interner.borrow_mut(),
-                &mut &*self.interner,
-                arc_type,
-            );
-            self.types
-                .try_insert(id.as_str().into(), Box::new(rc_type.clone()))
-                .unwrap();
-            self.find_type(id).unwrap()
-        })
-    }
-
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, RcType>> {
-        if let Some(t) = self.aliases.get(id.as_str()) {
-            return Some(t);
-        }
-        self.environment.find_type_info(id).map(|alias| {
-            let rc_alias_data = translate_alias(alias, |t| {
-                translate_interned_type(
-                    &mut self.type_interner.borrow_mut(),
-                    &mut &*self.interner,
-                    t,
-                )
-            });
-            let rc_alias = (&self.interner).new_data_alias(rc_alias_data);
-
-            self.type_interner
-                .borrow_mut()
-                .type_map
-                .insert(PtrEq(alias.as_type().clone()), rc_alias.as_type().clone());
-            self.aliases
-                .try_insert(id.as_str().into(), Box::new(rc_alias.clone()))
-                .unwrap();
-
-            self.find_type_info(id).unwrap()
-        })
-    }
-}
-
-impl<'a> PrimitiveEnv for ArcTypeCacher<'a> {
-    fn get_bool(&self) -> &ArcType {
-        self.environment.get_bool()
-    }
-}
-
-impl<'a> MetadataEnv for ArcTypeCacher<'a> {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
-        self.environment.get_metadata(id)
-    }
-}
 
 #[cfg(test)]
 mod tests {

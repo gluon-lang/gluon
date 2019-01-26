@@ -221,7 +221,6 @@ let { Test3 } = { Test, Test2, x = 2 }
 #[test]
 fn row_kinds() {
     let env = MockEnv::new();
-    let env = check::ArcTypeCacher::new(&env, Default::default(), Default::default());
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 
@@ -241,7 +240,6 @@ fn row_kinds() {
 #[test]
 fn row_kinds_error() {
     let env = MockEnv::new();
-    let env = check::ArcTypeCacher::new(&env, Default::default(), Default::default());
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 

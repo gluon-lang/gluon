@@ -460,18 +460,6 @@ where
     }
 }
 
-impl<Id> Alias<Id, ArcType<Id>>
-where
-    Id: Clone,
-{
-    pub fn make_mut(alias: &mut Alias<Id, ArcType<Id>>) -> &mut AliasRef<Id, ArcType<Id>> {
-        match *Arc::make_mut(&mut alias._typ.typ) {
-            Type::Alias(ref mut alias) => alias,
-            _ => unreachable!(),
-        }
-    }
-}
-
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
 /// for cheap conversion back into a type as well.
 #[derive(Clone, Debug)]
@@ -1207,10 +1195,32 @@ where
     }
 }
 
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "Seed<Id, ArcType<Id>>")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(bound(deserialize = "
+           Id: DeserializeState<'de, Seed<Id, ArcType<Id>>>
+                + Clone
+                + ::std::any::Any
+                + DeserializeState<'de, Seed<Id, ArcType<Id>>>"))
+)]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+struct ArcTypeInner<Id = Symbol> {
+    #[serde(state)]
+    typ: Type<Id, ArcType<Id>>,
+    flags: Flags,
+}
+
+forward_eq_hash! { <Id> for ArcTypeInner<Id> { typ } }
+
 /// A shared type which is atomically reference counted
 #[derive(Eq, PartialEq, Hash)]
 pub struct ArcType<Id = Symbol> {
-    typ: Arc<Type<Id, ArcType<Id>>>,
+    typ: Arc<ArcTypeInner<Id>>,
 }
 
 impl<Id> Default for ArcType<Id> {
@@ -1233,8 +1243,7 @@ where
     {
         use crate::serialization::SharedSeed;
         let seed = SharedSeed::new(seed);
-        crate::serde::de::DeserializeSeed::deserialize(seed, deserializer)
-            .map(|typ| ArcType { typ })
+        crate::serde::de::DeserializeSeed::deserialize(seed, deserializer).map(ArcType::new)
     }
 }
 
@@ -1269,7 +1278,7 @@ unsafe impl<Id> StableDeref for ArcType<Id> {}
 
 impl<Id> Borrow<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn borrow(&self) -> &Type<Id, ArcType<Id>> {
-        &self.typ
+        self
     }
 }
 
@@ -1277,7 +1286,7 @@ impl<Id> Deref for ArcType<Id> {
     type Target = Type<Id, ArcType<Id>>;
 
     fn deref(&self) -> &Type<Id, ArcType<Id>> {
-        &self.typ
+        &self.typ.typ
     }
 }
 
@@ -1590,11 +1599,17 @@ impl<Id> TypeExt for ArcType<Id> {
     type Id = Id;
 
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        ArcType { typ: Arc::new(typ) }
+        let flags = Flags::from_type(&typ);
+        let typ = Arc::new(ArcTypeInner { typ, flags });
+        ArcType { typ }
     }
 
     fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
+    }
+
+    fn flags(&self) -> Flags {
+        self.typ.flags
     }
 }
 
@@ -1912,6 +1927,14 @@ impl<Id> ArcType<Id> {
             },
             u32::max_value(),
         )
+    }
+
+    pub fn needs_generalize(&self) -> bool {
+        self.flags().intersects(Flags::NEEDS_GENERALIZE)
+    }
+
+    pub fn forall_params(&self) -> impl Iterator<Item = &Generic<Id>> {
+        forall_params(self)
     }
 }
 
@@ -3107,9 +3130,9 @@ where
     forward_type_interner_methods!(Id, T, self_, self_.borrow_mut());
 }
 
-pub type SharedInterner<Id, T> = Rc<RefCell<Interner<Id, T>>>;
+pub type SharedInterner<Id, T> = TypeCache<Id, T>;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct NullInterner;
 
 impl<Id, T> TypeInterner<Id, T> for NullInterner
@@ -3125,9 +3148,23 @@ macro_rules! forward_to_cache {
     ($($id: ident)*) => {
         $(
             fn $id(&mut self) -> T {
-                TypeCache::$id(*self)
+                TypeCache::$id(self)
             }
         )*
+    }
+}
+
+impl<Id, T> TypeInterner<Id, T> for TypeCache<Id, T>
+where
+    T: From<Type<Id, T>> + Clone,
+{
+    fn intern(&mut self, typ: Type<Id, T>) -> T {
+        T::from(typ)
+    }
+
+    forward_to_cache! {
+        hole opaque error int byte float string char
+        function_builtin array_builtin unit empty_row
     }
 }
 
@@ -3192,6 +3229,21 @@ where
 pub trait TypeInternerAlloc: Sized {
     type Id;
     fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
+}
+
+impl TypeInternerAlloc for ArcType {
+    type Id = Symbol;
+    fn alloc(into: &mut Self, typ: Type<Symbol, Self>) {
+        match Arc::get_mut(&mut into.typ) {
+            Some(into) => {
+                into.flags = Flags::from_type(&typ);
+                into.typ = typ;
+            }
+            None => {
+                *into = Self::new(typ);
+            }
+        }
+    }
 }
 
 pub struct Interner<Id, T> {
