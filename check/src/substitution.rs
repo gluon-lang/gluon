@@ -3,7 +3,7 @@ use std::{cell::RefCell, default::Default, fmt};
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use crate::base::{
-    fixed::{FixedMap, FixedVec},
+    fixed::{FixedVec, FixedVecMap},
     kind::ArcKind,
     symbol::Symbol,
     types::{self, ArcType, InternerVisitor, Skolem, Type, TypeInterner, Walker},
@@ -40,9 +40,9 @@ where
     /// which needs to always be able to return a `&T` reference
     variables: FixedVec<T>,
     /// For variables which have been infered to have a real type (not a variable) their types are
-    /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
+    /// stored here. As the type stored will never changed we use a `FixedVecMap` lets `real` return
     /// `&T` from this map safely.
-    types: FixedMap<u32, T>,
+    types: FixedVecMap<T>,
     factory: T::Factory,
     interner: T::Interner,
 }
@@ -264,7 +264,7 @@ where
         Substitution {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
-            types: FixedMap::new(),
+            types: FixedVecMap::new(),
             factory: factory,
             interner,
         }
@@ -285,7 +285,7 @@ where
                 "Tried to insert variable which is not allowed as that would cause memory \
                  unsafety"
             ),
-            None => match self.types.try_insert(var, t.into()) {
+            None => match self.types.try_insert(var as usize, t.into()) {
                 Ok(()) => (),
                 Err(_) => ice!("Expected variable to not have a type associated with it"),
             },
@@ -294,7 +294,7 @@ where
 
     pub fn replace(&mut self, var: u32, t: T) {
         debug_assert!(t.get_id() != Some(var));
-        self.types.insert(var, t.into());
+        self.types.insert(var as usize, t.into());
     }
 
     /// Creates a new variable
@@ -344,9 +344,9 @@ where
         if var as usize >= union.size() {
             return None;
         }
-        let index = union.find(var as usize) as u32;
-        self.types.get(&index).or_else(|| {
-            if var == index {
+        let index = union.find(var as usize);
+        self.types.get(index).or_else(|| {
+            if var == index as u32 {
                 None
             } else {
                 Some(&self.variables[index as usize])

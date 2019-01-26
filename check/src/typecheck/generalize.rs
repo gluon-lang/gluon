@@ -93,10 +93,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {
-                self.generalizer.tc.type_variables.enter_scope();
                 self.generalizer.span = e.span;
                 ast::walk_mut_expr(self, e);
-                self.generalizer.tc.type_variables.exit_scope();
             }
 
             fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Symbol>) {
@@ -213,9 +211,9 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             _ => {
-                self.type_variables.enter_scope();
                 // Ensure that the forall's variables don't look unbound
                 if let Type::Forall(ref params, _) = **typ {
+                    self.type_variables.enter_scope();
                     let mut type_cache = &self.tc.subs;
                     self.tc.type_variables.extend(
                         params
@@ -233,7 +231,9 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 .map(|t| unroll_typ(self.tc, &t).unwrap_or(t))
                 .or_else(|| replacement.clone());
 
-                self.type_variables.exit_scope();
+                if let Type::Forall(..) = **typ {
+                    self.type_variables.exit_scope();
+                }
 
                 new_type
             }

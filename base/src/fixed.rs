@@ -13,6 +13,8 @@ use std::{
 };
 
 use crate::fnv::FnvMap;
+use vec_map::VecMap;
+
 // NOTE: transmute is used to circumvent the borrow checker in this module
 // This is safe since the containers hold boxed values meaning allocating larger
 // storage does not invalidate the references that are handed out and because values
@@ -110,6 +112,88 @@ where
 {
     type Output = V;
     fn index(&self, index: &'a Q) -> &Self::Output {
+        self.get(index).expect("Index out of bounds")
+    }
+}
+
+// A mapping between K and V where once a value has been inserted it cannot be changed
+// Through this and the fact the all values are stored as pointers it is possible to safely
+// insert new values without invalidating pointers retrieved from it
+pub struct FixedVecMap<V> {
+    // Use u16 to leave space for the `Option` tag in `VecMap`
+    map: RefCell<VecMap<(u16, u32)>>,
+    values: Buffer<V>,
+}
+
+impl<V> Default for FixedVecMap<V> {
+    fn default() -> FixedVecMap<V> {
+        FixedVecMap::new()
+    }
+}
+
+impl<V: fmt::Debug> fmt::Debug for FixedVecMap<V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.map.borrow().fmt(f)
+    }
+}
+
+impl<V> FixedVecMap<V> {
+    pub fn new() -> FixedVecMap<V> {
+        FixedVecMap {
+            map: Default::default(),
+            values: Default::default(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.map.borrow_mut().clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.borrow().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<V> FixedVecMap<V> {
+    pub fn insert(&mut self, key: usize, value: V) -> Option<V> {
+        use vec_map::Entry;
+        match self.map.get_mut().entry(key) {
+            Entry::Occupied(entry) => Some(mem::replace(&mut self.values[*entry.get()], value)),
+            Entry::Vacant(entry) => {
+                let (i, j) = self.values.push(value);
+                entry.insert((i as u16, j));
+                None
+            }
+        }
+    }
+
+    pub fn try_insert(&self, key: usize, value: V) -> Result<(), (usize, V)> {
+        if self.get(key).is_some() {
+            Err((key, value))
+        } else {
+            let (i, j) = self.values.push(value);
+            self.map.borrow_mut().insert(key, (i as u16, j));
+            Ok(())
+        }
+    }
+
+    pub fn get(&self, k: usize) -> Option<&V> {
+        self.map.borrow().get(k).map(|key| &self.values[*key])
+    }
+
+    pub fn get_mut(&mut self, k: usize) -> Option<&mut V> {
+        let values = &mut self.values;
+        self.map.get_mut().get(k).map(move |&key| &mut values[key])
+    }
+}
+
+impl<V> Index<usize> for FixedVecMap<V> {
+    type Output = V;
+    fn index(&self, index: usize) -> &Self::Output {
         self.get(index).expect("Index out of bounds")
     }
 }
@@ -238,6 +322,19 @@ impl<T> Index<(u32, u32)> for Buffer<T> {
 
 impl<T> IndexMut<(u32, u32)> for Buffer<T> {
     fn index_mut(&mut self, (i, j): (u32, u32)) -> &mut T {
+        &mut self.values.get_mut()[i as usize][j as usize]
+    }
+}
+
+impl<T> Index<(u16, u32)> for Buffer<T> {
+    type Output = T;
+    fn index(&self, (i, j): (u16, u32)) -> &T {
+        unsafe { forget_lifetime(&self.values.borrow()[i as usize][j as usize]) }
+    }
+}
+
+impl<T> IndexMut<(u16, u32)> for Buffer<T> {
+    fn index_mut(&mut self, (i, j): (u16, u32)) -> &mut T {
         &mut self.values.get_mut()[i as usize][j as usize]
     }
 }
