@@ -706,12 +706,12 @@ pub fn load<'vm>(vm: &'vm Thread) -> Result<ExternModule> {
     use self::std;
 
     vm.define_global(
-        "@error",
+        "error",
         primitive::<fn(StdString) -> Pushed<A>>("@error", std::prim::error),
     )?;
 
     vm.define_global(
-        "@string_eq",
+        "string_eq",
         primitive!(2, "@string_eq", <str as PartialEq>::eq),
     )?;
 

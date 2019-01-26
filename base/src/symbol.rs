@@ -288,12 +288,15 @@ impl Name {
     }
 
     pub fn as_pretty_str(&self) -> &str {
-        let name = &self.0;
-        name.split(':').next().unwrap_or(name)
+        Self::strip_position_suffix(&self.0)
     }
 
     pub fn as_str(&self) -> &str {
-        debug_assert!(!self.0.contains(':'), "Did you mean to call as_pretty_str?");
+        debug_assert!(
+            !self.0.contains(':'),
+            "Did you mean to call as_pretty_str?: {}",
+            &self.0
+        );
         &self.0
     }
 
@@ -318,8 +321,24 @@ impl Name {
     }
 
     pub fn definition_name(&self) -> &str {
-        let name = self.0.trim_start_matches('@');
-        name.split(':').next().unwrap_or(name)
+        Self::strip_position_suffix(if self.0.as_bytes().get(0) == Some(&b'@') {
+            &self.0[1..]
+        } else {
+            &self.0
+        })
+    }
+
+    fn strip_position_suffix(name: &str) -> &str {
+        // Strip away a `:1234_56` suffix
+        let x = match name
+            .bytes()
+            .rposition(|b| (b < b'0' || b > b'9') && b != b'_')
+        {
+            Some(i) if name.as_bytes()[i] == b':' => &name[..i],
+            _ => name,
+        };
+
+        x
     }
 }
 
@@ -553,5 +572,16 @@ impl<'s> DisplayEnv for SymbolModule<'s> {
 impl<'a> IdentEnv for SymbolModule<'a> {
     fn from_str(&mut self, s: &str) -> Symbol {
         self.symbol(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn definition_name() {
+        assert_eq!(Name::new("a:123").definition_name(), "a");
+        assert_eq!(Name::new("a:123_5").definition_name(), "a");
     }
 }
