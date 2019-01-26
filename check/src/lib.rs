@@ -48,7 +48,7 @@ use crate::base::{
     symbol::{Symbol, SymbolRef},
     types::{
         translate_alias, translate_type, Alias, ArcType, PrimitiveEnv, SharedInterner, TypeEnv,
-        TypeInterner,
+        TypeExt, TypeInterner,
     },
 };
 

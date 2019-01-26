@@ -11,12 +11,10 @@ use crate::base::{
     symbol::Symbol,
     types::{
         self, dt, forall_params, pretty_print::Printer, translate_alias, AliasData, AliasRef,
-        ArcType, Generic, Prec, Skolem, ToDoc, Type, TypeExt, TypeFormatter, TypeInterner,
+        ArcType, Generic, Prec, ToDoc, Type, TypeExt, TypeFormatter, TypeInterner,
         TypeInternerAlloc,
     },
 };
-
-use crate::substitution::Substitution;
 
 pub use crate::base::types::Flags;
 
@@ -136,71 +134,6 @@ impl<Id> RcType<Id> {
 
     pub fn forall_params(&self) -> impl Iterator<Item = &Generic<Id>> {
         forall_params(self)
-    }
-}
-
-impl RcType {
-    pub fn instantiate_generics(
-        &self,
-        interner: &mut &Substitution<Self>,
-        named_variables: &mut FnvMap<Symbol, Self>,
-    ) -> Self {
-        let mut typ = self;
-        while let Type::Forall(params, inner_type) = &**typ {
-            named_variables.extend(
-                params
-                    .iter()
-                    .map(|param| (param.id.clone(), interner.new_var())),
-            );
-            typ = inner_type;
-        }
-        if named_variables.is_empty() {
-            typ.clone()
-        } else {
-            typ.replace_generics(interner, named_variables)
-                .unwrap_or_else(|| typ.clone())
-        }
-    }
-
-    pub fn skolemize(
-        &self,
-        interner: &mut &Substitution<Self>,
-        named_variables: &mut FnvMap<Symbol, Self>,
-    ) -> Self {
-        let mut typ = self;
-        while let Type::Forall(ref params, ref inner_type) = **typ {
-            let iter = params.iter().map(|param| {
-                let var = interner.new_var(); // TODO Avoid allocating a variable
-                let var = var.as_variable().unwrap();
-                (
-                    param.id.clone(),
-                    interner.intern(Type::Skolem(Skolem {
-                        name: param.id.clone(),
-                        id: var.id,
-                        kind: param.kind.clone(),
-                    })),
-                )
-            });
-            named_variables.extend(iter);
-            typ = inner_type;
-        }
-        if named_variables.is_empty() {
-            typ.clone()
-        } else {
-            typ.replace_generics(interner, named_variables)
-                .unwrap_or_else(|| typ.clone())
-        }
-    }
-
-    pub fn skolemize_in(
-        &self,
-        interner: &mut &Substitution<Self>,
-        named_variables: &mut FnvMap<Symbol, Self>,
-        f: impl FnOnce(Self) -> Self,
-    ) -> Self {
-        let skolemized = self.skolemize(interner, named_variables);
-        let new_type = f(skolemized);
-        interner.with_forall(new_type, self)
     }
 }
 

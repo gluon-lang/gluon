@@ -1498,6 +1498,72 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
     fn flags(&self) -> Flags {
         Flags::all()
     }
+
+    fn instantiate_generics(
+        &self,
+        interner: &mut impl Substitution<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Self
+    where
+        Self::Id: Clone + Eq + Hash,
+    {
+        let mut typ = self;
+        while let Type::Forall(params, inner_type) = &**typ {
+            named_variables.extend(
+                params
+                    .iter()
+                    .map(|param| (param.id.clone(), interner.new_var())),
+            );
+            typ = inner_type;
+        }
+        if named_variables.is_empty() {
+            typ.clone()
+        } else {
+            typ.replace_generics(interner, named_variables)
+                .unwrap_or_else(|| typ.clone())
+        }
+    }
+
+    fn skolemize(
+        &self,
+        interner: &mut impl Substitution<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Self
+    where
+        Self::Id: Clone + Eq + Hash,
+    {
+        let mut typ = self;
+        while let Type::Forall(ref params, ref inner_type) = **typ {
+            let iter = params.iter().map(|param| {
+                (
+                    param.id.clone(),
+                    interner.new_skolem(param.id.clone(), param.kind.clone()),
+                )
+            });
+            named_variables.extend(iter);
+            typ = inner_type;
+        }
+        if named_variables.is_empty() {
+            typ.clone()
+        } else {
+            typ.replace_generics(interner, named_variables)
+                .unwrap_or_else(|| typ.clone())
+        }
+    }
+
+    fn skolemize_in(
+        &self,
+        interner: &mut impl Substitution<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+        f: impl FnOnce(Self) -> Self,
+    ) -> Self
+    where
+        Self::Id: Clone + Eq + Hash,
+    {
+        let skolemized = self.skolemize(interner, named_variables);
+        let new_type = f(skolemized);
+        interner.with_forall(new_type, self)
+    }
 }
 
 pub fn forall_params<'a, T, Id>(mut typ: &'a T) -> impl Iterator<Item = &'a Generic<Id>>
@@ -3013,6 +3079,11 @@ pub trait TypeInterner<Id, T> {
             })
             .collect()
     }
+}
+
+pub trait Substitution<Id, T>: TypeInterner<Id, T> {
+    fn new_var(&mut self) -> T;
+    fn new_skolem(&mut self, name: Id, kind: ArcKind) -> T;
 }
 
 impl<'b, Id, T, V> TypeInterner<Id, T> for &'b Rc<V>

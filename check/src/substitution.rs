@@ -51,7 +51,6 @@ where
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
     types: FixedMap<u32, Box<T>>,
-    next_skolem_id: Cell<u32>,
     factory: T::Factory,
     interner: T::Interner,
 }
@@ -84,6 +83,15 @@ where
     T::Target: Eq + Hash,
 {
     gluon_base::forward_type_interner_methods!(Symbol, T, self_, self_.interner.borrow_mut());
+}
+
+impl<'a> types::Substitution<Symbol, RcType> for &'a Substitution<RcType> where {
+    fn new_var(&mut self) -> RcType {
+        Substitution::new_var(*self)
+    }
+    fn new_skolem(&mut self, name: Symbol, kind: ArcKind) -> RcType {
+        Substitution::new_skolem(*self, name, kind)
+    }
 }
 
 impl<T> Default for Substitution<T>
@@ -279,7 +287,6 @@ where
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
-            next_skolem_id: Default::default(),
             factory: factory,
             interner,
         }
@@ -482,9 +489,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
 
 impl Substitution<RcType> {
     pub fn new_skolem(&self, name: Symbol, kind: ArcKind) -> RcType {
-        let id = self.next_skolem_id.get();
-        self.next_skolem_id.set(id + 1);
-        (&*self).skolem(Skolem { name, id, kind })
+        self.new_var_fn(|id| (&*self).skolem(Skolem { name, id, kind }))
     }
 
     pub fn zonk(&self, typ: &RcType) -> RcType {
