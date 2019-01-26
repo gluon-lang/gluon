@@ -3,7 +3,7 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Generic, Type, TypeInterner},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeExt, TypeInterner},
 };
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
@@ -252,6 +252,12 @@ struct TypeVariableGenerator {
 impl TypeVariableGenerator {
     fn new(subs: &Substitution<RcType>, typ: &RcType) -> TypeVariableGenerator {
         fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<RcType>, typ: &RcType) {
+            if !typ
+                .flags()
+                .intersects(Flags::HAS_VARIABLES | Flags::HAS_FORALL)
+            {
+                return;
+            }
             let typ = subs.real(typ);
             if let Type::Forall(ref params, _) = **typ {
                 map.extend(params.iter().map(|param| param.id.clone()));
