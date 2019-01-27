@@ -215,10 +215,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        self.map.get_mut(key).and_then(|x| {
-            let last = x.len() - 1;
-            x.get_mut(last)
-        })
+        self.map.get_mut(key).and_then(|x| x.last_mut())
     }
 
     pub fn insert(&mut self, k: K, v: V) -> bool {

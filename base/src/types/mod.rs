@@ -3446,6 +3446,30 @@ where
 
 pub struct FlagsVisitor<F: ?Sized>(pub Flags, pub F);
 
+impl<F, I, T> TypeVisitor<I, T> for FlagsVisitor<F>
+where
+    F: FnMut(&T) -> Option<T>,
+    T: From<Type<I, T>> + TypeExt<Id = I>,
+{
+    fn visit(&mut self, typ: &T) -> Option<T>
+    where
+        T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+        I: Clone,
+    {
+        if self.0.intersects(typ.flags()) {
+            let new_type = walk_move_type_opt(typ, self);
+            let new_type2 = (self.1)(new_type.as_ref().map_or(typ, |t| t));
+            new_type2.or(new_type)
+        } else {
+            None
+        }
+    }
+
+    fn make(&mut self, typ: Type<I, T>) -> T {
+        T::from(typ)
+    }
+}
+
 impl<'a, T, F> Walker<'a, T> for FlagsVisitor<F>
 where
     F: ?Sized + FnMut(&'a T),

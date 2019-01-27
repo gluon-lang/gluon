@@ -3,6 +3,7 @@ use crate::base::{
         self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
         TypedIdent,
     },
+    fnv::FnvMap,
     pos::{self, ByteOffset, BytePos, Span},
     scoped_map::ScopedMap,
     symbol::{Symbol, SymbolModule},
@@ -21,6 +22,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
+        seen_symbols: FnvMap<Symbol, u32>,
         env: Environment,
     }
 
@@ -70,25 +72,30 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
             }
         }
 
+        // Renames the symbol to be unique in this module
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
-            use std::fmt::Write;
+            let new_id =
+                self.symbols
+                    .symbol(format!("{}:{}", self.symbols.string(&id), span.start()));
 
-            let old_id = id.clone();
-            let name = self.symbols.string(&id).to_owned();
-            let mut new_name = format!("{}:{}", name, span.start());
-            let mut i = 0;
-            while self.symbols.contains_name(&new_name) {
-                let truncate_len = new_name
-                    .trim_end_matches(|c: char| c.is_digit(10) || c == '_')
-                    .len();
-                new_name.truncate(truncate_len);
+            let index = self.seen_symbols.entry(new_id.clone()).or_default();
+            let new_id = if *index == 0 {
+                *index += 1;
+                new_id
+            } else {
+                *index += 1;
+                self.symbols.symbol(format!(
+                    "{}:{}_{}",
+                    self.symbols.string(&id),
+                    span.start(),
+                    index
+                ))
+            };
 
-                write!(new_name, "_{}", i).unwrap();
-                i += 1;
-            }
-            let new_id = self.symbols.symbol(new_name);
-            debug!("Rename binding `{:?}` = `{:?}`", (&old_id), (&new_id),);
-            self.env.stack.insert(old_id, (new_id.clone(), span));
+            debug!("Rename binding `{:?}` = `{:?}`", id, new_id);
+
+            self.env.stack.insert(id, (new_id.clone(), span));
+
             new_id
         }
 
@@ -319,6 +326,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
     let mut visitor = RenameVisitor {
         symbols: symbols,
+        seen_symbols: Default::default(),
         env: Environment {
             stack: ScopedMap::new(),
         },
