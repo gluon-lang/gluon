@@ -9,8 +9,8 @@ use crate::base::{
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
     types::{
-        self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeEnv,
-        TypeExt, TypeFormatter, TypeContext, TypeVariable,
+        self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeContext,
+        TypeEnv, TypeExt, TypeFormatter, TypeVariable,
     },
 };
 
@@ -1238,6 +1238,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (&**l, &**r) {
+            (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
 
             (_, &Type::Forall(ref params, ref r)) => {
