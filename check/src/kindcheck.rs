@@ -245,21 +245,12 @@ impl<'a> KindCheck<'a> {
                 let mut prev_span = ctor.span();
 
                 for arg in args {
-                    let f = Kind::function(self.subs.new_var(), self.subs.new_var());
-                    kind = self.unify(prev_span, &f, kind)?;
-                    kind = match *kind {
-                        Kind::Function(ref arg_kind, ref ret) => {
-                            let actual = self.kindcheck(arg)?;
-                            self.unify(arg.span(), arg_kind, actual)?;
-                            ret.clone()
-                        }
-                        _ => {
-                            return Err(pos::spanned(
-                                arg.span(),
-                                UnifyError::TypeMismatch(self.function1_kind(), kind.clone()),
-                            ));
-                        }
-                    };
+                    let (arg_kind, ret) = self.unify_function(prev_span, kind)?;
+
+                    let actual = self.kindcheck(arg)?;
+                    self.unify(arg.span(), &arg_kind, actual)?;
+
+                    kind = ret;
                     prev_span = arg.span();
                 }
                 Ok(kind)
@@ -353,6 +344,24 @@ impl<'a> KindCheck<'a> {
 
             Type::Alias(ref alias) => self.find(span, &alias.name),
         }
+    }
+
+    fn unify_function(
+        &mut self,
+        span: Span<BytePos>,
+        actual: ArcKind,
+    ) -> Result<(ArcKind, ArcKind)> {
+        if let Kind::Function(arg, ret) = &**self.subs.real(&actual) {
+            return Ok((arg.clone(), ret.clone()));
+        }
+
+        let arg = self.subs.new_var();
+        let ret = self.subs.new_var();
+        let f = Kind::function(arg.clone(), ret.clone());
+
+        self.unify(span, &f, actual)?;
+
+        Ok((arg, ret))
     }
 
     fn unify(
