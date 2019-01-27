@@ -761,3 +761,18 @@ type Test = { MyInt }
 
     assert_err!(result, UndefinedType(..));
 }
+
+#[test]
+fn different_kind_on_scoped_variable() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let f x : a -> () =
+    let g z : a () -> () = ()
+    ()
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, KindError(..));
+}

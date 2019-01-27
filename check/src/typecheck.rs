@@ -64,6 +64,7 @@ pub(crate) struct Environment<'a> {
     /// Types which exist in some scope (`type Test = ... in ...`)
     stack_types: ScopedMap<Symbol, (RcType, Alias<Symbol, RcType>)>,
     kind_cache: KindCache,
+    type_variables: ScopedMap<Symbol, RcType>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -71,6 +72,11 @@ impl<'a> KindEnv for Environment<'a> {
         self.stack_types
             .get(type_name)
             .map(|&(_, ref alias)| alias.kind(&self.kind_cache).into_owned())
+            .or_else(|| {
+                self.type_variables
+                    .get(type_name)
+                    .map(|t| t.kind(&self.kind_cache).into_owned())
+            })
             .or_else(|| self.environment.find_kind(type_name))
     }
 }
@@ -123,8 +129,6 @@ pub struct Typecheck<'a> {
     named_variables: FnvMap<Symbol, RcType>,
     pub(crate) errors: Errors<SpannedTypeError<Symbol, RcType<Symbol>>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
-    type_variables: ScopedMap<Symbol, RcType>,
-
     kind_cache: KindCache,
 
     pub(crate) implicit_resolver: implicits::ImplicitResolver<'a>,
@@ -157,11 +161,11 @@ impl<'a> Typecheck<'a> {
                 stack: ScopedMap::new(),
                 stack_types: ScopedMap::new(),
                 kind_cache: interner.kind_cache.clone(),
+                type_variables: ScopedMap::new(),
             },
             symbols: symbols,
             named_variables: FnvMap::default(),
             errors: Errors::new(),
-            type_variables: ScopedMap::new(),
             kind_cache: interner.kind_cache.clone(),
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
@@ -358,7 +362,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type_errors(&mut self, errors: &mut Errors<SpannedTypeError<Symbol, RcType>>) {
-        self.type_variables.enter_scope();
+        self.environment.type_variables.enter_scope();
 
         for err in errors {
             use self::TypeError::*;
@@ -428,7 +432,7 @@ impl<'a> Typecheck<'a> {
             }
         }
 
-        self.type_variables.exit_scope();
+        self.environment.type_variables.exit_scope();
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -477,7 +481,7 @@ impl<'a> Typecheck<'a> {
         {
             if let Some(expected_type) = expected_type {
                 let mut type_cache = &self.subs;
-                self.type_variables.extend(
+                self.environment.type_variables.extend(
                     expected_type
                         .forall_params()
                         .map(|param| (param.id.clone(), type_cache.hole())),
@@ -1317,7 +1321,7 @@ impl<'a> Typecheck<'a> {
         body: &mut SpannedExpr<Symbol>,
     ) -> RcType {
         debug!("Checking lambda {}", function_type);
-        debug!("Checking lambda {:#?}", self.type_variables);
+        debug!("Checking lambda {:#?}", self.environment.type_variables);
         self.enter_scope();
 
         let mut arg_types = Vec::new();
@@ -1693,7 +1697,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) -> TcResult<()> {
         self.enter_scope();
-        self.type_variables.enter_scope();
+        self.environment.type_variables.enter_scope();
         let level = self.subs.var_id();
 
         let is_recursive = bindings.is_recursive();
@@ -1703,8 +1707,8 @@ impl<'a> Typecheck<'a> {
             for (i, bind) in bindings.iter_mut().enumerate() {
                 let typ = {
                     if let Some(ref mut typ) = bind.typ {
-                        let rc_type = self.translate_ast_type(typ);
                         self.kindcheck(typ);
+                        let rc_type = self.translate_ast_type(typ);
 
                         resolved_types.push(rc_type);
                     } else {
@@ -1733,8 +1737,8 @@ impl<'a> Typecheck<'a> {
             // recursive
             let typ = if !is_recursive {
                 if let Some(ref mut typ) = bind.typ {
-                    let rc_type = self.translate_ast_type(typ);
                     self.kindcheck(typ);
+                    let rc_type = self.translate_ast_type(typ);
 
                     resolved_types.push(rc_type);
                 } else {
@@ -1831,7 +1835,7 @@ impl<'a> Typecheck<'a> {
         }
 
         debug!("Typecheck `in`");
-        self.type_variables.exit_scope();
+        self.environment.type_variables.exit_scope();
         Ok(())
     }
 
@@ -1845,11 +1849,11 @@ impl<'a> Typecheck<'a> {
         // Rename the types so they get a name which is distinct from types from other
         // modules
         for bind in bindings.iter_mut() {
-            self.type_variables.enter_scope();
+            self.environment.type_variables.enter_scope();
 
             {
                 let mut type_cache = &self.subs;
-                self.type_variables.extend(
+                self.environment.type_variables.extend(
                     bind.alias
                         .value
                         .params()
@@ -1859,7 +1863,7 @@ impl<'a> Typecheck<'a> {
             }
             self.check_undefined_variables(bind.alias.value.unresolved_type());
 
-            self.type_variables.exit_scope();
+            self.environment.type_variables.exit_scope();
         }
 
         {
@@ -1886,7 +1890,13 @@ impl<'a> Typecheck<'a> {
 
             // Kindcheck all the types in the environment
             for bind in &mut *bindings {
-                check.enter_scope_with(bind.alias.value.params());
+                check.enter_scope_with(
+                    bind.alias
+                        .value
+                        .params()
+                        .iter()
+                        .map(|g| (g.id.clone(), g.kind.clone())),
+                );
 
                 let typ = bind
                     .alias
@@ -1914,7 +1924,7 @@ impl<'a> Typecheck<'a> {
 
         let mut resolved_aliases = Vec::new();
         for bind in &mut *bindings {
-            self.type_variables.enter_scope();
+            self.environment.type_variables.enter_scope();
 
             let mut alias =
                 types::translate_alias(&bind.alias.value, |typ| self.translate_ast_type(typ));
@@ -1933,7 +1943,7 @@ impl<'a> Typecheck<'a> {
             }
             resolved_aliases.push(alias);
 
-            self.type_variables.exit_scope();
+            self.environment.type_variables.exit_scope();
         }
 
         let arc_alias_group = Alias::group(
@@ -1980,7 +1990,7 @@ impl<'a> Typecheck<'a> {
         use crate::base::pos::HasSpan;
         match **typ {
             Type::Generic(ref id) => {
-                if !self.type_variables.contains_key(&id.id) {
+                if !self.environment.type_variables.contains_key(&id.id) {
                     info!("Undefined type variable {}", id.id);
                     self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
                 }
@@ -1992,7 +2002,8 @@ impl<'a> Typecheck<'a> {
             _ => {
                 if let Type::Forall(ref params, ..) = **typ {
                     let mut type_cache = &self.subs;
-                    self.type_variables
+                    self.environment
+                        .type_variables
                         .extend(params.iter().map(|gen| (gen.id.clone(), type_cache.hole())));
                 }
                 types::walk_move_type_opt(
@@ -2099,7 +2110,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut RcType, span: Span<BytePos>) {
-        debug!("Start generalize {:#?}", self.type_variables);
+        debug!("Start generalize {:#?}", self.environment.type_variables);
         debug!("Start generalize {} >> {}", level, typ);
         let mut generalizer = TypeGeneralizer::new(level, self, typ, span);
         generalizer.generalize_type_top(typ);
@@ -2111,12 +2122,12 @@ impl<'a> Typecheck<'a> {
         typ: &mut RcType,
         span: Span<BytePos>,
     ) {
-        self.type_variables.enter_scope();
+        self.environment.type_variables.enter_scope();
 
         let mut generalizer = TypeGeneralizer::new(level, self, typ, span);
         let result_type = generalizer.generalize_type(typ);
 
-        generalizer.type_variables.exit_scope();
+        generalizer.environment.type_variables.exit_scope();
 
         if let Some(finished) = result_type {
             *typ = finished;
@@ -2140,7 +2151,7 @@ impl<'a> Typecheck<'a> {
     ) -> Option<RcType> {
         debug!("Creating signature: {:#?}", typ);
 
-        self.type_variables.extend(scope);
+        self.environment.type_variables.extend(scope);
 
         let opt = self.create_unifiable_signature2(typ);
         debug!("Created signature: {:#?}", opt.as_ref().unwrap_or(typ));
@@ -2245,21 +2256,22 @@ impl<'a> Typecheck<'a> {
             }
 
             Type::Forall(ref params, ref typ) => {
-                self.type_variables.enter_scope();
+                self.environment.type_variables.enter_scope();
 
                 let mut subs = &self.subs;
-                self.type_variables
+                self.environment
+                    .type_variables
                     .extend(params.iter().map(|param| (param.id.clone(), subs.hole())));
 
                 let result = self.create_unifiable_signature_(typ);
 
-                self.type_variables.exit_scope();
+                self.environment.type_variables.exit_scope();
 
                 result.map(|typ| self.intern(Type::Forall(params.clone(), typ)))
             }
 
             Type::Generic(ref generic) => {
-                if let Some(typ) = self.type_variables.get(&generic.id) {
+                if let Some(typ) = self.environment.type_variables.get(&generic.id) {
                     match **typ {
                         Type::Skolem(_) => Some(typ.clone()),
                         _ => None,
@@ -2335,7 +2347,7 @@ impl<'a> Typecheck<'a> {
     ) -> RcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
 
-        self.type_variables.enter_scope();
+        self.environment.type_variables.enter_scope();
 
         // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
         // specified to have implicit arguments)
@@ -2367,7 +2379,7 @@ impl<'a> Typecheck<'a> {
         let mut skolem_scope = FnvMap::default();
         loop {
             expected = expected.skolemize(&mut &self.subs, &mut skolem_scope);
-            self.type_variables.extend(skolem_scope.drain());
+            self.environment.type_variables.extend(skolem_scope.drain());
 
             expected = match *expected {
                 Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
@@ -2400,7 +2412,7 @@ impl<'a> Typecheck<'a> {
         let new_type = self.subsumes(span, error_order, &expected, actual);
         let typ = self.with_forall(original_expected, new_type);
 
-        self.type_variables.exit_scope();
+        self.environment.type_variables.exit_scope();
 
         typ
     }
@@ -2576,10 +2588,10 @@ impl<'a> Typecheck<'a> {
         original_type: &RcType,
         f: impl FnOnce(&mut Self, RcType) -> RcType,
     ) -> RcType {
-        self.type_variables.enter_scope();
+        self.environment.type_variables.enter_scope();
         let t = self.skolemize_in_no_scope(span, original_type, f);
 
-        self.type_variables.exit_scope();
+        self.environment.type_variables.exit_scope();
         t
     }
 
@@ -2595,7 +2607,7 @@ impl<'a> Typecheck<'a> {
         let original_type = self.subs.zonk(original_type);
         types::walk_type(&original_type, &mut |typ: &RcType| {
             if let Type::Skolem(skolem) = &**typ {
-                if !self.type_variables.contains_key(&skolem.name) {
+                if !self.environment.type_variables.contains_key(&skolem.name) {
                     self.error(
                         span,
                         TypeError::Message(format!(
@@ -2613,13 +2625,14 @@ impl<'a> Typecheck<'a> {
     fn skolemize(&mut self, typ: &RcType) -> RcType {
         self.named_variables.clear();
         self.named_variables.extend(
-            self.type_variables
+            self.environment
+                .type_variables
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone())),
         );
         let new_type = typ.skolemize(&mut &self.subs, &mut self.named_variables);
         for (id, typ) in self.named_variables.drain() {
-            match self.type_variables.entry(id) {
+            match self.environment.type_variables.entry(id) {
                 scoped_map::Entry::Vacant(e) => {
                     e.insert(typ);
                 }

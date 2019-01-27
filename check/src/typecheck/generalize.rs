@@ -3,7 +3,7 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeExt, TypeContext},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypeExt},
 };
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
@@ -82,7 +82,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
-        self.tc.type_variables.enter_scope();
+        self.tc.environment.type_variables.enter_scope();
 
         // Replaces all type variables with their inferred types
         struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
@@ -120,15 +120,15 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
         }
 
-        self.tc.type_variables.exit_scope();
+        self.tc.environment.type_variables.exit_scope();
     }
 
     pub(crate) fn generalize_type_top(&mut self, typ: &mut RcType) {
-        self.tc.type_variables.enter_scope();
+        self.tc.environment.type_variables.enter_scope();
 
         let mut result_type = self.generalize_type(typ);
 
-        self.tc.type_variables.exit_scope();
+        self.tc.environment.type_variables.exit_scope();
 
         if result_type.is_none() && !self.unbound_variables.is_empty() {
             result_type = Some(typ.clone());
@@ -192,7 +192,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             Type::Skolem(ref skolem) => {
-                let in_scope = self.type_variables.contains_key(&skolem.name);
+                let in_scope = self.environment.type_variables.contains_key(&skolem.name);
                 if self.subs.get_level(skolem.id) >= self.level {
                     let generic = self.generic(Generic {
                         id: skolem.name.clone(),
@@ -213,9 +213,9 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             _ => {
                 // Ensure that the forall's variables don't look unbound
                 if let Type::Forall(ref params, _) = **typ {
-                    self.type_variables.enter_scope();
+                    self.environment.type_variables.enter_scope();
                     let mut type_cache = &self.tc.subs;
-                    self.tc.type_variables.extend(
+                    self.tc.environment.type_variables.extend(
                         params
                             .iter()
                             .map(|param| (param.id.clone(), type_cache.hole())),
@@ -232,7 +232,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 .or_else(|| replacement.clone());
 
                 if let Type::Forall(..) = **typ {
-                    self.type_variables.exit_scope();
+                    self.environment.type_variables.exit_scope();
                 }
 
                 new_type
@@ -288,7 +288,7 @@ impl TypeVariableGenerator {
         };
         self.map.insert(symbol.clone());
         let hole = tc.hole();
-        tc.type_variables.insert(symbol.clone(), hole);
+        tc.environment.type_variables.insert(symbol.clone(), hole);
         symbol
     }
 
@@ -296,7 +296,7 @@ impl TypeVariableGenerator {
         for c in b'a'..(b'z' + 1) {
             self.name.push(c as char);
             let symbol = tc.symbols.symbol(&self.name[..]);
-            if !self.map.contains(&symbol) && tc.type_variables.get(&symbol).is_none() {
+            if !self.map.contains(&symbol) && tc.environment.type_variables.get(&symbol).is_none() {
                 return symbol;
             }
             self.name.pop();

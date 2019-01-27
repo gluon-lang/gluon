@@ -26,7 +26,7 @@ pub struct KindCheck<'a> {
     variables: ScopedMap<Symbol, ArcKind>,
     info: &'a (TypeEnv<Type = RcType> + 'a),
     idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
-    pub subs: Substitution<ArcKind>,
+    subs: Substitution<ArcKind>,
     kind_cache: KindCache,
     /// A cached one argument kind function, `Type -> Type`
     function1_kind: ArcKind,
@@ -85,10 +85,9 @@ impl<'a> KindCheck<'a> {
         self.variables.insert(name, kind);
     }
 
-    pub fn enter_scope_with(&mut self, variables: &[Generic<Symbol>]) {
+    pub fn enter_scope_with(&mut self, variables: impl IntoIterator<Item = (Symbol, ArcKind)>) {
         self.variables.enter_scope();
-        self.variables
-            .extend(variables.iter().map(|g| (g.id.clone(), g.kind.clone())));
+        self.variables.extend(variables);
     }
 
     pub fn exit_scope(&mut self) {
