@@ -105,6 +105,14 @@ fn typecheck_benchmark(c: &mut Criterion) {
     c.bench_function("typecheck_only_24", move |b| {
         typecheck_file(b, "examples/24.glu")
     });
+
+    c.bench_function("compile_lisp", move |b| {
+        b.iter(|| {
+            let vm = new_vm();
+            let mut compiler = Compiler::new();
+            compiler.load_file(&vm, "examples/lisp/lisp.glu").unwrap()
+        })
+    });
 }
 
 criterion_group!(
