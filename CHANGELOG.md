@@ -1,3 +1,30 @@
+<a name="v0.10.1"></a>
+### v0.10.1 (2019-01-27)
+
+
+#### Performance
+
+*   Use &mut to get better LLVM optimization (-2%) ([7bd988e5](https://github.com/gluon-lang/gluon/commit/7bd988e5de1be18c3b721ade509444fed990c9fc))
+*   Take the type directly from the pattern during record pattern compile ([5fc9b2e8](https://github.com/gluon-lang/gluon/commit/5fc9b2e85f2a13832ecc97140ff79efc6dd10f27))
+* **parser:**
+  *  Avoid one branch in Tokenizer::bump (parse_prelude: -6%) ([9cf39d4b](https://github.com/gluon-lang/gluon/commit/9cf39d4b4d1fe7c0647e0e3651f5c16b9e34a23e))
+  *  Shrink lalrpop's symbol size slightly ([fff12fab](https://github.com/gluon-lang/gluon/commit/fff12fab3a705a689fad616a97cd7d9b633bdc52))
+* **vm:**
+  *  Use more specialized functions ([cd057689](https://github.com/gluon-lang/gluon/commit/cd057689789a677fb8e6420d8c9bd6b388865abf))
+  *  Add and use extend for Stack manipulation ([41c9f0f6](https://github.com/gluon-lang/gluon/commit/41c9f0f6ffa4e0191e9edcaaf58947b5c28bbf9d))
+* **vm/translate:**
+  *  Avoid one field lookup loop in pattern desugaring ([292edb70](https://github.com/gluon-lang/gluon/commit/292edb709c667b7bbc4accb19834d418918c4e94))
+  *  Hoist a remove_alias call outside the loop ([37fe8762](https://github.com/gluon-lang/gluon/commit/37fe8762573594143adaf9378adfde07238d0d8a))
+  *  Avoid doing replacement for trivial matches ([bfbab7fd](https://github.com/gluon-lang/gluon/commit/bfbab7fd452e0efb51bb55c7bc296b82bfe2d217))
+  *  Use FnvMap with variable replacement ([e6c4b614](https://github.com/gluon-lang/gluon/commit/e6c4b614562078b176601b014fda4ef5cb5736c7))
+
+#### Bug Fixes
+
+*   Always do a gluon panic on arithemtic overflow ([82838a96](https://github.com/gluon-lang/gluon/commit/82838a962121066120f9643d67559c8287fbd0bb))
+* **std.http:**  Don't return NotReady if the http stream is broken ([a93ed235](https://github.com/gluon-lang/gluon/commit/a93ed2352f5aa432f1ea6ef85660ba352b514d98))
+
+
+
 <a name="v0.10.0"></a>
 ## v0.10.0 (2019-01-05)
 
