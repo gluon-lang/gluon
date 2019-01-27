@@ -25,7 +25,7 @@ use crate::base::{
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Generic, PrimitiveEnv, Type,
-        TypeCache, TypeEnv, TypeExt, TypeContext,
+        TypeCache, TypeContext, TypeEnv, TypeExt,
     },
 };
 
@@ -1886,7 +1886,7 @@ impl<'a> Typecheck<'a> {
 
             // Kindcheck all the types in the environment
             for bind in &mut *bindings {
-                check.set_variables(bind.alias.value.params());
+                check.enter_scope_with(bind.alias.value.params());
 
                 let typ = bind
                     .alias
@@ -1897,6 +1897,7 @@ impl<'a> Typecheck<'a> {
                     self.errors
                         .push(pos::spanned(err.span, TypeError::from(err.value).into()));
                 }
+                check.exit_scope();
             }
 
             // All kinds are now inferred so replace the kinds store in the AST

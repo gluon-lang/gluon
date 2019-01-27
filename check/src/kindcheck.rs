@@ -5,6 +5,7 @@ use crate::base::{
     kind::{self, ArcKind, Kind, KindCache},
     merge,
     pos::{self, BytePos, HasSpan, Span, Spanned},
+    scoped_map::{Entry, ScopedMap},
     symbol::Symbol,
     types::{self, BuiltinType, Generic, NullInterner, Type, TypeEnv, Walker},
 };
@@ -22,9 +23,7 @@ pub type Result<T> = StdResult<T, SpannedError<Symbol, RcType<Symbol>>>;
 
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
-    variables: Vec<Generic<Symbol>>,
-    /// Type bindings local to the current kindcheck invocation
-    locals: Vec<(Symbol, ArcKind)>,
+    variables: ScopedMap<Symbol, ArcKind>,
     info: &'a (TypeEnv<Type = RcType> + 'a),
     idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<ArcKind>,
@@ -72,8 +71,7 @@ impl<'a> KindCheck<'a> {
         let typ = kind_cache.typ();
         let function1_kind = Kind::function(typ.clone(), typ.clone());
         KindCheck {
-            variables: Vec::new(),
-            locals: Vec::new(),
+            variables: Default::default(),
             info: info,
             idents: idents,
             subs: Substitution::new((), Default::default()),
@@ -84,12 +82,17 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn add_local(&mut self, name: Symbol, kind: ArcKind) {
-        self.locals.push((name, kind));
+        self.variables.insert(name, kind);
     }
 
-    pub fn set_variables(&mut self, variables: &[Generic<Symbol>]) {
-        self.variables.clear();
-        self.variables.extend(variables.iter().cloned());
+    pub fn enter_scope_with(&mut self, variables: &[Generic<Symbol>]) {
+        self.variables.enter_scope();
+        self.variables
+            .extend(variables.iter().map(|g| (g.id.clone(), g.kind.clone())));
+    }
+
+    pub fn exit_scope(&mut self) {
+        self.variables.exit_scope();
     }
 
     pub fn type_kind(&self) -> ArcKind {
@@ -125,35 +128,33 @@ impl<'a> KindCheck<'a> {
     }
 
     fn find(&mut self, span: Span<BytePos>, id: &Symbol) -> Result<ArcKind> {
-        let kind = self
-            .variables
-            .iter()
-            .find(|var| var.id == *id)
-            .map(|t| t.kind.clone())
-            .or_else(|| self.locals.iter().find(|t| t.0 == *id).map(|t| t.1.clone()))
-            .or_else(|| self.info.find_kind(id))
-            .map_or_else(
-                || {
-                    if self.idents.string(id).starts_with(char::is_uppercase) {
-                        Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
-                    } else {
-                        // Create a new variable
-                        self.locals.push((id.clone(), self.subs.new_var()));
-                        Ok(self.locals.last().unwrap().1.clone())
+        let kind = match self.variables.entry(id.clone()) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => {
+                let kind = match self.info.find_kind(id) {
+                    Some(k) => k.clone(),
+                    None => {
+                        if self.idents.string(id).starts_with(char::is_uppercase) {
+                            return Err(pos::spanned(
+                                span,
+                                UnifyError::Other(KindError::UndefinedType(id.clone())),
+                            ));
+                        } else {
+                            self.subs.new_var()
+                        }
                     }
-                },
-                Ok,
-            );
+                };
+                entry.insert(kind.clone());
+                kind
+            }
+        };
 
-        if let Ok(ref kind) = kind {
-            debug!("Find kind: {} => {}", self.idents.string(&id), kind);
-        }
+        debug!("Find kind: {} => {}", self.idents.string(&id), kind);
 
-        kind.map(|kind| match *kind {
+        Ok(match *kind {
             Kind::Hole => self.subs.new_var(),
             _ => kind,
         })
-        .map_err(|err| pos::spanned(span, err))
     }
 
     fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
@@ -194,32 +195,40 @@ impl<'a> KindCheck<'a> {
         }
     }
 
+    fn scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.variables.enter_scope();
+        let r = f(self);
+        self.variables.exit_scope();
+        r
+    }
+
     fn kindcheck(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
         let span = typ.span();
         match **typ {
             Type::Error => Ok(self.kind_cache.error()),
+
             Type::Hole | Type::Opaque | Type::Variable(_) => Ok(self.subs.new_var()),
+
             Type::Skolem(ref mut skolem) => {
                 skolem.kind = self.find(span, &skolem.name)?;
                 Ok(skolem.kind.clone())
             }
+
             Type::Generic(ref mut gen) => {
                 gen.kind = self.find(span, &gen.id)?;
                 Ok(gen.kind.clone())
             }
+
             Type::Builtin(builtin_typ) => Ok(self.builtin_kind(builtin_typ)),
-            Type::Forall(ref mut params, ref mut typ) => {
+
+            Type::Forall(ref mut params, ref mut typ) => self.scope(|self_| {
                 for param in &mut *params {
-                    param.kind = self.subs.new_var();
-                    self.locals.push((param.id.clone(), param.kind.clone()));
+                    param.kind = self_.subs.new_var();
+                    self_.variables.insert(param.id.clone(), param.kind.clone());
                 }
-                let ret_kind = self.kindcheck(typ)?;
+                self_.kindcheck(typ)
+            }),
 
-                let offset = self.locals.len() - params.len();
-                self.locals.drain(offset..);
-
-                Ok(ret_kind)
-            }
             Type::Function(_, ref mut arg, ref mut ret) => {
                 let arg_kind = self.kindcheck(arg)?;
                 let ret_kind = self.kindcheck(ret)?;
@@ -230,6 +239,7 @@ impl<'a> KindCheck<'a> {
 
                 Ok(type_kind)
             }
+
             Type::App(ref mut ctor, ref mut args) => {
                 let mut kind = self.kindcheck(ctor)?;
 
@@ -255,6 +265,7 @@ impl<'a> KindCheck<'a> {
                 }
                 Ok(kind)
             }
+
             Type::Variant(ref mut row) => {
                 match **row {
                     Type::ExtendRow { .. } => {
@@ -278,12 +289,14 @@ impl<'a> KindCheck<'a> {
 
                 Ok(self.type_kind())
             }
+
             Type::Record(ref mut row) => {
                 let kind = self.kindcheck(row)?;
                 let row_kind = self.row_kind();
                 self.unify(span, &row_kind, kind)?;
                 Ok(self.type_kind())
             }
+
             Type::Effect(ref mut row) => {
                 let mut iter = types::row_iter_mut(row);
                 for field in &mut iter {
@@ -296,6 +309,7 @@ impl<'a> KindCheck<'a> {
                 self.unify(span, &row_kind, kind)?;
                 Ok(self.function1_kind())
             }
+
             Type::ExtendRow {
                 ref mut types,
                 ref mut fields,
@@ -303,20 +317,18 @@ impl<'a> KindCheck<'a> {
             } => {
                 for field in types {
                     if let Some(alias) = field.typ.try_get_alias_mut() {
-                        for param in alias.params_mut() {
-                            param.kind = self.subs.new_var();
-                            self.locals.push((param.id.clone(), param.kind.clone()));
-                        }
+                        self.scope(|self_| {
+                            for param in alias.params_mut() {
+                                param.kind = self_.subs.new_var();
+                                self_.variables.insert(param.id.clone(), param.kind.clone());
+                            }
 
-                        {
                             let field_type = alias.unresolved_type_mut();
-                            let kind = self.kindcheck(field_type)?;
-                            let type_kind = self.type_kind();
-                            self.unify(field_type.span(), &type_kind, kind)?;
-                        }
+                            let kind = self_.kindcheck(field_type)?;
+                            let type_kind = self_.type_kind();
 
-                        let offset = self.locals.len() - alias.params().len();
-                        self.locals.drain(offset..);
+                            self_.unify(field_type.span(), &type_kind, kind)
+                        })?;
                     }
                 }
                 for field in fields {
@@ -331,11 +343,15 @@ impl<'a> KindCheck<'a> {
 
                 Ok(row_kind)
             }
+
             Type::EmptyRow => Ok(self.row_kind()),
+
             Type::Ident(ref id) => self.find(span, id),
+
             Type::Projection(ref ids) => Ok(self
                 .find_projection(ids)
                 .unwrap_or_else(|| self.subs.new_var())),
+
             Type::Alias(ref alias) => self.find(span, &alias.name),
         }
     }
