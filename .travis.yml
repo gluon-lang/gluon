@@ -18,7 +18,7 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2018-12-28
+  - rust: nightly-2019-01-26
   - rust: beta
   - rust: stable
     env: ARCH=i686
@@ -35,7 +35,7 @@ matrix:
       - BENCH_DEFAULT_FEATURES_CHECK=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly-2018-12-28
+  - rust: nightly-2019-01-26
     env: WASM=1
 
     # Only for deployment
