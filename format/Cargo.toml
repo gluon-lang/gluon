@@ -1,6 +1,6 @@
 [package]
 name = "gluon_format"
-version = "0.10.0" # GLUON
+version = "0.10.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -17,13 +17,13 @@ pretty = "0.5"
 itertools = "0.8"
 codespan = "0.2"
 
-gluon_base = { path = "../base", version = "0.10.0" } # GLUON
+gluon_base = { path = "../base", version = "0.10.1" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
-gluon_base = { path = "../base", version = "0.10.0" } # GLUON
+gluon_base = { path = "../base", version = "0.10.1" } # GLUON
 gluon = { path = "..", version = ">=0.9" }
 
 [features]

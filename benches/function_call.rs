@@ -22,7 +22,7 @@ fn factorial(b: &mut Bencher) {
     Compiler::new().load_script(&vm, "factorial", text).unwrap();
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
-        let result = factorial.call(100).unwrap();
+        let result = factorial.call(20).unwrap();
         black_box(result)
     })
 }
@@ -39,7 +39,7 @@ fn factorial_tail_call(b: &mut Bencher) {
     Compiler::new().load_script(&vm, "factorial", text).unwrap();
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
-        let result = factorial.call(100).unwrap();
+        let result = factorial.call(20).unwrap();
         black_box(result)
     })
 }
