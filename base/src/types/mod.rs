@@ -453,7 +453,7 @@ where
     Id: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
-    pub fn typ(&self, interner: &mut impl TypeInterner<Id, T>) -> Cow<T> {
+    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
         match *self._typ {
             Type::Alias(ref alias) => alias.typ(interner),
             _ => unreachable!(),
@@ -567,14 +567,14 @@ where
     T: TypeExt<Id = Id> + Clone,
     Id: Clone + PartialEq,
 {
-    pub fn typ(&self, interner: &mut impl TypeInterner<Id, T>) -> Cow<T> {
+    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
         match self.typ_(interner, &self.typ) {
             Some(typ) => Cow::Owned(typ),
             None => Cow::Borrowed(&self.typ),
         }
     }
 
-    fn typ_(&self, interner: &mut impl TypeInterner<Id, T>, typ: &T) -> Option<T> {
+    fn typ_(&self, interner: &mut impl TypeContext<Id, T>, typ: &T) -> Option<T> {
         if !typ.flags().intersects(Flags::HAS_IDENTS) {
             return None;
         }
@@ -1412,7 +1412,7 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
 
     fn replace_generics(
         &self,
-        interner: &mut impl TypeInterner<Self::Id, Self>,
+        interner: &mut impl TypeContext<Self::Id, Self>,
         named_variables: &mut FnvMap<Self::Id, Self>,
     ) -> Option<Self>
     where
@@ -1480,7 +1480,7 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         &self,
         params: &[Generic<Self::Id>],
         args: &[Self],
-        interner: &mut impl TypeInterner<Self::Id, Self>,
+        interner: &mut impl TypeContext<Self::Id, Self>,
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
@@ -2870,7 +2870,7 @@ pub struct InternerVisitor<'i, F, T> {
     visitor: F,
 }
 
-pub trait TypeInterner<Id, T> {
+pub trait TypeContext<Id, T> {
     fn intern(&mut self, typ: Type<Id, T>) -> T;
 
     fn hole(&mut self) -> T {
@@ -3135,28 +3135,28 @@ pub trait TypeInterner<Id, T> {
     }
 }
 
-pub trait Substitution<Id, T>: TypeInterner<Id, T> {
+pub trait Substitution<Id, T>: TypeContext<Id, T> {
     fn new_var(&mut self) -> T;
     fn new_skolem(&mut self, name: Id, kind: ArcKind) -> T;
 }
 
-impl<'b, Id, T, V> TypeInterner<Id, T> for &'b Rc<V>
+impl<'b, Id, T, V> TypeContext<Id, T> for &'b Rc<V>
 where
-    for<'a> &'a V: TypeInterner<Id, T>,
+    for<'a> &'a V: TypeContext<Id, T>,
 {
     forward_type_interner_methods!(Id, T, self_, &***self_);
 }
 
-impl<Id, T, V> TypeInterner<Id, T> for Rc<V>
+impl<Id, T, V> TypeContext<Id, T> for Rc<V>
 where
-    for<'a> &'a V: TypeInterner<Id, T>,
+    for<'a> &'a V: TypeContext<Id, T>,
 {
     forward_type_interner_methods!(Id, T, self_, &**self_);
 }
 
-impl<'a, Id, T, V> TypeInterner<Id, T> for &'a RefCell<V>
+impl<'a, Id, T, V> TypeContext<Id, T> for &'a RefCell<V>
 where
-    V: TypeInterner<Id, T>,
+    V: TypeContext<Id, T>,
 {
     forward_type_interner_methods!(Id, T, self_, self_.borrow_mut());
 }
@@ -3166,7 +3166,7 @@ pub type SharedInterner<Id, T> = TypeCache<Id, T>;
 #[derive(Default, Clone)]
 pub struct NullInterner;
 
-impl<Id, T> TypeInterner<Id, T> for NullInterner
+impl<Id, T> TypeContext<Id, T> for NullInterner
 where
     T: From<Type<Id, T>>,
 {
@@ -3185,7 +3185,7 @@ macro_rules! forward_to_cache {
     }
 }
 
-impl<Id, T> TypeInterner<Id, T> for TypeCache<Id, T>
+impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
     T: From<Type<Id, T>> + Clone,
 {
@@ -3199,7 +3199,7 @@ where
     }
 }
 
-impl<'a, Id, T> TypeInterner<Id, T> for &'a TypeCache<Id, T>
+impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
     T: From<Type<Id, T>> + Clone,
 {
@@ -3257,12 +3257,12 @@ where
     }
 }
 
-pub trait TypeInternerAlloc: Sized {
+pub trait TypeContextAlloc: Sized {
     type Id;
     fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
 }
 
-impl TypeInternerAlloc for ArcType {
+impl TypeContextAlloc for ArcType {
     type Id = Symbol;
     fn alloc(into: &mut Self, typ: Type<Symbol, Self>) {
         match Arc::get_mut(&mut into.typ) {
@@ -3323,9 +3323,9 @@ macro_rules! forward_to_intern_cache {
     }
 }
 
-impl<Id, T> TypeInterner<Id, T> for Interner<Id, T>
+impl<Id, T> TypeContext<Id, T> for Interner<Id, T>
 where
-    T: TypeInternerAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
+    T: TypeContextAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
@@ -3352,7 +3352,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
     where
         F: FnMut(&mut V, &T) -> Option<T>,
         T: TypeExt<Id = I>,
-        V: TypeInterner<I, T>,
+        V: TypeContext<I, T>,
     {
         InternerVisitor { interner, visitor }
     }
@@ -3364,7 +3364,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
     where
         F: FnMut(&mut V, &T) -> Option<T>,
         T: TypeExt<Id = I>,
-        V: TypeInterner<I, T>,
+        V: TypeContext<I, T>,
     {
         InternerVisitor {
             interner,
@@ -3377,7 +3377,7 @@ impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, F, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
     T: TypeExt<Id = I>,
-    V: TypeInterner<I, T>,
+    V: TypeContext<I, T>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -3398,7 +3398,7 @@ impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, ControlVisitation
 where
     F: FnMut(&mut V, &T) -> Option<T>,
     T: TypeExt<Id = I>,
-    V: TypeInterner<I, T>,
+    V: TypeContext<I, T>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -3636,7 +3636,7 @@ where
     }
 }
 
-pub fn translate_type<Id, T, U>(interner: &mut impl TypeInterner<Id, U>, arc_type: &T) -> U
+pub fn translate_type<Id, T, U>(interner: &mut impl TypeContext<Id, U>, arc_type: &T) -> U
 where
     T: Deref<Target = Type<Id, T>>,
     U: Clone,
@@ -3657,7 +3657,7 @@ where
     U: Clone,
     Id: Clone,
     F: FnMut(&mut I, &T) -> U,
-    I: TypeInterner<Id, U>,
+    I: TypeContext<Id, U>,
 {
     macro_rules! intern {
         ($e: expr) => {{

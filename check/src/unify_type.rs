@@ -10,7 +10,7 @@ use crate::base::{
     symbol::{Symbol, SymbolRef},
     types::{
         self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeEnv,
-        TypeExt, TypeFormatter, TypeInterner, TypeVariable,
+        TypeExt, TypeFormatter, TypeContext, TypeVariable,
     },
 };
 

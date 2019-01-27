@@ -3,7 +3,7 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeExt, TypeInterner},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeExt, TypeContext},
 };
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
@@ -40,7 +40,7 @@ impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b> {
     }
 }
 
-impl<'a, 'b> TypeInterner<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
+impl<'a, 'b> TypeContext<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
     fn intern(&mut self, typ: Type<Symbol, RcType>) -> RcType {
         (&self.tc.subs).intern(typ)
     }
@@ -306,7 +306,7 @@ impl TypeVariableGenerator {
     }
 }
 
-fn unroll_typ(interner: &mut impl TypeInterner<Symbol, RcType>, typ: &RcType) -> Option<RcType> {
+fn unroll_typ(interner: &mut impl TypeContext<Symbol, RcType>, typ: &RcType) -> Option<RcType> {
     let mut args = AppVec::new();
     let mut current = match **typ {
         Type::App(ref l, ref rest) => {
@@ -340,7 +340,7 @@ fn unroll_typ(interner: &mut impl TypeInterner<Symbol, RcType>, typ: &RcType) ->
 }
 
 fn unroll_record(
-    interner: &mut impl TypeInterner<Symbol, RcType>,
+    interner: &mut impl TypeContext<Symbol, RcType>,
     typ: &Type<Symbol, RcType>,
 ) -> Option<RcType> {
     let mut new_types = Vec::new();

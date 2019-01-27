@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::symbol::Symbol;
-use crate::types::{AliasRef, Type, TypeEnv, TypeExt, TypeInterner};
+use crate::types::{AliasRef, Type, TypeContext, TypeEnv, TypeExt};
 
 quick_error! {
     #[derive(Debug, PartialEq)]
@@ -42,7 +42,7 @@ impl AliasRemover {
     pub fn canonical_alias<'t, F, T>(
         &mut self,
         env: &TypeEnv<Type = T>,
-        interner: &mut impl TypeInterner<Symbol, T>,
+        interner: &mut impl TypeContext<Symbol, T>,
         typ: &'t T,
         mut canonical: F,
     ) -> Result<Cow<'t, T>, Error>
@@ -80,7 +80,7 @@ impl AliasRemover {
     pub fn remove_aliases<T>(
         &mut self,
         env: &TypeEnv<Type = T>,
-        interner: &mut impl TypeInterner<Symbol, T>,
+        interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
     ) -> Result<T, Error>
     where
@@ -97,7 +97,7 @@ impl AliasRemover {
     pub fn remove_alias<T>(
         &mut self,
         env: &TypeEnv<Type = T>,
-        interner: &mut impl TypeInterner<Symbol, T>,
+        interner: &mut impl TypeContext<Symbol, T>,
         typ: &T,
     ) -> Result<Option<T>, Error>
     where
@@ -125,7 +125,7 @@ impl AliasRemover {
 /// Removes type aliases from `typ` until it is an actual type
 pub fn remove_aliases<T>(
     env: &TypeEnv<Type = T>,
-    interner: &mut impl TypeInterner<Symbol, T>,
+    interner: &mut impl TypeContext<Symbol, T>,
     mut typ: T,
 ) -> T
 where
@@ -140,7 +140,7 @@ where
 pub fn remove_aliases_cow<'t, T>(
     env: &TypeEnv<Type = T>,
 
-    interner: &mut impl TypeInterner<Symbol, T>,
+    interner: &mut impl TypeContext<Symbol, T>,
     typ: &'t T,
 ) -> Cow<'t, T>
 where
@@ -156,7 +156,7 @@ where
 /// type that directly contains that alias
 pub fn canonical_alias<'t, F, T>(
     env: &TypeEnv<Type = T>,
-    interner: &mut impl TypeInterner<Symbol, T>,
+    interner: &mut impl TypeContext<Symbol, T>,
     typ: &'t T,
     mut canonical: F,
 ) -> Cow<'t, T>
@@ -186,7 +186,7 @@ where
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias<T>(
     env: &TypeEnv<Type = T>,
-    interner: &mut impl TypeInterner<Symbol, T>,
+    interner: &mut impl TypeContext<Symbol, T>,
     typ: &T,
 ) -> Result<Option<T>, Error>
 where

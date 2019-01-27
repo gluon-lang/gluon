@@ -24,7 +24,7 @@ use crate::base::{
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Generic, PrimitiveEnv, Type,
-        TypeCache, TypeEnv, TypeExt, TypeInterner,
+        TypeCache, TypeEnv, TypeExt, TypeContext,
     },
 };
 
@@ -130,7 +130,7 @@ pub struct Typecheck<'a> {
     unbound_variables: ScopedMap<Symbol, ArcKind>,
 }
 
-impl<'a> TypeInterner<Symbol, RcType> for Typecheck<'a> {
+impl<'a> TypeContext<Symbol, RcType> for Typecheck<'a> {
     gluon_base::forward_type_interner_methods!(Symbol, RcType, self_, &self_.subs);
 }
 
@@ -2777,7 +2777,7 @@ impl<'a> Typecheck<'a> {
 pub fn translate_projected_type(
     env: &TypeEnv<Type = RcType>,
     symbols: &mut IdentEnv<Ident = Symbol>,
-    interner: &mut impl TypeInterner<Symbol, RcType>,
+    interner: &mut impl TypeContext<Symbol, RcType>,
     ids: &[Symbol],
 ) -> TcResult<RcType> {
     let mut lookup_type: Option<RcType> = None;
