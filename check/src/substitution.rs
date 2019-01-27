@@ -6,7 +6,7 @@ use crate::base::{
     fixed::{FixedVec, FixedVecMap},
     kind::ArcKind,
     symbol::Symbol,
-    types::{self, ArcType, InternerVisitor, Skolem, Type, TypeContext, Walker},
+    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, Walker},
 };
 use crate::typ::RcType;
 
@@ -469,7 +469,7 @@ impl Substitution<RcType> {
     pub fn zonk(&self, typ: &RcType) -> RcType {
         types::walk_move_type(
             typ.clone(),
-            &mut InternerVisitor::new(&mut &*self, |_, typ: &RcType| match typ.get_var() {
+            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_var() {
                 Some(var) => match self.find_type_for_var(var.get_id()) {
                     Some(t) => Some(self.zonk(t)),
                     None => None,
