@@ -159,17 +159,16 @@ fn write_response(
                 return Ok(Async::NotReady);
             }
             Ok(Async::Ready(_)) => (),
-            Err(_) => {
-                info!("Could not send http response");
-                return Ok(Async::Ready(IO::Value(())));
+            Err(err) => {
+                info!("Could not send http response {}", err);
+                return Ok(IO::Exception(err.to_string()).into());
             }
         }
         match sender.send_data(chunk) {
             Ok(()) => Ok(Async::Ready(IO::Value(()))),
             Err(chunk) => {
-                info!("Could not send http response");
                 unsent_chunk = Some(chunk);
-                Ok(Async::NotReady)
+                Ok(IO::Exception("Could not send http response".into()).into())
             }
         }
     })
