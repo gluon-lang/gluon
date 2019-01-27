@@ -1224,22 +1224,7 @@ where
     }
 }
 
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(
-    feature = "serde_derive",
-    serde(deserialize_state = "Seed<Id, ArcType<Id>>")
-)]
-#[cfg_attr(
-    feature = "serde_derive",
-    serde(bound(deserialize = "
-           Id: DeserializeState<'de, Seed<Id, ArcType<Id>>>
-                + Clone
-                + ::std::any::Any
-                + DeserializeState<'de, Seed<Id, ArcType<Id>>>"))
-)]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 struct ArcTypeInner<Id = Symbol> {
-    #[serde(state)]
     typ: Type<Id, ArcType<Id>>,
     flags: Flags,
 }

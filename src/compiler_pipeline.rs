@@ -612,10 +612,7 @@ where
 
             let translator = core::Translator::new(&*env);
             let expr = {
-                let expr = translator
-                    .allocator
-                    .arena
-                    .alloc(translator.translate(self.expr.borrow()));
+                let expr = translator.translate_expr(self.expr.borrow());
 
                 debug!("Translation returned: {}", expr);
 

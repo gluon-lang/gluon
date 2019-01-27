@@ -38,11 +38,15 @@ pub mod optimize;
 #[cfg(feature = "test")]
 mod pretty;
 
-use std::{borrow::Cow, collections::HashMap, fmt, iter::once, mem};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem};
 
 use itertools::Itertools;
 
-use self::{smallvec::SmallVec, typed_arena::Arena};
+use self::{
+    optimize::{walk_expr_alloc, SameLifetime, Visitor},
+    smallvec::SmallVec,
+    typed_arena::Arena,
+};
 
 use crate::base::{
     ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent},
@@ -256,7 +260,9 @@ pub fn translate(env: &PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>)
     unsafe {
         let translator = Translator::new(env);
         let core_expr = {
-            let core_expr = (*(&translator as *const Translator)).translate(expr);
+            let core_expr = (*(&translator as *const Translator))
+                .translate(expr)
+                .clone();
             mem::transmute::<Expr, Expr<'static>>(core_expr)
         };
         CoreExpr::new(
@@ -268,6 +274,13 @@ pub fn translate(env: &PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>)
 
 pub struct Translator<'a, 'e> {
     pub allocator: Allocator<'a>,
+
+    // Since we merge all patterns that match on the same thing (variants with the same tag,
+    // any record or tuple ...), tuple patterns
+    // If a field has already been seen in an earlier pattern we must make sure
+    // that the variable bound in this pattern/field gets replaced with the
+    // symbol from the earlier pattern
+    ident_replacements: RefCell<FnvMap<Symbol, Symbol>>,
     env: &'e PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
 }
@@ -276,16 +289,80 @@ impl<'a, 'e> Translator<'a, 'e> {
     pub fn new(env: &'e PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
         Translator {
             allocator: Allocator::new(),
-            env: env,
+            ident_replacements: Default::default(),
+            env,
             dummy_symbol: TypedIdent::new(Symbol::from("")),
         }
     }
 
-    pub fn translate_alloc(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
+    pub fn translate_expr(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
+        struct FixupMatches<'a, 'b> {
+            allocator: &'a Allocator<'a>,
+            ident_replacments: &'b mut FnvMap<Symbol, Symbol>,
+        }
+
+        impl<'a, 'b> Visitor<'a, 'a> for FixupMatches<'a, 'b> {
+            type Producer = SameLifetime<'a>;
+
+            fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
+                match *expr {
+                    Expr::Ident(ref id, span) => {
+                        return self.ident_replacments.get(&id.name).map(|new_name| {
+                            &*self.allocator.arena.alloc(Expr::Ident(
+                                TypedIdent {
+                                    name: new_name.clone(),
+                                    typ: id.typ.clone(),
+                                },
+                                span,
+                            ))
+                        });
+                    }
+
+                    Expr::Match(body, alts) if alts.len() == 1 => {
+                        // match x with
+                        // | y -> EXPR
+                        // // ==>
+                        // EXPR // with `y`s replaced by `x`
+                        match (&alts[0].pattern, body) {
+                            (Pattern::Ident(id), Expr::Ident(expr_id, _))
+                                if !expr_id.name.is_global() =>
+                            {
+                                self.ident_replacments
+                                    .insert(id.name.clone(), expr_id.name.clone());
+
+                                let expr = alts[0].expr;
+                                return Some(self.visit_expr(expr).unwrap_or(expr));
+                            }
+                            _ => (),
+                        }
+                    }
+
+                    _ => (),
+                }
+
+                walk_expr_alloc(self, expr)
+            }
+
+            fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+                Some(self.allocator)
+            }
+        }
+
+        let expr = self.translate_alloc(expr);
+
+        FixupMatches {
+            allocator: &self.allocator,
+            ident_replacments: &mut self.ident_replacements.borrow_mut(),
+        }
+        .visit_expr(expr)
+        .unwrap_or(expr)
+    }
+
+    fn translate_alloc(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
         self.allocator.arena.alloc(self.translate(expr))
     }
 
-    pub fn translate(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
+    fn translate(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
         let mut current = expr;
         let mut lets = Vec::new();
         while let ast::Expr::LetBindings(ref binds, ref tail) = current.value {
@@ -360,7 +437,20 @@ impl<'a, 'e> Translator<'a, 'e> {
                 if is_constructor(&id.name) {
                     self.new_data_constructor(id.typ.clone(), id, SmallVec::new(), expr.span)
                 } else {
-                    Expr::Ident(id.clone(), expr.span)
+                    let name = self
+                        .ident_replacements
+                        .borrow()
+                        .get(&id.name)
+                        .unwrap_or(&id.name)
+                        .clone();
+
+                    Expr::Ident(
+                        TypedIdent {
+                            name,
+                            typ: id.typ.clone(),
+                        },
+                        expr.span,
+                    )
                 }
             }
 
@@ -898,51 +988,6 @@ enum CType {
     Literal,
 }
 
-use self::optimize::*;
-struct ReplaceVariables<'a, 'b> {
-    replacements: &'b FnvMap<Symbol, Symbol>,
-    allocator: &'a Allocator<'a>,
-}
-
-impl<'a, 'b> Visitor<'a, 'a> for ReplaceVariables<'a, 'b> {
-    type Producer = SameLifetime<'a>;
-
-    fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
-        match *expr {
-            Expr::Ident(ref id, span) => self.replacements.get(&id.name).map(|new_name| {
-                &*self.allocator.arena.alloc(Expr::Ident(
-                    TypedIdent {
-                        name: new_name.clone(),
-                        typ: id.typ.clone(),
-                    },
-                    span,
-                ))
-            }),
-            _ => walk_expr_alloc(self, expr),
-        }
-    }
-    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
-        Some(self.allocator)
-    }
-}
-
-fn replace_variables<'a, 'b>(
-    allocator: &'a Allocator<'a>,
-    replacements: &'b FnvMap<Symbol, Symbol>,
-    expr: &'a Expr<'a>,
-) -> &'a Expr<'a> {
-    if replacements.is_empty() {
-        expr
-    } else {
-        ReplaceVariables {
-            replacements,
-            allocator,
-        }
-        .visit_expr(expr)
-        .unwrap_or(expr)
-    }
-}
-
 /// `PatternTranslator` translated nested (AST) patterns into non-nested (core) patterns.
 ///
 /// It does this this by looking at each nested pattern as part of an `Equation` to be solved.
@@ -994,7 +1039,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .map(|equation| *equation.patterns.first().unwrap())
             };
 
-            let (core_pattern, replacements) = self.pattern_identifiers(first_iter());
+            let core_pattern = self.pattern_identifiers(first_iter());
 
             // Gather the inner patterns so we can prepend them to equations
             let temp = first_iter()
@@ -1074,7 +1119,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             let new_variables = self.insert_new_variables(&core_pattern, variables);
 
             let expr = self.translate(default, &new_variables, &new_equations);
-            let expr = replace_variables(&self.0.allocator, &replacements, expr);
 
             Alternative {
                 pattern: core_pattern,
@@ -1133,7 +1177,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             .into_iter()
             .map(|key| {
                 let equations = &groups[key];
-                let (pattern, replacements) = self.pattern_identifiers(
+                let pattern = self.pattern_identifiers(
                     equations
                         .iter()
                         .map(|equation| *equation.patterns.first().unwrap()),
@@ -1160,7 +1204,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 let new_variables = self.insert_new_variables(&pattern, variables);
 
                 let expr = self.translate(default, &new_variables, &new_equations);
-                let expr = replace_variables(&self.0.allocator, &replacements, expr);
 
                 Alternative {
                     pattern: pattern,
@@ -1170,26 +1213,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             .chain(if complete {
                 None
             } else {
-                Some(match *default {
-                    // HACK We remove a redundant nested match by identifying that it
-                    // matches on the same thing as the curret match
-                    //
-                    // match p1 with
-                    // | ...
-                    // | _ ->
-                    //     match p1 with
-                    //     | x -> <expr>
-                    //
-                    // to
-                    //
-                    // match p1 with
-                    // | ...
-                    // | x -> <expr>
-                    Expr::Match(e, alts) if e == variables[0] && alts.len() == 1 => alts[0].clone(),
-                    _ => Alternative {
-                        pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                        expr: default,
-                    },
+                Some(Alternative {
+                    pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
+                    expr: default,
                 })
             })
             .collect::<Vec<_>>();
@@ -1220,34 +1246,16 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 })
                 .collect::<Vec<_>>(),
         );
-        let (pattern, replacements) = self.pattern_identifiers(
+        let pattern = self.pattern_identifiers(
             equations
                 .iter()
                 .map(|equation| *equation.patterns.first().unwrap()),
         );
-        let expr = replace_variables(&self.0.allocator, &replacements, expr);
 
         let alt = Alternative {
             pattern: pattern,
             expr: expr,
         };
-
-        // match x with
-        // | y -> EXPR
-        // // ==>
-        // EXPR // with `y`s replaced by `x`
-        match (&alt.pattern, variables[0]) {
-            (&Pattern::Ident(ref id), &Expr::Ident(ref expr_id, _))
-                if !expr_id.name.is_global() =>
-            {
-                return replace_variables(
-                    &self.0.allocator,
-                    &collect![(id.name.clone(), expr_id.name.clone())],
-                    expr,
-                );
-            }
-            _ => (),
-        }
 
         let expr = Expr::Match(
             variables[0],
@@ -1484,7 +1492,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     // Gather all the identifiers of top level pattern of each of the `patterns` and create a core
     // pattern.
     // Nested patterns are ignored here.
-    fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> (Pattern, FnvMap<Symbol, Symbol>)
+    fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> Pattern
     where
         I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
     {
@@ -1494,17 +1502,12 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     fn pattern_identifiers_<'b, 'p: 'b>(
         &self,
         patterns: &mut Iterator<Item = &'b SpannedPattern<Symbol>>,
-    ) -> (Pattern, FnvMap<Symbol, Symbol>) {
+    ) -> Pattern {
         let mut identifiers: Vec<TypedIdent<Symbol>> = Vec::new();
         let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();
         let mut core_pattern = None;
 
-        // Since we merge all patterns that match on the same thing (variants with the same tag,
-        // any record or tuple ...), tuple patterns
-        // If a field has already been seen in an earlier pattern we must make sure
-        // that the variable bound in this pattern/field gets replaced with the
-        // symbol from the earlier pattern
-        let mut replacements = HashMap::default();
+        let mut replacements = self.0.ident_replacements.borrow_mut();
 
         fn add_duplicate_ident(
             replacements: &mut FnvMap<Symbol, Symbol>,
@@ -1612,7 +1615,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Literal(_) | ast::Pattern::Error => (),
             }
         }
-        let pattern = match core_pattern {
+
+        match core_pattern {
             Some(mut p) => {
                 if let Pattern::Constructor(_, ref mut ids) = p {
                     *ids = identifiers
@@ -1620,8 +1624,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 p
             }
             None => Pattern::Record(record_fields),
-        };
-        (pattern, replacements)
+        }
     }
 }
 
@@ -1854,7 +1857,7 @@ mod tests {
         let translator = Translator::new(&*env);
 
         let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate(&expr);
+        let core_expr = translator.translate_expr(&expr);
 
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &translator.allocator, expected_str)

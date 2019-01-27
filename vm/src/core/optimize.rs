@@ -1,10 +1,12 @@
 use std::marker::PhantomData;
 
-use crate::base::ast::TypedIdent;
-use crate::base::merge::{merge_fn, merge_iter};
-use crate::base::pos;
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, Field, TypeExt};
+use crate::base::{
+    ast::TypedIdent,
+    merge::{merge_fn, merge_iter},
+    pos,
+    symbol::Symbol,
+    types::{ArcType, Field, TypeExt},
+};
 
 use crate::core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 
