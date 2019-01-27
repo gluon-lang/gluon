@@ -40,7 +40,7 @@ pub enum TypeError<I, T> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
-    DuplicateField(String),
+    DuplicateField(I),
     /// Type is not a type which has any fields
     InvalidProjection(T),
     /// Expected to find a record with the following fields

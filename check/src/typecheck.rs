@@ -1018,7 +1018,7 @@ impl<'a> Typecheck<'a> {
                     }
 
                     let alias = self.find_type_info_at(field.name.span, &field.name.value);
-                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, &field.name) {
                         match base_record_types.get(field.name.value.declared_name()) {
                             Some(&i) => base_types[i].typ = alias,
                             None => new_types.push(Field::new(field.name.value.clone(), alias)),
@@ -1080,7 +1080,7 @@ impl<'a> Typecheck<'a> {
                     };
                     self.generalize_type(level, &mut typ, field.name.span);
 
-                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, &field.name) {
                         match base_record_fields.get(field.name.value.declared_name()) {
                             Some(&i) => base_fields[i].typ = typ,
                             None => new_fields.push(Field::new(field.name.value.clone(), typ)),
@@ -1485,7 +1485,7 @@ impl<'a> Typecheck<'a> {
                         .map(|field| &field.name)
                         .chain(fields.iter().map(|field| &field.name));
                     for field in all_fields {
-                        if self.error_on_duplicated_field(&mut duplicated_fields, field.clone()) {
+                        if self.error_on_duplicated_field(&mut duplicated_fields, &field) {
                             pattern_fields.push(field.value.clone());
                         }
                     }
@@ -2651,19 +2651,19 @@ impl<'a> Typecheck<'a> {
         typ.instantiate_generics(&mut &self.subs, &mut self.named_variables)
     }
 
-    fn error_on_duplicated_field(
+    fn error_on_duplicated_field<'s>(
         &mut self,
-        duplicated_fields: &mut FnvSet<String>,
-        new_name: Spanned<Symbol, BytePos>,
+        duplicated_fields: &mut FnvSet<&'s str>,
+        new_name: &'s Spanned<Symbol, BytePos>,
     ) -> bool {
         let span = new_name.span;
         duplicated_fields
-            .replace(new_name.value.declared_name().to_string())
+            .replace(new_name.value.definition_name())
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,
                     // TODO Help to the other fields location
-                    value: TypeError::DuplicateField(name).into(),
+                    value: TypeError::DuplicateField(self.symbols.symbols().symbol(name)).into(),
                 });
                 false
             })
