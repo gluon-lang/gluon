@@ -703,6 +703,22 @@ string.slice s 1 (string.len s)
 }
 
 #[test]
+fn arithmetic_over_flow_dont_panic() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+let int = import! std.int
+int.max_value * 2
+"#;
+    let mut vm = make_vm();
+    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
+    match result {
+        Err(Error::VM(vm::Error::Message(ref err))) if err.contains("overflow") => (),
+        Err(err) => panic!("Unexpected error `{}`", err),
+        Ok(_) => panic!("Expected an error"),
+    }
+}
+
+#[test]
 fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();

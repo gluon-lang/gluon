@@ -2081,26 +2081,26 @@ impl<'b> ExecuteContext<'b> {
                     let v = self.stack.get_upvar(i).clone();
                     self.stack.push(v);
                 }
-                AddInt => binop_int(self.thread, &mut self.stack, VmInt::add),
-                SubtractInt => binop_int(self.thread, &mut self.stack, VmInt::sub),
-                MultiplyInt => binop_int(self.thread, &mut self.stack, VmInt::mul),
-                DivideInt => binop_int(self.thread, &mut self.stack, VmInt::div),
-                IntLT => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l < r),
-                IntEQ => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l == r),
+                AddInt => binop_int(self.thread, &mut self.stack, VmInt::checked_add)?,
+                SubtractInt => binop_int(self.thread, &mut self.stack, VmInt::checked_sub)?,
+                MultiplyInt => binop_int(self.thread, &mut self.stack, VmInt::checked_mul)?,
+                DivideInt => binop_int(self.thread, &mut self.stack, VmInt::checked_div)?,
+                IntLT => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l < r)?,
+                IntEQ => binop_bool(self.thread, &mut self.stack, |l: VmInt, r| l == r)?,
 
-                AddByte => binop_byte(self.thread, &mut self.stack, u8::add),
-                SubtractByte => binop_byte(self.thread, &mut self.stack, u8::sub),
-                MultiplyByte => binop_byte(self.thread, &mut self.stack, u8::mul),
-                DivideByte => binop_byte(self.thread, &mut self.stack, u8::div),
-                ByteLT => binop_bool(self.thread, &mut self.stack, |l: u8, r| l < r),
-                ByteEQ => binop_bool(self.thread, &mut self.stack, |l: u8, r| l == r),
+                AddByte => binop_byte(self.thread, &mut self.stack, u8::checked_add)?,
+                SubtractByte => binop_byte(self.thread, &mut self.stack, u8::checked_sub)?,
+                MultiplyByte => binop_byte(self.thread, &mut self.stack, u8::checked_mul)?,
+                DivideByte => binop_byte(self.thread, &mut self.stack, u8::checked_div)?,
+                ByteLT => binop_bool(self.thread, &mut self.stack, |l: u8, r| l < r)?,
+                ByteEQ => binop_bool(self.thread, &mut self.stack, |l: u8, r| l == r)?,
 
-                AddFloat => binop_f64(self.thread, &mut self.stack, f64::add),
-                SubtractFloat => binop_f64(self.thread, &mut self.stack, f64::sub),
-                MultiplyFloat => binop_f64(self.thread, &mut self.stack, f64::mul),
-                DivideFloat => binop_f64(self.thread, &mut self.stack, f64::div),
-                FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r),
-                FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r),
+                AddFloat => binop_f64(self.thread, &mut self.stack, f64::add)?,
+                SubtractFloat => binop_f64(self.thread, &mut self.stack, f64::sub)?,
+                MultiplyFloat => binop_f64(self.thread, &mut self.stack, f64::mul)?,
+                DivideFloat => binop_f64(self.thread, &mut self.stack, f64::div)?,
+                FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r)?,
+                FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r)?,
             }
             index += 1;
         }
@@ -2310,47 +2310,75 @@ where
 }
 
 #[inline]
-fn binop_int<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c, ClosureState>, f: F)
+fn binop_int<'b, 'c, F, T>(
+    vm: &'b Thread,
+    stack: &'b mut StackFrame<'c, ClosureState>,
+    f: F,
+) -> Result<()>
 where
-    F: FnOnce(T, T) -> VmInt,
+    F: FnOnce(T, T) -> Option<VmInt>,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| ValueRepr::Int(f(l, r)))
+    binop(vm, stack, |l, r| {
+        Ok(ValueRepr::Int(f(l, r).ok_or_else(|| {
+            Error::Message("Arithmetic overflow".into())
+        })?))
+    })
 }
 
 #[inline]
-fn binop_f64<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c, ClosureState>, f: F)
+fn binop_f64<'b, 'c, F, T>(
+    vm: &'b Thread,
+    stack: &'b mut StackFrame<'c, ClosureState>,
+    f: F,
+) -> Result<()>
 where
     F: FnOnce(T, T) -> f64,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| ValueRepr::Float(f(l, r)))
+    binop(vm, stack, |l, r| Ok(ValueRepr::Float(f(l, r))))
 }
 
 #[inline]
-fn binop_byte<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c, ClosureState>, f: F)
+fn binop_byte<'b, 'c, F, T>(
+    vm: &'b Thread,
+    stack: &'b mut StackFrame<'c, ClosureState>,
+    f: F,
+) -> Result<()>
 where
-    F: FnOnce(T, T) -> u8,
+    F: FnOnce(T, T) -> Option<u8>,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| ValueRepr::Byte(f(l, r)))
+    binop(vm, stack, |l, r| {
+        Ok(ValueRepr::Byte(f(l, r).ok_or_else(|| {
+            Error::Message("Arithmetic overflow".into())
+        })?))
+    })
 }
 
 #[inline]
-fn binop_bool<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c, ClosureState>, f: F)
+fn binop_bool<'b, 'c, F, T>(
+    vm: &'b Thread,
+    stack: &'b mut StackFrame<'c, ClosureState>,
+    f: F,
+) -> Result<()>
 where
     F: FnOnce(T, T) -> bool,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     binop(vm, stack, |l, r| {
-        ValueRepr::Tag(if f(l, r) { 1 } else { 0 })
+        Ok(ValueRepr::Tag(if f(l, r) { 1 } else { 0 }))
     })
 }
 
 #[inline]
-fn binop<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c, ClosureState>, f: F)
+fn binop<'b, 'c, F, T>(
+    vm: &'b Thread,
+    stack: &'b mut StackFrame<'c, ClosureState>,
+    f: F,
+) -> Result<()>
 where
-    F: FnOnce(T, T) -> ValueRepr,
+    F: FnOnce(T, T) -> Result<ValueRepr>,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     let (l, r) = {
@@ -2358,9 +2386,10 @@ where
         let l = stack.get_variant(stack.len() - 2).unwrap();
         (T::from_value(vm, l), T::from_value(vm, r))
     };
-    let result = f(l, r);
+    let result = f(l, r)?;
     stack.pop_many(2);
     stack.stack.push(result);
+    Ok(())
 }
 
 fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Instruction) {
