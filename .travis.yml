@@ -60,6 +60,8 @@ before_install:
   - set -e
   - rustup self update
 install:
+  - export PATH="$HOME/bin:$PATH"
+  - mkdir -p $HOME/bin
   - ./scripts/install_sccache.sh
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
