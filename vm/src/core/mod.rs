@@ -928,7 +928,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<Self::Ident>, String> {
+    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<Symbol>, String> {
         match *self {
             Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
             Expr::Const(ref literal, _) => literal.try_type_of(env),
