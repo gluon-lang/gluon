@@ -462,8 +462,17 @@ AtomicPattern: Pattern<Id> = {
         },
 
     "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
-        let mut types = Vec::new();
-        let mut values = Vec::new();
+        let mut types_len = 0;
+        let mut values_len = 0;
+        for field in &fields {
+            match field {
+                FieldPattern::Type(..) => types_len += 1,
+                FieldPattern::Value(..) => values_len += 1,
+            }
+        }
+
+        let mut types = Vec::with_capacity(types_len);
+        let mut values = Vec::with_capacity(values_len);
 
         for field in fields {
             match field {
@@ -668,8 +677,17 @@ AtomicExpr: Expr<Id> = {
         }),
 
     "{" <fields: Comma<FieldExpr>> <base: RecordExprBase> "}" => {
-        let mut types = Vec::new();
-        let mut values = Vec::new();
+        let mut types_len = 0;
+        let mut values_len = 0;
+        for field in &fields {
+            match **field {
+                FieldExpr::Type(..) => types_len += 1,
+                FieldExpr::Value(..) => values_len += 1,
+            }
+        }
+
+        let mut types = Vec::with_capacity(types_len);
+        let mut values = Vec::with_capacity(values_len);
 
         for field in fields {
             match *field {
