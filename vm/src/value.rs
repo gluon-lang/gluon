@@ -12,7 +12,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 use crate::base::fnv::FnvMap;
 use crate::base::symbol::Symbol;
 use crate::base::types::pretty_print::ident as pretty_ident;
-use crate::base::types::{ArcType, Type, TypeEnv};
+use crate::base::types::{ArcType, Type, TypeEnv, TypeExt};
 use crate::base::DebugLevel;
 use crate::types::*;
 
@@ -560,7 +560,7 @@ use self::Prec::*;
 
 pub struct ValuePrinter<'a> {
     pub typ: &'a ArcType,
-    pub env: &'a TypeEnv,
+    pub env: &'a TypeEnv<Type = ArcType>,
     pub value: Variants<'a>,
     pub max_level: i32,
     pub width: usize,
@@ -569,7 +569,7 @@ pub struct ValuePrinter<'a> {
 
 impl<'t> ValuePrinter<'t> {
     pub fn new(
-        env: &'t TypeEnv,
+        env: &'t TypeEnv<Type = ArcType>,
         typ: &'t ArcType,
         value: Variants<'t>,
         debug_level: &'t DebugLevel,
@@ -599,7 +599,7 @@ const INDENT: usize = 4;
 
 struct InternalPrinter<'a, 't> {
     typ: &'t ArcType,
-    env: &'t TypeEnv,
+    env: &'t TypeEnv<Type = ArcType>,
     arena: &'a Arena<'a>,
     prec: Prec,
     level: i32,
@@ -715,10 +715,12 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             }
         }
 
-        use crate::base::resolve::remove_aliases_cow;
-        use crate::base::types::arg_iter;
+        use crate::base::{
+            resolve::remove_aliases_cow,
+            types::{arg_iter, NullInterner},
+        };
 
-        let typ = remove_aliases_cow(self.env, self.typ);
+        let typ = remove_aliases_cow(self.env, &mut NullInterner, self.typ);
         let arena = self.arena;
         match **typ {
             Type::Record(ref row) => {
@@ -1620,6 +1622,8 @@ mod tests {
     }
 
     impl TypeEnv for MockEnv {
+        type Type = ArcType;
+
         fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
             None
         }

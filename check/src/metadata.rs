@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::base::ast::Visitor;
 use crate::base::ast::{
@@ -7,32 +7,135 @@ use crate::base::ast::{
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::{Metadata, MetadataEnv};
 use crate::base::symbol::{Name, Symbol};
-use crate::base::types::row_iter;
+use crate::base::types::{row_iter, TypeExt};
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
-    stack: FnvMap<Symbol, Metadata>,
+    stack: FnvMap<Symbol, Arc<Metadata>>,
+}
+
+trait ArcMetadata: Into<Arc<Metadata>> {
+    fn into_owned(self) -> Metadata;
+    fn definition(&self) -> Option<&Symbol>;
+    fn has_data(&self) -> bool;
+}
+
+impl ArcMetadata for Arc<Metadata> {
+    fn into_owned(self) -> Metadata {
+        Arc::try_unwrap(self).unwrap_or_else(|arc| (*arc).clone())
+    }
+    fn definition(&self) -> Option<&Symbol> {
+        self.definition.as_ref()
+    }
+    fn has_data(&self) -> bool {
+        Metadata::has_data(self)
+    }
+}
+
+impl ArcMetadata for Metadata {
+    fn into_owned(self) -> Metadata {
+        self
+    }
+    fn definition(&self) -> Option<&Symbol> {
+        self.definition.as_ref()
+    }
+    fn has_data(&self) -> bool {
+        Metadata::has_data(self)
+    }
+}
+
+impl ArcMetadata for MaybeMetadata {
+    fn into_owned(self) -> Metadata {
+        match self {
+            MaybeMetadata::Empty => Metadata::default(),
+            MaybeMetadata::Data(d) => d.into_owned(),
+        }
+    }
+    fn definition(&self) -> Option<&Symbol> {
+        match self {
+            MaybeMetadata::Empty => None,
+            MaybeMetadata::Data(d) => d.definition(),
+        }
+    }
+    fn has_data(&self) -> bool {
+        match self {
+            MaybeMetadata::Empty => false,
+            MaybeMetadata::Data(d) => d.has_data(),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum MaybeMetadata {
+    Empty,
+    Data(Arc<Metadata>),
+}
+
+impl Default for MaybeMetadata {
+    fn default() -> Self {
+        MaybeMetadata::Empty
+    }
+}
+
+impl From<Option<Arc<Metadata>>> for MaybeMetadata {
+    fn from(m: Option<Arc<Metadata>>) -> Self {
+        match m {
+            None => Default::default(),
+            Some(d) => MaybeMetadata::Data(d),
+        }
+    }
+}
+
+impl From<MaybeMetadata> for Arc<Metadata> {
+    fn from(m: MaybeMetadata) -> Self {
+        match m {
+            MaybeMetadata::Empty => Default::default(),
+            MaybeMetadata::Data(d) => d.clone(),
+        }
+    }
+}
+
+impl MaybeMetadata {
+    fn merge(metadata: &Metadata, other: &MaybeMetadata) -> MaybeMetadata {
+        if metadata.has_data() {
+            match other {
+                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.clone())),
+                MaybeMetadata::Data(other) => {
+                    MaybeMetadata::Data(Arc::new(metadata.clone().merge_ref(other)))
+                }
+            }
+        } else {
+            other.clone()
+        }
+    }
+
+    fn get_module(&self, key: &str) -> Option<&Arc<Metadata>> {
+        match self {
+            MaybeMetadata::Empty => None,
+            MaybeMetadata::Data(d) => d.module.get(key),
+        }
+    }
 }
 
 /// Queries `expr` for the metadata which it contains.
 pub fn metadata(
     env: &MetadataEnv,
     expr: &SpannedExpr<Symbol>,
-) -> (Metadata, FnvMap<Symbol, Metadata>) {
+) -> (Arc<Metadata>, FnvMap<Symbol, Arc<Metadata>>) {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
 
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
+        fn new_binding(&mut self, metadata: MaybeMetadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = bind.metadata.clone().merge(metadata);
+                    let metadata = MaybeMetadata::merge(&bind.metadata, &metadata);
                     self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let mut metadata = bind.metadata.clone().merge(metadata);
+                    let mut metadata = MaybeMetadata::merge(&bind.metadata, &metadata).into_owned();
                     metadata.args = bind
                         .args
                         .iter()
@@ -50,11 +153,11 @@ pub fn metadata(
                         .alias_ident()
                         .and_then(|id| self.metadata(id))
                     {
-                        let mut type_metadata = type_metadata.clone();
                         // We want the first definition of this value and not the definition of the
                         // type
-                        type_metadata.definition = None;
-                        metadata.merge_with(type_metadata);
+                        let metadata_definition = metadata.definition.take();
+                        metadata.merge_with_ref(&type_metadata);
+                        metadata.definition = metadata_definition;
                     }
 
                     self.stack_var(id.name.clone(), metadata);
@@ -67,7 +170,7 @@ pub fn metadata(
             }
         }
 
-        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &SpannedPattern<Symbol>) {
+        fn new_pattern(&mut self, metadata: MaybeMetadata, pattern: &SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record {
                     ref fields,
@@ -80,19 +183,22 @@ pub fn metadata(
                     }
 
                     for field in fields {
-                        if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
+                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
                             let id = match field.value {
                                 Some(ref pat) => match pat.value {
                                     Pattern::Ident(ref id) => &id.name,
-                                    _ => return self.new_pattern(m, pat),
+                                    _ => {
+                                        return self
+                                            .new_pattern(MaybeMetadata::Data(m.clone()), pat);
+                                    }
                                 },
                                 None => &field.name.value,
                             };
-                            self.stack_var(id.clone(), m);
+                            self.stack_var(id.clone(), m.clone());
                         }
                     }
                     for field in types {
-                        if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
+                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
                             // FIXME Shouldn't need to insert this metadata twice
                             if let Some(type_field) = typ
                                 .type_field_iter()
@@ -106,7 +212,7 @@ pub fn metadata(
                                 .as_ref()
                                 .unwrap_or_else(|| &field.name.value)
                                 .clone();
-                            self.stack_var(id, m);
+                            self.stack_var(id, m.clone());
                         }
                     }
                 }
@@ -122,9 +228,9 @@ pub fn metadata(
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, mut metadata: Metadata) {
-            if metadata
-                .definition
+        fn stack_var(&mut self, id: Symbol, metadata: impl ArcMetadata) {
+            let arc_metadata = if metadata
+                .definition()
                 .as_ref()
                 .map(|definition| {
                     id.declared_name().starts_with(char::is_lowercase)
@@ -132,14 +238,18 @@ pub fn metadata(
                 })
                 .unwrap_or(true)
             {
+                let mut metadata = metadata.into_owned();
                 metadata.definition = Some(id.clone());
-            }
+                metadata.into()
+            } else {
+                metadata.into()
+            };
 
             debug!("Insert {}", id,);
-            self.env.stack.insert(id, metadata);
+            self.env.stack.insert(id, arc_metadata);
         }
 
-        fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
+        fn metadata(&self, id: &Symbol) -> Option<&Arc<Metadata>> {
             debug!("Lookup {}", id);
             self.env
                 .stack
@@ -147,9 +257,9 @@ pub fn metadata(
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
-        fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> Metadata {
+        fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> MaybeMetadata {
             for arg in &bind.args {
-                if let Some(mut type_metadata) = arg
+                if let Some(type_metadata) = arg
                     .name
                     .value
                     .typ
@@ -157,6 +267,8 @@ pub fn metadata(
                     .and_then(|id| self.metadata(id))
                     .cloned()
                 {
+                    let mut type_metadata =
+                        Arc::try_unwrap(type_metadata).unwrap_or_else(|arc| (*arc).clone());
                     // We want the first definition of this value and not the definition of the
                     // type
                     type_metadata.definition = None;
@@ -167,67 +279,62 @@ pub fn metadata(
             self.metadata_expr(&bind.expr)
         }
 
-        fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
+        fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> MaybeMetadata {
             match expr.value {
-                Expr::Ident(ref id) => self
-                    .metadata(&id.name)
-                    .cloned()
-                    .unwrap_or_else(Metadata::default),
+                Expr::Ident(ref id) => self.metadata(&id.name).cloned().into(),
                 Expr::Record {
                     ref exprs,
                     ref types,
                     ..
                 } => {
                     let mut module = BTreeMap::new();
+
                     for field in exprs {
                         let maybe_metadata = match field.value {
-                            Some(ref expr) => {
-                                let m = self.metadata_expr(expr);
-                                if m.has_data() {
-                                    Some(m)
-                                } else {
-                                    None
-                                }
-                            }
-                            None => self.metadata(&field.name.value).cloned(),
+                            Some(ref expr) => self.metadata_expr(expr),
+                            None => self.metadata(&field.name.value).cloned().into(),
                         };
-                        let field_metadata = field.metadata.clone();
-                        let maybe_metadata = match maybe_metadata {
-                            Some(r) => field_metadata.merge(r),
-                            None => field_metadata,
-                        };
-                        if maybe_metadata.has_data() {
+                        let maybe_metadata = MaybeMetadata::merge(&field.metadata, &maybe_metadata);
+                        if let MaybeMetadata::Data(metadata) = maybe_metadata {
                             let field_name = String::from(field.name.value.as_ref());
-                            module.insert(field_name, maybe_metadata);
+                            module.insert(field_name, metadata);
                         }
                     }
+
                     for field in types {
                         let maybe_metadata = self.metadata(&field.name.value).cloned();
-                        if let Some(metadata) = maybe_metadata {
+                        if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
                             let name = Name::new(field.name.value.as_ref()).name().as_str();
                             module.insert(String::from(name), metadata);
                         }
                     }
-                    Metadata {
-                        module,
-                        ..Metadata::default()
+
+                    if module.is_empty() {
+                        MaybeMetadata::Empty
+                    } else {
+                        MaybeMetadata::Data(Arc::new(Metadata {
+                            module,
+                            ..Metadata::default()
+                        }))
                     }
                 }
                 Expr::LetBindings(ref bindings, ref expr) => {
                     if bindings.is_recursive() {
                         for bind in bindings {
-                            self.new_binding(Metadata::default(), bind);
+                            self.new_binding(Default::default(), bind);
                         }
                         for bind in bindings {
                             let expr_metadata = self.metadata_binding(&bind);
 
                             if let Pattern::Ident(ref id) = bind.name.value {
-                                if expr_metadata.has_data() {
-                                    self.env
-                                        .stack
-                                        .entry(id.name.clone())
-                                        .or_insert_with(Default::default)
-                                        .merge_with(expr_metadata);
+                                if let MaybeMetadata::Data(expr_metadata) = expr_metadata {
+                                    Arc::make_mut(
+                                        self.env
+                                            .stack
+                                            .entry(id.name.clone())
+                                            .or_insert_with(Default::default),
+                                    )
+                                    .merge_with_ref(&expr_metadata);
                                 }
                             }
                         }
@@ -259,18 +366,14 @@ pub fn metadata(
                 }
                 Expr::Projection(ref expr, ref field, _) => {
                     let metadata = self.metadata_expr(expr);
-                    metadata
-                        .module
-                        .get(field.definition_name())
-                        .cloned()
-                        .unwrap_or_default()
+                    metadata.get_module(field.definition_name()).cloned().into()
                 }
                 Expr::MacroExpansion {
                     ref replacement, ..
                 } => self.metadata_expr(replacement),
                 _ => {
                     ast::walk_expr(self, expr);
-                    Metadata::default()
+                    Default::default()
                 }
             }
         }
@@ -287,7 +390,7 @@ pub fn metadata(
                         }
                         None => field_metadata,
                     };
-                    field_metadata.map(|m| (field.name.to_string(), m))
+                    field_metadata.map(|m| (field.name.to_string(), Arc::new(m)))
                 })
                 .collect();
 
@@ -316,6 +419,6 @@ pub fn metadata(
             stack: FnvMap::default(),
         },
     };
-    let metadata = visitor.metadata_expr(expr);
+    let metadata = visitor.metadata_expr(expr).into();
     (metadata, visitor.env.stack)
 }

@@ -10,11 +10,13 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::{self, Typed};
-use crate::base::kind::Kind;
-use crate::base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
+use crate::base::{
+    ast::{self, Typed},
+    kind::Kind,
+    types::{Alias, AliasData, ArcType, Field, Generic, Type},
+};
 
-use crate::support::{alias, intern, typ, MockEnv};
+use crate::support::*;
 
 #[macro_use]
 #[allow(unused_macros)]
@@ -32,7 +34,7 @@ macro_rules! assert_pass {
 /// types easier to write
 fn make_ident_type(typ: ArcType) -> ArcType {
     use crate::base::types::walk_move_type;
-    walk_move_type(typ, &mut |typ| match **typ {
+    walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
         _ => None,
     })
@@ -473,7 +475,7 @@ let const x = \_ -> x
 in const #Int+ 1
 ";
     let result = support::typecheck(text);
-    assert!(result.is_err());
+    assert!(result.is_err(), "{}", result.unwrap());
 }
 
 #[test]

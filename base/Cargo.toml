@@ -12,6 +12,7 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
+bitflags = "1"
 log = "0.4"
 quick-error = "1.0.0"
 fnv = "1.0.3"
@@ -25,6 +26,7 @@ codespan = "0.2"
 codespan-reporting = "0.2"
 either = "1"
 stable_deref_trait = "1"
+vec_map = "0.8"
 
 serde = { version = "1.0.0", features = ["rc"], optional = true }
 serde_state = { version = "0.4.0", features = ["rc"], optional = true }

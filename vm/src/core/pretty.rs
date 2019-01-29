@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use pretty::{self, DocAllocator};
 
-use crate::base::types::Type;
+use crate::base::types::{Type, TypeExt};
 
 use crate::core::{Alternative, Expr, Literal, Named, Pattern};
 

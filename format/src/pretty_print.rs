@@ -396,7 +396,7 @@ where
                         let typ = bind.alias.value.unresolved_type();
                         let typ = match **typ {
                             // Remove the "parameters"
-                            Type::Forall(_, ref typ, _) => typ,
+                            Type::Forall(_, ref typ) => typ,
                             _ => typ
                         };
                         let mut type_doc = types::pretty_print(self, typ);

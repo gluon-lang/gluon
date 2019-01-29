@@ -18,7 +18,7 @@ use crate::base::{
     kind::Kind,
     pos, resolve,
     symbol::{Symbol, SymbolModule},
-    types::ArcType,
+    types::{ArcType, TypeExt},
     DebugLevel,
 };
 use crate::parser::{parse_partial_repl_line, ReplLine};
@@ -394,7 +394,10 @@ fn set_globals(
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            let resolved_type = resolve::remove_aliases_cow(&*vm.global_env().get_env(), typ);
+            let resolved_type = {
+                let env = vm.global_env();
+                resolve::remove_aliases_cow(&*env.get_env(), &mut env.type_cache(), typ)
+            };
 
             for pattern_field in fields.iter() {
                 let field_name: &Symbol = &pattern_field.name.value;

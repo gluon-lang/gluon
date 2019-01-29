@@ -5,26 +5,28 @@ use crate::base::{
     kind::{self, ArcKind, Kind, KindCache},
     merge,
     pos::{self, BytePos, HasSpan, Span, Spanned},
+    scoped_map::{Entry, ScopedMap},
     symbol::Symbol,
-    types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker},
+    types::{self, BuiltinType, Generic, NullInterner, Type, TypeEnv, Walker},
 };
 
-use crate::substitution::{Substitutable, Substitution};
-use crate::unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
+use crate::{
+    substitution::{Substitutable, Substitution},
+    typ::RcType,
+    unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState},
+};
 
-pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
-pub type SpannedError<I> = Spanned<Error<I>, BytePos>;
+pub type Error<I, T = RcType<I>> = UnifyError<KindError<I, T>, ArcKind>;
+pub type SpannedError<I, T> = Spanned<Error<I, T>, BytePos>;
 
-pub type Result<T> = StdResult<T, SpannedError<Symbol>>;
+pub type Result<T> = StdResult<T, SpannedError<Symbol, RcType<Symbol>>>;
 
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
-    variables: Vec<Generic<Symbol>>,
-    /// Type bindings local to the current kindcheck invocation
-    locals: Vec<(Symbol, ArcKind)>,
-    info: &'a (TypeEnv + 'a),
+    variables: ScopedMap<Symbol, ArcKind>,
+    info: &'a (TypeEnv<Type = RcType> + 'a),
     idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
-    pub subs: Substitution<ArcKind>,
+    subs: Substitution<ArcKind>,
     kind_cache: KindCache,
     /// A cached one argument kind function, `Type -> Type`
     function1_kind: ArcKind,
@@ -62,18 +64,17 @@ where
 
 impl<'a> KindCheck<'a> {
     pub fn new(
-        info: &'a (TypeEnv + 'a),
+        info: &'a (TypeEnv<Type = RcType> + 'a),
         idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
         kind_cache: KindCache,
     ) -> KindCheck<'a> {
         let typ = kind_cache.typ();
         let function1_kind = Kind::function(typ.clone(), typ.clone());
         KindCheck {
-            variables: Vec::new(),
-            locals: Vec::new(),
+            variables: Default::default(),
             info: info,
             idents: idents,
-            subs: Substitution::new(()),
+            subs: Substitution::new((), Default::default()),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
             kind_cache: kind_cache,
@@ -81,12 +82,16 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn add_local(&mut self, name: Symbol, kind: ArcKind) {
-        self.locals.push((name, kind));
+        self.variables.insert(name, kind);
     }
 
-    pub fn set_variables(&mut self, variables: &[Generic<Symbol>]) {
-        self.variables.clear();
-        self.variables.extend(variables.iter().cloned());
+    pub fn enter_scope_with(&mut self, variables: impl IntoIterator<Item = (Symbol, ArcKind)>) {
+        self.variables.enter_scope();
+        self.variables.extend(variables);
+    }
+
+    pub fn exit_scope(&mut self) {
+        self.variables.exit_scope();
     }
 
     pub fn type_kind(&self) -> ArcKind {
@@ -122,42 +127,40 @@ impl<'a> KindCheck<'a> {
     }
 
     fn find(&mut self, span: Span<BytePos>, id: &Symbol) -> Result<ArcKind> {
-        let kind = self
-            .variables
-            .iter()
-            .find(|var| var.id == *id)
-            .map(|t| t.kind.clone())
-            .or_else(|| self.locals.iter().find(|t| t.0 == *id).map(|t| t.1.clone()))
-            .or_else(|| self.info.find_kind(id))
-            .map_or_else(
-                || {
-                    if self.idents.string(id).starts_with(char::is_uppercase) {
-                        Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
-                    } else {
-                        // Create a new variable
-                        self.locals.push((id.clone(), self.subs.new_var()));
-                        Ok(self.locals.last().unwrap().1.clone())
+        let kind = match self.variables.entry(id.clone()) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => {
+                let kind = match self.info.find_kind(id) {
+                    Some(k) => k.clone(),
+                    None => {
+                        if self.idents.string(id).starts_with(char::is_uppercase) {
+                            return Err(pos::spanned(
+                                span,
+                                UnifyError::Other(KindError::UndefinedType(id.clone())),
+                            ));
+                        } else {
+                            self.subs.new_var()
+                        }
                     }
-                },
-                Ok,
-            );
+                };
+                entry.insert(kind.clone());
+                kind
+            }
+        };
 
-        if let Ok(ref kind) = kind {
-            debug!("Find kind: {} => {}", self.idents.string(&id), kind);
-        }
+        debug!("Find kind: {} => {}", self.idents.string(&id), kind);
 
-        kind.map(|kind| match *kind {
+        Ok(match *kind {
             Kind::Hole => self.subs.new_var(),
             _ => kind,
         })
-        .map_err(|err| pos::spanned(span, err))
     }
 
     fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
         // Errors get reported in typecheck as well so ignore them here
-        crate::typecheck::translate_projected_type(self.info, self.idents, ids)
+        crate::typecheck::translate_projected_type(self.info, self.idents, &mut NullInterner, ids)
             .ok()
-            .map(|typ| typ.kind().into_owned())
+            .map(|typ| typ.kind(&self.kind_cache).into_owned())
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
@@ -175,6 +178,7 @@ impl<'a> KindCheck<'a> {
         let kind = self.kindcheck(typ)?;
         let kind = self.unify(typ.span(), expected, kind)?;
         self.finalize_type(typ);
+        info!("Kindchecked {:#?}", typ);
         Ok(kind)
     }
 
@@ -190,32 +194,40 @@ impl<'a> KindCheck<'a> {
         }
     }
 
+    fn scope<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.variables.enter_scope();
+        let r = f(self);
+        self.variables.exit_scope();
+        r
+    }
+
     fn kindcheck(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
         let span = typ.span();
         match **typ {
             Type::Error => Ok(self.kind_cache.error()),
+
             Type::Hole | Type::Opaque | Type::Variable(_) => Ok(self.subs.new_var()),
+
             Type::Skolem(ref mut skolem) => {
                 skolem.kind = self.find(span, &skolem.name)?;
                 Ok(skolem.kind.clone())
             }
+
             Type::Generic(ref mut gen) => {
                 gen.kind = self.find(span, &gen.id)?;
                 Ok(gen.kind.clone())
             }
+
             Type::Builtin(builtin_typ) => Ok(self.builtin_kind(builtin_typ)),
-            Type::Forall(ref mut params, ref mut typ, _) => {
+
+            Type::Forall(ref mut params, ref mut typ) => self.scope(|self_| {
                 for param in &mut *params {
-                    param.kind = self.subs.new_var();
-                    self.locals.push((param.id.clone(), param.kind.clone()));
+                    param.kind = self_.subs.new_var();
+                    self_.variables.insert(param.id.clone(), param.kind.clone());
                 }
-                let ret_kind = self.kindcheck(typ)?;
+                self_.kindcheck(typ)
+            }),
 
-                let offset = self.locals.len() - params.len();
-                self.locals.drain(offset..);
-
-                Ok(ret_kind)
-            }
             Type::Function(_, ref mut arg, ref mut ret) => {
                 let arg_kind = self.kindcheck(arg)?;
                 let ret_kind = self.kindcheck(ret)?;
@@ -226,31 +238,24 @@ impl<'a> KindCheck<'a> {
 
                 Ok(type_kind)
             }
+
             Type::App(ref mut ctor, ref mut args) => {
                 let mut kind = self.kindcheck(ctor)?;
 
                 let mut prev_span = ctor.span();
 
                 for arg in args {
-                    let f = Kind::function(self.subs.new_var(), self.subs.new_var());
-                    kind = self.unify(prev_span, &f, kind)?;
-                    kind = match *kind {
-                        Kind::Function(ref arg_kind, ref ret) => {
-                            let actual = self.kindcheck(arg)?;
-                            self.unify(arg.span(), arg_kind, actual)?;
-                            ret.clone()
-                        }
-                        _ => {
-                            return Err(pos::spanned(
-                                arg.span(),
-                                UnifyError::TypeMismatch(self.function1_kind(), kind.clone()),
-                            ))
-                        }
-                    };
+                    let (arg_kind, ret) = self.unify_function(prev_span, kind)?;
+
+                    let actual = self.kindcheck(arg)?;
+                    self.unify(arg.span(), &arg_kind, actual)?;
+
+                    kind = ret;
                     prev_span = arg.span();
                 }
                 Ok(kind)
             }
+
             Type::Variant(ref mut row) => {
                 match **row {
                     Type::ExtendRow { .. } => {
@@ -274,12 +279,14 @@ impl<'a> KindCheck<'a> {
 
                 Ok(self.type_kind())
             }
+
             Type::Record(ref mut row) => {
                 let kind = self.kindcheck(row)?;
                 let row_kind = self.row_kind();
                 self.unify(span, &row_kind, kind)?;
                 Ok(self.type_kind())
             }
+
             Type::Effect(ref mut row) => {
                 let mut iter = types::row_iter_mut(row);
                 for field in &mut iter {
@@ -292,6 +299,7 @@ impl<'a> KindCheck<'a> {
                 self.unify(span, &row_kind, kind)?;
                 Ok(self.function1_kind())
             }
+
             Type::ExtendRow {
                 ref mut types,
                 ref mut fields,
@@ -299,20 +307,18 @@ impl<'a> KindCheck<'a> {
             } => {
                 for field in types {
                     if let Some(alias) = field.typ.try_get_alias_mut() {
-                        for param in alias.params_mut() {
-                            param.kind = self.subs.new_var();
-                            self.locals.push((param.id.clone(), param.kind.clone()));
-                        }
+                        self.scope(|self_| {
+                            for param in alias.params_mut() {
+                                param.kind = self_.subs.new_var();
+                                self_.variables.insert(param.id.clone(), param.kind.clone());
+                            }
 
-                        {
                             let field_type = alias.unresolved_type_mut();
-                            let kind = self.kindcheck(field_type)?;
-                            let type_kind = self.type_kind();
-                            self.unify(field_type.span(), &type_kind, kind)?;
-                        }
+                            let kind = self_.kindcheck(field_type)?;
+                            let type_kind = self_.type_kind();
 
-                        let offset = self.locals.len() - alias.params().len();
-                        self.locals.drain(offset..);
+                            self_.unify(field_type.span(), &type_kind, kind)
+                        })?;
                     }
                 }
                 for field in fields {
@@ -327,13 +333,35 @@ impl<'a> KindCheck<'a> {
 
                 Ok(row_kind)
             }
+
             Type::EmptyRow => Ok(self.row_kind()),
+
             Type::Ident(ref id) => self.find(span, id),
+
             Type::Projection(ref ids) => Ok(self
                 .find_projection(ids)
                 .unwrap_or_else(|| self.subs.new_var())),
+
             Type::Alias(ref alias) => self.find(span, &alias.name),
         }
+    }
+
+    fn unify_function(
+        &mut self,
+        span: Span<BytePos>,
+        actual: ArcKind,
+    ) -> Result<(ArcKind, ArcKind)> {
+        if let Kind::Function(arg, ret) = &**self.subs.real(&actual) {
+            return Ok((arg.clone(), ret.clone()));
+        }
+
+        let arg = self.subs.new_var();
+        let ret = self.subs.new_var();
+        let f = Kind::function(arg.clone(), ret.clone());
+
+        self.unify(span, &f, actual)?;
+
+        Ok((arg, ret))
     }
 
     fn unify(
@@ -381,7 +409,6 @@ impl<'a> KindCheck<'a> {
             }
             return;
         }
-
         match **typ {
             Type::ExtendRow { ref mut types, .. } => types.iter_mut().for_each(|field| {
                 if let Some(alias) = field.typ.try_get_alias_mut() {
@@ -402,7 +429,7 @@ impl<'a> KindCheck<'a> {
                 .params_mut()
                 .iter_mut()
                 .for_each(|var| *var = self.finalize_generic(var)),
-            Type::Forall(ref mut params, _, _) => {
+            Type::Forall(ref mut params, _) => {
                 for param in params {
                     *param = self.finalize_generic(&param);
                 }
@@ -428,16 +455,17 @@ fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&Arc
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking
-#[derive(Debug, PartialEq)]
-pub enum KindError<I> {
+#[derive(Debug, PartialEq, Functor)]
+pub enum KindError<I, T> {
     /// The type is not defined in the current scope
     UndefinedType(I),
-    UndefinedField(ArcType<I>, I),
+    UndefinedField(T, I),
 }
 
-impl<I> fmt::Display for KindError<I>
+impl<I, T> fmt::Display for KindError<I, T>
 where
     I: fmt::Display + AsRef<str>,
+    T: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -449,9 +477,10 @@ where
     }
 }
 
-pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
+pub fn fmt_kind_error<I, T>(error: &Error<I, T>, f: &mut fmt::Formatter) -> fmt::Result
 where
     I: fmt::Display + AsRef<str>,
+    T: fmt::Display,
 {
     use crate::unify::Error::*;
     match *error {
@@ -467,9 +496,12 @@ where
 
 impl Substitutable for ArcKind {
     type Variable = u32;
+
     type Factory = ();
 
-    fn from_variable(x: u32) -> ArcKind {
+    type Interner = NullInterner;
+
+    fn from_variable(_: &Substitution<Self>, x: u32) -> ArcKind {
         Kind::variable(x)
     }
 
@@ -492,13 +524,13 @@ impl Substitutable for ArcKind {
 }
 
 impl<'a> Unifiable<&'a KindCache> for ArcKind {
-    type Error = KindError<Symbol>;
+    type Error = KindError<Symbol, RcType>;
 
     fn zip_match<U>(
         &self,
         other: &Self,
         unifier: &mut UnifierState<&'a KindCache, U>,
-    ) -> StdResult<Option<Self>, Error<Symbol>>
+    ) -> StdResult<Option<Self>, Error<Symbol, RcType>>
     where
         UnifierState<&'a KindCache, U>: Unifier<&'a KindCache, Self>,
     {

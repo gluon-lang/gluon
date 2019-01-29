@@ -23,31 +23,52 @@ extern crate union_find;
 
 #[macro_use]
 extern crate gluon_base as base;
+#[macro_use]
+extern crate gluon_codegen;
 
 pub mod kindcheck;
 pub mod metadata;
 mod recursion_check;
 pub mod rename;
 pub mod substitution;
+mod typ;
 pub mod typecheck;
 pub mod unify;
 pub mod unify_type;
 
 mod implicits;
 
-use crate::base::types::{ArcType, TypeCache, TypeEnv};
+use crate::base::{
+    fnv::FnvMap,
+    kind::Kind,
+    metadata::MetadataEnv,
+    symbol::Symbol,
+    types::{translate_type, ArcType, PrimitiveEnv, SharedInterner, TypeEnv, TypeExt},
+};
+
+use crate::{substitution::Substitution, typ::RcType};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
-pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> bool {
-    use crate::base::{fnv::FnvMap, kind::Kind};
+pub fn check_signature(
+    env: &TypecheckEnv<Type = ArcType>,
+    signature: &ArcType,
+    actual: &ArcType,
+) -> bool {
+    let interner = SharedInterner::default();
+    let signature = translate_type(&mut &interner, signature);
+    let actual = translate_type(&mut &interner, actual);
+    check_signature_(&env, &interner, &signature, &actual)
+}
 
-    use crate::substitution::Substitution;
-
-    let subs = Substitution::new(Kind::typ());
-    let type_cache = TypeCache::new();
-    let state = unify_type::State::new(env, &subs, &type_cache);
-    let actual = unify_type::new_skolem_scope(&subs, actual);
-    let actual = actual.instantiate_generics(&mut FnvMap::default());
+fn check_signature_(
+    env: &TypeEnv<Type = RcType>,
+    interner: &SharedInterner<Symbol, RcType>,
+    signature: &RcType,
+    actual: &RcType,
+) -> bool {
+    let subs = Substitution::new(Kind::typ(), interner.clone());
+    let state = unify_type::State::new(env, &subs);
+    let actual = actual.instantiate_generics(&mut &subs, &mut FnvMap::default());
     let result = unify_type::subsumes(&subs, state, signature, &actual);
     if let Err((_, ref err)) = result {
         warn!("Check signature error: {}", err);
@@ -55,14 +76,20 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
     result.is_ok()
 }
 
+pub trait TypecheckEnv: PrimitiveEnv + MetadataEnv {}
+
+impl<T> TypecheckEnv for T where T: PrimitiveEnv + MetadataEnv {}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use std::cell::RefCell;
     use std::rc::Rc;
 
     use crate::base::kind::{ArcKind, KindEnv};
     use crate::base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-    use crate::base::types::{Alias, ArcType, TypeEnv};
+    use crate::base::types::{Alias, TypeEnv};
 
     pub struct MockEnv;
 
@@ -73,10 +100,11 @@ mod tests {
     }
 
     impl TypeEnv for MockEnv {
-        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        type Type = RcType;
+        fn find_type(&self, _id: &SymbolRef) -> Option<&RcType> {
             None
         }
-        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, RcType>> {
             None
         }
     }

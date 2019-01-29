@@ -10,10 +10,12 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::{Expr, Pattern, SpannedExpr};
-use crate::base::pos::{BytePos, Span};
-use crate::base::symbol::Symbol;
-use crate::base::types::{Field, Type};
+use crate::base::{
+    ast::{Expr, Pattern, SpannedExpr},
+    pos::{BytePos, Span},
+    symbol::Symbol,
+    types::{Field, NullInterner, Type},
+};
 
 use crate::support::{alias, intern, typ, MockEnv};
 
@@ -680,7 +682,7 @@ fn resolve_app_app() {
         collect![Type::int()],
     );
 
-    let actual = resolve::remove_aliases(&MockEnv::new(), alias);
+    let actual = resolve::remove_aliases(&MockEnv::new(), &mut NullInterner, alias);
     assert_eq!(actual.to_string(), "{ x : (), y : Int }");
 }
 
@@ -1237,7 +1239,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a1 . | Ok\n.. a1".to_string())
+        Ok("forall a . | Ok\n.. a".to_string())
     );
 }
 
@@ -1333,7 +1335,7 @@ test_check_err! {
     let new : ST s (Test s) = any ()
     run new
     "#,
-    TypeError::Message(_)
+    TypeError::Unification(..)
 }
 
 test_check! { load_list_skolem_bug,

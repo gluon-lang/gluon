@@ -41,7 +41,7 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> Default for $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>> + Clone,
+            where $typ: From<$inner_type<$($args,)*>>,
         {
             fn default() -> Self {
                 $name::new()
@@ -49,7 +49,7 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>> + Clone,
+            where $typ: From<$inner_type<$($args,)*>>,
         {
             pub fn new() -> Self {
                 $name {
@@ -60,7 +60,11 @@ macro_rules! type_cache {
                     _marker: ::std::marker::PhantomData,
                 }
             }
+        }
 
+        impl<$($args),*> $name<$($args),*>
+            where $typ: Clone,
+        {
             $(
                 pub fn $id(&self) -> $typ {
                     self.$id.clone()
@@ -96,6 +100,7 @@ pub mod scoped_map;
 pub mod serialization;
 pub mod source;
 pub mod symbol;
+#[macro_use]
 pub mod types;
 
 pub fn filename_to_module(filename: &str) -> String {

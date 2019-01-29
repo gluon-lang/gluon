@@ -1,13 +1,16 @@
-use std::cell::RefCell;
-use std::default::Default;
-use std::fmt;
+use std::{cell::RefCell, default::Default, fmt};
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
-use crate::base::fixed::{FixedMap, FixedVec};
-use crate::base::types::{self, ArcType, Type, Walker};
+use crate::base::{
+    fixed::{FixedVec, FixedVecMap},
+    kind::ArcKind,
+    symbol::Symbol,
+    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, Walker},
+};
+use crate::typ::RcType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Functor)]
 pub enum Error<T> {
     Occurs(T, T),
 }
@@ -35,21 +38,48 @@ where
     union: RefCell<QuickFindUf<UnionByLevel>>,
     /// Vector containing all created variables for this substitution. Needed for the `real` method
     /// which needs to always be able to return a `&T` reference
-    variables: FixedVec<Box<T>>,
+    variables: FixedVec<T>,
     /// For variables which have been infered to have a real type (not a variable) their types are
-    /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
+    /// stored here. As the type stored will never changed we use a `FixedVecMap` lets `real` return
     /// `&T` from this map safely.
-    types: FixedMap<u32, Box<T>>,
+    types: FixedVecMap<T>,
     factory: T::Factory,
+    interner: T::Interner,
+}
+
+impl<T> TypeContext<Symbol, T> for Substitution<T>
+where
+    T: Substitutable + From<Type<Symbol, T>>,
+    for<'a> &'a T::Interner: TypeContext<Symbol, T>,
+{
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);
+}
+
+impl<'a, T> TypeContext<Symbol, T> for &'a Substitution<T>
+where
+    T: Substitutable + From<Type<Symbol, T>>,
+    &'a T::Interner: TypeContext<Symbol, T>,
+{
+    gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);
+}
+
+impl<'a> types::Substitution<Symbol, RcType> for &'a Substitution<RcType> {
+    fn new_var(&mut self) -> RcType {
+        Substitution::new_var(*self)
+    }
+    fn new_skolem(&mut self, name: Symbol, kind: ArcKind) -> RcType {
+        Substitution::new_skolem(*self, name, kind)
+    }
 }
 
 impl<T> Default for Substitution<T>
 where
     T: Substitutable,
     T::Factory: Default,
+    T::Interner: Default,
 {
     fn default() -> Substitution<T> {
-        Substitution::new(Default::default())
+        Substitution::new(Default::default(), Default::default())
     }
 }
 
@@ -82,9 +112,13 @@ impl VariableFactory for () {
 /// Trait implemented on types which may contain substitutable variables
 pub trait Substitutable: Sized {
     type Variable: Variable;
+
     type Factory: VariableFactory<Variable = Self::Variable>;
+
+    type Interner: Default;
+
     /// Constructs a new object from its variable type
-    fn from_variable(x: Self::Variable) -> Self;
+    fn from_variable(subs: &Substitution<Self>, x: Self::Variable) -> Self;
 
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
@@ -98,6 +132,12 @@ pub trait Substitutable: Sized {
         F: Walker<'a, Self>;
 
     fn instantiate(&self, subs: &Substitution<Self>) -> Self;
+
+    // Allowed return true even if the type does not contain variables but not false if it does
+    // contain
+    fn contains_variables(&self) -> bool {
+        true
+    }
 
     fn on_union(&self) -> Option<&Self> {
         None
@@ -118,7 +158,7 @@ where
         T: Substitutable,
     {
         fn walk(&mut self, typ: &'t T) {
-            if self.occurs {
+            if !typ.contains_variables() || self.occurs {
                 return;
             }
             let typ = self.subs.real(typ);
@@ -133,6 +173,7 @@ where
             typ.traverse(self);
         }
     }
+
     let mut occurs = Occurs {
         occurs: false,
         var: var,
@@ -211,13 +252,17 @@ where
     }
 }
 
-impl<T: Substitutable> Substitution<T> {
-    pub fn new(factory: T::Factory) -> Substitution<T> {
+impl<T> Substitution<T>
+where
+    T: Substitutable,
+{
+    pub fn new(factory: T::Factory, interner: T::Interner) -> Substitution<T> {
         Substitution {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
-            types: FixedMap::new(),
+            types: FixedVecMap::new(),
             factory: factory,
+            interner,
         }
     }
 
@@ -236,11 +281,16 @@ impl<T: Substitutable> Substitution<T> {
                 "Tried to insert variable which is not allowed as that would cause memory \
                  unsafety"
             ),
-            None => match self.types.try_insert(var, t.into()) {
+            None => match self.types.try_insert(var as usize, t.into()) {
                 Ok(()) => (),
                 Err(_) => ice!("Expected variable to not have a type associated with it"),
             },
         }
+    }
+
+    pub fn replace(&mut self, var: u32, t: T) {
+        debug_assert!(t.get_id() != Some(var));
+        self.types.insert(var as usize, t.into());
     }
 
     /// Creates a new variable
@@ -248,7 +298,7 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
-        self.new_var_fn(|var| T::from_variable(self.factory.new(var)))
+        self.new_var_fn(|var| T::from_variable(self, self.factory.new(var)))
     }
 
     pub fn new_var_fn<F>(&self, f: F) -> T
@@ -290,9 +340,9 @@ impl<T: Substitutable> Substitution<T> {
         if var as usize >= union.size() {
             return None;
         }
-        let index = union.find(var as usize) as u32;
-        self.types.get(&index).or_else(|| {
-            if var == index {
+        let index = union.find(var as usize);
+        self.types.get(index).or_else(|| {
+            if var == index as u32 {
                 None
             } else {
                 Some(&self.variables[index as usize])
@@ -333,7 +383,7 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
-pub fn is_variable_unified(subs: &Substitution<ArcType>, var: &ArcType) -> bool {
+pub fn is_variable_unified(subs: &Substitution<RcType>, var: &RcType) -> bool {
     match **var {
         Type::Variable(ref var) => subs.find_type_for_var(var.id).is_some(),
         _ => false,
@@ -364,7 +414,10 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             return Ok(None);
         }
         if occurs(typ, self, id) {
-            return Err(Error::Occurs(T::from_variable(id.clone()), typ.clone()));
+            return Err(Error::Occurs(
+                T::from_variable(self, id.clone()),
+                typ.clone(),
+            ));
         }
         {
             let id_type = self.find_type_for_var(id.get_id());
@@ -396,16 +449,38 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         Ok(resolved_type.cloned())
     }
+
+    pub fn unbound_variables(&self, level: u32) -> impl Iterator<Item = &T> {
+        (level..(self.variables.len() as u32)).filter_map(move |i| {
+            if self.find_type_for_var(i).is_none() && self.get_level(i) >= level {
+                Some(&self.variables[i as usize])
+            } else {
+                None
+            }
+        })
+    }
 }
 
-impl Substitution<ArcType> {
-    pub fn zonk(&self, typ: &ArcType) -> ArcType {
-        types::walk_move_type(typ.clone(), &mut |typ| match typ.get_var() {
-            Some(var) => match self.find_type_for_var(var.get_id()) {
-                Some(t) => Some(self.zonk(t)),
+impl Substitution<RcType> {
+    pub fn new_skolem(&self, name: Symbol, kind: ArcKind) -> RcType {
+        self.new_var_fn(|id| (&*self).skolem(Skolem { name, id, kind }))
+    }
+
+    pub fn zonk(&self, typ: &RcType) -> RcType {
+        types::walk_move_type(
+            typ.clone(),
+            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_var() {
+                Some(var) => match self.find_type_for_var(var.get_id()) {
+                    Some(t) => Some(self.zonk(t)),
+                    None => None,
+                },
                 None => None,
-            },
-            None => None,
-        })
+            }),
+        )
+    }
+
+    // Stub kept in case multiple types are attempted again
+    pub fn bind_arc(&self, typ: &RcType) -> ArcType {
+        typ.clone()
     }
 }

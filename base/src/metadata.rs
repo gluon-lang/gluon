@@ -1,20 +1,22 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
-use crate::ast::Argument;
-use crate::symbol::{Symbol, SymbolRef};
+use crate::{
+    ast::Argument,
+    symbol::{Symbol, SymbolRef},
+};
 
 pub trait MetadataEnv {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata>;
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>>;
 }
 
 impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
         (**self).get_metadata(id)
     }
 }
 
 impl MetadataEnv for () {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
         None
     }
 }
@@ -47,7 +49,7 @@ pub struct Metadata {
     pub comment: Option<Comment>,
     pub attributes: Vec<Attribute>,
     pub args: Vec<Argument<Symbol>>,
-    pub module: BTreeMap<String, Metadata>,
+    pub module: BTreeMap<String, Arc<Metadata>>,
 }
 
 impl Metadata {
@@ -76,12 +78,39 @@ impl Metadata {
                 Entry::Vacant(entry) => {
                     entry.insert(value);
                 }
-                Entry::Occupied(entry) => entry.into_mut().merge_with(value),
+                Entry::Occupied(entry) => Arc::make_mut(entry.into_mut()).merge_with_ref(&value),
             }
         }
         self.attributes.extend(other.attributes);
         if self.args.is_empty() {
             self.args = other.args;
+        }
+    }
+
+    pub fn merge_ref(mut self, other: &Metadata) -> Self {
+        self.merge_with_ref(other);
+        self
+    }
+
+    pub fn merge_with_ref(&mut self, other: &Metadata) {
+        if other.definition.is_some() {
+            self.definition = other.definition.clone();
+        }
+        if self.comment.is_none() {
+            self.comment = other.comment.clone();
+        }
+        for (key, value) in &other.module {
+            use std::collections::btree_map::Entry;
+            match self.module.entry(key.clone()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(value.clone());
+                }
+                Entry::Occupied(entry) => Arc::make_mut(entry.into_mut()).merge_with_ref(&value),
+            }
+        }
+        self.attributes.extend(other.attributes.iter().cloned());
+        if self.args.is_empty() {
+            self.args = other.args.clone();
         }
     }
 

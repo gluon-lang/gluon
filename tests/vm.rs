@@ -1083,3 +1083,12 @@ let _ = import! std.effect.lift
 ",
 1i32
 }
+
+test_expr! { use_bool,
+r"
+let { Bool } = import! std.types
+
+True
+",
+true
+}

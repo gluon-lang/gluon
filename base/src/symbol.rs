@@ -87,7 +87,7 @@ impl Borrow<SymbolRef> for Symbol {
 
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
-        self.0.as_str()
+        self.0.as_pretty_str()
     }
 }
 
@@ -197,8 +197,20 @@ impl SymbolRef {
         self.name() == other.name()
     }
 
+    pub fn as_pretty_str(&self) -> &str {
+        Name::new(&self.0).as_pretty_str()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub fn name(&self) -> &Name {
-        Name::new(Name::new(&self.0).as_str())
+        Name::new(Name::new(&self.0).as_pretty_str())
+    }
+
+    pub fn raw_name(&self) -> &Name {
+        Name::new(&self.0)
     }
 
     /// Returns the name of this symbol as it was originally declared (strips location information
@@ -208,7 +220,7 @@ impl SymbolRef {
     }
 
     pub fn definition_name(&self) -> &str {
-        self.name().definition_name()
+        Name::new(&self.0).definition_name()
     }
 
     pub fn is_global(&self) -> bool {
@@ -275,9 +287,17 @@ impl Name {
         unsafe { &*(n.as_ref() as *const str as *const Name) }
     }
 
+    pub fn as_pretty_str(&self) -> &str {
+        Self::strip_position_suffix(&self.0)
+    }
+
     pub fn as_str(&self) -> &str {
-        let name = &self.0;
-        name.split(':').next().unwrap_or(name)
+        debug_assert!(
+            !self.0.contains(':'),
+            "Did you mean to call as_pretty_str?: {}",
+            &self.0
+        );
+        &self.0
     }
 
     pub fn components(&self) -> Components {
@@ -301,8 +321,24 @@ impl Name {
     }
 
     pub fn definition_name(&self) -> &str {
-        let name = self.as_str().trim_start_matches('@');
-        name.split(':').next().unwrap_or(name)
+        Self::strip_position_suffix(if self.0.as_bytes().get(0) == Some(&b'@') {
+            &self.0[1..]
+        } else {
+            &self.0
+        })
+    }
+
+    fn strip_position_suffix(name: &str) -> &str {
+        // Strip away a `:1234_56` suffix
+        let x = match name
+            .bytes()
+            .rposition(|b| (b < b'0' || b > b'9') && b != b'_')
+        {
+            Some(i) if name.as_bytes()[i] == b':' => &name[..i],
+            _ => name,
+        };
+
+        x
     }
 }
 
@@ -536,5 +572,16 @@ impl<'s> DisplayEnv for SymbolModule<'s> {
 impl<'a> IdentEnv for SymbolModule<'a> {
     fn from_str(&mut self, s: &str) -> Symbol {
         self.symbol(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn definition_name() {
+        assert_eq!(Name::new("a:123").definition_name(), "a");
+        assert_eq!(Name::new("a:123_5").definition_name(), "a");
     }
 }

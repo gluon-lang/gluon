@@ -18,7 +18,7 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2018-12-28
+  - rust: nightly-2019-01-26
   - rust: beta
   - rust: stable
     env: ARCH=i686
@@ -35,7 +35,7 @@ matrix:
       - BENCH_DEFAULT_FEATURES_CHECK=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly-2018-12-28
+  - rust: nightly-2019-01-26
     env: WASM=1
 
     # Only for deployment
@@ -60,10 +60,12 @@ before_install:
   - set -e
   - rustup self update
 install:
-  - (unset RUSTC_WRAPPER && sh scripts/cargo_install.sh sccache 0.2.7)
+  - export PATH="$HOME/bin:$PATH"
+  - mkdir -p $HOME/bin
+  - ./scripts/install_sccache.sh
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
-  - sh scripts/cargo_install.sh mdbook 0.1.2
+  - ./scripts/install_mdbook.sh
 
 env:
   global:

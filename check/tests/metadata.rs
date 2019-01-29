@@ -8,12 +8,16 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::{Argument, SpannedExpr};
-use crate::base::metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv};
-use crate::base::symbol::{Symbol, SymbolRef};
+use std::sync::Arc;
+
+use crate::base::{
+    ast::{Argument, SpannedExpr},
+    metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv},
+    symbol::{Symbol, SymbolRef},
+};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
-    check::metadata::metadata(env, expr).0
+    Metadata::clone(&check::metadata::metadata(env, expr).0)
 }
 
 mod support;
@@ -23,7 +27,7 @@ use crate::support::intern;
 struct MockEnv;
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
         None
     }
 }
@@ -75,7 +79,7 @@ let id x = x
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("id"),
+        metadata.module.get("id").map(|m| &**m),
         Some(&Metadata {
             definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
@@ -100,7 +104,7 @@ type Test = Int
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("Test"),
+        metadata.module.get("Test").map(|m| &**m),
         Some(&Metadata {
             definition: metadata
                 .module
@@ -128,7 +132,7 @@ fn propagate_metadata_record_field_comment() {
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("id"),
+        metadata.module.get("id").map(|m| &**m),
         Some(&Metadata {
             definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
@@ -183,7 +187,8 @@ type Test = {
         metadata
             .module
             .get("Test")
-            .and_then(|metadata| metadata.module.get("x")),
+            .and_then(|metadata| metadata.module.get("x"))
+            .map(|m| &**m),
         Some(&Metadata {
             comment: Some(line_comment("A field")),
             ..Metadata::default()
@@ -221,7 +226,8 @@ let test: Test = {
         metadata
             .module
             .get("test")
-            .and_then(|metadata| metadata.module.get("x")),
+            .and_then(|metadata| metadata.module.get("x"))
+            .map(|m| &**m),
         Some(&Metadata {
             comment: Some(line_comment("A field")),
             ..Metadata::default()
@@ -231,7 +237,8 @@ let test: Test = {
         metadata
             .module
             .get("test")
-            .and_then(|metadata| metadata.module.get("y")),
+            .and_then(|metadata| metadata.module.get("y"))
+            .map(|m| &**m),
         Some(&Metadata {
             comment: Some(line_comment("Shadowing field comment")),
             ..Metadata::default()
@@ -265,7 +272,7 @@ let x ?test : [Test a] -> a = test.x
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("x"),
+        metadata.module.get("x").map(|m| &**m),
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
@@ -294,7 +301,7 @@ let x ?test : [Test a] -> a = test.x
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("x"),
+        metadata.module.get("x").map(|m| &**m),
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
@@ -325,7 +332,7 @@ let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata.module.get("x"),
+        metadata.module.get("x").map(|m| &**m),
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             attributes: vec![Attribute {

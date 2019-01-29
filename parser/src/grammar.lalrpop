@@ -18,7 +18,7 @@ use crate::ordered_float::NotNan;
 use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
 grammar<'input, 'env, Id>(input: &'input crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
-    where Id: Clone;
+    where Id: Clone + AsRef<str>;
 
 extern {
     type Location = BytePos;
@@ -404,8 +404,7 @@ Type_ = {
         Type::Forall(args.into_iter()
                          .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                          .collect(),
-                     ty,
-                     None),
+                     ty),
 
     <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
         Type::Function(

@@ -3,6 +3,8 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
+    rc::Rc,
+    sync::Arc,
 };
 
 use itertools::{Either, Itertools};
@@ -20,29 +22,45 @@ use crate::base::{
     resolve,
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolRef},
-    types::{self, ArcType, ArgType, BuiltinType, Type},
+    types::{self, ArgType, BuiltinType, Type, TypeExt},
 };
 
 use crate::{
     substitution::Substitution,
-    typecheck::{TypeError, Typecheck, TypecheckEnv},
+    typ::RcType,
+    typecheck::{TypeError, Typecheck},
     unify_type::{self, Size},
+    TypecheckEnv,
 };
 
 impl SymbolKey {
-    pub fn new(typ: &ArcType) -> Option<SymbolKey> {
-        match **typ {
-            Type::App(ref id, _) => SymbolKey::new(id),
-            Type::Function(ArgType::Implicit, _, ref ret_type) => SymbolKey::new(ret_type),
+    pub fn split<'a>(
+        subs: &'a Substitution<RcType>,
+        typ: &'a RcType,
+    ) -> Option<(SymbolKey, Option<&'a RcType>)> {
+        let symbol = match **subs.real(typ) {
+            Type::App(ref id, ref args) => {
+                return SymbolKey::split(subs, id)
+                    .map(|(k, _)| k)
+                    .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
+            }
+            Type::Function(ArgType::Implicit, _, ref ret_type) => {
+                SymbolKey::split(subs, ret_type)
+                    // Usually the implicit argument will appear directly inside type whose `SymbolKey`
+                    // that was returned so it is unlikely that partitition further
+                    .map(|(s, _)| s)
+            }
             Type::Function(ArgType::Explicit, ..) => {
                 Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
             }
+            Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
             Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
             Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
             Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-            Type::Forall(_, ref typ, _) => SymbolKey::new(typ),
+            Type::Forall(_, ref typ) => return SymbolKey::split(subs, typ),
             _ => None,
-        }
+        };
+        symbol.map(|s| (s, None))
     }
 }
 
@@ -88,43 +106,111 @@ impl Borrow<SymbolRef> for SymbolKey {
     }
 }
 
-type ImplicitBinding = (Vec<TypedIdent<Symbol>>, ArcType);
+type ImplicitBinding = Rc<(Vec<TypedIdent<Symbol, RcType>>, RcType)>;
 type ImplicitVector = ::rpds::Vector<ImplicitBinding>;
 
-#[derive(Clone, Default, Debug)]
-pub(crate) struct ImplicitBindings {
-    partioned: ::rpds::RedBlackTreeMap<SymbolKey, ImplicitVector>,
-    rest: ImplicitVector,
-    definitions: ::rpds::RedBlackTreeSet<Symbol>,
+#[derive(Debug)]
+struct Partition<T> {
+    partition: ::rpds::HashTrieMap<SymbolKey, Partition<T>>,
+    rest: ::rpds::Vector<T>,
 }
 
-impl ImplicitBindings {
-    fn new() -> ImplicitBindings {
-        ImplicitBindings::default()
-    }
-
-    fn insert(&mut self, definition: Option<&Symbol>, path: Vec<TypedIdent<Symbol>>, typ: ArcType) {
-        if let Some(definition) = definition {
-            self.definitions.insert_mut(definition.clone());
-        }
-
-        match SymbolKey::new(&typ) {
-            Some(symbol) => {
-                let mut vec = self.partioned.get(&symbol).cloned().unwrap_or_default();
-                vec.push_back_mut((path, typ));
-                self.partioned.insert_mut(symbol, vec);
-            }
-            None => self.rest.push_back_mut((path, typ)),
+impl<T> Clone for Partition<T> {
+    fn clone(&self) -> Self {
+        Partition {
+            partition: self.partition.clone(),
+            rest: self.rest.clone(),
         }
     }
+}
 
-    pub fn update<F>(&mut self, mut f: F)
+impl<T> Default for Partition<T> {
+    fn default() -> Self {
+        Partition {
+            partition: Default::default(),
+            rest: Default::default(),
+        }
+    }
+}
+
+impl<T> Partition<T> {
+    fn insert(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>, value: T)
     where
-        F: FnMut(&Symbol) -> Option<ArcType>,
+        T: Clone,
+    {
+        self.insert_(subs, typ, value);
+        // Ignore the insertion request at the top level as we know that the partitioning is 100%
+        // correct here (it matches on the implicit type rather than the argument to the implicit
+        // type)
+    }
+
+    fn insert_(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>, value: T) -> bool
+    where
+        T: Clone,
+    {
+        match typ.and_then(|typ| SymbolKey::split(subs, typ)) {
+            Some((symbol, rest)) => {
+                let mut partition = self.partition.get(&symbol).cloned().unwrap_or_default();
+                if partition.insert_(subs, rest, value.clone()) {
+                    partition.rest.push_back_mut(value);
+                }
+                // Add a fallback value, ideally we shouldn't need this
+                self.partition.insert_mut(symbol, partition);
+                true
+            }
+            None => {
+                self.rest.push_back_mut(value);
+                false
+            }
+        }
+    }
+
+    fn get_candidates<'a>(
+        &'a self,
+        subs: &Substitution<RcType>,
+        typ: Option<&RcType>,
+    ) -> Option<impl DoubleEndedIterator<Item = &'a T>>
+    where
+        T: fmt::Debug,
+    {
+        match typ.and_then(|typ| SymbolKey::split(subs, &typ)) {
+            Some((symbol, rest)) => {
+                match self
+                    .partition
+                    .get(&symbol)
+                    .and_then(|bindings| bindings.get_candidates(subs, rest))
+                {
+                    Some(bs) => Some(Either::Left(
+                        Box::new(bs) as Box<DoubleEndedIterator<Item = _>>
+                    )),
+                    None => {
+                        if self.rest.is_empty() {
+                            None
+                        } else {
+                            Some(Either::Right(self.rest.iter()))
+                        }
+                    }
+                }
+            }
+            None => {
+                if self.rest.is_empty() {
+                    None
+                } else {
+                    Some(Either::Right(self.rest.iter()))
+                }
+            }
+        }
+    }
+}
+
+impl Partition<ImplicitBinding> {
+    fn update<F>(&mut self, f: &mut F) -> bool
+    where
+        F: FnMut(&Symbol) -> Option<RcType>,
     {
         fn update_vec<F>(vec: &mut ImplicitVector, mut f: F) -> bool
         where
-            F: FnMut(&Symbol) -> Option<ArcType>,
+            F: FnMut(&Symbol) -> Option<RcType>,
         {
             let mut updated = false;
 
@@ -139,53 +225,88 @@ impl ImplicitBindings {
                     }
                 };
                 if let Some(new) = opt {
-                    vec.set_mut(i, new);
+                    vec.set_mut(i, Rc::new(new));
                     updated = true;
                 }
             }
             updated
         }
 
-        for (key, vec) in &self.partioned.clone() {
-            let mut vec = vec.clone();
-            if update_vec(&mut vec, &mut f) {
-                self.partioned.insert_mut(key.clone(), vec);
+        let mut updated = false;
+        for (key, partition) in &self.partition.clone() {
+            let mut partition = partition.clone();
+            if partition.update(f) {
+                updated = true;
+                self.partition.insert_mut(key.clone(), partition);
             }
         }
 
-        update_vec(&mut self.rest, &mut f);
+        updated |= update_vec(&mut self.rest, f);
+
+        updated
+    }
+}
+
+#[derive(Clone, Default, Debug)]
+pub(crate) struct ImplicitBindings {
+    partition: Partition<ImplicitBinding>,
+    definitions: ::rpds::HashTrieSet<Symbol>,
+}
+
+impl ImplicitBindings {
+    fn new() -> ImplicitBindings {
+        ImplicitBindings::default()
+    }
+
+    fn insert(
+        &mut self,
+        subs: &Substitution<RcType>,
+        definition: Option<&Symbol>,
+        path: Vec<TypedIdent<Symbol, RcType>>,
+        typ: &RcType,
+    ) {
+        if let Some(definition) = definition {
+            self.definitions.insert_mut(definition.clone());
+        }
+
+        self.partition
+            .insert(subs, Some(typ), Rc::new((path, typ.clone())));
+    }
+
+    pub fn update<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&Symbol) -> Option<RcType>,
+    {
+        self.partition.update(&mut f);
     }
 
     fn get_candidates<'a>(
         &'a self,
-        typ: &ArcType,
+        subs: &Substitution<RcType>,
+        typ: &RcType,
     ) -> impl DoubleEndedIterator<Item = &'a ImplicitBinding> {
-        match SymbolKey::new(&typ) {
-            Some(symbol) => Either::Left(self.partioned.get(&symbol).unwrap_or(&self.rest).iter()),
-            None => Either::Right(
-                self.rest
-                    .iter()
-                    .chain(self.partioned.values().flat_map(|x| x.iter())),
-            ),
-        }
+        self.partition
+            .get_candidates(subs, Some(typ))
+            .into_iter()
+            .flat_map(|x| x)
     }
 }
 
-type Result<T> = ::std::result::Result<T, Error<Symbol>>;
+type Result<T> = ::std::result::Result<T, Error<RcType>>;
 
-#[derive(Debug, PartialEq)]
-pub struct Error<I> {
-    pub kind: ErrorKind<I>,
-    pub reason: rpds::List<ArcType<I>>,
+#[derive(Debug, PartialEq, Functor)]
+pub struct Error<T> {
+    pub kind: ErrorKind<T>,
+    pub reason: rpds::List<T>,
 }
 
-impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for Error<I> {
+impl<I: fmt::Display + Clone> fmt::Display for Error<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for Error<I> {
+impl<I: fmt::Display + Clone> AsDiagnostic for Error<I> {
     fn as_diagnostic(&self) -> Diagnostic {
         let diagnostic = Diagnostic::new_error(self.to_string());
         self.reason.iter().fold(diagnostic, |diagnostic, reason| {
@@ -198,15 +319,21 @@ impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for Error<I> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ErrorKind<I> {
-    /// An implicit parameter were not possible to resolve
-    MissingImplicit(ArcType<I>),
-    LoopInImplicitResolution(Vec<String>),
-    AmbiguousImplicit(Vec<(String, ArcType<I>)>),
+#[derive(Debug, PartialEq, Functor)]
+pub struct AmbiguityEntry<T> {
+    pub path: String,
+    pub typ: T,
 }
 
-impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
+#[derive(Debug, PartialEq, Functor)]
+pub enum ErrorKind<T> {
+    /// An implicit parameter were not possible to resolve
+    MissingImplicit(T),
+    LoopInImplicitResolution(Vec<String>),
+    AmbiguousImplicit(Vec<AmbiguityEntry<T>>),
+}
+
+impl<I: fmt::Display> fmt::Display for ErrorKind<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ErrorKind::*;
         match *self {
@@ -225,9 +352,9 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
                 "Unable to resolve implicit. Multiple candidates were found: {}",
                 candidates
                     .iter()
-                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
+                    .format_with(", ", |entry, fmt| fmt(&format_args!(
                         "{}: {}",
-                        path, typ
+                        entry.path, entry.typ
                     )))
             ),
         }
@@ -235,8 +362,8 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
 }
 
 struct Demand {
-    reason: rpds::List<ArcType>,
-    constraint: ArcType,
+    reason: rpds::List<RcType>,
+    constraint: RcType,
 }
 
 struct ResolveImplicitsVisitor<'a, 'b: 'a> {
@@ -248,13 +375,13 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         &mut self,
         implicit_bindings: &ImplicitBindings,
         expr: &SpannedExpr<Symbol>,
-        id: &TypedIdent<Symbol>,
+        id: &TypedIdent<Symbol, RcType>,
     ) -> Option<SpannedExpr<Symbol>> {
         debug!(
             "Resolving {} against:\n{}",
             id.typ,
             implicit_bindings
-                .get_candidates(&id.typ)
+                .get_candidates(&self.tc.subs, &id.typ)
                 .map(|t| &t.1)
                 .format("\n")
         );
@@ -293,6 +420,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 match resolution_result {
                     Some(Ok(replacement)) => Some(replacement),
                     Some(Err(err)) => {
+                        debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                         self.tc.errors.push(Spanned {
                             span: expr.span,
                             value: TypeError::UnableToResolveImplicit(err).into(),
@@ -316,6 +444,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 }
             }
             Err(err) => {
+                debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                 self.tc.errors.push(Spanned {
                     span: expr.span,
                     value: TypeError::UnableToResolveImplicit(err).into(),
@@ -329,7 +458,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         level: u32,
         implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
-        path: &[TypedIdent<Symbol>],
+        path: &[TypedIdent<Symbol, RcType>],
         to_resolve: &[Demand],
     ) -> Result<Option<SpannedExpr<Symbol>>> {
         self.resolve_implicit_application_(level, implicit_bindings, span, path, to_resolve)
@@ -346,16 +475,25 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         level: u32,
         implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
-        path: &[TypedIdent<Symbol>],
+        path: &[TypedIdent<Symbol, RcType>],
         to_resolve: &[Demand],
     ) -> Result<Option<SpannedExpr<Symbol>>> {
-        let base_ident = path[0].clone();
         let func = path[1..].iter().fold(
-            pos::spanned(span, Expr::Ident(base_ident)),
+            pos::spanned(
+                span,
+                Expr::Ident(TypedIdent::new2(
+                    path[0].name.clone(),
+                    self.tc.subs.bind_arc(&path[0].typ),
+                )),
+            ),
             |expr, ident| {
                 pos::spanned(
                     expr.span,
-                    Expr::Projection(Box::new(expr), ident.name.clone(), ident.typ.clone()),
+                    Expr::Projection(
+                        Box::new(expr),
+                        ident.name.clone(),
+                        self.tc.subs.bind_arc(&ident.typ),
+                    ),
                 )
             },
         );
@@ -408,10 +546,10 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
 
     fn try_resolve_implicit(
         &mut self,
-        path: &[TypedIdent<Symbol>],
+        path: &[TypedIdent<Symbol, RcType>],
         to_resolve: &mut Vec<Demand>,
         demand: &Demand,
-        binding_type: &ArcType,
+        binding_type: &RcType,
     ) -> bool {
         debug!(
             "Trying implicit {{\n    path: `{}`,\n    to_resolve: [{}],\n    demand: `{}`,\n    binding_type: {} }}",
@@ -421,7 +559,6 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             binding_type,
         );
 
-        let binding_type = self.tc.new_skolem_scope(binding_type);
         let binding_type = self.tc.instantiate_generics(&binding_type);
         to_resolve.clear();
         let mut iter = types::implicit_arg_iter(&binding_type);
@@ -430,8 +567,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             constraint,
         }));
 
-        let state =
-            crate::unify_type::State::new(&self.tc.environment, &self.tc.subs, &self.tc.type_cache);
+        let state = crate::unify_type::State::new(&self.tc.environment, &self.tc.subs);
         crate::unify_type::subsumes(&self.tc.subs, state, &demand.constraint, &iter.typ).is_ok()
     }
 
@@ -440,13 +576,17 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         implicit_bindings: &'c ImplicitBindings,
         to_resolve: &mut Vec<Demand>,
         demand: &Demand,
-    ) -> Result<&'c [TypedIdent<Symbol>]> {
-        let mut candidates = implicit_bindings.get_candidates(&demand.constraint).rev();
-        let found_candidate = candidates
-            .by_ref()
-            .find(|&&(ref path, ref typ)| self.try_resolve_implicit(path, to_resolve, demand, typ));
+    ) -> Result<&'c [TypedIdent<Symbol, RcType>]> {
+        let mut candidates = implicit_bindings
+            .get_candidates(&self.tc.subs, &demand.constraint)
+            .rev();
+        let found_candidate = candidates.by_ref().find(|x| {
+            let (path, typ) = &***x;
+            self.try_resolve_implicit(path, to_resolve, demand, typ)
+        });
         match found_candidate {
-            Some((candidate_path, candidate_type)) => {
+            Some(x) => {
+                let (candidate_path, candidate_type) = &**x;
                 let new_demands = to_resolve
                     .iter()
                     .map(|d| self.tc.subs.zonk(&d.constraint))
@@ -470,11 +610,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                             entry.get().iter().format(", "),
                         );
 
-                        let state = unify_type::State::new(
-                            &self.tc.environment,
-                            &self.tc.subs,
-                            &self.tc.type_cache,
-                        );
+                        let state = unify_type::State::new(&self.tc.environment, &self.tc.subs);
                         if !smallers(state, &new_demands, entry.get()) {
                             return Err(Error {
                                 kind: ErrorKind::LoopInImplicitResolution(vec![candidate_path
@@ -491,27 +627,26 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 }
 
                 let mut additional_candidates: Vec<_> = candidates
-                    .filter(|&&(ref path, ref typ)| {
+                    .filter(|x| {
+                        let (path, typ) = &***x;
                         self.try_resolve_implicit(path, &mut Vec::new(), demand, typ)
                     })
-                    .map(|bind| {
-                        (
-                            bind.0.iter().map(|id| &id.name).format(".").to_string(),
-                            bind.1.clone(),
-                        )
+                    .map(|bind| AmbiguityEntry {
+                        path: bind.0.iter().map(|id| &id.name).format(".").to_string(),
+                        typ: bind.1.clone(),
                     })
                     .collect();
                 if additional_candidates.is_empty() {
                     Ok(&candidate_path)
                 } else {
-                    additional_candidates.push((
-                        candidate_path
+                    additional_candidates.push(AmbiguityEntry {
+                        path: candidate_path
                             .iter()
                             .map(|id| &id.name)
                             .format(".")
                             .to_string(),
-                        candidate_type.clone(),
-                    ));
+                        typ: candidate_type.clone(),
+                    });
                     Err(Error {
                         kind: ErrorKind::AmbiguousImplicit(additional_candidates),
                         reason: demand.reason.clone(),
@@ -539,7 +674,12 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                 .get(&id.name)
                 .cloned();
             if let Some(implicit_bindings) = implicit_bindings {
-                replacement = self.resolve_implicit(&implicit_bindings, expr, id);
+                let typ = id.typ.clone();
+                let id = TypedIdent {
+                    name: id.name.clone(),
+                    typ: typ,
+                };
+                replacement = self.resolve_implicit(&implicit_bindings, expr, &id);
             }
         }
         if let Some(replacement) = replacement {
@@ -553,17 +693,17 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
 }
 
 pub struct ImplicitResolver<'a> {
-    pub(crate) metadata: &'a mut FnvMap<Symbol, Metadata>,
-    environment: &'a TypecheckEnv,
+    pub(crate) metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
+    environment: &'a TypecheckEnv<Type = RcType>,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
-    visited: ScopedMap<Box<[Symbol]>, Box<[ArcType]>>,
+    visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
 }
 
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
-        environment: &'a TypecheckEnv,
-        metadata: &'a mut FnvMap<Symbol, Metadata>,
+        environment: &'a TypecheckEnv<Type = RcType>,
+        metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {
             metadata,
@@ -574,82 +714,88 @@ impl<'a> ImplicitResolver<'a> {
         }
     }
 
-    pub fn on_stack_var(&mut self, id: &Symbol, typ: &ArcType) {
+    pub fn on_stack_var(&mut self, subs: &Substitution<RcType>, id: &Symbol, typ: &RcType) {
         if self.implicit_bindings.is_empty() {
             self.implicit_bindings.push(ImplicitBindings::new());
         }
-        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
         let metadata = self.metadata.get(id);
-        self.try_add_implicit(
-            &id,
-            metadata,
-            &typ,
-            &mut Vec::new(),
-            &mut |definition, path, implicit_type| {
-                bindings.insert(definition, path, implicit_type.clone());
-            },
-        );
-        *self.implicit_bindings.last_mut().unwrap() = bindings;
+
+        let opt = self.try_create_implicit(&id, metadata.map(|m| &**m), &typ, &mut Vec::new());
+
+        if let Some((definition, path, implicit_type)) = opt {
+            self.implicit_bindings.last_mut().unwrap().insert(
+                subs,
+                definition,
+                path,
+                &implicit_type,
+            );
+        }
     }
 
     pub fn add_implicits_of_record(
         &mut self,
-        subs: &Substitution<ArcType>,
+        mut subs: &Substitution<RcType>,
         id: &Symbol,
-        typ: &ArcType,
+        typ: &RcType,
     ) {
         info!("Trying to resolve implicit {}", typ);
 
         if self.implicit_bindings.is_empty() {
             self.implicit_bindings.push(ImplicitBindings::new());
         }
-        let mut bindings = self.implicit_bindings.last().unwrap().clone();
 
-        let mut path = vec![TypedIdent {
-            name: id.clone(),
-            typ: typ.clone(),
-        }];
-        let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
-        let typ = crate::unify_type::top_skolem_scope(subs, subs.real(typ));
-        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
-        let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
-            Ok(t) => t,
-            // Don't recurse into self recursive aliases
-            Err(_) => return,
-        };
+        let typ = subs.real(typ).clone();
+        let ref typ = typ.instantiate_generics(&mut subs, &mut FnvMap::default());
+        let raw_type =
+            match alias_resolver.remove_aliases(&self.environment, &mut subs, typ.clone()) {
+                Ok(t) => t,
+                // Don't recurse into self recursive aliases
+                Err(_) => return,
+            };
         match *raw_type {
             Type::Record(_) => {
+                let metadata = self.metadata.get(id);
+
+                let mut path = vec![TypedIdent {
+                    name: id.clone(),
+                    typ: typ.clone(),
+                }];
+
                 for field in raw_type.row_iter() {
                     let field_metadata = metadata
                         .as_ref()
-                        .and_then(|metadata| metadata.module.get(field.name.declared_name()));
+                        .and_then(|metadata| metadata.module.get(field.name.as_pretty_str()));
 
-                    self.try_add_implicit(
+                    let opt = self.try_create_implicit(
                         &field.name,
-                        field_metadata,
+                        field_metadata.map(|m| &**m),
                         &field.typ,
                         &mut path,
-                        &mut |definition, path, implicit_type| {
-                            bindings.insert(definition, path, implicit_type.clone());
-                        },
                     );
+
+                    if let Some((definition, path, implicit_type)) = opt {
+                        self.implicit_bindings.last_mut().unwrap().insert(
+                            subs,
+                            definition,
+                            path,
+                            &implicit_type,
+                        );
+                    }
                 }
             }
             _ => (),
         }
-        *self.implicit_bindings.last_mut().unwrap() = bindings;
     }
 
-    pub fn try_add_implicit(
+    pub fn try_create_implicit<'m>(
         &self,
         id: &Symbol,
-        metadata: Option<&Metadata>,
-        typ: &ArcType,
-        path: &mut Vec<TypedIdent<Symbol>>,
-        consumer: &mut FnMut(Option<&Symbol>, Vec<TypedIdent<Symbol>>, &ArcType),
-    ) {
+        metadata: Option<&'m Metadata>,
+        typ: &RcType,
+        path: &mut Vec<TypedIdent<Symbol, RcType>>,
+    ) -> Option<(Option<&'m Symbol>, Vec<TypedIdent<Symbol, RcType>>, RcType)> {
         let has_implicit_attribute =
             |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
         let mut is_implicit = metadata.map(&has_implicit_attribute).unwrap_or(false);
@@ -666,7 +812,7 @@ impl<'a> ImplicitResolver<'a> {
                     self.metadata
                         .get(typename)
                         .or_else(|| self.environment.get_metadata(typename))
-                        .map(has_implicit_attribute)
+                        .map(|m| has_implicit_attribute(m))
                 })
                 .unwrap_or(false);
         }
@@ -683,7 +829,7 @@ impl<'a> ImplicitResolver<'a> {
                         .definitions
                         .contains(definition)
                     {
-                        return;
+                        return None;
                     }
                 }
             }
@@ -693,11 +839,17 @@ impl<'a> ImplicitResolver<'a> {
                 name: id.clone(),
                 typ: typ.clone(),
             });
-            consumer(metadata.and_then(|m| m.definition.as_ref()), path, typ);
+            Some((
+                metadata.and_then(|m| m.definition.as_ref()),
+                path,
+                typ.clone(),
+            ))
+        } else {
+            None
         }
     }
 
-    pub fn make_implicit_ident(&mut self, _typ: &ArcType) -> Symbol {
+    pub fn make_implicit_ident(&mut self, _typ: &RcType) -> Symbol {
         let name = Symbol::from("implicit_arg");
 
         let implicits = self.implicit_bindings.last().unwrap().clone();
@@ -720,7 +872,7 @@ pub fn resolve(tc: &mut Typecheck, expr: &mut SpannedExpr<Symbol>) {
     visitor.visit_expr(expr);
 }
 
-fn smaller(state: unify_type::State, new_type: &ArcType, old_type: &ArcType) -> Size {
+fn smaller(state: unify_type::State, new_type: &RcType, old_type: &RcType) -> Size {
     match unify_type::smaller(state.clone(), new_type, old_type) {
         Size::Smaller => match unify_type::smaller(state, old_type, new_type) {
             Size::Smaller => Size::Different,
@@ -729,7 +881,7 @@ fn smaller(state: unify_type::State, new_type: &ArcType, old_type: &ArcType) -> 
         check => check,
     }
 }
-fn smallers(state: unify_type::State, new_types: &[ArcType], old_types: &[ArcType]) -> bool {
+fn smallers(state: unify_type::State, new_types: &[RcType], old_types: &[RcType]) -> bool {
     if old_types.is_empty() {
         true
     } else {

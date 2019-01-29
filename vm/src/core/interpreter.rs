@@ -4,11 +4,13 @@ use crate::base::kind::{ArcKind, KindEnv};
 use crate::base::merge::merge_iter;
 use crate::base::scoped_map::ScopedMap;
 use crate::base::symbol::{Symbol, SymbolRef};
-use crate::base::types::{Alias, ArcType, TypeEnv};
-use crate::core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
+use crate::base::types::{Alias, ArcType, TypeEnv, TypeExt};
+use crate::core::optimize::{
+    walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor,
+};
 use crate::core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
-use std::ops::{Deref, DerefMut};
 use crate::types::*;
+use std::ops::{Deref, DerefMut};
 
 use crate::{Error, Result};
 
@@ -283,6 +285,8 @@ impl<'a, 'e> KindEnv for Compiler<'a, 'e> {
 }
 
 impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
+    type Type = ArcType;
+
     fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
         None
     }

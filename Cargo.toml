@@ -66,7 +66,7 @@ little-skeptic = { version = "0.15.0", optional = true }
 walkdir = "2"
 
 [dev-dependencies]
-bencher = "0.1.2"
+criterion = "0.2"
 tensile = "0.4"
 collect-mac = "0.1.0"
 env_logger = "0.6"
@@ -179,3 +179,5 @@ features = ["docs_rs"]
 [profile.bench]
 debug = true
 
+[profile.release]
+debug = true

@@ -159,6 +159,7 @@ extern crate quote;
 extern crate syn;
 
 mod attr;
+mod functor;
 mod getable;
 mod pushable;
 mod shared;
@@ -187,4 +188,10 @@ pub fn userdata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(VmType, attributes(gluon))]
 pub fn vm_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     vm_type::derive(input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro_derive(Functor, attributes(functor))]
+pub fn functor(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    functor::derive(input.into()).into()
 }

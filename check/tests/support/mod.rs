@@ -23,7 +23,9 @@ use self::{
     parser::{parse_partial_expr, reparse_infix, ParseErrors},
 };
 
-use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
+pub use self::base::types::TypeExt;
+
+use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc, sync::Arc};
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
@@ -99,11 +101,12 @@ impl MockEnv {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
 
-        let bool_sym = interner.symbol("Bool");
-        let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
-
         MockEnv {
-            bool: Alias::new(bool_sym, Vec::new(), bool_ty),
+            bool: {
+                let bool_sym = interner.symbol("Bool");
+                let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+                Alias::new(bool_sym, Vec::new(), bool_ty)
+            },
         }
     }
 }
@@ -118,6 +121,7 @@ impl KindEnv for MockEnv {
 }
 
 impl TypeEnv for MockEnv {
+    type Type = ArcType;
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.definition_name() {
             "False" | "True" => Some(&self.bool.as_type()),
@@ -140,7 +144,7 @@ impl PrimitiveEnv for MockEnv {
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
         None
     }
 }
@@ -208,7 +212,7 @@ pub fn typecheck_expr_expected(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -249,7 +253,7 @@ pub fn typecheck_partial_expr(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -316,7 +320,7 @@ pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> A
 /// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ, &mut |typ| match **typ {
+    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::ExtendRow {
             ref types,
             ref fields,

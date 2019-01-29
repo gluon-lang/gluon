@@ -3,19 +3,55 @@ use std::fmt;
 use pretty::{Arena, DocAllocator};
 
 use crate::base::error::Errors;
-use crate::base::symbol::Symbol;
+use crate::base::kind::ArcKind;
 use crate::base::types::ToDoc;
 
 use crate::substitution::{self, Substitutable, Substitution};
 
 #[derive(Debug, PartialEq)]
-pub enum Error<T, E> {
+pub enum Error<E, T> {
     TypeMismatch(T, T),
     Substitution(crate::substitution::Error<T>),
     Other(E),
 }
 
-impl<T, E> fmt::Display for Error<T, E>
+impl<I, T> Error<crate::unify_type::TypeError<I, T>, T> {
+    pub fn map_t<U>(
+        self,
+        f: &mut impl FnMut(T) -> U,
+    ) -> Error<crate::unify_type::TypeError<I, U>, U>
+    where
+        T: Clone,
+    {
+        use crate::unify::Error::*;
+
+        match self {
+            TypeMismatch(l, r) => TypeMismatch(f(l), f(r)),
+            Substitution(err) => Substitution(err.map_t(f)),
+            Other(err) => Other(err.map_t(f)),
+        }
+    }
+}
+
+impl<I, T> Error<crate::kindcheck::KindError<I, T>, ArcKind> {
+    pub fn map_t<U>(
+        self,
+        f: &mut impl FnMut(T) -> U,
+    ) -> Error<crate::kindcheck::KindError<I, U>, ArcKind>
+    where
+        T: Clone,
+    {
+        use crate::unify::Error::*;
+
+        match self {
+            TypeMismatch(l, r) => TypeMismatch(l, r),
+            Substitution(err) => Substitution(err),
+            Other(err) => Other(err.map_t(f)),
+        }
+    }
+}
+
+impl<E, T> fmt::Display for Error<E, T>
 where
     T: fmt::Display + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
     E: fmt::Display,
@@ -46,7 +82,7 @@ where
     }
 }
 
-impl<T, E> From<substitution::Error<T>> for Error<T, E> {
+impl<T, E> From<substitution::Error<T>> for Error<E, T> {
     fn from(err: substitution::Error<T>) -> Self {
         Error::Substitution(err)
     }
@@ -63,7 +99,7 @@ where
     Type: Unifiable<S>,
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
-    fn report_error(&mut self, error: Error<Type, Type::Error>);
+    fn report_error(&mut self, error: Error<Type::Error, Type>);
     /// Attempt to unify `l` and `r` using the strategy of `Self`.
     fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
         match self.try_match_res(l, r) {
@@ -78,7 +114,7 @@ where
         &mut self,
         l: &Type,
         r: &Type,
-    ) -> Result<Option<Type>, Error<Type, Type::Error>>;
+    ) -> Result<Option<Type>, Error<Type::Error, Type>>;
 
     /// `true` if the returned type can be replaced by the caller
     fn allow_returned_type_replacement(&self) -> bool {
@@ -104,7 +140,7 @@ pub trait Unifiable<S>: Substitutable + Sized {
         &self,
         other: &Self,
         unifier: &mut UnifierState<S, U>,
-    ) -> Result<Option<Self>, Error<Self, Self::Error>>
+    ) -> Result<Option<Self>, Error<Self::Error, Self>>
     where
         UnifierState<S, U>: Unifier<S, Self>;
 
@@ -121,7 +157,7 @@ pub fn unify<S, T>(
     state: S,
     l: &T,
     r: &T,
-) -> Result<T, Errors<Error<T, T::Error>>>
+) -> Result<T, Errors<Error<T::Error, T>>>
 where
     T: Unifiable<S> + PartialEq + fmt::Display + fmt::Debug + Clone,
     T::Variable: Clone,
@@ -147,7 +183,7 @@ struct Unify<'e, T, E>
 where
     T: Substitutable + 'e,
 {
-    errors: Errors<Error<T, E>>,
+    errors: Errors<Error<E, T>>,
     subs: &'e Substitution<T>,
 }
 
@@ -157,11 +193,11 @@ where
     T::Variable: Clone,
     T::Factory: Clone,
 {
-    fn report_error(&mut self, error: Error<T, T::Error>) {
+    fn report_error(&mut self, error: Error<T::Error, T>) {
         self.unifier.errors.push(error);
     }
 
-    fn try_match_res(&mut self, l_orig: &T, r_orig: &T) -> Result<Option<T>, Error<T, T::Error>> {
+    fn try_match_res(&mut self, l_orig: &T, r_orig: &T) -> Result<Option<T>, Error<T::Error, T>> {
         let subs = self.unifier.subs;
 
         // Retrieve the 'real' types by resolving
@@ -174,12 +210,12 @@ where
             (_, Some(r_var)) => {
                 let replacement = subs.union(r_var, l)?;
                 debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
-                Ok(replacement)
+                Ok(None)
             }
             (Some(l_var), _) => {
                 let replacement = subs.union(l_var, r)?;
                 debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
-                Ok(replacement.or_else(|| Some(r.clone())))
+                Ok(None)
             }
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
@@ -195,24 +231,21 @@ where
     }
 }
 
-pub trait GenericVariant {
-    fn new_generic(symbol: Symbol, kind: &Self) -> Self;
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
-    use std::fmt;
+    use std::{fmt, ops::Deref};
 
-    use crate::base::error::Errors;
-    use crate::base::merge::merge;
-    use crate::base::symbol::Symbol;
-    use crate::base::types::Walker;
+    use crate::base::{
+        error::Errors,
+        merge::merge,
+        types::{NullInterner, Walker},
+    };
 
     use crate::substitution::{Substitutable, Substitution};
 
-    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+    #[derive(Debug, Default, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -222,23 +255,31 @@ mod test {
         Arrow(T, T),
     }
 
+    impl<T> Default for Type<T> {
+        fn default() -> Self {
+            Type::Variable(0)
+        }
+    }
+
+    impl Deref for TType {
+        type Target = Type<TType>;
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
     impl fmt::Display for TType {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{:?}", self)
         }
     }
 
-    impl GenericVariant for TType {
-        fn new_generic(symbol: Symbol, _: &TType) -> Self {
-            TType(Box::new(Type::Ident(symbol.to_string())))
-        }
-    }
-
     impl Substitutable for TType {
         type Variable = u32;
         type Factory = ();
+        type Interner = NullInterner;
 
-        fn from_variable(var: u32) -> TType {
+        fn from_variable(_: &Substitution<Self>, var: u32) -> TType {
             TType(Box::new(Type::Variable(var)))
         }
         fn get_var(&self) -> Option<&u32> {
@@ -274,7 +315,7 @@ mod test {
             &self,
             other: &Self,
             f: &mut UnifierState<(), F>,
-        ) -> Result<Option<Self>, Error<Self, Self::Error>>
+        ) -> Result<Option<Self>, Error<Self::Error, Self>>
         where
             UnifierState<(), F>: Unifier<(), Self>,
         {
@@ -299,13 +340,13 @@ mod test {
         subs: &Substitution<TType>,
         l: &TType,
         r: &TType,
-    ) -> Result<TType, Errors<Error<TType, ()>>> {
+    ) -> Result<TType, Errors<Error<(), TType>>> {
         super::unify(subs, (), l, r)
     }
 
     #[test]
     fn unify_test() {
-        let subs = Substitution::new(());
+        let subs = Substitution::default();
         let var1 = subs.new_var();
         let var2 = subs.new_var();
 
@@ -323,7 +364,7 @@ mod test {
 
     #[test]
     fn unify_function() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -339,12 +380,12 @@ mod test {
 
     #[test]
     fn unify_real_type() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
         let result = unify(&subs, &var1, &string);
-        assert_eq!(result, Ok(string.clone()));
+        assert_eq!(result.as_ref().map(|t| subs.real(t)), Ok(&string));
 
         let int = TType(Box::new(Type::Ident("Int".into())));
         // Check that var1 does not unify with int as it should already be a string
@@ -360,7 +401,7 @@ mod test {
 
     #[test]
     fn occurs() {
-        let subs = Substitution::<TType>::new(());
+        let subs = Substitution::<TType>::default();
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));

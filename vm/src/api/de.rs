@@ -1,13 +1,12 @@
 //! _This module requires Gluon to be built with the `serde` feature._
 
-use std::cell::RefCell;
-use std::fmt;
-use std::marker::PhantomData;
-use std::result::Result as StdResult;
+use std::{cell::RefCell, fmt, marker::PhantomData, result::Result as StdResult};
 
-use crate::base::resolve;
-use crate::base::symbol::Symbol;
-use crate::base::types::{row_iter, ArcType, BuiltinType, Type, TypeEnv};
+use crate::base::{
+    resolve,
+    symbol::Symbol,
+    types::{row_iter, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
+};
 
 use crate::api::{Getable, ValueRef, VmType};
 use crate::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
@@ -198,7 +197,7 @@ where
 #[derive(Clone)]
 struct State<'de> {
     thread: &'de Thread,
-    env: &'de TypeEnv,
+    env: &'de TypeEnv<Type = ArcType>,
 }
 
 #[derive(Clone)]
@@ -211,7 +210,7 @@ struct Deserializer<'de, 't> {
 impl<'de, 't> Deserializer<'de, 't> {
     fn from_value(
         thread: &'de Thread,
-        env: &'de TypeEnv,
+        env: &'de TypeEnv<Type = ArcType>,
         input: Variants<'de>,
         typ: &'t ArcType,
     ) -> Self {
@@ -239,7 +238,7 @@ impl<'de, 't> Deserializer<'de, 't> {
         F: FnOnce(T) -> Result<R>,
         T: Getable<'de, 'de>,
     {
-        let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+        let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         if expected(&typ) {
             visit(T::from_value(self.state.thread, self.input))
         } else {
@@ -300,7 +299,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             },
             ValueRef::Byte(_) => self.deserialize_u8(visitor),
             ValueRef::Data(_) => {
-                let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+                let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
                 let mut deserializer = Deserializer {
                     typ: &typ,
                     ..self.clone()
@@ -441,7 +440,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         V: Visitor<'de>,
     {
         use std::char::from_u32;
-        let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+        let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         match (self.input.as_ref(), &**typ) {
             (ValueRef::Int(c), &Type::Builtin(BuiltinType::Char)) => match from_u32(c as u32) {
                 Some(c) => visitor.visit_char(c),
@@ -492,7 +491,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
+        let typ = resolve::canonical_alias(self.state.env, &mut NullInterner, self.typ, |alias| {
             alias.name.name().as_str() == "std.types.Option"
         });
         let option_inner_typ = match **typ {
@@ -556,7 +555,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+        let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         match (self.input.as_ref(), &**typ) {
             (ValueRef::Array(values), &Type::App(_, ref args)) if args.len() == 1 => visitor
                 .visit_seq(SeqDeserializer::new(
@@ -601,7 +600,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+        let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         match (self.input.as_ref(), &**typ) {
             (ValueRef::Data(ref data), &Type::Record { .. }) => {
                 let iter = typ.row_iter().flat_map(|field| {
@@ -774,7 +773,7 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
             ValueRef::Data(data) => data.tag(),
             _ => return Err(Self::Error::custom("Unable to deserialize tag")),
         };
-        let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
+        let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, self.de.typ);
         match **typ {
             Type::Variant(ref variants) => {
                 let variant = variants
@@ -824,7 +823,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
     where
         T: DeserializeSeed<'de>,
     {
-        let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
+        let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, self.de.typ);
         match (self.de.input.as_ref(), &**typ) {
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {

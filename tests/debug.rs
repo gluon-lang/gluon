@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use futures::{Async, Future};
 
 use gluon::base::pos::Line;
-use gluon::base::types::{ArcType, Type};
+use gluon::base::types::{ArcType, Type, TypeExt};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{HookFlags, ThreadInternal};
 use gluon::{new_vm, Compiler};

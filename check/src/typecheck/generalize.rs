@@ -1,24 +1,30 @@
 use crate::base::{
     ast::{self, MutVisitor, SpannedExpr, SpannedIdent},
     fnv::{FnvMap, FnvSet},
-    merge,
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypeExt},
 };
 
-use crate::{
-    substitution::{is_variable_unified, Substitution},
-    typecheck::{TypeError, Typecheck},
-};
+use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
 
 pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     level: u32,
-    unbound_variables: FnvMap<Symbol, Generic<Symbol>>,
+    unbound_variables: FnvMap<u32, RcType>,
+    /// We delay updating the substitution until after all recursive bindings have been typechecked
+    /// to ensure that they get can figure out which variable got generalized for each binding
+    delayed_generalizations: Vec<(u32, RcType)>,
     variable_generator: TypeVariableGenerator,
-    tc: &'a mut Typecheck<'b>,
-    context: ArcType,
+    pub tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
+}
+
+impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b> {
+    fn drop(&mut self) {
+        for (id, gen) in self.delayed_generalizations.drain(..) {
+            self.tc.subs.replace(id, gen);
+        }
+    }
 }
 
 impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
@@ -34,19 +40,25 @@ impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b> {
     }
 }
 
+impl<'a, 'b> TypeContext<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
+    fn intern(&mut self, typ: Type<Symbol, RcType>) -> RcType {
+        (&self.tc.subs).intern(typ)
+    }
+}
+
 impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     pub(crate) fn new(
         level: u32,
         tc: &'a mut Typecheck<'b>,
-        typ: &ArcType,
+        typ: &RcType,
         span: Span<BytePos>,
     ) -> TypeGeneralizer<'a, 'b> {
         TypeGeneralizer {
             level,
-            unbound_variables: FnvMap::default(),
+            unbound_variables: Default::default(),
+            delayed_generalizations: Vec::new(),
             variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
             tc,
-            context: typ.clone(),
             span,
         }
     }
@@ -70,7 +82,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
-        self.tc.type_variables.enter_scope();
+        self.tc.environment.type_variables.enter_scope();
 
         // Replaces all type variables with their inferred types
         struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
@@ -81,10 +93,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {
-                self.generalizer.tc.type_variables.enter_scope();
                 self.generalizer.span = e.span;
                 ast::walk_mut_expr(self, e);
-                self.generalizer.tc.type_variables.exit_scope();
             }
 
             fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Symbol>) {
@@ -92,15 +102,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 self.visit_ident(&mut id.value)
             }
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                {
-                    let type_cache = &self.generalizer.tc.type_cache;
-                    self.generalizer.tc.type_variables.extend(
-                        typ.forall_params()
-                            .map(|param| (param.id.clone(), type_cache.hole())),
-                    );
-                }
-                if let Some(finished) = self.generalizer.generalize_type(typ) {
-                    *typ = finished;
+                debug!("Variable generalize {}", typ);
+                if let Some(new_type) = self.generalizer.generalize_type(typ) {
+                    *typ = new_type;
+                    debug!("End generalize {}", typ);
+                } else {
+                    debug!("End variable generalize");
                 }
             }
         }
@@ -113,29 +120,37 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
         }
 
-        self.tc.type_variables.exit_scope();
+        self.tc.environment.type_variables.exit_scope();
     }
 
-    pub(crate) fn generalize_type_top(&mut self, typ: &mut ArcType) {
-        self.tc.type_variables.enter_scope();
+    pub(crate) fn generalize_type_top(&mut self, typ: &mut RcType) {
+        self.tc.environment.type_variables.enter_scope();
 
         let mut result_type = self.generalize_type(typ);
 
-        self.tc.type_variables.exit_scope();
+        self.tc.environment.type_variables.exit_scope();
 
         if result_type.is_none() && !self.unbound_variables.is_empty() {
             result_type = Some(typ.clone());
         }
 
         result_type = result_type.map(|typ| {
+            let delayed_generalizations = &mut self.delayed_generalizations;
             let mut params = self
                 .unbound_variables
                 .drain()
-                .map(|(_, generic)| generic)
+                .map(|(id, generic)| {
+                    let t = match &*generic {
+                        Type::Generic(g) => g.clone(),
+                        _ => unreachable!(),
+                    };
+                    delayed_generalizations.push((id, generic));
+                    t
+                })
                 .collect::<Vec<_>>();
             params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
 
-            Type::forall(params, typ)
+            self.tc.forall(params, typ)
         });
         if let Some(finished) = result_type {
             *typ = finished;
@@ -143,103 +158,64 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
         debug!("End generalize {}", typ);
     }
 
-    pub(crate) fn generalize_type(&mut self, typ: &ArcType) -> Option<ArcType> {
+    pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
         let replacement = self.subs.replace_variable(typ);
         let mut typ = typ;
         if let Some(ref t) = replacement {
             typ = t;
         }
-        match **typ {
+        trace!("GEN: {}", typ);
+
+        if !typ.needs_generalize() {
+            trace!("No need to generalize: {}", typ);
+            return replacement;
+        }
+
+        let new_type = match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= self.level => {
-                // Create a prefix if none exists
-                let id = self.variable_generator.next_variable(self.tc);
+                let Self {
+                    tc,
+                    variable_generator,
+                    ..
+                } = self;
+                let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                    // Create a prefix if none exists
+                    let id = variable_generator.next_variable(tc);
 
-                let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
-                debug!("Gen {} to {}", var.id, gen);
-                self.subs.insert(var.id, gen.clone());
+                    let gen: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, gen);
 
-                self.unbound_variables
-                    .insert(id.clone(), Generic::new(id, var.kind.clone()));
+                    gen
+                });
 
-                Some(gen)
-            }
-
-            Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                trace!("Generalize `{}` {:?}", typ, vars);
-
-                let mut new_params = Vec::new();
-                let typ = {
-                    let subs = &self.tc.subs;
-                    self.tc.named_variables.clear();
-                    for (param, var) in params.iter().zip(vars) {
-                        if is_variable_unified(subs, var) {
-                            self.tc
-                                .named_variables
-                                .insert(param.id.clone(), var.clone());
-                        } else {
-                            new_params.push(param.clone());
-                        }
-                    }
-
-                    if self.tc.named_variables.is_empty() {
-                        typ.clone()
-                    } else {
-                        typ.instantiate_generics_(&mut self.tc.named_variables)
-                            .unwrap_or(typ.clone())
-                    }
-                };
-
-                self.type_variables.enter_scope();
-                self.type_variables.extend(
-                    params
-                        .iter()
-                        .zip(vars)
-                        .map(|(param, var)| (param.id.clone(), var.clone())),
-                );
-
-                trace!("Generalize forall => `{}`", typ);
-
-                let new_type = self.generalize_type(&typ);
-                self.type_variables.exit_scope();
-
-                Some(Type::forall(
-                    new_params,
-                    new_type.unwrap_or_else(|| typ.clone()),
-                ))
+                Some(gen.clone())
             }
 
             Type::Skolem(ref skolem) => {
-                let in_scope = self.type_variables.contains_key(&skolem.name);
-                if !in_scope {
-                    self.tc.error(
-                        self.span,
-                        TypeError::Message(format!(
-                            "Skolem variable `{}` would escape as it is not bound in `{}`",
-                            skolem.name, self.context
-                        )),
-                    );
-                }
+                let in_scope = self.environment.type_variables.contains_key(&skolem.name);
                 if self.subs.get_level(skolem.id) >= self.level {
-                    let generic = Generic {
+                    let generic = self.generic(Generic {
                         id: skolem.name.clone(),
                         kind: skolem.kind.clone(),
-                    };
+                    });
 
                     if !in_scope {
                         self.unbound_variables
-                            .insert(generic.id.clone(), generic.clone());
+                            .insert(skolem.id.clone(), generic.clone());
                     }
 
-                    Some(Type::generic(generic))
+                    Some(generic)
                 } else {
-                    replacement
+                    replacement.clone()
                 }
             }
 
             _ => {
-                if let Type::Forall(ref params, _, None) = **typ {
-                    let type_cache = &self.tc.type_cache;
-                    self.tc.type_variables.extend(
+                // Ensure that the forall's variables don't look unbound
+                if let Type::Forall(ref params, _) = **typ {
+                    self.environment.type_variables.enter_scope();
+                    let mut type_cache = &self.tc.subs;
+                    self.tc.environment.type_variables.extend(
                         params
                             .iter()
                             .map(|param| (param.id.clone(), type_cache.hole())),
@@ -248,22 +224,22 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                 let new_type = types::walk_move_type_opt(
                     typ,
-                    &mut types::ControlVisitation(|typ: &ArcType| self.generalize_type(typ)),
-                );
-                match **typ {
-                    Type::Generic(ref generic)
-                        if self.type_variables.get(&generic.id).is_none() =>
-                    {
-                        self.unbound_variables
-                            .insert(generic.id.clone(), generic.clone());
-                    }
-                    _ => (),
+                    &mut types::InternerVisitor::control(self, |self_, typ: &RcType| {
+                        self_.generalize_type(typ)
+                    }),
+                )
+                .map(|t| unroll_typ(self.tc, &t).unwrap_or(t))
+                .or_else(|| replacement.clone());
+
+                if let Type::Forall(..) = **typ {
+                    self.environment.type_variables.exit_scope();
                 }
+
                 new_type
-                    .map(|t| unroll_typ(&t).unwrap_or(t))
-                    .or_else(|| replacement.clone())
             }
-        }
+        };
+
+        new_type
     }
 }
 
@@ -274,17 +250,22 @@ struct TypeVariableGenerator {
 }
 
 impl TypeVariableGenerator {
-    fn new(subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
-        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<ArcType>, typ: &ArcType) {
+    fn new(subs: &Substitution<RcType>, typ: &RcType) -> TypeVariableGenerator {
+        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<RcType>, typ: &RcType) {
+            if !typ
+                .flags()
+                .intersects(Flags::HAS_VARIABLES | Flags::HAS_FORALL)
+            {
+                return;
+            }
             let typ = subs.real(typ);
-            if let Type::Forall(ref params, _, _) = **typ {
+            if let Type::Forall(ref params, _) = **typ {
                 map.extend(params.iter().map(|param| param.id.clone()));
             }
-            types::walk_move_type_opt(
+            types::walk_type_(
                 typ,
-                &mut types::ControlVisitation(|typ: &ArcType| {
+                &mut types::ControlVisitation(|typ: &RcType| {
                     gather_foralls(map, subs, typ);
-                    None
                 }),
             );
         }
@@ -306,7 +287,8 @@ impl TypeVariableGenerator {
             tc.symbols.symbol(&name[..])
         };
         self.map.insert(symbol.clone());
-        tc.type_variables.insert(symbol.clone(), Type::hole());
+        let hole = tc.hole();
+        tc.environment.type_variables.insert(symbol.clone(), hole);
         symbol
     }
 
@@ -314,7 +296,7 @@ impl TypeVariableGenerator {
         for c in b'a'..(b'z' + 1) {
             self.name.push(c as char);
             let symbol = tc.symbols.symbol(&self.name[..]);
-            if !self.map.contains(&symbol) && tc.type_variables.get(&symbol).is_none() {
+            if !self.map.contains(&symbol) && tc.environment.type_variables.get(&symbol).is_none() {
                 return symbol;
             }
             self.name.pop();
@@ -324,7 +306,7 @@ impl TypeVariableGenerator {
     }
 }
 
-fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
+fn unroll_typ(interner: &mut impl TypeContext<Symbol, RcType>, typ: &RcType) -> Option<RcType> {
     let mut args = AppVec::new();
     let mut current = match **typ {
         Type::App(ref l, ref rest) => {
@@ -337,7 +319,7 @@ fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
             args.extend(rest.iter().rev().cloned());
             l
         }
-        _ => return unroll_record(typ),
+        _ => return unroll_record(interner, typ),
     };
     while let Type::App(ref l, ref rest) = **current {
         args.extend(rest.iter().rev().cloned());
@@ -350,14 +332,17 @@ fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
         match **current {
             Type::Builtin(BuiltinType::Function) if args.len() == 2 => {
                 let ret = args.pop().unwrap();
-                Some(Type::function(args.into_iter().collect(), ret))
+                Some(interner.function(args, ret))
             }
-            _ => Some(Type::app(current.clone(), args)),
+            _ => Some(interner.app(current.clone(), args)),
         }
     }
 }
 
-fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
+fn unroll_record(
+    interner: &mut impl TypeContext<Symbol, RcType>,
+    typ: &Type<Symbol, RcType>,
+) -> Option<RcType> {
     let mut new_types = Vec::new();
     let mut new_fields = Vec::new();
     let mut current = match *typ {
@@ -388,7 +373,7 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
     if new_types.is_empty() && new_fields.is_empty() {
         None
     } else {
-        Some(Type::extend_row(new_types, new_fields, current.clone()))
+        Some(interner.extend_row(new_types, new_fields, current.clone()))
     }
 }
 
@@ -396,31 +381,44 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
 mod tests {
     use super::*;
 
+    use crate::base::types::SharedInterner;
+
     #[test]
     fn unroll_typ_test() {
-        let i: ArcType = Type::int();
-        let s: ArcType = Type::string();
+        let mut interner = SharedInterner::default();
+
+        let i: RcType = interner.int();
+        let s: RcType = interner.string();
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(i.clone(), collect![s.clone()]),
-                collect![i.clone()]
-            )),
-            Some(Type::app(i.clone(), collect![s.clone(), i.clone()]))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(i.clone(), collect![s.clone()]),
+                    collect![i.clone()]
+                )
+            ),
+            Some(interner.app(i.clone(), collect![s.clone(), i.clone()]))
         );
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(i.clone(), collect![i.clone()]),
-                collect![s.clone()]
-            )),
-            Some(Type::app(i.clone(), collect![i.clone(), s.clone()]))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(i.clone(), collect![i.clone()]),
+                    collect![s.clone()]
+                )
+            ),
+            Some(interner.app(i.clone(), collect![i.clone(), s.clone()]))
         );
-        let f: ArcType = Type::builtin(BuiltinType::Function);
+        let f: RcType = interner.function_builtin();
         assert_eq!(
-            unroll_typ(&Type::app(
-                Type::app(f.clone(), collect![i.clone()]),
-                collect![s.clone()]
-            )),
-            Some(Type::function(collect![i.clone()], s.clone()))
+            unroll_typ(
+                &mut &interner,
+                &(&interner).app(
+                    (&interner).app(f.clone(), collect![i.clone()]),
+                    collect![s.clone()]
+                )
+            ),
+            Some(interner.function(vec![i.clone()], s.clone()))
         );
     }
 }

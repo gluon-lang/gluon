@@ -47,7 +47,7 @@ use gluon::{
         filename_to_module,
         metadata::Metadata,
         symbol::{Name, Symbol},
-        types::{ArcType, ArgType, Type},
+        types::{ArcType, ArgType, Type, TypeExt},
     },
     check::metadata::metadata,
     Compiler, Thread,

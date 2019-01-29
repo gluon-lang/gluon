@@ -92,7 +92,7 @@ return;
         );
 
         let str_vec: Vec<_> = test_locations.iter().map(|s| &s[..]).collect();
-        skeptic::generate_doc_tests(&str_vec);
+        skeptic::Config::default().generate_doc_tests(&str_vec);
     }
 }
 

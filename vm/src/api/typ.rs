@@ -3,7 +3,7 @@
 //! _This module requires Gluon to be built with the `serde` feature._
 
 use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::{ArcType, Field, Type, TypeCache};
+use crate::base::types::{ArcType, Field, Type, TypeCache, TypeExt};
 
 use crate::api::VmType;
 use crate::thread::Thread;

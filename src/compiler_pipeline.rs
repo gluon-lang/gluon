@@ -11,6 +11,7 @@ use std::borrow::{Borrow, BorrowMut};
 use std::mem;
 use std::ops::Deref;
 use std::result::Result as StdResult;
+use std::sync::Arc;
 
 #[cfg(feature = "serde")]
 use either::Either;
@@ -24,7 +25,7 @@ use crate::base::metadata::Metadata;
 use crate::base::resolve;
 use crate::base::source::Source;
 use crate::base::symbol::{Name, NameBuf, Symbol, SymbolModule};
-use crate::base::types::{ArcType, Type};
+use crate::base::types::{ArcType, NullInterner, Type};
 
 use crate::check::{metadata, rename};
 
@@ -226,25 +227,18 @@ where
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<Renamed<Self::Expr>> {
-        let mut macro_error = None;
-        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
-            Ok(expr) => expr,
-            Err((Some(expr), err)) => {
-                macro_error = Some(err);
-                expr
-            }
-            Err((None, err)) => return Err((None, err)),
-        };
-        match expr.rename(compiler, thread, file, expr_str) {
-            Ok(value) => match macro_error {
-                Some(err) => return Err((Some(value), err)),
-                None => Ok(value),
+        join_result(
+            self.expand_macro(compiler, thread, file, expr_str),
+            |MacroValue { expr }| {
+                MacroValue {
+                    expr: expr.borrow_mut(),
+                }
+                .rename(compiler, thread, file, expr_str)
+                .map(|_| ())
+                .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
-            Err((opt, err)) => Err((
-                opt,
-                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            )),
-        }
+            |MacroValue { expr }| Renamed { expr },
+        )
     }
 }
 
@@ -269,8 +263,8 @@ where
 
 pub struct WithMetadata<E> {
     pub expr: E,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait MetadataExtractable: Sized {
@@ -343,10 +337,11 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct InfixReparsed<E> {
     pub expr: E,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait InfixReparseable: Sized {
@@ -438,8 +433,8 @@ where
 pub struct TypecheckValue<E> {
     pub expr: E,
     pub typ: ArcType,
-    pub metadata_map: FnvMap<Symbol, Metadata>,
-    pub metadata: Metadata,
+    pub metadata_map: FnvMap<Symbol, Arc<Metadata>>,
+    pub metadata: Arc<Metadata>,
 }
 
 pub trait Typecheckable: Sized {
@@ -529,7 +524,7 @@ where
                     file.into(),
                     &mut compiler.symbols,
                     &*env,
-                    thread.global_env().type_cache().clone(),
+                    &thread.global_env().type_cache(),
                     &mut metadata_map,
                 );
 
@@ -562,7 +557,7 @@ where
 pub struct CompileValue<E> {
     pub expr: E,
     pub typ: ArcType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
     pub module: CompiledModule,
 }
 
@@ -617,10 +612,7 @@ where
 
             let translator = core::Translator::new(&*env);
             let expr = {
-                let expr = translator
-                    .allocator
-                    .arena
-                    .alloc(translator.translate(self.expr.borrow()));
+                let expr = translator.translate_expr(self.expr.borrow());
 
                 debug!("Translation returned: {}", expr);
 
@@ -663,7 +655,7 @@ where
     pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
     pub value: RootedValue<T>,
 }
 
@@ -809,7 +801,7 @@ where
                     vm.set_global(
                         value.id.clone(),
                         value.typ,
-                        value.metadata,
+                        (*value.metadata).clone(),
                         value.value.get_value(),
                     )?;
                     info!("Loaded module `{}` filename", filename);
@@ -841,7 +833,7 @@ pub struct Module {
     )]
     pub typ: ArcType,
 
-    pub metadata: Metadata,
+    pub metadata: Arc<Metadata>,
 
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub module: CompiledModule,
@@ -907,7 +899,7 @@ where
         use crate::vm::serialization::DeSeed;
 
         let Global {
-            metadata,
+            mut metadata,
             typ,
             value,
             id: _,
@@ -915,7 +907,12 @@ where
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
         let id = compiler.symbols.symbol(format!("@{}", name));
-        try_future!(vm.set_global(id, typ, metadata, value,));
+        try_future!(vm.set_global(
+            id,
+            typ,
+            mem::replace(Arc::make_mut(&mut metadata), Default::default()),
+            value,
+        ));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))
     }
@@ -983,7 +980,8 @@ where
             vm1.execute_io_top(value.get_variant())
                 .map(move |value| {
                     // The type of the new value will be `a` instead of `IO a`
-                    let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);
+                    let actual =
+                        resolve::remove_aliases_cow(&*vm.get_env(), &mut NullInterner, &typ);
                     let actual = match **actual {
                         Type::App(_, ref arg) => arg[0].clone(),
                         _ => ice!("ICE: Expected IO type found: `{}`", actual),

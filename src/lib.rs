@@ -436,7 +436,7 @@ impl Compiler {
         vm: &Thread,
         file: &str,
         expr_str: &str,
-    ) -> Result<(SpannedExpr<Symbol>, ArcType, Metadata)> {
+    ) -> Result<(SpannedExpr<Symbol>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
         let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 

@@ -63,6 +63,12 @@ pub enum Kind {
     ),
 }
 
+impl Default for Kind {
+    fn default() -> Self {
+        Kind::Hole
+    }
+}
+
 impl Kind {
     pub fn hole() -> ArcKind {
         ArcKind::new(Kind::Hole)
@@ -132,7 +138,7 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 }
 
 /// Reference counted kind type.
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Default, Eq, PartialEq, Hash)]
 pub struct ArcKind(Arc<Kind>);
 
 #[cfg(feature = "serde")]

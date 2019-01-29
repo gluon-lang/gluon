@@ -82,6 +82,8 @@ impl KindEnv for MockEnv {
 }
 
 impl TypeEnv for MockEnv {
+    type Type = ArcType;
+
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.definition_name() {
             "False" | "True" => Some(self.bool.as_type()),
@@ -106,7 +108,7 @@ impl PrimitiveEnv for MockEnv {
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
         None
     }
 }
@@ -134,7 +136,7 @@ pub fn typecheck_expr_expected(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -185,7 +187,7 @@ pub fn typecheck_partial_expr(
         "test".into(),
         &mut interner,
         &env,
-        TypeCache::new(),
+        &TypeCache::new(),
         &mut metadata,
     );
 
@@ -229,7 +231,7 @@ where
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ, &mut |typ| match **typ {
+    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::ExtendRow {
             ref types,
             ref fields,

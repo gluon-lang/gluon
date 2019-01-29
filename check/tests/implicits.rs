@@ -955,3 +955,22 @@ test { x = [{ x = 1 }] }
 "#,
 "()"
 }
+
+test_check! {
+recursive_binding_scoped_variables,
+r#"
+type Show a = { show : a -> () }
+
+type Test a =
+    | Test a
+
+rec
+let eq_Test a : a -> () = ()
+let show_Test : Show (Test a) =
+    rec let show_ x : Test a -> () = ()
+    { show = show_ }
+
+()
+"#,
+"()"
+}
