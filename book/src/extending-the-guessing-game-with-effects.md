@@ -116,8 +116,10 @@ Here we define our entrypoint and we can see the first use of the [`Eff`][] type
 
 Effect rows are described in a similar manner to records, except they use `[|` and `|]` to delimit instead of `{` and `}`.
 Rather than describing what fields a record holds they instead describe the effects used in this function.
-In the same way as records, effect rows also has an optional `| r ` part which is what makes this "extensible".
+In the same way as records, effect rows also has an optional `| r ` part which is what makes this "extensible" (see [polymorphic records][] in the reference).
 If we defined the row without the `| r` part then we would get an error when trying to use the effect in a place that allows more effects.
+
+[polymorphic records]:./syntax-and-semantics.html#polymorphic-records
 
 ```f#,ignore
 let eff_closed : Eff [| eff_1 : Eff1 |] () = ...

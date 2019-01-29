@@ -1,4 +1,4 @@
-# Anatomy of a gluon program (draft)
+# Anatomy of a gluon program
 
 Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is to low or to high. If the player guesses correctly the program will congratulate the player and exit.
 
