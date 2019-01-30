@@ -84,34 +84,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     ) {
         self.tc.environment.type_variables.enter_scope();
 
-        // Replaces all type variables with their inferred types
-        struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
-            generalizer: &'c mut TypeGeneralizer<'a, 'b>,
-        }
-
-        impl<'a, 'b, 'c, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b, 'c> {
-            type Ident = Symbol;
-
-            fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {
-                self.generalizer.span = e.span;
-                ast::walk_mut_expr(self, e);
-            }
-
-            fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Symbol>) {
-                self.generalizer.span = id.span;
-                self.visit_ident(&mut id.value)
-            }
-            fn visit_typ(&mut self, typ: &mut ArcType) {
-                debug!("Variable generalize {}", typ);
-                if let Some(new_type) = self.generalizer.generalize_type(typ) {
-                    *typ = new_type;
-                    debug!("End generalize {}", typ);
-                } else {
-                    debug!("End variable generalize");
-                }
-            }
-        }
-
         {
             let mut visitor = ReplaceVisitor { generalizer: self };
             visitor.visit_expr(expr);
@@ -156,6 +128,12 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             *typ = finished;
         }
         debug!("End generalize {}", typ);
+    }
+
+    pub(crate) fn generalize_type_mut(&mut self, typ: &mut RcType) {
+        if let Some(new_type) = self.generalize_type(typ) {
+            *typ = new_type;
+        }
     }
 
     pub(crate) fn generalize_type(&mut self, typ: &RcType) -> Option<RcType> {
@@ -374,6 +352,34 @@ fn unroll_record(
         None
     } else {
         Some(interner.extend_row(new_types, new_fields, current.clone()))
+    }
+}
+
+// Replaces all type variables with their inferred types
+pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
+    pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b>,
+}
+
+impl<'a, 'b, 'c, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b, 'c> {
+    type Ident = Symbol;
+
+    fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {
+        self.generalizer.span = e.span;
+        ast::walk_mut_expr(self, e);
+    }
+
+    fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Symbol>) {
+        self.generalizer.span = id.span;
+        self.visit_ident(&mut id.value)
+    }
+    fn visit_typ(&mut self, typ: &mut ArcType) {
+        debug!("Variable generalize {}", typ);
+        if let Some(new_type) = self.generalizer.generalize_type(typ) {
+            *typ = new_type;
+            debug!("End generalize {}", typ);
+        } else {
+            debug!("End variable generalize");
+        }
     }
 }
 

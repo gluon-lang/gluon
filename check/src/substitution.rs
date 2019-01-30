@@ -6,7 +6,7 @@ use crate::base::{
     fixed::{FixedVec, FixedVecMap},
     kind::ArcKind,
     symbol::Symbol,
-    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, Walker},
+    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, TypeExt, Walker},
 };
 use crate::typ::RcType;
 
@@ -270,11 +270,6 @@ where
         self.variables.len() as u32
     }
 
-    pub fn clear(&mut self) {
-        self.types.clear();
-        self.variables.clear();
-    }
-
     pub fn insert(&self, var: u32, t: T) {
         match t.get_var() {
             Some(_) => ice!(
@@ -449,16 +444,6 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         Ok(resolved_type.cloned())
     }
-
-    pub fn unbound_variables(&self, level: u32) -> impl Iterator<Item = &T> {
-        (level..(self.variables.len() as u32)).filter_map(move |i| {
-            if self.find_type_for_var(i).is_none() && self.get_level(i) >= level {
-                Some(&self.variables[i as usize])
-            } else {
-                None
-            }
-        })
-    }
 }
 
 impl Substitution<RcType> {
@@ -482,5 +467,26 @@ impl Substitution<RcType> {
     // Stub kept in case multiple types are attempted again
     pub fn bind_arc(&self, typ: &RcType) -> ArcType {
         typ.clone()
+    }
+
+    /// Assumes that all variables < `level` are not unified with anything
+    pub fn clear_from(&mut self, level: u32) {
+        self.union = RefCell::new(QuickFindUf::new(0));
+        let mut u = self.union.borrow_mut();
+        for _ in 0..level {
+            u.insert(UnionByLevel {
+                ..UnionByLevel::default()
+            });
+        }
+        self.types.truncate(level as usize);
+        for t in self.variables.iter().skip(level as usize) {
+            assert_eq!(
+                RcType::strong_count(t),
+                1,
+                "Variable {} is not unbound at this stage",
+                t
+            );
+        }
+        self.variables.truncate(level as usize);
     }
 }

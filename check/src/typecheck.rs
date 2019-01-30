@@ -477,7 +477,7 @@ impl<'a> Typecheck<'a> {
         let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
         let expected_type = temp.as_ref().or(expected_type);
 
-        let mut typ = self.typecheck_opt(expr, expected_type);
+        let mut typ = self.typecheck_opt_(true, expr, expected_type);
         {
             if let Some(expected_type) = expected_type {
                 let mut type_cache = &self.subs;
@@ -492,8 +492,8 @@ impl<'a> Typecheck<'a> {
             let tail = tail_expr(expr);
             crate::implicits::resolve(self, tail);
             self.generalize_type(0, &mut typ, tail.span);
+            self.generalize_variables(0, &mut [].iter_mut(), tail);
         }
-        self.generalize_variables(0, &mut [].iter_mut(), expr);
 
         {
             struct ReplaceVisitor<'a: 'b, 'b> {
@@ -562,6 +562,15 @@ impl<'a> Typecheck<'a> {
     /// successful
     fn typecheck_opt(
         &mut self,
+        expr: &mut SpannedExpr<Symbol>,
+        expected_type: Option<&RcType>,
+    ) -> RcType {
+        self.typecheck_opt_(false, expr, expected_type)
+    }
+
+    fn typecheck_opt_(
+        &mut self,
+        mut top_level: bool,
         mut expr: &mut SpannedExpr<Symbol>,
         mut expected_type: Option<&RcType>,
     ) -> RcType {
@@ -571,6 +580,7 @@ impl<'a> Typecheck<'a> {
         // How many scopes that have been entered in this "tailcall" loop
         let mut scope_count = 0;
         let returned_type;
+        let level = self.subs.var_id();
         loop {
             match self.typecheck_(expr, &mut expected_type) {
                 Ok(tailcall) => {
@@ -578,12 +588,20 @@ impl<'a> Typecheck<'a> {
                         TailCall::TailCall => {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
-                                Expr::LetBindings(_, ref mut new_expr)
-                                | Expr::TypeBindings(_, ref mut new_expr)
-                                | Expr::Do(Do {
+                                Expr::LetBindings(ref mut binds, ref mut new_expr) => {
+                                    if top_level {
+                                        self.generalize_and_clear_subs(level, binds);
+                                    }
+                                    new_expr
+                                }
+                                Expr::TypeBindings(_, ref mut new_expr) => new_expr,
+                                Expr::Do(Do {
                                     body: ref mut new_expr,
                                     ..
-                                }) => new_expr,
+                                }) => {
+                                    top_level = false;
+                                    new_expr
+                                }
                                 _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -2065,7 +2083,7 @@ impl<'a> Typecheck<'a> {
                 let record_type = self.remove_alias(typ.clone());
 
                 for (field_name, binding, field_type) in with_pattern_types(fields, &record_type) {
-                    let mut field_type = field_type.clone();
+                    let mut field_type = field_type.cloned().unwrap_or_else(|| self.subs.error());
                     self.generalize_type(level, &mut field_type, field_name.span);
                     match *binding {
                         Some(ref mut pat) => {
@@ -2107,6 +2125,38 @@ impl<'a> Typecheck<'a> {
             }
             Pattern::Literal(_) | Pattern::Error => (),
         }
+    }
+
+    // At the top level we know we can generalize all variables, letting us clear the substitution
+    // and start fresh
+    fn generalize_and_clear_subs(&mut self, level: u32, binds: &mut ValueBindings<Symbol>) {
+        debug!("Clearing from: {}", level);
+        {
+            let hole = self.subs.hole();
+
+            let mut generalizer = TypeGeneralizer::new(level, self, &hole, binds[0].span());
+            for bind in &mut *binds {
+                generalize::ReplaceVisitor {
+                    generalizer: &mut generalizer,
+                }
+                .visit_pattern(&mut bind.name);
+
+                generalizer.generalize_variables(
+                    &mut bind.args.iter_mut().map(|arg| &mut arg.name),
+                    &mut bind.expr,
+                );
+                generalizer.generalize_type_mut(&mut bind.resolved_type);
+            }
+        }
+
+        let mut errors = mem::replace(&mut self.errors, Default::default());
+        self.generalize_type_errors(&mut errors);
+        self.errors = errors;
+
+        self.named_variables.clear();
+        self.implicit_resolver.implicit_vars.clear();
+
+        self.subs.clear_from(level);
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut RcType, span: Span<BytePos>) {
@@ -2848,16 +2898,18 @@ fn with_pattern_types<'a: 'b, 'b>(
     Item = (
         &'a Spanned<Symbol, BytePos>,
         &'a mut Option<SpannedPattern<Symbol>>,
-        &'b RcType,
+        Option<&'b RcType>,
     ),
 > {
-    fields.iter_mut().filter_map(move |field| {
-        // If the field in the pattern does not exist (undefined field error) then skip it as
-        // the error itself will already have been reported
+    fields.iter_mut().map(move |field| {
         let opt = typ
             .row_iter()
             .find(|type_field| type_field.name.name_eq(&field.name.value));
-        opt.map(move |associated_type| (&field.name, &mut field.value, &associated_type.typ))
+        (
+            &field.name,
+            &mut field.value,
+            opt.map(move |associated_type| &associated_type.typ),
+        )
     })
 }
 

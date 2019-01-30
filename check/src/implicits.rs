@@ -109,10 +109,37 @@ impl Borrow<SymbolRef> for SymbolKey {
 type ImplicitBinding = Rc<(Vec<TypedIdent<Symbol, RcType>>, RcType)>;
 type ImplicitVector = ::rpds::Vector<ImplicitBinding>;
 
-#[derive(Debug)]
-struct Partition<T> {
+pub struct Partition<T> {
     partition: ::rpds::HashTrieMap<SymbolKey, Partition<T>>,
     rest: ::rpds::Vector<T>,
+}
+
+impl<T> fmt::Debug for Partition<T>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Partition")
+            .field(
+                "partition",
+                &format_args!(
+                    "[{}]",
+                    self.partition
+                        .iter()
+                        .format_with(",", |i, f| f(&format_args!("{:?}", i)))
+                ),
+            )
+            .field(
+                "rest",
+                &format_args!(
+                    "[{}]",
+                    self.rest
+                        .iter()
+                        .format_with(",", |i, f| f(&format_args!("{:?}", i)))
+                ),
+            )
+            .finish()
+    }
 }
 
 impl<T> Clone for Partition<T> {
@@ -249,8 +276,8 @@ impl Partition<ImplicitBinding> {
 
 #[derive(Clone, Default, Debug)]
 pub(crate) struct ImplicitBindings {
-    partition: Partition<ImplicitBinding>,
-    definitions: ::rpds::HashTrieSet<Symbol>,
+    pub partition: Partition<ImplicitBinding>,
+    pub definitions: ::rpds::HashTrieSet<Symbol>,
 }
 
 impl ImplicitBindings {
@@ -696,7 +723,7 @@ pub struct ImplicitResolver<'a> {
     pub(crate) metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     environment: &'a TypecheckEnv<Type = RcType>,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
-    implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
+    pub(crate) implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
 }
 

@@ -54,6 +54,7 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 
     pub fn clear(&mut self) {
+        error!("Clear");
         self.map.borrow_mut().clear();
     }
 
@@ -189,6 +190,26 @@ impl<V> FixedVecMap<V> {
         let values = &mut self.values;
         self.map.get_mut().get(k).map(move |&key| &mut values[key])
     }
+
+    pub fn remove(&mut self, k: usize) -> Option<V> {
+        let values = self.values.values.get_mut();
+        self.map.get_mut().remove(k).and_then(|(i, j)| {
+            if values.len() == i as usize + 1 && values[i as usize].len() == j as usize + 1 {
+                let x = values[i as usize].pop();
+                if values[i as usize].is_empty() {
+                    values.pop();
+                }
+                x
+            } else {
+                unimplemented!()
+            }
+        })
+    }
+
+    pub fn truncate(&mut self, index: usize) {
+        self.map.get_mut().retain(|i, _| i < index);
+        self.values.truncate(index);
+    }
 }
 
 impl<V> Index<usize> for FixedVecMap<V> {
@@ -240,9 +261,7 @@ impl<T> FixedVec<T> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-}
 
-impl<T> FixedVec<T> {
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         (0..).scan((), move |_, i| self.get(i))
     }
@@ -250,6 +269,19 @@ impl<T> FixedVec<T> {
     pub fn get(&self, index: usize) -> Option<&T> {
         if index < self.len() {
             Some(&self[index])
+        } else {
+            None
+        }
+    }
+
+    pub fn truncate(&mut self, index: usize) {
+        self.vec.get_mut().truncate(index);
+        self.values.truncate(index)
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.vec.get_mut().pop().is_some() {
+            self.values.pop()
         } else {
             None
         }
@@ -289,6 +321,14 @@ impl<T> Buffer<T> {
         }
     }
 
+    fn total_len(&self) -> usize {
+        self.values
+            .borrow()
+            .iter()
+            .map(|vec| vec.len())
+            .sum::<usize>()
+    }
+
     fn push(&self, value: T) -> (u32, u32) {
         let mut values = self.values.borrow_mut();
         let cap = match values.last() {
@@ -311,30 +351,87 @@ impl<T> Buffer<T> {
         inner.push(value);
         (i, j)
     }
+
+    fn truncate(&mut self, index: usize) {
+        let mut left = self.total_len() - index;
+        let values = self.values.get_mut();
+        while left != 0 {
+            let inner = values.last_mut().expect("Not values left");
+            if inner.len() <= left {
+                left -= inner.len();
+                values.pop();
+            } else {
+                let i = inner.len() - left;
+                inner.truncate(i);
+                left = 0;
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<T> {
+        let values = self.values.get_mut();
+        let out = values.last_mut().and_then(|vec| vec.pop());
+        if out.is_some() {
+            out
+        } else {
+            values.pop();
+            values.last_mut().and_then(|vec| vec.pop())
+        }
+    }
 }
 
 impl<T> Index<(u32, u32)> for Buffer<T> {
     type Output = T;
     fn index(&self, (i, j): (u32, u32)) -> &T {
-        unsafe { forget_lifetime(&self.values.borrow()[i as usize][j as usize]) }
+        unsafe {
+            forget_lifetime(
+                &self
+                    .values
+                    .borrow()
+                    .get(i as usize)
+                    .and_then(|v| v.get(j as usize))
+                    .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j))),
+            )
+        }
     }
 }
 
 impl<T> IndexMut<(u32, u32)> for Buffer<T> {
     fn index_mut(&mut self, (i, j): (u32, u32)) -> &mut T {
-        &mut self.values.get_mut()[i as usize][j as usize]
+        self.values
+            .get_mut()
+            .get_mut(i as usize)
+            .and_then(|v| v.get_mut(j as usize))
+            .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j)))
     }
 }
 
 impl<T> Index<(u16, u32)> for Buffer<T> {
     type Output = T;
     fn index(&self, (i, j): (u16, u32)) -> &T {
-        unsafe { forget_lifetime(&self.values.borrow()[i as usize][j as usize]) }
+        &self[(i as u32, j)]
     }
 }
 
 impl<T> IndexMut<(u16, u32)> for Buffer<T> {
     fn index_mut(&mut self, (i, j): (u16, u32)) -> &mut T {
-        &mut self.values.get_mut()[i as usize][j as usize]
+        &mut self[(i as u32, j)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_buffer() {
+        let mut buffer = Buffer::new();
+        for i in 0..10 {
+            buffer.push(i);
+        }
+        buffer.truncate(6);
+        assert_eq!(buffer.total_len(), 6);
+        buffer.truncate(2);
+        assert_eq!(buffer.total_len(), 2);
     }
 }
