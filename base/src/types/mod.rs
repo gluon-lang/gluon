@@ -1224,6 +1224,7 @@ where
     }
 }
 
+#[derive(Clone)]
 struct ArcTypeInner<Id = Symbol> {
     typ: Type<Id, ArcType<Id>>,
     flags: Flags,
@@ -1929,6 +1930,15 @@ where
 }
 
 impl<Id> ArcType<Id> {
+    pub fn set(into: &mut Self, typ: Type<Id, Self>)
+    where
+        Id: Clone,
+    {
+        let into = Arc::make_mut(&mut into.typ);
+        into.flags = Flags::from_type(&typ);
+        into.typ = typ;
+    }
+
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
     pub fn level(&self) -> u32 {

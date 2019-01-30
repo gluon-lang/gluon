@@ -54,7 +54,6 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 
     pub fn clear(&mut self) {
-        error!("Clear");
         self.map.borrow_mut().clear();
     }
 
@@ -209,6 +208,11 @@ impl<V> FixedVecMap<V> {
     pub fn truncate(&mut self, index: usize) {
         self.map.get_mut().retain(|i, _| i < index);
         self.values.truncate(index);
+    }
+
+    pub fn drain<'a>(&'a mut self) -> impl Iterator<Item = V> + 'a {
+        self.map.get_mut().clear();
+        self.values.drain()
     }
 }
 
@@ -366,6 +370,10 @@ impl<T> Buffer<T> {
                 left = 0;
             }
         }
+    }
+
+    fn drain<'a>(&'a mut self) -> impl Iterator<Item = T> + 'a {
+        self.values.get_mut().drain(..).flat_map(|vec| vec)
     }
 
     fn pop(&mut self) -> Option<T> {

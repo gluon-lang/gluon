@@ -246,6 +246,14 @@ impl Substitutable for RcType<Symbol> {
         subs.variable(var)
     }
 
+    fn into_variable(&mut self, x: Self::Variable) {
+        Self::set(self, Type::Variable(x))
+    }
+
+    fn is_unique(self_: &Self) -> bool {
+        RcType::strong_count(self_) == 1
+    }
+
     fn get_var(&self) -> Option<&TypeVariable> {
         match **self {
             Type::Variable(ref var) => Some(var),

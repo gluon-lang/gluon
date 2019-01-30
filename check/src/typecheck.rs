@@ -2153,6 +2153,7 @@ impl<'a> Typecheck<'a> {
         self.generalize_type_errors(&mut errors);
         self.errors = errors;
 
+        // Clear any location which could have skolems or variables left in them
         self.named_variables.clear();
         self.implicit_resolver.implicit_vars.clear();
 

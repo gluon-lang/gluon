@@ -110,7 +110,9 @@ fn typecheck_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let vm = new_vm();
             let mut compiler = Compiler::new();
-            compiler.load_file(&vm, "examples/lisp/lisp.glu").unwrap()
+            compiler
+                .load_file(&vm, "examples/lisp/lisp.glu")
+                .unwrap_or_else(|err| panic!("{}", err))
         })
     });
 }

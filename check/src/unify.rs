@@ -282,6 +282,15 @@ mod test {
         fn from_variable(_: &Substitution<Self>, var: u32) -> TType {
             TType(Box::new(Type::Variable(var)))
         }
+
+        fn into_variable(&mut self, x: Self::Variable) {
+            *self.0 = Type::Variable(x);
+        }
+
+        fn is_unique(self_: &Self) -> bool {
+            true
+        }
+
         fn get_var(&self) -> Option<&u32> {
             match *self.0 {
                 Type::Variable(ref var) => Some(var),

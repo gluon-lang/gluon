@@ -6,7 +6,7 @@ use crate::base::{
     fixed::{FixedVec, FixedVecMap},
     kind::ArcKind,
     symbol::Symbol,
-    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, TypeExt, Walker},
+    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, Walker},
 };
 use crate::typ::RcType;
 
@@ -45,6 +45,7 @@ where
     types: FixedVecMap<T>,
     factory: T::Factory,
     interner: T::Interner,
+    variable_cache: RefCell<Vec<T>>,
 }
 
 impl<T> TypeContext<Symbol, T> for Substitution<T>
@@ -119,6 +120,10 @@ pub trait Substitutable: Sized {
 
     /// Constructs a new object from its variable type
     fn from_variable(subs: &Substitution<Self>, x: Self::Variable) -> Self;
+
+    fn into_variable(&mut self, x: Self::Variable);
+
+    fn is_unique(self_: &Self) -> bool;
 
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
@@ -263,6 +268,7 @@ where
             types: FixedVecMap::new(),
             factory: factory,
             interner,
+            variable_cache: Default::default(),
         }
     }
 
@@ -288,12 +294,37 @@ where
         self.types.insert(var as usize, t.into());
     }
 
+    /// Assumes that no variables unified with anything (but variables < level may exist)
+    pub fn clear_from(&mut self, level: u32) {
+        self.union = RefCell::new(QuickFindUf::new(0));
+        let mut u = self.union.borrow_mut();
+        for _ in 0..level {
+            u.insert(UnionByLevel {
+                ..UnionByLevel::default()
+            });
+        }
+
+        let mut variable_cache = self.variable_cache.borrow_mut();
+        // Since no types should be unified with anything we can remove all of this and reuse the
+        // unique values
+        variable_cache.extend(self.types.drain().filter(T::is_unique));
+        while self.variables.len() > level as usize {
+            variable_cache.push(self.variables.pop().unwrap());
+        }
+    }
+
     /// Creates a new variable
     pub fn new_var(&self) -> T
     where
         T: Clone,
     {
-        self.new_var_fn(|var| T::from_variable(self, self.factory.new(var)))
+        self.new_var_fn(|var| match self.variable_cache.borrow_mut().pop() {
+            Some(mut typ) => {
+                T::into_variable(&mut typ, self.factory.new(var));
+                typ
+            }
+            None => T::from_variable(self, self.factory.new(var)),
+        })
     }
 
     pub fn new_var_fn<F>(&self, f: F) -> T
@@ -448,7 +479,16 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
 
 impl Substitution<RcType> {
     pub fn new_skolem(&self, name: Symbol, kind: ArcKind) -> RcType {
-        self.new_var_fn(|id| (&*self).skolem(Skolem { name, id, kind }))
+        self.new_var_fn(|id| {
+            let skolem = Skolem { name, id, kind };
+            match self.variable_cache.borrow_mut().pop() {
+                Some(mut typ) => {
+                    RcType::set(&mut typ, Type::Skolem(skolem));
+                    typ
+                }
+                None => (&*self).skolem(skolem),
+            }
+        })
     }
 
     pub fn zonk(&self, typ: &RcType) -> RcType {
@@ -467,26 +507,5 @@ impl Substitution<RcType> {
     // Stub kept in case multiple types are attempted again
     pub fn bind_arc(&self, typ: &RcType) -> ArcType {
         typ.clone()
-    }
-
-    /// Assumes that all variables < `level` are not unified with anything
-    pub fn clear_from(&mut self, level: u32) {
-        self.union = RefCell::new(QuickFindUf::new(0));
-        let mut u = self.union.borrow_mut();
-        for _ in 0..level {
-            u.insert(UnionByLevel {
-                ..UnionByLevel::default()
-            });
-        }
-        self.types.truncate(level as usize);
-        for t in self.variables.iter().skip(level as usize) {
-            assert_eq!(
-                RcType::strong_count(t),
-                1,
-                "Variable {} is not unbound at this stage",
-                t
-            );
-        }
-        self.variables.truncate(level as usize);
     }
 }
