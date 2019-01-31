@@ -10,7 +10,7 @@ fn macro_error_with_line_column_info() {
     assert_eq!(
         result
             .unwrap_err()
-            .emit_string(compiler.code_map())
+            .emit_string(&compiler.code_map())
             .unwrap(),
         r#"error: Could not find module 'undefined'. Searched `.`.
 - <test>:1:9

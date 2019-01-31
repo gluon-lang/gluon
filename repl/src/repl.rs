@@ -282,7 +282,7 @@ fn eval_line(
             Ok(x) => IO::Value(x),
             Err((compiler, err)) => {
                 let mut stderr = termcolor::StandardStream::stderr(color.into());
-                if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
+                if let Err(err) = err.emit(&mut stderr, &compiler.code_map()) {
                     eprintln!("{}", err);
                 }
                 IO::Value(())
@@ -305,7 +305,7 @@ fn eval_line_(
         match result {
             Ok(x) => x,
             Err((_, err)) => {
-                let code_map = compiler.code_map().clone();
+                let code_map = compiler.code_map();
                 return Either::A(future::err((compiler, InFile::new(code_map, err).into())));
             }
         }
@@ -576,7 +576,7 @@ pub fn run(
     let mut compiler = Compiler::new();
     try_future!(
         compile_repl(&mut compiler, &vm)
-            .map_err(|err| err.emit_string(compiler.code_map()).unwrap()),
+            .map_err(|err| err.emit_string(&compiler.code_map()).unwrap()),
         Either::A
     );
 

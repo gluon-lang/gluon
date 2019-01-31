@@ -59,6 +59,8 @@ quick_error! {
     }
 }
 
+pub const COMPILER_KEY: &str = "Compiler";
+
 include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 
 pub trait Importer: Any + Clone + Sync + Send {
@@ -529,15 +531,14 @@ where
                 return Box::new(future::ok(pos::spanned(args[0].span, expr)));
             }
 
-            // TODO Inherit settings from the parent compiler instead of forcing full_metadata here
-            // (which is necessary for the doc generator)
-            match self.load_module(
-                &mut Compiler::new().full_metadata(true),
-                vm,
-                macros,
-                &name,
-                args[0].span,
-            ) {
+            let mut compiler = macros
+                .state
+                .get(COMPILER_KEY)
+                .and_then(|any| any.downcast_ref::<Compiler>())
+                .expect("No `Compiler` in the macro state")
+                .split();
+
+            match self.load_module(&mut compiler, vm, macros, &name, args[0].span) {
                 Ok(Some(future)) => {
                     let span = args[0].span;
                     return Box::new(

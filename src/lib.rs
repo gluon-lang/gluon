@@ -253,6 +253,7 @@ impl State {
     }
 }
 
+#[derive(Clone)]
 struct Settings {
     implicit_prelude: bool,
     emit_debug_info: bool,
@@ -351,7 +352,7 @@ impl Compiler {
         self.state.lock().unwrap()
     }
 
-    fn code_map(&self) -> codespan::CodeMap {
+    pub fn code_map(&self) -> codespan::CodeMap {
         self.state().code_map.clone()
     }
 
@@ -376,6 +377,14 @@ impl Compiler {
 
     pub fn mut_symbols(&mut self) -> &mut Symbols {
         &mut self.symbols
+    }
+
+    pub fn split(&self) -> Self {
+        Self {
+            symbols: Symbols::new(),
+            state: self.state.clone(),
+            settings: self.settings.clone(),
+        }
     }
 
     /// Parse `expr_str`, returning an expression if successful
