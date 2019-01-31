@@ -460,11 +460,27 @@ Ref String
 
 The last kind of type which Gluon has is the alias type. An alias type explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract, then the type is only considered equivalent to itself (ie if you define an abstract type of `MyInt` which happens to have the same representation as `Int` the typechecker will consider these two types as being distinct).
 
+
 ### Higher-kinded types
 
 Higher-kinded types are a fairly abstract concept in Gluon and you may create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have, as they can be used to create very powerful abstractions.
 
 Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : Option Float` each have a type, these types themselves have their own 'type' or the 'kind' as it is called. For the types of concrete values the `Kind` is always `Type` so for the earlier examples `Int : Type`, `String : Type` and `Option Float : Type`. That is not very useful on its own but it becomes more interesting when we consider the kind of `Option : Type -> Type`. `Type -> Type` looks rather like the type of a function such as `show_int : Int -> String` but, instead of taking a value, it takes a type and produces a new type. In effect, this lets us abstract over types instead of just over values. This abstraction facility can be seen in the `Functor : (Type -> Type) -> Type` type which takes a type with kind `Type -> Type` as argument which is exactly the kind of `Option` (or `List`, `Result a`).
+
+### Row type
+
+A `Row` is defined as a set of `(identifier, Type)` pairs and are used to describe the contents of records, variants and effects. A `Row` type has it's own special `Row` kind (instead of the normal `Type`) and has special treatment during typechecking if it is marked as extensible. If two extensible rows are unified (checking if they are equivalent) then they do not need to exactly match, but if one of the rows has more fields than the other (or vice-versa) then the other record is simply constrained to also have those fields.
+
+
+```f#
+// Unifying
+{ x : Int | r } <=>  { y : String | s }
+// Results in
+{ x : Int, y : String | t }
+// The same goes for effects and variants
+```
+
+Rows are currently a bit of an implementation detail and are thus only indirectly exposed to users through records, variants and effects. (In the future direct manipulation and definitions of rows may be added).
 
 ### Universal quantification
 
