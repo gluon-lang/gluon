@@ -29,6 +29,7 @@
         <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
             <h1 class="pb-3 mb-4 border-bottom">{{name}}</h1>
 
+            {{#if sub_modules}}
             <h2>Modules</h2>
 
             <table class="table-sm">
@@ -44,6 +45,7 @@
                 </tr>
             {{/each}}
             </table>
+            {{/if}}
 
             <div class="docblock">{{markdown comment}}</div>
 

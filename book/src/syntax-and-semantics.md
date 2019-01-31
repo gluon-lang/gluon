@@ -425,6 +425,19 @@ In addition to storing values, records also have a secondary function of storing
 { Test = { x : Int } }
 ```
 
+#### Polymorphic records
+
+Records in gluon can also be polymorphic, that is, just like a function can be polymorphic over it's arguments or return type records can be polymorphic over the fields they contain.
+
+
+```f#
+// `f` only requires that the record holds an `x` and `y` field
+let f record : { x : Int, y : Int | r } -> Int = record.x + record.y
+
+let z = f { x = 1, y = 2 }
+f { x = 1, y = 2, other = "abc" } // The record we pass can hold more fields than the type specifies
+```
+
 ### Enumeration type
 
 ```

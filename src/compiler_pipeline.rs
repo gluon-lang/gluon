@@ -510,6 +510,7 @@ where
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
         use crate::check::typecheck::Typecheck;
+        trace!("Typecheck: {}", file);
 
         let InfixReparsed {
             mut expr,

@@ -472,7 +472,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             .or_default()
             .entry(name.name().as_str().to_owned())
             .or_insert_with(|| {
-                error!("Adding implicit module {}", module_name);
+                trace!("Adding implicit module {}", module_name);
 
                 Module {
                     name: module_name.into(),

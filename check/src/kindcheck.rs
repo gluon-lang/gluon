@@ -505,6 +505,14 @@ impl Substitutable for ArcKind {
         Kind::variable(x)
     }
 
+    fn into_variable(&mut self, x: Self::Variable) {
+        *ArcKind::make_mut(self) = Kind::Variable(x);
+    }
+
+    fn is_unique(self_: &Self) -> bool {
+        ArcKind::strong_count(self_) == 1
+    }
+
     fn get_var(&self) -> Option<&u32> {
         match **self {
             Kind::Variable(ref var) => Some(var),
