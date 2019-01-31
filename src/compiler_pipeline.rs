@@ -533,7 +533,7 @@ where
             };
             result.map_err(|err| {
                 info!("Error when typechecking `{}`: {}", file, err);
-                InFile::new(compiler.code_map().clone(), err)
+                InFile::new(compiler.state().code_map.clone(), err)
             })?
         };
 
