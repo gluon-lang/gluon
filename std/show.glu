@@ -7,13 +7,14 @@ type Show a = { show : a -> String }
 
 /// Converts a value into a string.
 /// ```
-/// let { assert } = import! std.test
+/// let { ? } = import! std.effect
+/// let { assert_eq, ? } = import! std.test
 /// let list @ { ? } = import! std.list
 ///
-/// assert (show 123 == "123")
-/// assert (show 3.14 == "3.14")
-/// assert (show "abc" == "\"abc\"")
-/// assert (show (list.of [1, 2, 3]) == "[1, 2, 3]")
+/// seq assert_eq (show 123) "123"
+/// seq assert_eq (show 3.14) "3.14"
+/// seq assert_eq (show "abc") "\"abc\""
+/// assert_eq (show (list.of [1, 2, 3])) "[1, 2, 3]"
 /// ```
 let show ?s : [Show a] -> a -> String = s.show
 

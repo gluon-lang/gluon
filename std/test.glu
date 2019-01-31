@@ -50,6 +50,7 @@ rec let run test : Eff [| writer : Test | r |] a -> Eff [| | r |] () =
 in
 rec let run_io test : TestEffIO r a -> IO () =
     run_lift (run test)
+in
 
 {
     Test,

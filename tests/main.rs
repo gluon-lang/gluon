@@ -113,7 +113,8 @@ macro_rules! define_test_type {
     };
 }
 
-type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, TestEffIO>>;
+type TestEff = OpaqueValue<RootedThread, TestEffIO>;
+type TestFn = OwnedFunction<fn(()) -> TestEff>;
 
 #[derive(Deserialize)]
 enum TestCase {
@@ -140,30 +141,32 @@ where
     }
 }
 
+fn make_tensile_test(name: String, test: TestFn) -> tensile::Test<Error> {
+    let mut test = ::std::panic::AssertUnwindSafe(test);
+    tensile::test(name, move || {
+        let future = test
+            .call_async(())
+            .and_then(|test| {
+                future::result(test.vm().get_global("std.test.run_io")).and_then(|action| {
+                    let mut action: OwnedFunction<
+                        fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>,
+                    > = action;
+                    action.call_async(test).map(|_| ())
+                })
+            })
+            .map_err(gluon::Error::from)
+            .map_err(Error::from);
+        GluonTestable(::std::panic::AssertUnwindSafe(future))
+    })
+}
+
 impl TestCase {
     fn into_tensile_test(self) -> tensile::Test<Error> {
         match self {
             TestCase::Test { name, test } => {
                 let child_thread = test.vm().new_thread().unwrap();
                 let test = TestFn::from_value(&child_thread, test.get_variant());
-                let mut test = ::std::panic::AssertUnwindSafe(test);
-                tensile::test(name, move || {
-                    let future = test
-                        .call_async(())
-                        .and_then(|test| {
-                            future::result(test.vm().get_global("std.test.run_io")).and_then(
-                                |action| {
-                                    let mut action: OwnedFunction<
-                                        fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>,
-                                    > = action;
-                                    action.call_async(test).map(|_| ())
-                                },
-                            )
-                        })
-                        .map_err(gluon::Error::from)
-                        .map_err(Error::from);
-                    GluonTestable(::std::panic::AssertUnwindSafe(future))
-                })
+                make_tensile_test(name, test)
             }
             TestCase::Group { name, tests } => tensile::Test::Group {
                 name,
@@ -285,19 +288,28 @@ fn run_doc_tests<'t>(
 
     let (expr, _, _) = compiler.extract_metadata(&vm, &name, &text)?;
 
+    let (mut convert_test_fn, _) = compiler.run_expr::<OwnedFunction<fn(TestEff) -> TestFn>>(
+        &vm,
+        "convert_test_fn",
+        r"\x -> \_ -> x",
+    )?;
+
     let tests = gather_doc_tests(&expr);
     Ok(tests
         .into_iter()
         .map(move |(test_name, test_source)| {
             let vm = vm.new_thread().unwrap();
-            tensile::test(test_name.clone(), move || {
-                Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(
-                    &vm,
-                    &test_name,
-                    &test_source,
-                )?;
-                Ok(())
-            })
+
+            match Compiler::new()
+                .run_expr::<TestEff>(&vm, &test_name, &test_source)
+                .and_then(|(test, _)| Ok(convert_test_fn.call(test)?))
+            {
+                Ok(test) => make_tensile_test(test_name, test),
+                Err(err) => {
+                    let err = ::std::panic::AssertUnwindSafe(err);
+                    tensile::test(test_name, || Err(err.0.into()))
+                }
+            }
         })
         .collect())
 }

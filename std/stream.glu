@@ -47,11 +47,12 @@ let uncons stream : Stream a -> Option (a, Stream a) =
 /// Takes the first `n` elements of `xs`.
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let stream @ { take, repeat, empty, ? } = import! std.stream
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (take 0 (repeat "abc") == empty)
-/// assert (take 3 (repeat 1) == stream.of [1, 1, 1])
+/// seq assert_eq (take 0 (repeat "abc")) empty
+/// assert_eq (take 3 (repeat 1)) (stream.of [1, 1, 1])
 /// ```
 let take n xs : Int -> Stream a -> Stream a =
     if n /= 0 then
@@ -65,9 +66,9 @@ let take n xs : Int -> Stream a -> Stream a =
 ///
 /// ```
 /// let stream = import! std.stream
-/// let { assert } = import! std.test
+/// let { assert_eq } = import! std.test
 ///
-/// assert (stream.is_empty stream.empty)
+/// assert_eq (stream.is_empty stream.empty) True
 /// ```
 let is_empty stream : Stream a -> Bool =
     match force stream with
@@ -90,9 +91,9 @@ let foldr f b stream : (a -> b -> b) -> b -> Stream a -> b =
 /// ```
 /// let stream = import! std.stream
 /// let list @ { ? } = import! std.list
-/// let { assert } = import! std.test
+/// let { assert_eq } = import! std.test
 ///
-/// assert (stream.to_list (stream.of ["a", "b"]) == list.of ["a", "b"])
+/// assert_eq (stream.to_list (stream.of ["a", "b"])) (list.of ["a", "b"])
 /// ```
 let to_list : Stream a -> List a =
     foldr Cons Nil

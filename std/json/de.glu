@@ -67,12 +67,13 @@ let monad : Monad (Deserializer i) = {
 /// Deserializes a `Bool`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, bool, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with bool "true" == Ok True)
-/// assert (deserialize_with bool "123" == Err "Expected bool")
+/// seq assert_eq (deserialize_with bool "true") (Ok True)
+/// assert_eq (deserialize_with bool "123") (Err "Expected bool")
 /// ```
 let bool : ValueDeserializer Bool = \input ->
     match input with
@@ -84,13 +85,14 @@ let bool : ValueDeserializer Bool = \input ->
 /// Note that the deserializer will "integers" such as 123 as floats
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, float, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with float "123.45" == Ok 123.45)
-/// assert (deserialize_with float "123" == Ok 123.0)
-/// assert (deserialize_with float "true" == Err "Expected float")
+/// seq assert_eq (deserialize_with float "123.45") (Ok 123.45)
+/// seq assert_eq (deserialize_with float "123") (Ok 123.0)
+/// assert_eq (deserialize_with float "true") (Err "Expected float")
 /// ```
 let float : ValueDeserializer Float = \input ->
     match input with
@@ -101,12 +103,13 @@ let float : ValueDeserializer Float = \input ->
 /// Deserializes an `Int`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, int, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with int "123" == Ok 123)
-/// assert (deserialize_with int "true" == Err "Expected integer")
+/// seq assert_eq (deserialize_with int "123") (Ok 123)
+/// assert_eq (deserialize_with int "true") (Err "Expected integer")
 /// ```
 let int : ValueDeserializer Int = \input ->
     match input with
@@ -116,12 +119,13 @@ let int : ValueDeserializer Int = \input ->
 /// Deserializes a `String`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, string, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with string "\"abc\"" == Ok "abc")
-/// assert (deserialize_with string "true" == Err "Expected string")
+/// seq assert_eq (deserialize_with string "\"abc\"") (Ok "abc")
+/// assert_eq (deserialize_with string "true") (Err "Expected string")
 /// ```
 let string : ValueDeserializer String = \input ->
     match input with
@@ -131,13 +135,14 @@ let string : ValueDeserializer String = \input ->
 /// Deserializes an `Array` of `a`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, array, int, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with (array int) "[123, 456]" == Ok [123, 456])
-/// assert (deserialize_with (array int) "[123, \"\"]" == Err "Expected integer")
+/// seq assert_eq (deserialize_with (array int) "[123, 456]") (Ok [123, 456])
+/// assert_eq (deserialize_with (array int) "[123, \"\"]") (Err "Expected integer")
 /// ```
 let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
     match input with
@@ -153,14 +158,15 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
 /// `null` maps to `None` and all other values to `a`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, option, int, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with (option int) "123" == Ok (Some 123))
-/// assert (deserialize_with (option int) "null" == Ok None)
-/// assert (deserialize_with (option int) "\"\"" == Err "Expected integer")
+/// seq assert_eq (deserialize_with (option int) "123") (Ok (Some 123))
+/// seq assert_eq (deserialize_with (option int) "null") (Ok None)
+/// assert_eq (deserialize_with (option int) "\"\"") (Err "Expected integer")
 /// ```
 let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
     match input with
@@ -170,13 +176,14 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
 /// Deserializes the field `name` of an object using `a`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, field, int, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (deserialize_with (field "test" int) "{ \"test\": 123 }" == Ok 123)
-/// assert (deserialize_with (field "test" int) "{ \"abc\": 123 }" == Err "Expected field `test`")
+/// seq assert_eq (deserialize_with (field "test" int) "{ \"test\": 123 }") (Ok 123)
+/// assert_eq (deserialize_with (field "test" int) "{ \"abc\": 123 }") (Err "Expected field `test`")
 /// ```
 let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input ->
     match input with
@@ -191,17 +198,17 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
 /// Deserializes the a `Map String a`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, map, int, deserialize_with } = import! std.json.de
 /// let { Result, ? } = import! std.result
 /// let { singleton, ? } = import! std.map
 /// let { (<>) } = import! std.semigroup
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (
-///     deserialize_with (map int) r#"{ "test": 123, "test2": 0 }"#
-///         == Ok (singleton "test" 123 <> singleton "test2" 0)
-/// )
-/// assert (deserialize_with (map int) r#"{ "abc": "" }"# == Err "Expected integer")
+/// seq assert_eq
+///     (deserialize_with (map int) r#"{ "test": 123, "test2": 0 }"#)
+///     (Ok (singleton "test" 123 <> singleton "test2" 0))
+/// assert_eq (deserialize_with (map int) r#"{ "abc": "" }"#) (Err "Expected integer")
 /// ```
 let map a : ValueDeserializer a -> ValueDeserializer (Map String a) = \input ->
     match input with

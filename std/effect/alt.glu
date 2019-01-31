@@ -28,7 +28,7 @@ let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] 
 
 ///
 /// ```
-/// let { assert } = import! std.assert
+/// let { assert_eq, ? } = import! std.test
 /// let alt = import! std.effect.alt
 /// let state = import! std.effect.state
 /// let { (*>) } = import! std.applicative
@@ -36,10 +36,10 @@ let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] 
 ///
 /// let incr = state.modify (\x -> x + 1)
 /// 
-/// assert (run_pure (state.exec_state 0 (alt.run_alt incr incr)) == 1)
-/// assert (run_pure (state.exec_state 0 (alt.run_alt (incr *> incr) incr)) == 2)
-/// assert (run_pure (state.exec_state 0 (alt.run_alt (incr *> alt.empty *> incr) incr)) == 2)
-/// assert (run_pure (state.exec_state 0 (alt.run_alt alt.empty incr)) == 1)
+/// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt incr incr))) (1)
+/// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> incr) incr))) (2)
+/// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> alt.empty *> incr) incr))) (2)
+/// assert_eq (run_pure (state.exec_state 0 (alt.run_alt alt.empty incr))) (1)
 /// 
 /// ```
 let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | r |] (Option a) =

@@ -24,15 +24,16 @@ let singleton k v = Bin k v empty empty
 /// Searches the map `m` for `k`. Returns `Some` with the element if it is found and otherwise `None`.
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let map @ { ? } = import! std.map
 /// let { (<>) } = import! std.semigroup
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (map.find "a" (map.singleton "a" 1) == Some 1)
+/// seq assert_eq (map.find "a" (map.singleton "a" 1)) (Some 1)
 ///
 /// let my_map = map.singleton "a" 1 <> map.singleton "b" 2
-/// assert (map.find "b" my_map == Some 2)
-/// assert (map.find "c" my_map == None)
+/// seq assert_eq (map.find "b" my_map) (Some 2)
+/// assert_eq (map.find "c" my_map) None
 /// ```
 let find k m : [Ord k] -> k -> Map k a -> Option a =
     match m with
