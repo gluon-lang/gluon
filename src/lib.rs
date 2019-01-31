@@ -253,14 +253,29 @@ impl State {
     }
 }
 
-/// Type which makes parsing, typechecking and compiling an AST into bytecode
-pub struct Compiler {
-    symbols: Symbols,
-    state: Arc<Mutex<State>>,
+struct Settings {
     implicit_prelude: bool,
     emit_debug_info: bool,
     run_io: bool,
     full_metadata: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            implicit_prelude: true,
+            emit_debug_info: true,
+            run_io: false,
+            full_metadata: false,
+        }
+    }
+}
+
+/// Type which makes parsing, typechecking and compiling an AST into bytecode
+pub struct Compiler {
+    symbols: Symbols,
+    state: Arc<Mutex<State>>,
+    settings: Settings,
 }
 
 impl Default for Compiler {
@@ -283,39 +298,50 @@ macro_rules! option {
 };
 }
 
+macro_rules! option_settings {
+($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+    $(#[$attr])*
+    pub fn $name(mut self, $name: $typ) -> Self {
+        self.settings.$name = $name;
+        self
+    }
+
+    pub fn $set_name(&mut self, $name: $typ) {
+        self.settings.$name = $name;
+    }
+};
+}
+
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
         Compiler {
             symbols: Symbols::new(),
             state: Default::default(),
-            implicit_prelude: true,
-            emit_debug_info: true,
-            run_io: false,
-            full_metadata: false,
+            settings: Default::default(),
         }
     }
 
-    option! {
+    option_settings! {
         /// Sets whether the implicit prelude should be include when compiling a file using this
         /// compiler (default: true)
         implicit_prelude set_implicit_prelude: bool
     }
 
-    option! {
+    option_settings! {
         /// Sets whether the compiler should emit debug information such as source maps and variable
         /// names.
         /// (default: true)
         emit_debug_info set_emit_debug_info: bool
     }
 
-    option! {
+    option_settings! {
         /// Sets whether `IO` expressions are evaluated.
         /// (default: false)
         run_io set_run_io: bool
     }
 
-    option! {
+    option_settings! {
         /// Sets whether full metadata is required
         /// (default: false)
         full_metadata set_full_metadata: bool
