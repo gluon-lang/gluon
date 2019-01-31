@@ -165,8 +165,8 @@ impl<'a> KindCheck<'a> {
 
     // Kindhecks `typ`, infering it to be of kind `Type`
     pub fn kindcheck_type(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
-        let type_kind = self.type_kind();
-        self.kindcheck_expected(typ, &type_kind)
+        let any = self.subs.new_var();
+        self.kindcheck_expected(typ, &any)
     }
 
     pub fn kindcheck_expected(

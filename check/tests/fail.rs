@@ -342,11 +342,7 @@ type Bar = Test Int
 ()
 "#;
     let result = support::typecheck(text);
-    assert_err!(
-        result,
-        KindError(TypeMismatch(..)),
-        KindError(TypeMismatch(..))
-    );
+    assert_err!(result, KindError(TypeMismatch(..)));
 }
 
 #[test]

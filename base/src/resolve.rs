@@ -48,7 +48,7 @@ impl AliasRemover {
     ) -> Result<Cow<'t, T>, Error>
     where
         F: FnMut(&AliasRef<Symbol, T>) -> bool,
-        T: TypeExt<Id = Symbol> + Clone,
+        T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     {
         Ok(match peek_alias(env, typ) {
             Ok(Some(alias)) => {
@@ -84,7 +84,7 @@ impl AliasRemover {
         mut typ: T,
     ) -> Result<T, Error>
     where
-        T: TypeExt<Id = Symbol>,
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         loop {
             typ = match self.remove_alias(env, interner, &typ)? {
@@ -101,7 +101,7 @@ impl AliasRemover {
         typ: &T,
     ) -> Result<Option<T>, Error>
     where
-        T: TypeExt<Id = Symbol>,
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         match peek_alias(env, &typ)? {
             Some(alias) => {
@@ -162,7 +162,7 @@ pub fn canonical_alias<'t, F, T>(
 ) -> Cow<'t, T>
 where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
-    T: TypeExt<Id = Symbol> + Clone,
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -208,7 +208,7 @@ pub fn peek_alias<'t, T>(
     typ: &'t T,
 ) -> Result<Option<&'t AliasRef<Symbol, T>>, Error>
 where
-    T: TypeExt<Id = Symbol>,
+    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
     let maybe_alias = typ.applied_alias();
 

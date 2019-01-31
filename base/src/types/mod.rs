@@ -1116,15 +1116,9 @@ where
     }
 
     pub fn applied_alias(&self) -> Option<&AliasRef<Id, T>> {
-        self.applied_alias_(0)
-    }
-
-    fn applied_alias_(&self, given_arguments_count: usize) -> Option<&AliasRef<Id, T>> {
         match *self {
-            Type::Alias(ref alias) if alias.params().len() == given_arguments_count => Some(alias),
-            Type::App(ref alias, ref args) => {
-                alias.applied_alias_(args.len() + given_arguments_count)
-            }
+            Type::Alias(ref alias) => Some(alias),
+            Type::App(ref alias, _) => alias.applied_alias(),
             _ => None,
         }
     }
@@ -1513,9 +1507,18 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
             .map(|g| g.id.clone())
             .zip(args.iter().cloned())
             .collect();
+
+        let typ = typ
+            .replace_generics(interner, &mut map)
+            .unwrap_or_else(|| typ.clone());
         Some(
-            typ.replace_generics(interner, &mut map)
-                .unwrap_or_else(|| typ.clone()),
+            interner.app(
+                typ,
+                args[params.len().min(args.len())..]
+                    .iter()
+                    .cloned()
+                    .collect(),
+            ),
         )
     }
 
