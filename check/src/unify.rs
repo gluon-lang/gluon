@@ -8,7 +8,7 @@ use crate::base::types::ToDoc;
 
 use crate::substitution::{self, Substitutable, Substitution};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum Error<E, T> {
     TypeMismatch(T, T),
     Substitution(crate::substitution::Error<T>),

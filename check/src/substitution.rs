@@ -10,7 +10,7 @@ use crate::base::{
 };
 use crate::typ::RcType;
 
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Functor)]
 pub enum Error<T> {
     Occurs(T, T),
 }

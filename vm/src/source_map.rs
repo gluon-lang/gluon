@@ -6,7 +6,7 @@ use crate::base::types::ArcType;
 
 use crate::types::VmIndex;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct SourceMap {
     /// The index of the first instruction for each line
@@ -55,7 +55,7 @@ impl SourceMap {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -81,7 +81,7 @@ pub struct Local {
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Clone, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",

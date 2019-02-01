@@ -21,28 +21,28 @@ impl MetadataEnv for () {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum CommentType {
     Block,
     Line,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Comment {
     pub typ: CommentType,
     pub content: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Attribute {
     pub name: String,
     pub arguments: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
     pub definition: Option<Symbol>,

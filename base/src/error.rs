@@ -249,7 +249,7 @@ impl<E: fmt::Display + fmt::Debug + Any + AsDiagnostic> StdError for InFile<E> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Help<E, H> {
     pub error: E,
     pub help: Option<H>,

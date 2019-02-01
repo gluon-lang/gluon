@@ -3,7 +3,7 @@ use crate::base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 use crate::token::{SpannedToken, Token};
 
 quick_error! {
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         UnindentedTooFar {
             description("line was unindented too far")
