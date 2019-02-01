@@ -36,7 +36,7 @@ enum FieldAccess {
     Index(VmIndex),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -58,7 +58,7 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -81,7 +81,7 @@ pub struct DebugInfo {
     pub source_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -108,7 +108,7 @@ pub struct CompiledModule {
     pub function: CompiledFunction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",

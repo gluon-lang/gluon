@@ -136,7 +136,7 @@ impl<'a> fmt::Display for Expected<'a> {
 }
 
 quick_error! {
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Token(err: TokenizeError) {
             description(err.description())

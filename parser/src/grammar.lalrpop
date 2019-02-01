@@ -32,7 +32,7 @@ extern {
         "char literal" => Token::CharLiteral(<char>),
         "int literal" => Token::IntLiteral(<i64>),
         "byte literal" => Token::ByteLiteral(<u8>),
-        "float literal" => Token::FloatLiteral(<f64>),
+        "float literal" => Token::FloatLiteral(<NotNan<f64>>),
         "documentation comment" => Token::DocComment(<Comment<&'input str>>),
 
         "rec" => Token::Rec,
@@ -553,7 +553,7 @@ Literal: Literal = {
     "char literal" => Literal::Char(<>),
     "int literal" => Literal::Int(<>),
     "byte literal" => Literal::Byte(<>),
-    "float literal" => Literal::Float(NotNan::new(<>).unwrap()),
+    "float literal" => Literal::Float(<>),
 };
 
 Alternative: Alternative<Id> = {

@@ -474,7 +474,7 @@ fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&Arc
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Functor)]
 pub enum KindError<I, T> {
     /// The type is not defined in the current scope
     UndefinedType(I),
