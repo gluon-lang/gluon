@@ -100,10 +100,9 @@ pub fn generate(
 
                     let expr = {
                         if pattern_args.len() > 1 {
-                            return Err(format!(
+                            return Err(Error::message(format!(
                                 "Variants with more than 1 argument is not yet supported"
-                            )
-                            .into());
+                            )));
                         }
 
                         if pattern_args.is_empty() {
@@ -150,7 +149,7 @@ pub fn generate(
             pos::spanned(span, Expr::Match(Box::new(ident(span, x.clone())), alts))
         }
 
-        _ => return Err("Unable to derive Deserialize for this type".into()),
+        _ => return Err(Error::message("Unable to derive Deserialize for this type")),
     };
 
     let serialization_import = generate_import_(

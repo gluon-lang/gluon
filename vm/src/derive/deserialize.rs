@@ -87,7 +87,7 @@ pub fn generate(
                 })
             })
             .unwrap(),
-        _ => return Err("Unable to derive Deserialize for this type".into()),
+        _ => return Err(Error::message("Unable to derive Deserialize for this type")),
     };
 
     let serialization_import = generate_import_(
