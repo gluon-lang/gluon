@@ -2309,7 +2309,7 @@ where
     }
 }
 
-#[inline(always)]
+#[inline]
 fn binop_int<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2326,7 +2326,7 @@ where
     })
 }
 
-#[inline(always)]
+#[inline]
 fn binop_f64<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2339,7 +2339,7 @@ where
     binop(vm, stack, |l, r| Ok(ValueRepr::Float(f(l, r))))
 }
 
-#[inline(always)]
+#[inline]
 fn binop_byte<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2356,7 +2356,7 @@ where
     })
 }
 
-#[inline(always)]
+#[inline]
 fn binop_bool<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2371,7 +2371,7 @@ where
     })
 }
 
-#[inline(always)]
+#[inline]
 fn binop<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2385,8 +2385,8 @@ where
     let r = stack.get_value(vm, stack.len() - 1).unwrap();
     let l = stack.get_value(vm, stack.len() - 2).unwrap();
     let result = f(l, r)?;
-    stack.pop_many(2);
-    stack.stack.push(result);
+    stack.pop();
+    *stack.last_mut().unwrap() = result.into();
     Ok(())
 }
 
