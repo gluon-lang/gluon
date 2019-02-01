@@ -287,7 +287,7 @@ mod test {
             *self.0 = Type::Variable(x);
         }
 
-        fn is_unique(self_: &Self) -> bool {
+        fn is_unique(_: &Self) -> bool {
             true
         }
 

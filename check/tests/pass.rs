@@ -1022,3 +1022,14 @@ let (+) x y : a -> a -> a = y
     assert!(result.is_ok(), "{}", result.unwrap_err());
     assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Int");
 }
+
+test_check! {
+    partially_applied_alias_def,
+    r#"
+type Test a b = (a, b)
+type Test2 = Test Int
+let x : Test2 String = (1, "")
+x
+    "#,
+    "test.Test2 String"
+}

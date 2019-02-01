@@ -337,6 +337,7 @@ impl Stack {
         self.get_variant(self.len() - 1)
     }
 
+    #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
         unsafe {
             if index < self.len() {
@@ -580,8 +581,21 @@ where
         self.stack.slide(count);
     }
 
+    #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
         self.stack.get_variant(self.frame.offset + index)
+    }
+
+    #[inline]
+    pub fn get_value<'vm, 'value, T>(
+        &'value self,
+        thread: &'vm crate::thread::Thread,
+        index: VmIndex,
+    ) -> Option<T>
+    where
+        T: crate::api::Getable<'vm, 'value>,
+    {
+        self.get_variant(index).map(|v| T::from_value(thread, v))
     }
 
     pub fn insert_slice(&mut self, index: VmIndex, values: &[Value]) {

@@ -1,17 +1,22 @@
+#[macro_use]
+extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate pretty;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::ops::Deref;
+use std::{cell::RefCell, ops::Deref, rc::Rc};
 
 use pretty::{Arena, DocAllocator};
 
-use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::pos::{self, BytePos, Span, Spanned};
-use base::symbol::{Symbol, SymbolRef, Symbols};
-use base::types::*;
+use base::{
+    ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent},
+    kind::{ArcKind, Kind, KindEnv},
+    pos::{self, BytePos, Span, Spanned},
+    resolve,
+    symbol::{Symbol, SymbolRef, Symbols},
+    types::*,
+};
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
@@ -353,8 +358,15 @@ impl TypeEnv for MockEnv {
 
 pub type SpExpr = SpannedExpr<Symbol>;
 
+pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
+    thread_local!(static INTERNER: Rc<RefCell<Symbols>>
+    = Rc::new(RefCell::new(Symbols::new())));
+
+    INTERNER.with(|interner| interner.clone())
+}
+
 pub fn intern(s: &str) -> Symbol {
-    Symbol::from(s)
+    get_local_interner().borrow_mut().symbol(s)
 }
 
 pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
@@ -385,4 +397,32 @@ fn take_implicits_into_account_on_infix_type() {
     }
 
     assert_eq!(expr.env_type_of(&MockEnv), Type::int());
+}
+
+#[test]
+fn resolve_partially_applied_alias() {
+    let gen = |x: &str| Type::<_, ArcType>::generic(Generic::new(intern(x), Kind::typ()));
+    let test = Type::alias(
+        intern("Test"),
+        vec![
+            Generic::new(intern("a"), Kind::typ()),
+            Generic::new(intern("b"), Kind::typ()),
+        ],
+        Type::function(vec![gen("a")], gen("b")),
+    );
+    let test2 = Type::alias(
+        intern("Test2"),
+        vec![],
+        Type::app(test.clone(), collect![Type::string()]),
+    );
+
+    assert_eq_display!(
+        resolve::remove_aliases(
+            &MockEnv,
+            &mut NullInterner,
+            Type::app(test2, collect![Type::int()])
+        )
+        .to_string(),
+        "String -> Int"
+    );
 }

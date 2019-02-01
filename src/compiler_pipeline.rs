@@ -157,10 +157,14 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
+        if compiler.settings.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         let prev_errors = mem::replace(&mut macros.errors, Errors::new());
+        macros.state.insert(
+            crate::import::COMPILER_KEY.into(),
+            Box::new(compiler.split()),
+        );
         macros.run(&mut compiler.symbols, self);
         let errors = mem::replace(&mut macros.errors, prev_errors);
         let value = MacroValue { expr: self };
@@ -533,12 +537,12 @@ where
             };
             result.map_err(|err| {
                 info!("Error when typechecking `{}`: {}", file, err);
-                InFile::new(compiler.code_map().clone(), err)
+                InFile::new(compiler.state().code_map.clone(), err)
             })?
         };
 
         // Some metadata requires typechecking so recompute it if full metadata is required
-        let (metadata, metadata_map) = if compiler.full_metadata {
+        let (metadata, metadata_map) = if compiler.settings.full_metadata {
             let env = thread.get_env();
             metadata::metadata(&*env, expr.borrow_mut())
         } else {
@@ -634,7 +638,7 @@ where
                 symbols,
                 &source,
                 filename.to_string(),
-                compiler.emit_debug_info,
+                compiler.settings.emit_debug_info,
             );
             compiler.compile_expr(expr)?
         };
@@ -748,7 +752,7 @@ where
             mut module,
             metadata,
         } = self;
-        let run_io = compiler.run_io;
+        let run_io = compiler.settings.run_io;
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module));
@@ -784,7 +788,7 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        let run_io = compiler.run_io;
+        let run_io = compiler.settings.run_io;
         let filename = filename.to_string();
 
         let vm1 = vm.clone();

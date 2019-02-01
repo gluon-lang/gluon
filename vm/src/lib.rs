@@ -110,24 +110,29 @@ pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
+    #[inline]
     pub unsafe fn new(value: &Value) -> Variants {
         Variants::with_root(value.clone(), value)
     }
 
+    #[inline]
     pub(crate) unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
         Variants(value.get_repr(), PhantomData)
     }
 
+    #[inline]
     pub(crate) fn int(i: VmInt) -> Self {
         Variants(ValueRepr::Int(i), PhantomData)
     }
 
+    #[inline]
     pub fn get_value(&self) -> Value {
         self.0.into()
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
+    #[inline]
     pub fn as_ref(&self) -> ValueRef<'a> {
         unsafe { ValueRef::rooted_new(self.0) }
     }

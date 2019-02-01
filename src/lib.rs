@@ -60,7 +60,7 @@ use std::env;
 use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::base::ast::{self, SpannedExpr};
 use crate::base::error::{Errors, InFile};
@@ -206,80 +206,13 @@ impl Error {
 /// Type alias for results returned by gluon
 pub type Result<T> = StdResult<T, Error>;
 
-/// Type which makes parsing, typechecking and compiling an AST into bytecode
-pub struct Compiler {
-    symbols: Symbols,
+#[derive(Default)]
+struct State {
     code_map: codespan::CodeMap,
     index_map: FnvMap<String, BytePos>,
-    implicit_prelude: bool,
-    emit_debug_info: bool,
-    run_io: bool,
-    full_metadata: bool,
 }
 
-impl Default for Compiler {
-    fn default() -> Compiler {
-        Compiler::new()
-    }
-}
-
-macro_rules! option {
-($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
-    $(#[$attr])*
-    pub fn $name(mut self, $name: $typ) -> Self {
-        self.$name = $name;
-        self
-    }
-
-    pub fn $set_name(&mut self, $name: $typ) {
-        self.$name = $name;
-    }
-};
-}
-
-impl Compiler {
-    /// Creates a new compiler with default settings
-    pub fn new() -> Compiler {
-        Compiler {
-            symbols: Symbols::new(),
-            code_map: codespan::CodeMap::new(),
-            index_map: FnvMap::default(),
-            implicit_prelude: true,
-            emit_debug_info: true,
-            run_io: false,
-            full_metadata: false,
-        }
-    }
-
-    option! {
-        /// Sets whether the implicit prelude should be include when compiling a file using this
-        /// compiler (default: true)
-        implicit_prelude set_implicit_prelude: bool
-    }
-
-    option! {
-        /// Sets whether the compiler should emit debug information such as source maps and variable
-        /// names.
-        /// (default: true)
-        emit_debug_info set_emit_debug_info: bool
-    }
-
-    option! {
-        /// Sets whether `IO` expressions are evaluated.
-        /// (default: false)
-        run_io set_run_io: bool
-    }
-
-    option! {
-        /// Sets whether full metadata is required
-        /// (default: false)
-        full_metadata set_full_metadata: bool
-    }
-
-    pub fn code_map(&self) -> &codespan::CodeMap {
-        &self.code_map
-    }
-
+impl State {
     pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
     where
         S: Into<String>,
@@ -318,9 +251,140 @@ impl Compiler {
         self.index_map.insert(file.into(), file_map.span().start());
         file_map
     }
+}
+
+#[derive(Clone)]
+struct Settings {
+    implicit_prelude: bool,
+    emit_debug_info: bool,
+    run_io: bool,
+    full_metadata: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            implicit_prelude: true,
+            emit_debug_info: true,
+            run_io: false,
+            full_metadata: false,
+        }
+    }
+}
+
+/// Type which makes parsing, typechecking and compiling an AST into bytecode
+pub struct Compiler {
+    symbols: Symbols,
+    state: Arc<Mutex<State>>,
+    settings: Settings,
+}
+
+impl Default for Compiler {
+    fn default() -> Compiler {
+        Compiler::new()
+    }
+}
+
+macro_rules! option {
+($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+    $(#[$attr])*
+    pub fn $name(mut self, $name: $typ) -> Self {
+        self.$name = $name;
+        self
+    }
+
+    pub fn $set_name(&mut self, $name: $typ) {
+        self.$name = $name;
+    }
+};
+}
+
+macro_rules! option_settings {
+($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+    $(#[$attr])*
+    pub fn $name(mut self, $name: $typ) -> Self {
+        self.settings.$name = $name;
+        self
+    }
+
+    pub fn $set_name(&mut self, $name: $typ) {
+        self.settings.$name = $name;
+    }
+};
+}
+
+impl Compiler {
+    /// Creates a new compiler with default settings
+    pub fn new() -> Compiler {
+        Compiler {
+            symbols: Symbols::new(),
+            state: Default::default(),
+            settings: Default::default(),
+        }
+    }
+
+    option_settings! {
+        /// Sets whether the implicit prelude should be include when compiling a file using this
+        /// compiler (default: true)
+        implicit_prelude set_implicit_prelude: bool
+    }
+
+    option_settings! {
+        /// Sets whether the compiler should emit debug information such as source maps and variable
+        /// names.
+        /// (default: true)
+        emit_debug_info set_emit_debug_info: bool
+    }
+
+    option_settings! {
+        /// Sets whether `IO` expressions are evaluated.
+        /// (default: false)
+        run_io set_run_io: bool
+    }
+
+    option_settings! {
+        /// Sets whether full metadata is required
+        /// (default: false)
+        full_metadata set_full_metadata: bool
+    }
+
+    fn state(&self) -> MutexGuard<State> {
+        self.state.lock().unwrap()
+    }
+
+    pub fn code_map(&self) -> codespan::CodeMap {
+        self.state().code_map.clone()
+    }
+
+    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
+    where
+        S: Into<String>,
+    {
+        self.state().update_filemap(file, source)
+    }
+
+    pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
+        self.state().get_filemap(file).cloned()
+    }
+
+    #[doc(hidden)]
+    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
+    where
+        S: AsRef<str> + Into<String>,
+    {
+        self.state().add_filemap(file, source)
+    }
 
     pub fn mut_symbols(&mut self) -> &mut Symbols {
         &mut self.symbols
+    }
+
+    pub fn split(&self) -> Self {
+        Self {
+            symbols: Symbols::new(),
+            state: self.state.clone(),
+            settings: self.settings.clone(),
+        }
     }
 
     /// Parse `expr_str`, returning an expression if successful

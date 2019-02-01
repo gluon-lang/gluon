@@ -21,25 +21,20 @@ let serialize ?ser : [Serialize a] -> a -> Result Error Value = ser.serialize
 /// Serializes `a` to a JSON without whitespace string
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, to_string, ? } = import! std.json.ser
 /// let { Result, ? } = import! std.result
 /// let { singleton, ? } = import! std.map
 /// let { (<>) } = import! std.semigroup
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (
-///     to_string "string" == Ok r#""string""#
-/// )
+/// seq assert_eq (to_string "string") (Ok r#""string""#)
 ///
 /// let expected = r#"[1,2,3]"#
-/// assert (
-///     to_string [1, 2, 3] == Ok expected
-/// )
+/// seq assert_eq (to_string [1, 2, 3]) (Ok expected)
 ///
 /// let expected = r#"{"field":1}"#
-/// assert (
-///     to_string (singleton "field" 1) == Ok expected 
-/// )
+/// assert_eq (to_string (singleton "field" 1)) (Ok expected)
 /// ```
 let to_string v : [Serialize a] -> a -> Result Error String =
     do value = serialize v
@@ -49,31 +44,26 @@ let to_string v : [Serialize a] -> a -> Result Error String =
 /// Serializes `a` to a JSON string
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let { Value, to_string_pretty, ? } = import! std.json.ser
 /// let { Result, ? } = import! std.result
 /// let { singleton, ? } = import! std.map
 /// let { (<>) } = import! std.semigroup
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (
-///     to_string_pretty "string" == Ok r#""string""#
-/// )
+/// seq assert_eq (to_string_pretty "string") (Ok r#""string""#)
 ///
 /// let expected = r#"[
 ///   1,
 ///   2,
 ///   3
 /// ]"#
-/// assert (
-///     to_string_pretty [1, 2, 3] == Ok expected
-/// )
+/// seq assert_eq (to_string_pretty [1, 2, 3]) (Ok expected)
 ///
 /// let expected = r#"{
 ///   "field": 1
 /// }"#
-/// assert (
-///     to_string_pretty (singleton "field" 1) == Ok expected 
-/// )
+/// assert_eq (to_string_pretty (singleton "field" 1)) (Ok expected)
 /// ```
 let to_string_pretty v : [Serialize a] -> a -> Result Error String =
     do value = serialize v

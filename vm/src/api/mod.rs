@@ -97,10 +97,12 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
 }
 
 impl<'a> ValueRef<'a> {
+    #[inline]
     pub(crate) fn new(value: &'a Value) -> ValueRef<'a> {
         unsafe { ValueRef::rooted_new(value.get_repr()) }
     }
 
+    #[inline]
     pub(crate) unsafe fn rooted_new(value: ValueRepr) -> ValueRef<'a> {
         match value {
             ValueRepr::Byte(i) => ValueRef::Byte(i),
@@ -117,6 +119,7 @@ impl<'a> ValueRef<'a> {
         }
     }
 
+    #[inline]
     pub fn tag(t: VmTag) -> Self {
         ValueRef::Data(Data(DataInner::Tag(t)))
     }
@@ -702,12 +705,14 @@ impl VmType for u8 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for u8 {
+    #[inline]
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Byte(self));
         Ok(())
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for u8 {
+    #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> u8 {
         match value.as_ref() {
             ValueRef::Byte(i) => i,
@@ -723,12 +728,14 @@ macro_rules! int_impls {
             type Type = VmInt;
         }
         impl<'vm> Pushable<'vm> for $id {
+            #[inline]
             fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
                 context.push(ValueRepr::Int(self as VmInt));
                 Ok(())
             }
         }
         impl<'vm, 'value> Getable<'vm, 'value> for $id {
+            #[inline]
             fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
                 match value.as_ref() {
                     ValueRef::Int(i) => i as $id,
@@ -746,12 +753,14 @@ impl VmType for f64 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for f64 {
+    #[inline]
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Float(self));
         Ok(())
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for f64 {
+    #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> f64 {
         match value.as_ref() {
             ValueRef::Float(f) => f,
@@ -771,12 +780,14 @@ impl VmType for bool {
     }
 }
 impl<'vm> Pushable<'vm> for bool {
+    #[inline]
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Tag(if self { 1 } else { 0 }));
         Ok(())
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for bool {
+    #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> bool {
         match value.as_ref() {
             ValueRef::Data(data) => data.tag() == 1,
@@ -795,6 +806,7 @@ impl VmType for Ordering {
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
+    #[inline]
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let tag = match self {
             Ordering::Less => 0,
@@ -806,6 +818,7 @@ impl<'vm> Pushable<'vm> for Ordering {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for Ordering {
+    #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Ordering {
         let tag = match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
@@ -860,12 +873,14 @@ impl VmType for char {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for char {
+    #[inline]
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Int(self as VmInt));
         Ok(())
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for char {
+    #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> char {
         match value.as_ref() {
             ValueRef::Int(x) => match ::std::char::from_u32(x as u32) {

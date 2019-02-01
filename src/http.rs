@@ -331,12 +331,13 @@ fn listen(
         );
         let incoming = listener
             .incoming()
-            .and_then(move |stream| {
+            .map(move |stream| {
                 acceptor.accept(stream).map(Some).or_else(|err| {
                     info!("Unable to accept TLS connection: {}", err);
                     Ok(None)
                 })
             })
+            .buffer_unordered(100)
             .filter_map(|opt_tls_stream| opt_tls_stream);
 
         let future = http

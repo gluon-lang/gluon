@@ -18,9 +18,9 @@ let { (<|>) } = import! std.alternative
 ///
 /// ```
 /// let list @ { List, ? } = import! std.list
-/// let { assert } = import! std.test
+/// let { assert_neq } = import! std.test
 ///
-/// assert (Cons 1 Nil /= Nil)
+/// assert_neq (Cons 1 Nil) Nil
 /// ```
 #[derive(Eq, Show)]
 type List a =
@@ -30,12 +30,13 @@ type List a =
 /// Constructs a list from an array. Useful to emulate list literals
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let list @ { List, ? } = import! std.list
-/// let { assert } = import! std.test
+/// let { assert_eq, ? } = import! std.test
 ///
-/// assert (list.of [1, 2] == Cons 1 (Cons 2 Nil))
+/// seq assert_eq (list.of [1, 2]) (Cons 1 (Cons 2 Nil))
 /// let xs : List String = list.of []
-/// assert (xs == Nil)
+/// assert_eq xs Nil
 /// ```
 let of xs : Array a -> List a =
     let len = array.len xs
@@ -167,10 +168,11 @@ let traversable : Traversable List = {
 /// elements where `predicate` returns `True`
 ///
 /// ```
+/// let { ? } = import! std.effect
 /// let list @ { List, ? } = import! std.list
-/// let { assert } = import! std.test
-/// assert (list.filter (\x -> x /= 2) (list.of [1, 2, 3]) == list.of [1, 3])
-/// assert (list.filter (\x -> False) (list.of [1, 2, 3]) == Nil)
+/// let { assert_eq, ? } = import! std.test
+/// seq assert_eq (list.filter (\x -> x /= 2) (list.of [1, 2, 3])) (list.of [1, 3])
+/// assert_eq (list.filter (\x -> False) (list.of [1, 2, 3])) Nil
 /// ```
 rec let filter predicate xs : (a -> Bool) -> List a -> List a =
     match xs with
@@ -197,8 +199,8 @@ rec let scan compare xs less equal greater : (a -> Ordering)
 ///
 /// ```
 /// let list @ { List, ? } = import! std.list
-/// let { assert } = import! std.test
-/// assert (list.sort (list.of [2, 1, 3]) == list.of [1, 2, 3])
+/// let { assert_eq, ? } = import! std.test
+/// assert_eq (list.sort (list.of [2, 1, 3])) (list.of [1, 2, 3])
 /// ```
 rec let sort xs : [Ord a] -> List a -> List a =
     match xs with

@@ -477,7 +477,14 @@ impl<'a> Typecheck<'a> {
         let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
         let expected_type = temp.as_ref().or(expected_type);
 
-        let mut typ = self.typecheck_opt_(true, expr, expected_type);
+        let mut typ = if let Some(expected_type) = expected_type {
+            self.skolemize_in(expr.span, &expected_type, |self_, expected_type| {
+                self_.typecheck_opt_(true, expr, Some(&expected_type))
+            })
+        } else {
+            self.typecheck_opt_(true, expr, expected_type)
+        };
+
         {
             if let Some(expected_type) = expected_type {
                 let mut type_cache = &self.subs;

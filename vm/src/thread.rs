@@ -2381,14 +2381,12 @@ where
     F: FnOnce(T, T) -> Result<ValueRepr>,
     T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
-    let (l, r) = {
-        let r = stack.get_variant(stack.len() - 1).unwrap();
-        let l = stack.get_variant(stack.len() - 2).unwrap();
-        (T::from_value(vm, l), T::from_value(vm, r))
-    };
+    assert!(stack.len() >= 2);
+    let r = stack.get_value(vm, stack.len() - 1).unwrap();
+    let l = stack.get_value(vm, stack.len() - 2).unwrap();
     let result = f(l, r)?;
-    stack.pop_many(2);
-    stack.stack.push(result);
+    stack.pop();
+    *stack.last_mut().unwrap() = result.into();
     Ok(())
 }
 
