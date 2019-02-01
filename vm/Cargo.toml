@@ -19,6 +19,7 @@ travis-ci = { repository = "gluon-lang/gluon" }
 [dependencies]
 bitflags = "1.0.0"
 codespan = "0.3"
+codespan-reporting = "0.3"
 collect-mac = "0.1.0"
 crossbeam-utils = "0.6"
 frunk_core = "0.3"

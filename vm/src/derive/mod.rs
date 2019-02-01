@@ -29,11 +29,16 @@ pub fn generate(
                     "Show" => show::generate(symbols, bind),
                     "Deserialize" => deserialize::generate(symbols, bind),
                     "Serialize" => serialize::generate(symbols, bind),
-                    _ => return Err(format!("`{}` is not a type that can be derived", arg)),
+                    _ => {
+                        return Err(Error::message(format!(
+                            "`{}` is not a type that can be derived",
+                            arg
+                        )));
+                    }
                 })
             })
             .collect::<Result<_, _>>()?,
-        _ => Err("Invalid `derive` attribute".into()),
+        _ => Err(Error::message("Invalid `derive` attribute")),
     }
 }
 

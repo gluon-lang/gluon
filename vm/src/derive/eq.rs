@@ -169,7 +169,7 @@ pub fn generate(
                 }],
             )
         }
-        _ => return Err("Unable to derive eq for this type".into()),
+        _ => return Err(Error::message("Unable to derive eq for this type")),
     };
 
     let self_type: AstType<_> = Type::app(

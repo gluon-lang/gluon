@@ -1,27 +1,32 @@
 //! Implementation of the `import!` macro.
 
-use std::any::Any;
-use std::borrow::Cow;
-use std::collections::hash_map::Entry;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-use std::mem;
-use std::path::PathBuf;
-use std::sync::{Mutex, RwLock};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::hash_map::Entry,
+    error::Error as StdError,
+    fmt,
+    fs::File,
+    io,
+    io::Read,
+    mem,
+    path::PathBuf,
+    sync::{Arc, Mutex, RwLock},
+};
 
-use futures::sync::oneshot;
-use futures::{future, Future};
+use futures::{future, sync::oneshot, Future};
 
 use itertools::Itertools;
 
-use crate::base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
-use crate::base::error::{Errors, InFile};
-use crate::base::filename_to_module;
-use crate::base::fnv::FnvMap;
-use crate::base::pos::{self, BytePos, Span};
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent},
+    error::{Errors, InFile},
+    filename_to_module,
+    fnv::FnvMap,
+    pos::{self, BytePos, Span},
+    symbol::Symbol,
+    types::{ArcType, Type},
+};
 
 use crate::vm::{
     self,
@@ -32,9 +37,53 @@ use crate::vm::{
 
 use super::Compiler;
 
+#[derive(Debug, Clone)]
+pub struct IoError(Arc<io::Error>);
+
+impl fmt::Display for IoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl StdError for IoError {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.0.source()
+    }
+}
+
+impl<E> From<E> for IoError
+where
+    io::Error: From<E>,
+{
+    fn from(err: E) -> Self {
+        IoError(Arc::new(err.into()))
+    }
+}
+
+impl Eq for IoError {}
+
+impl PartialEq for IoError {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(&*self.0, &*other.0)
+    }
+}
+
+impl std::hash::Hash for IoError {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (&*self.0 as *const io::Error).hash(state)
+    }
+}
+
 quick_error! {
     /// Error type for the import macro
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub enum Error {
         /// The importer found a cyclic dependency when loading files
         CyclicDependency(module: String, cycle: Vec<String>) {
@@ -51,11 +100,17 @@ quick_error! {
             display("{}", message)
         }
         /// The importer could not load the imported file
-        IO(err: io::Error) {
+        IO(err: IoError) {
             description(err.description())
             display("{}", err)
             from()
         }
+    }
+}
+
+impl base::error::AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
+        codespan_reporting::Diagnostic::new_error(self.to_string())
     }
 }
 

@@ -1072,6 +1072,7 @@ version = "0.12.0"
 dependencies = [
  "bitflags 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-utils 0.6.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",

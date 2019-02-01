@@ -1,14 +1,18 @@
 //! Module providing the building blocks to create macros and expand them.
-use std::any::Any;
-use std::error::Error as StdError;
-use std::mem;
-use std::sync::{Arc, RwLock};
+use std::{
+    any::Any,
+    error::Error as StdError,
+    fmt, mem,
+    sync::{Arc, RwLock},
+};
 
 use futures::{stream, Future, Stream};
 
+use codespan_reporting::Diagnostic;
+
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
-    error::Errors as BaseErrors,
+    error::{AsDiagnostic, Errors as BaseErrors},
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
@@ -17,10 +21,114 @@ use crate::base::{
 
 use crate::thread::Thread;
 
-pub type Error = Box<dyn StdError + Send + Sync>;
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
+
+pub trait MacroError: ::mopa::Any + StdError + AsDiagnostic + Send + Sync + 'static {
+    fn clone_error(&self) -> Error;
+    fn eq_error(&self, other: &dyn MacroError) -> bool;
+    fn hash_error(&self, hash: &mut dyn std::hash::Hasher);
+}
+mopafy!(MacroError);
+
+impl<T> MacroError for T
+where
+    T: Clone + PartialEq + std::hash::Hash + AsDiagnostic + StdError + Send + Sync + 'static,
+{
+    fn clone_error(&self) -> Error {
+        Error(Box::new(self.clone()))
+    }
+    fn eq_error(&self, other: &dyn MacroError) -> bool {
+        other
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+    fn hash_error(&self, mut hash: &mut dyn std::hash::Hasher) {
+        self.hash(&mut hash)
+    }
+}
+
+#[derive(Debug)]
+pub struct Error(Box<dyn MacroError>);
+
+impl StdError for Error {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.0.source()
+    }
+}
+
+impl AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> Diagnostic {
+        self.0.as_diagnostic()
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        self.0.clone_error()
+    }
+}
+
+impl Eq for Error {}
+
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_error(&*other.0)
+    }
+}
+
+impl std::hash::Hash for Error {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.0.hash_error(state)
+    }
+}
+
+impl Error {
+    pub fn new<E>(err: E) -> Self
+    where
+        E: MacroError,
+    {
+        Self(Box::new(err))
+    }
+
+    pub fn message(s: impl Into<String>) -> Error {
+        #[derive(Debug, Eq, PartialEq, Clone, Hash)]
+        struct StringError(String);
+
+        impl StdError for StringError {
+            fn description(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for StringError {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fmt::Display::fmt(&self.0, f)
+            }
+        }
+
+        impl AsDiagnostic for StringError {
+            fn as_diagnostic(&self) -> Diagnostic {
+                Diagnostic::new_error(self.to_string())
+            }
+        }
+
+        Self::new(StringError(s.into()))
+    }
+}
 
 /// A trait which abstracts over macros.
 ///
@@ -190,7 +298,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,
-                            "Implicit arguments are not allowed on macros".into(),
+                            Error::message("Implicit arguments are not allowed on macros"),
                         ));
                     }
 
