@@ -584,6 +584,17 @@ where
         self.stack.get_variant(self.frame.offset + index)
     }
 
+    pub fn get_value<'vm, 'value, T>(
+        &'value self,
+        thread: &'vm crate::thread::Thread,
+        index: VmIndex,
+    ) -> Option<T>
+    where
+        T: crate::api::Getable<'vm, 'value>,
+    {
+        self.get_variant(index).map(|v| T::from_value(thread, v))
+    }
+
     pub fn insert_slice(&mut self, index: VmIndex, values: &[Value]) {
         self.stack.values.reserve(values.len());
         unsafe {
