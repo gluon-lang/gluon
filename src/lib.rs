@@ -31,9 +31,22 @@ extern crate gluon_codegen;
 #[macro_use]
 pub extern crate gluon_vm as vm;
 
+macro_rules! try_future {
+    ($e:expr) => {
+        try_future!($e, Box::new)
+    };
+    ($e:expr, $f:expr) => {
+        match $e {
+            Ok(x) => x,
+            Err(err) => return $f(::futures::future::err(err.into())),
+        }
+    };
+}
+
 pub mod compiler_pipeline;
 #[macro_use]
 pub mod import;
+pub mod query;
 pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
@@ -43,32 +56,35 @@ use futures::{Future, IntoFuture};
 use either::Either;
 
 use std as real_std;
-use std::env;
-use std::error::Error as StdError;
-use std::path::PathBuf;
-use std::result::Result as StdResult;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    env, error::Error as StdError, fmt, path::PathBuf, result::Result as StdResult, sync::Arc,
+};
 
-use crate::base::ast::{self, SpannedExpr};
-use crate::base::error::{Errors, InFile};
-use crate::base::filename_to_module;
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::Metadata;
-use crate::base::pos::{self, BytePos, Span, Spanned};
-use crate::base::symbol::{Symbol, SymbolModule, Symbols};
-use crate::base::types::{ArcType, TypeCache};
+use crate::base::{
+    ast::{self, SpannedExpr},
+    error::{Errors, InFile},
+    filename_to_module,
+    metadata::Metadata,
+    pos::{BytePos, Span, Spanned},
+    symbol::{Symbol, Symbols},
+    types::{ArcType, TypeCache},
+};
 
 use crate::format::Formatter;
 
-use crate::compiler_pipeline::*;
-use crate::import::{add_extern_module, DefaultImporter, Import};
 use crate::vm::api::{Getable, Hole, OpaqueValue, VmType};
 use crate::vm::compiler::CompiledModule;
 use crate::vm::macros;
 
+use crate::{
+    compiler_pipeline::*,
+    import::{add_extern_module, DefaultImporter, Import},
+    query::Compilation,
+};
+
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum Error {
     /// Error found when parsing gluon code
     Parse(err: InFile<parser::Error>) {
@@ -83,7 +99,7 @@ pub enum Error {
         from()
     }
     /// Error found when performing an IO action such as loading a file
-    IO(err: ::std::io::Error) {
+    IO(err: IoError) {
         description(err.description())
         display("{}", err)
         from()
@@ -100,7 +116,7 @@ pub enum Error {
         display("{}", err)
         from()
     }
-    Other(err: Box<dyn StdError + Send + Sync>) {
+    Other(err: macros::Error) {
         description(err.description())
         display("{}", err)
         from()
@@ -111,6 +127,78 @@ pub enum Error {
         display("{}", err)
     }
 }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IO(err.into())
+    }
+}
+
+impl Error {
+    pub fn merge(self, other: Self) -> Self {
+        match (self, other) {
+            (Error::Multiple(mut errors), Error::Multiple(err)) => {
+                errors.extend(err);
+                Error::Multiple(errors)
+            }
+            (Error::Multiple(mut errors), err) | (err, Error::Multiple(mut errors)) => {
+                errors.push(err);
+                Error::Multiple(errors)
+            }
+            (l, r) => Error::Multiple(vec![l, r].into_iter().collect()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IoError(Arc<std::io::Error>);
+
+impl fmt::Display for IoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl StdError for IoError {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.0.source()
+    }
+}
+
+impl<E> From<E> for IoError
+where
+    std::io::Error: From<E>,
+{
+    fn from(err: E) -> Self {
+        IoError(Arc::new(err.into()))
+    }
+}
+
+impl Eq for IoError {}
+
+impl PartialEq for IoError {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(&*self.0, &*other.0)
+    }
+}
+
+impl std::hash::Hash for IoError {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        (&*self.0 as *const std::io::Error).hash(state)
+    }
+}
+
+impl base::error::AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
+        codespan_reporting::Diagnostic::new_error(self.to_string())
+    }
 }
 
 impl From<String> for Error {
@@ -193,68 +281,10 @@ impl Error {
 /// Type alias for results returned by gluon
 pub type Result<T> = StdResult<T, Error>;
 
-#[derive(Default)]
-struct State {
-    code_map: codespan::CodeMap,
-    index_map: FnvMap<String, BytePos>,
-}
-
-impl State {
-    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
-    where
-        S: Into<String>,
-    {
-        let index_map = &mut self.index_map;
-        let code_map = &mut self.code_map;
-        index_map
-            .get(file)
-            .cloned()
-            .and_then(|i| code_map.update(i, source.into()))
-            .map(|file_map| {
-                index_map.insert(file.into(), file_map.span().start());
-                file_map
-            })
-    }
-
-    fn get_or_insert_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
-    where
-        S: AsRef<str> + Into<String>,
-    {
-        if let Some(i) = self.index_map.get(file) {
-            return self.code_map.find_file(*i).unwrap().clone();
-        }
-        self.add_filemap(file, source)
-    }
-
-    pub fn get_filemap(&self, file: &str) -> Option<&Arc<codespan::FileMap>> {
-        self.index_map
-            .get(file)
-            .and_then(move |i| self.code_map.find_file(*i))
-    }
-
-    #[doc(hidden)]
-    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
-    where
-        S: AsRef<str> + Into<String>,
-    {
-        match self.get_filemap(file) {
-            Some(file_map) if file_map.src() == source.as_ref() => return file_map.clone(),
-            _ => (),
-        }
-        let file_map = self.code_map.add_filemap(
-            codespan::FileName::virtual_(file.to_string()),
-            source.into(),
-        );
-        self.index_map.insert(file.into(), file_map.span().start());
-        file_map
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 struct Settings {
     implicit_prelude: bool,
     emit_debug_info: bool,
-    run_io: bool,
     full_metadata: bool,
     use_standard_lib: bool,
 }
@@ -264,23 +294,28 @@ impl Default for Settings {
         Self {
             implicit_prelude: true,
             emit_debug_info: true,
-            run_io: false,
             full_metadata: false,
             use_standard_lib: true,
         }
     }
 }
 
-/// Type which makes parsing, typechecking and compiling an AST into bytecode
+/// Type which enables parsing, typechecking and compiling an AST into bytecode
 pub struct Compiler {
-    symbols: Symbols,
-    state: Arc<Mutex<State>>,
-    settings: Settings,
+    pub run_io: bool,
+    pub implicit_prelude: bool,
 }
 
-impl Default for Compiler {
-    fn default() -> Compiler {
-        Compiler::new()
+pub struct ModuleCompiler<'a> {
+    compiler: &'a Compiler,
+    database: &'a query::CompilerDatabase,
+    symbols: Symbols,
+}
+
+impl<'a> std::ops::Deref for ModuleCompiler<'a> {
+    type Target = &'a query::CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        &self.database
     }
 }
 
@@ -298,165 +333,153 @@ macro_rules! option {
 };
 }
 
-macro_rules! option_settings {
+macro_rules! runtime_option {
 ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
     $(#[$attr])*
     pub fn $name(mut self, $name: $typ) -> Self {
-        self.settings.$name = $name;
+        self.$set_name($name);
         self
     }
 
     pub fn $set_name(&mut self, $name: $typ) {
-        self.settings.$name = $name;
+        let mut settings = self.compiler_settings();
+        settings.$name = $name;
+        self.set_compiler_settings(settings);
     }
 };
 }
 
-impl Compiler {
-    /// Creates a new compiler with default settings
-    pub fn new() -> Compiler {
-        Compiler {
-            symbols: Symbols::new(),
-            state: Default::default(),
-            settings: Default::default(),
-        }
-    }
-
-    option_settings! {
+impl import::CompilerLock {
+    runtime_option! {
         /// Sets whether the implicit prelude should be include when compiling a file using this
         /// compiler (default: true)
         implicit_prelude set_implicit_prelude: bool
     }
 
-    option_settings! {
+    runtime_option! {
         /// Sets whether the compiler should emit debug information such as source maps and variable
         /// names.
         /// (default: true)
         emit_debug_info set_emit_debug_info: bool
     }
 
-    option_settings! {
-        /// Sets whether `IO` expressions are evaluated.
-        /// (default: false)
-        run_io set_run_io: bool
-    }
-
-    option_settings! {
+    runtime_option! {
         /// Sets whether full metadata is required
         /// (default: false)
         full_metadata set_full_metadata: bool
     }
 
-    option_settings! {
+    runtime_option! {
         /// Sets whether internal standard library is searched for requested modules
         /// (default: true)
         use_standard_lib set_use_standard_lib: bool
     }
+}
 
-    fn state(&self) -> MutexGuard<State> {
-        self.state.lock().unwrap()
+impl Compiler {
+    /// Creates a new compiler with default settings
+    pub fn new() -> Self {
+        Compiler {
+            run_io: false,
+            implicit_prelude: true,
+            use_standard_lib: true,
+        }
     }
 
-    pub fn code_map(&self) -> codespan::CodeMap {
-        self.state().code_map.clone()
+    pub fn new_lock() -> Self {
+        Self::new()
     }
 
-    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
-    where
-        S: Into<String>,
-    {
-        self.state().update_filemap(file, source)
+    option! {
+        /// Sets whether the implicit prelude should be include when compiling a file using this
+        /// compiler (default: true)
+        implicit_prelude set_implicit_prelude: bool
     }
 
-    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
-    where
-        S: AsRef<str> + Into<String>,
-    {
-        self.state().get_or_insert_filemap(file, source)
+    option! {
+        /// Sets whether `IO` expressions are evaluated.
+        /// (default: false)
+        run_io set_run_io: bool
     }
 
-    pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
-        self.state().get_filemap(file).cloned()
-    }
-
-    #[doc(hidden)]
-    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
-    where
-        S: AsRef<str> + Into<String>,
-    {
-        self.state().add_filemap(file, source)
-    }
-
-    pub fn mut_symbols(&mut self) -> &mut Symbols {
-        &mut self.symbols
-    }
-
-    pub fn split(&self) -> Self {
-        Self {
-            symbols: Symbols::new(),
-            state: self.state.clone(),
-            settings: self.settings.clone(),
+    pub fn module_compiler<'a>(
+        &'a self,
+        database: &'a query::CompilerDatabase,
+    ) -> ModuleCompiler<'a> {
+        ModuleCompiler {
+            compiler: self,
+            database,
+            symbols: Default::default(),
         }
     }
 
     /// Parse `expr_str`, returning an expression if successful
     pub fn parse_expr(
-        &mut self,
+        &self,
+        vm: &Thread,
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(type_cache, file, expr_str)
+        self.parse_partial_expr(vm, type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
 
     /// Parse `input`, returning an expression if successful
     pub fn parse_partial_expr(
-        &mut self,
+        &self,
+        vm: &Thread,
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
-        let map = self.add_filemap(file, expr_str);
-        Ok(parser::parse_partial_expr(
-            &mut SymbolModule::new(file.into(), &mut self.symbols),
+    ) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+        parse_expr(
+            &mut self.module_compiler(&get_db_snapshot(&vm)),
             type_cache,
-            &*map,
+            file,
+            expr_str,
         )
-        .map_err(|(expr, err)| {
-            info!("Parse error: {}", err);
-            (expr, InFile::new(self.code_map().clone(), err))
-        })?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
     /// expression
     pub fn typecheck_expr(
-        &mut self,
+        &self,
         vm: &Thread,
         file: &str,
         expr_str: &str,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<ArcType> {
-        expr.typecheck_expected(self, vm, file, expr_str, None)
-            .map(|result| result.typ)
+        expr.typecheck_expected(
+            &mut self.module_compiler(&get_db_snapshot(&vm)),
+            vm,
+            file,
+            expr_str,
+            None,
+        )
+        .map(|result| result.typ)
     }
 
     pub fn typecheck_str(
-        &mut self,
+        &self,
         vm: &Thread,
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ, .. } =
-            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
+        let TypecheckValue { expr, typ, .. } = expr_str.typecheck_expected(
+            &mut self.module_compiler(&get_db_snapshot(&vm)),
+            vm,
+            file,
+            expr_str,
+            expected_type,
+        )?;
         Ok((expr, typ))
     }
 
     /// Compiles `expr` into a function which can be added and run by the `vm`
     pub fn compile_script(
-        &mut self,
+        &self,
         vm: &Thread,
         filename: &str,
         expr_str: &str,
@@ -468,14 +491,20 @@ impl Compiler {
             metadata: Default::default(),
             metadata_map: Default::default(),
         }
-        .compile(self, vm, filename, expr_str, ())
+        .compile(
+            &mut self.module_compiler(&get_db_snapshot(&vm)),
+            vm,
+            filename,
+            expr_str,
+            (),
+        )
         .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
     #[cfg(feature = "serialization")]
     pub fn compile_to_bytecode<S>(
-        &mut self,
+        &self,
         thread: &Thread,
         name: &str,
         expr_str: &str,
@@ -485,7 +514,15 @@ impl Compiler {
         S: serde::Serializer,
         S::Error: 'static,
     {
-        compile_to(expr_str, self, &thread, name, expr_str, None, serializer)
+        compile_to(
+            expr_str,
+            &mut self.module_compiler(&get_db_snapshot(&thread)),
+            &thread,
+            name,
+            expr_str,
+            None,
+            serializer,
+        )
     }
 
     /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
@@ -493,7 +530,7 @@ impl Compiler {
     /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
     #[cfg(feature = "serialization")]
     pub fn load_bytecode<'vm, D>(
-        &mut self,
+        &self,
         thread: &'vm Thread,
         name: &str,
         deserializer: D,
@@ -502,13 +539,19 @@ impl Compiler {
         D: serde::Deserializer<'vm> + 'vm,
         D::Error: Send + Sync,
     {
-        Precompiled(deserializer).load_script(self, thread, name, "", ())
+        Precompiled(deserializer).load_script(
+            &mut self.module_compiler(&get_db_snapshot(&thread)),
+            thread,
+            name,
+            "",
+            (),
+        )
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
     pub fn extract_metadata(
-        &mut self,
+        &self,
         vm: &Thread,
         file: &str,
         expr_str: &str,
@@ -525,53 +568,47 @@ impl Compiler {
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
-    pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
+    pub fn load_script(&self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
         self.load_script_async(vm, filename, input).wait()
     }
 
     pub fn load_script_async<'vm>(
-        &mut self,
+        &self,
         vm: &'vm Thread,
         filename: &str,
         input: &str,
     ) -> impl Future<Item = (), Error = Error> + 'vm {
-        input.load_script(self, vm, filename, input, None)
+        input.load_script(
+            &mut self.module_compiler(&get_db_snapshot(&vm)),
+            vm,
+            filename,
+            input,
+            None,
+        )
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file<'vm>(&mut self, vm: &'vm Thread, filename: &str) -> Result<()> {
+    pub fn load_file<'vm>(&self, vm: &'vm Thread, filename: &str) -> Result<()> {
         self.load_file_async(vm, filename).wait()
     }
 
     pub fn load_file_async<'vm>(
-        &mut self,
+        &self,
         vm: &'vm Thread,
         filename: &str,
     ) -> impl Future<Item = (), Error = Error> {
-        use crate::macros::MacroExpander;
-
         // Use the import macro's path resolution if it exists so that we mimick the import
         // macro as close as possible
-        let opt_macro = vm.get_macros().get("import");
-        let owned_import;
-        let import = match opt_macro
-            .as_ref()
-            .and_then(|mac| mac.downcast_ref::<Import>())
-        {
-            Some(import) => import,
-            None => {
-                owned_import = Import::new(DefaultImporter);
-                &owned_import
-            }
-        };
+        let import = get_import(vm);
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
-        let mut macros = MacroExpander::new(vm);
-        if let Err((_, err)) =
-            import.load_module(self, vm, &mut macros, &module_name, Span::default())
-        {
-            macros.errors.push(pos::spanned(Span::default(), err));
-        };
-        macros.finish().map_err(|err| err.into()).into_future()
+        import
+            .load_module(
+                &mut self.module_compiler(&import.snapshot(vm.root_thread())),
+                vm,
+                &module_name,
+            )
+            .map_err(|(_, err)| err.into())
+            .into_future()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -598,7 +635,7 @@ impl Compiler {
     /// ```
     ///
     pub fn run_expr<'vm, T>(
-        &mut self,
+        &self,
         vm: &'vm Thread,
         name: &str,
         expr_str: &str,
@@ -608,7 +645,13 @@ impl Compiler {
     {
         let expected = T::make_type(vm);
         expr_str
-            .run_expr(self, vm, name, expr_str, Some(&expected))
+            .run_expr(
+                &mut self.module_compiler(&get_db_snapshot(&vm)),
+                vm,
+                name,
+                expr_str,
+                Some(&expected),
+            )
             .and_then(move |execute_value| {
                 Ok((
                     T::from_value(vm, execute_value.value.get_variant()),
@@ -642,7 +685,7 @@ impl Compiler {
     /// ```
     ///
     pub fn run_expr_async<T>(
-        &mut self,
+        &self,
         vm: &Thread,
         name: &str,
         expr_str: &str,
@@ -653,7 +696,13 @@ impl Compiler {
         let expected = T::make_type(&vm);
         let vm = vm.root_thread();
         expr_str
-            .run_expr(self, vm.clone(), name, expr_str, Some(&expected))
+            .run_expr(
+                &mut self.module_compiler(&get_db_snapshot(&vm)),
+                vm.clone(),
+                name,
+                expr_str,
+                Some(&expected),
+            )
             .and_then(move |execute_value| {
                 Ok((
                     T::from_value(&vm, execute_value.value.get_variant()),
@@ -662,37 +711,8 @@ impl Compiler {
             })
     }
 
-    fn include_implicit_prelude(
-        &mut self,
-        type_cache: &TypeCache<Symbol, ArcType>,
-        name: &str,
-        expr: &mut SpannedExpr<Symbol>,
-    ) {
-        use std::mem;
-        if name == "std.prelude" {
-            return;
-        }
-
-        let prelude_expr = self.parse_expr(type_cache, "", PRELUDE).unwrap();
-        let original_expr = mem::replace(expr, prelude_expr);
-
-        // Replace the 0 in the prelude with the actual expression
-        fn assign_last_body(mut l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
-            loop {
-                match l.value {
-                    ast::Expr::LetBindings(_, ref mut e) => l = e,
-                    _ => {
-                        *l = original_expr;
-                        return;
-                    }
-                }
-            }
-        }
-        assign_last_body(expr, original_expr);
-    }
-
     pub fn format_expr(
-        &mut self,
+        &self,
         formatter: &mut Formatter,
         thread: &Thread,
         file: &str,
@@ -708,7 +728,11 @@ impl Compiler {
             }
         }
 
-        let expr = match input.reparse_infix(self, thread, file, input) {
+        let db = get_db_snapshot(thread);
+        let mut compiler = self.module_compiler(&db);
+        let compiler = &mut compiler;
+
+        let expr = match input.reparse_infix(compiler, thread, file, input) {
             Ok(expr) => expr.expr,
             Err((Some(expr), err)) => {
                 if has_format_disabling_errors(&codespan::FileName::from(file.to_string()), &err) {
@@ -731,8 +755,67 @@ impl Compiler {
             }
         }
 
-        let file_map = self.get_filemap(file).unwrap();
-        Ok(formatter.pretty_expr(input, skip_implicit_prelude(file_map.span(), &expr)))
+        let file_map = db.get_filemap(file).unwrap();
+        let expr = skip_implicit_prelude(file_map.span(), &expr);
+        Ok(formatter.pretty_expr(&*file_map, expr))
+    }
+}
+
+pub trait ThreadExt {
+    fn get_database(&self) -> salsa::Snapshot<query::CompilerDatabase>;
+    fn get_database_mut(&self) -> import::CompilerLock;
+}
+
+impl ThreadExt for Thread {
+    fn get_database(&self) -> salsa::Snapshot<query::CompilerDatabase> {
+        get_db_snapshot(self)
+    }
+    fn get_database_mut(&self) -> import::CompilerLock {
+        get_import(self).compiler_lock(self.root_thread())
+    }
+}
+
+fn get_db_snapshot(vm: &Thread) -> salsa::Snapshot<query::CompilerDatabase> {
+    get_import(vm).snapshot(vm.root_thread())
+}
+
+fn get_import(vm: &Thread) -> Arc<Import> {
+    let opt_macro = vm.get_macros().get("import");
+    match opt_macro.and_then(|mac| mac.downcast_arc::<Import>().ok()) {
+        Some(import) => import,
+        None => Arc::new(Import::new(DefaultImporter)),
+    }
+}
+
+impl<'a> ModuleCompiler<'a> {
+    pub fn mut_symbols(&mut self) -> &mut Symbols {
+        &mut self.symbols
+    }
+
+    fn include_implicit_prelude(
+        &mut self,
+        type_cache: &TypeCache<Symbol, ArcType>,
+        name: &str,
+        expr: &mut SpannedExpr<Symbol>,
+    ) {
+        use std::mem;
+        if name == "std.prelude" {
+            return;
+        }
+
+        let prelude_expr = parse_expr(self, type_cache, "", PRELUDE).unwrap();
+        let original_expr = mem::replace(expr, prelude_expr);
+
+        // Replace the 0 in the prelude with the actual expression
+        fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
+            match l.value {
+                ast::Expr::LetBindings(_, ref mut e) => {
+                    assign_last_body(e, original_expr);
+                }
+                _ => *l = original_expr,
+            }
+        }
+        assign_last_body(expr, original_expr);
     }
 }
 
@@ -789,11 +872,10 @@ impl VmBuilder {
         add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
 
         Compiler::new()
-            .implicit_prelude(false)
             .run_expr::<OpaqueValue<&Thread, Hole>>(
                 &vm,
                 "",
-                r#"
+                r#"//@NO-IMPLICIT-PRELUDE
                     let _ = import! std.types
                     let _ = import! std.prim
                     ()

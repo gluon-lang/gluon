@@ -177,7 +177,7 @@ impl TestCase {
 }
 
 fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();
@@ -191,7 +191,7 @@ fn run_file<'t>(
     name: &str,
     filename: &Path,
 ) -> Result<(OpaqueValue<&'t Thread, Hole>, ArcType), Error> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();
@@ -280,7 +280,7 @@ fn run_doc_tests<'t>(
     name: &str,
     filename: &Path,
 ) -> Result<Vec<tensile::Test<Error>>, Error> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();

@@ -165,18 +165,30 @@ fn precompile() {
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
+            .run_expr(
+                &mut Compiler::new().module_compiler(&thread.get_database()),
+                &*thread,
+                "test",
+                "",
+                (),
+            )
             .wait()
             .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
-                .wait()
-                .unwrap()
-                .value
-                .get_variant()
+            text.run_expr(
+                &mut Compiler::new().module_compiler(&thread2.get_database()),
+                &*thread2,
+                "test",
+                &text,
+                None
+            )
+            .wait()
+            .unwrap()
+            .value
+            .get_variant()
         ),
         serialize_value(precompiled_result.value.get_variant())
     );

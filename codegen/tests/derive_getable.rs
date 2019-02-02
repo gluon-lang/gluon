@@ -48,7 +48,7 @@ fn tuple_enum_to_str(val: TupleEnum) -> String {
 #[test]
 fn enum_tuple_variants() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<TupleEnum>(&vm).unwrap();
     compiler.load_script(&vm, "types", &src).unwrap();
@@ -92,7 +92,7 @@ fn struct_enum_to_str(val: StructEnum) -> String {
 #[test]
 fn enum_struct_variants() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
     println!("Types:\n{}", src);
@@ -151,7 +151,7 @@ fn enum_generic_variants() {
     let _ = env_logger::try_init();
 
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     import::add_extern_module(&vm, "functions", load_either_mod);
 
@@ -233,7 +233,7 @@ fn struct_to_str(val: Struct) -> String {
 #[test]
 fn struct_derive() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<Struct>(&vm).unwrap();
     compiler.load_script(&vm, "types", &src).unwrap();
@@ -271,7 +271,7 @@ fn tuple_struct_to_str(val: TupleStruct) -> String {
 #[test]
 fn tuple_struct_derive() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     let src = r#"
         type TupleStruct = (Int, Int)

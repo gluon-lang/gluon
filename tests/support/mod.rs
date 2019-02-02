@@ -11,7 +11,7 @@ use gluon::Compiler;
 
 #[allow(dead_code)]
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .load_script(vm, filename, input)
 }
@@ -21,7 +21,7 @@ pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
 where
     T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
 {
-    Compiler::new()
+    Compiler::new_lock()
         .run_io(true)
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
@@ -71,7 +71,7 @@ macro_rules! test_expr {
 
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
-            let (value, _) = ::gluon::Compiler::new()
+            let (value, _) = ::gluon::Compiler::new_lock()
                 .implicit_prelude(false)
                 .run_io(true)
                 .run_expr(&mut vm, "<top>", $expr)

@@ -40,7 +40,7 @@ fn read_file() {
 
         wrap (array.index bytes 8)
         "#;
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<u8>>(&thread, "<top>", text);
 
@@ -69,7 +69,7 @@ fn write_and_flush_file() {
             flush_file file
     "#;
 
-    let (mut test, _) = Compiler::new()
+    let (mut test, _) = Compiler::new_lock()
         .run_io(true)
         .run_expr::<OwnedFunction<fn(String) -> IO<()>>>(&thread, "<top>", &text)
         .unwrap_or_else(|err| panic!("{}", err));
@@ -108,7 +108,7 @@ fn run_expr_int() {
         io.applicative.wrap result.value
     "#;
     let mut vm = make_vm();
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<String>>(&mut vm, "<top>", text)
         .unwrap();
@@ -143,7 +143,7 @@ let io = import! std.io
 let { wrap } = io.applicative
 wrap 123
 "#;
-    let value = Compiler::new()
+    let value = Compiler::new_lock()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(
@@ -170,7 +170,7 @@ fn spawn_on_twice() {
     let vm = make_vm();
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
         )
@@ -184,7 +184,7 @@ fn spawn_on_twice() {
 
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
         )
@@ -216,7 +216,7 @@ fn spawn_on_runexpr() {
     let vm = make_vm();
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
         )
@@ -255,7 +255,7 @@ fn spawn_on_do_action_twice() {
     let vm = make_vm();
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
         )
@@ -288,7 +288,7 @@ fn spawn_on_force_action_twice() {
     let vm = make_vm();
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
         )
@@ -320,7 +320,7 @@ fn spawn_on_runexpr_in_catch() {
     let vm = make_vm();
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
         )
@@ -334,7 +334,7 @@ fn spawn_on_runexpr_in_catch() {
 
     let (result, _) = runtime
         .block_on(
-            Compiler::new()
+            Compiler::new_lock()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
         )
@@ -358,7 +358,7 @@ fn io_error_in_catch1() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .implicit_prelude(false)
         .run_expr::<IO<String>>(&vm, "<top>", expr)
@@ -380,7 +380,7 @@ fn io_error_in_catch2() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .implicit_prelude(false)
         .run_expr::<IO<String>>(&vm, "<top>", expr)
@@ -403,7 +403,7 @@ fn io_error_in_catch3() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .implicit_prelude(false)
         .run_expr::<IO<String>>(&vm, "<top>", expr)

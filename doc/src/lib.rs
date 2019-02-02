@@ -52,7 +52,7 @@ use gluon::{
         types::{ArcType, ArgType, Type, TypeExt},
     },
     check::metadata::metadata,
-    Compiler, Thread,
+    Compiler, Thread, ThreadExt,
 };
 
 pub type Error = failure::Error;
@@ -603,6 +603,8 @@ pub fn generate(options: &Options, thread: &Thread) -> Result<()> {
         output: out_path,
         src_url,
     } = options;
+
+    thread.get_database_mut().full_metadata(true);
 
     let mut collector = DocCollector {
         directories: BTreeMap::new(),

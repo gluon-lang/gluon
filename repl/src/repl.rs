@@ -20,9 +20,8 @@ use crate::base::{
 use crate::parser::{parse_partial_repl_line, ReplLine};
 use crate::vm::{
     api::{
-        de::De,
-        generic::A,
-        {Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, IO},
+        de::De, generic::A, Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM,
+        IO,
     },
     internal::ValuePrinter,
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal},
@@ -32,7 +31,7 @@ use crate::vm::{
 use gluon::{
     compiler_pipeline::{Executable, ExecuteValue},
     import::add_extern_module,
-    {Compiler, Error as GluonError, Result as GluonResult, RootedThread},
+    Compiler, Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
 use codespan_reporting::termcolor;
@@ -50,7 +49,7 @@ macro_rules! try_future {
 
 fn type_of_expr(args: WithVM<&str>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
         Ok((expr, _)) => {
             let env = vm.get_env();
@@ -130,20 +129,26 @@ fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
     use gluon::compiler_pipeline::*;
 
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
+    let db = thread.get_database();
+    let mut module_compiler = compiler.module_compiler(&db);
 
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
-    let (mut expr, _parse_result): (_, GluonResult<()>) =
-        match compiler.parse_partial_expr(thread.global_env().type_cache(), &name, fileinput) {
-            Ok(expr) => (expr, Ok(())),
-            Err((None, err)) => return Err(err.into()),
-            Err((Some(expr), err)) => (expr, Err(err.into())),
-        };
+    let (mut expr, _parse_result): (_, GluonResult<()>) = match parse_expr(
+        &mut module_compiler,
+        thread.global_env().type_cache(),
+        &name,
+        fileinput,
+    ) {
+        Ok(expr) => (expr, Ok(())),
+        Err((None, err)) => return Err(err.into()),
+        Err((Some(expr), err)) => (expr, Err(err.into())),
+    };
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
-    let _ = (&mut expr).typecheck(&mut compiler, thread, &name, fileinput);
-    let file_map = compiler
+    let _ = (&mut expr).typecheck(&mut module_compiler, thread, &name, fileinput);
+    let file_map = module_compiler
         .get_filemap(&name)
         .ok_or_else(|| VMError::from("FileMap is missing for completion".to_string()))?;
     let suggestions = completion::suggest(
@@ -338,12 +343,13 @@ fn eval_line(
     De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
 ) -> impl Future<Item = IO<()>, Error = vm::Error> {
+    let vm = vm.root_thread();
     eval_line_(vm.root_thread(), line).then(move |result| {
         Ok(match result {
             Ok(x) => IO::Value(x),
-            Err((compiler, err)) => {
+            Err((_, err)) => {
                 let mut stderr = termcolor::StandardStream::stderr(color.into());
-                if let Err(err) = err.emit(&mut stderr, &compiler.code_map()) {
+                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
                     eprintln!("{}", err);
                 }
                 IO::Value(())
@@ -356,17 +362,19 @@ fn eval_line_(
     vm: RootedThread,
     line: &str,
 ) -> impl Future<Item = (), Error = (Compiler, GluonError)> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new().run_io(true);
+    let db = vm.get_database();
+    let mut module_compiler = compiler.module_compiler(&db);
     let repl_line = {
         let result = {
-            let filemap = compiler.add_filemap("line", line);
-            let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
+            let filemap = vm.get_database().add_filemap("line", line);
+            let mut module = SymbolModule::new("line".into(), module_compiler.mut_symbols());
             parse_partial_repl_line(&mut module, &*filemap)
         };
         match result {
             Ok(x) => x,
             Err((_, err)) => {
-                let code_map = compiler.code_map();
+                let code_map = vm.get_database().code_map();
                 return Either::A(future::err((compiler, InFile::new(code_map, err).into())));
             }
         }
@@ -374,8 +382,7 @@ fn eval_line_(
     let future = match repl_line {
         None => return Either::A(future::ok(())),
         Some(ReplLine::Expr(expr)) => {
-            compiler = compiler.run_io(true);
-            Either::A(expr.run_expr(&mut compiler, vm, "line", line, None))
+            Either::A(expr.run_expr(&mut module_compiler, vm, "line", line, None))
         }
         Some(ReplLine::Let(mut let_binding)) => {
             let unpack_pattern = let_binding.name.clone();
@@ -401,7 +408,7 @@ fn eval_line_(
             let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
             Either::B(
                 eval_expr
-                    .run_expr(&mut compiler, vm.clone(), "line", line, None)
+                    .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
                     .and_then(move |value| {
                         // Hack to get around borrow-checker. Method-chaining didn't work,
                         // even with #[feature(nll)]. Seems like a bug
@@ -631,14 +638,14 @@ pub fn run(
     prompt: &str,
     debug_level: DebugLevel,
     use_std_lib: bool,
-) -> impl Future<Item = (), Error = Box<dyn StdError + Send + Sync + 'static>> {
+) -> impl Future<Item = (), Error = gluon::Error> {
     let vm = ::gluon::VmBuilder::new().build();
     vm.global_env().set_debug_level(debug_level);
 
     let mut compiler = Compiler::new().use_standard_lib(use_std_lib);
     try_future!(
         compile_repl(&mut compiler, &vm)
-            .map_err(|err| err.emit_string(&compiler.code_map()).unwrap()),
+            .map_err(|err| err.emit_string(&vm.get_database().code_map()).unwrap()),
         Either::A
     );
 

@@ -26,7 +26,7 @@ frunk_core = "0.3"
 futures = "0.1.0"
 itertools = "0.8"
 log = "0.4"
-mopa = "0.2.2"
+mopa = { path = "../../mopa" }
 ordered-float = "1"
 petgraph = "0.4"
 pretty = "0.5"

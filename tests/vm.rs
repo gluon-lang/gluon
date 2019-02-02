@@ -16,7 +16,7 @@ use gluon::base::types::Type;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
 use gluon::vm::channel::Sender;
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
-use gluon::{vm, Compiler, Error};
+use gluon::{vm, Compiler, Error, ThreadExt};
 
 test_expr! { pass_function_value,
 r"
@@ -545,7 +545,7 @@ let large_record = { x = 1 }
 }
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
 
@@ -641,7 +641,7 @@ fn opaque_value_type_mismatch() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
 
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
         .unwrap();
@@ -651,7 +651,7 @@ let { sender, receiver } = channel 0
 send sender 1
 sender
 "#;
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
     match result {
@@ -807,12 +807,12 @@ let from f : (Int -> Option a) -> Stream a =
 { from }
 "#;
 
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let (expr, _) = compiler
         .typecheck_str(&vm, "example", source, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let lines = compiler.get_filemap("example").expect("file_map");
+    let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::find(
         &*vm.get_env(),
         lines.span(),
@@ -830,12 +830,12 @@ fn completion_with_prelude_at_0() {
 
     let expr = "1";
 
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let (expr, _) = compiler
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let file_map = compiler.get_filemap("example").expect("file_map");
+    let file_map = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::find(&*vm.get_env(), file_map.span(), &expr, BytePos::from(0))
         .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
@@ -848,12 +848,12 @@ fn suggestion_from_implicit_prelude() {
 
     let expr = "1 ";
 
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let (expr, _) = compiler
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let lines = compiler.get_filemap("example").expect("file_map");
+    let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::suggest(
         &*vm.get_env(),
         lines.span(),
@@ -891,7 +891,7 @@ fn deep_clone_partial_application() {
 
     assert_eq!(child.allocated_memory(), 0);
 
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Hole>>(
             &child,

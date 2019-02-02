@@ -294,7 +294,9 @@ fn run_expr(
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    expr.run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
+    let compiler = Compiler::new();
+    let db = crate::get_db_snapshot(&vm);
+    expr.run_expr(&mut compiler.module_compiler(&db), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();
@@ -320,7 +322,10 @@ fn load_script(
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();
-    expr.load_script(&mut Compiler::new(), vm1, &name, expr, None)
+
+    let compiler = Compiler::new();
+    let db = crate::get_db_snapshot(&vm);
+    expr.load_script(&mut compiler.module_compiler(&db), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();

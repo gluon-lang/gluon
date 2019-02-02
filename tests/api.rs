@@ -213,7 +213,7 @@ fn return_delayed_future_simple() {
         ExternModule::new(thread, primitive!(1, poll_n))
     });
 
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<String>>(&vm, "<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
@@ -237,7 +237,7 @@ fn return_delayed_future_in_catch() {
         ExternModule::new(thread, primitive!(1, poll_n))
     });
 
-    let (result, _) = Compiler::new()
+    let (result, _) = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<String>>(&vm, "<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
@@ -267,7 +267,7 @@ fn io_future() {
         ExternModule::new(thread, primitive!(1, test))
     });
 
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<i32>>(&vm, "<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
@@ -409,7 +409,7 @@ fn runtime_result_vm_type_forwarding() {
         wrap ()
     "#;
 
-    let _ = Compiler::new()
+    let _ = Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<()>>(&vm, "test", text)
         .unwrap_or_else(|err| panic!("{}", err));

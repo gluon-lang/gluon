@@ -44,7 +44,7 @@ fn function_hook() {
         })));
         context.set_hook_mask(HookFlags::CALL_FLAG);
     }
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
         .unwrap();
@@ -62,7 +62,7 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
         context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    let mut execute = Compiler::new()
+    let mut execute = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr_async::<i32>(&thread, "test", source)
         .map(|_| ());
@@ -141,7 +141,7 @@ fn line_hook_after_call() {
         id 0
         1
     "#;
-    let mut execute = Compiler::new()
+    let mut execute = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr_async::<i32>(&thread, "test", expr)
         .map(|_| ());
@@ -242,10 +242,10 @@ fn read_variables() {
     let z = 1.0
     1
     "#;
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+        .unwrap_or_else(|err| panic!("{}", err));
 
     let map = result.lock().unwrap();
     assert_eq!(
@@ -314,7 +314,7 @@ fn argument_types() {
     let f z = g z
     f 1
     "#;
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();
@@ -375,7 +375,7 @@ fn source_name() {
     let z = { x }
     1
     "#;
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();
@@ -410,7 +410,7 @@ fn upvars() {
         g x #Int+ y #Int+ z
     f 3
     "#;
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();

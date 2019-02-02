@@ -128,6 +128,13 @@ impl Error {
 
         Self::new(StringError(s.into()))
     }
+
+    pub fn downcast<T>(self) -> Result<Box<T>, Self>
+    where
+        T: MacroError,
+    {
+        self.0.downcast().map_err(Self)
+    }
 }
 
 /// A trait which abstracts over macros.
@@ -187,10 +194,11 @@ impl MacroEnv {
     pub fn run(
         &self,
         vm: &Thread,
+        user_data: &dyn Any,
         symbols: &mut Symbols,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<(), Errors> {
-        let mut expander = MacroExpander::new(vm);
+        let mut expander = MacroExpander::new(vm, user_data);
         expander.run(symbols, expr);
         expander.finish()
     }
@@ -200,24 +208,24 @@ pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<dyn Any>>,
     pub vm: &'a Thread,
     pub errors: Errors,
-    pub error_in_expr: bool,
+    pub user_data: &'a dyn Any,
     macros: &'a MacroEnv,
 }
 
 impl<'a> MacroExpander<'a> {
-    pub fn new(vm: &'a Thread) -> MacroExpander<'a> {
+    pub fn new(vm: &'a Thread, user_data: &'a dyn Any) -> MacroExpander<'a> {
         MacroExpander {
             vm: vm,
 
             state: FnvMap::default(),
             macros: vm.get_macros(),
-            error_in_expr: false,
+            user_data,
             errors: Errors::new(),
         }
     }
 
     pub fn finish(self) -> Result<(), Errors> {
-        if self.error_in_expr || self.errors.has_errors() {
+        if self.errors.has_errors() {
             Err(self.errors)
         } else {
             Ok(())

@@ -16,7 +16,7 @@ use codespan_reporting::{Diagnostic, Label};
 use crate::pos::{BytePos, Span, Spanned};
 
 /// An error type which can represent multiple errors.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Errors<T> {
     errors: Vec<T>,
 }
@@ -159,12 +159,27 @@ pub struct InFile<E> {
     error: Errors<Spanned<E, BytePos>>,
 }
 
+impl<E> Eq for InFile<E> where E: Eq {}
+
 impl<E> PartialEq for InFile<E>
 where
     E: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.error == other.error
+    }
+}
+
+impl<E> std::hash::Hash for InFile<E>
+where
+    E: std::hash::Hash,
+{
+    #[inline(always)]
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.error.hash(state)
     }
 }
 
