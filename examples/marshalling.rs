@@ -14,12 +14,16 @@ use std::sync::Arc;
 use gluon::base::types::ArcType;
 
 use gluon::base::types::{AppVec, Type};
-use gluon::vm::api::generic::{A, L, R};
-use gluon::vm::api::{
-    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable,
-    UserdataValue, ValueRef, VmType, IO,
+use gluon::vm::{
+    self,
+    api::{
+        self,
+        generic::{A, L, R},
+        ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable, UserdataValue,
+        ValueRef, VmType, IO,
+    },
+    ExternModule, Variants,
 };
-use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,15 +44,15 @@ impl api::VmType for Enum {
     }
 }
 
-impl<'vm, 'value> api::Pushable<'vm> for Enum {
-    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
+impl<'thread, 'value> api::Pushable<'thread> for Enum {
+    fn push(self, context: &mut ActiveThread<'thread>) -> vm::Result<()> {
         api::ser::Ser(self).push(context)
     }
 }
 
-impl<'vm, 'value> api::Getable<'vm, 'value> for Enum {
+impl<'thread, 'value> api::Getable<'thread, 'value> for Enum {
     impl_getable_simple!();
-    fn from_value(thread: &'vm Thread, value: vm::Variants<'value>) -> Self {
+    fn from_value(thread: &'thread Thread, value: vm::Variants<'value>) -> Self {
         api::de::De::from_value(thread, value).0
     }
 }
@@ -111,7 +115,11 @@ where
     let thread = new_vm();
 
     // Load std.map so that we can retrieve the `Map` type through the `VmType` trait
-    Compiler::new().run_expr::<()>(&thread, "example", "let _ = import! std.map in ()")?;
+    Compiler::new().run_expr::<()>(
+        &thread,
+        "example",
+        "let _ = import! std.map in ()",
+    )?;
 
     let config_example = r#"
         let array = import! std.array
@@ -167,8 +175,8 @@ fn flip<'a>(
 }
 
 fn marshal_generic() -> Result<()> {
-    let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let thread = new_vm();
+    let mut compiler = Compiler::new_lock();
 
     // define the gluon type that maps to the rust Either
     let src = r#"
@@ -177,16 +185,18 @@ fn marshal_generic() -> Result<()> {
     "#;
 
     // load the type and then the module containing the rust function
-    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    fn load_mod(thread: &Thread) -> vm::Result<ExternModule> {
         let module = record! {
             flip => primitive!(1, flip),
         };
 
-        ExternModule::new(vm, module)
+        ExternModule::new(thread, module)
     }
 
-    compiler.load_script(&vm, "examples.either", src).unwrap();
-    import::add_extern_module(&vm, "examples.prim", load_mod);
+    compiler
+        .load_script(&thread, "examples.either", src)
+        .unwrap();
+    import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"
         let { Either } = import! examples.either
@@ -213,9 +223,8 @@ fn marshal_generic() -> Result<()> {
         | Right _ -> error "wrong answer!"
     "#;
 
-    compiler
-        .run_io(true)
-        .run_expr::<IO<()>>(&vm, "example", script)?;
+    compiler.set_run_io(true);
+    compiler.run_expr::<IO<()>>(&thread, "example", script)?;
 
     Ok(())
 }
@@ -240,25 +249,25 @@ where
 {
     type Type = Self;
 
-    fn make_type(vm: &Thread) -> ArcType {
+    fn make_type(thread: &Thread) -> ArcType {
         // get the type defined in Gluon
-        let ty = vm
+        let ty = thread
             .find_type_info("examples.wrapper.User")
             .expect("Could not find type")
             .into_type();
 
         // apply all generic parameters to the type
         let mut vec = AppVec::new();
-        vec.push(T::make_type(vm));
+        vec.push(T::make_type(thread));
         Type::app(ty, vec)
     }
 }
 
-impl<'vm, T> Pushable<'vm> for GluonUser<T>
+impl<'thread, T> Pushable<'thread> for GluonUser<T>
 where
-    T: Pushable<'vm>,
+    T: Pushable<'thread>,
 {
-    fn push(self, ctx: &mut ActiveThread<'vm>) -> vm::Result<()> {
+    fn push(self, ctx: &mut ActiveThread<'thread>) -> vm::Result<()> {
         (record! {
             name => self.inner.name,
             age => self.inner.age,
@@ -268,13 +277,13 @@ where
     }
 }
 
-impl<'vm, 'value, T> Getable<'vm, 'value> for GluonUser<T>
+impl<'thread, 'value, T> Getable<'thread, 'value> for GluonUser<T>
 where
-    T: Getable<'vm, 'value>,
+    T: Getable<'thread, 'value>,
 {
     impl_getable_simple!();
 
-    fn from_value(vm: &'vm Thread, data: Variants<'value>) -> GluonUser<T> {
+    fn from_value(vm: &'thread Thread, data: Variants<'value>) -> GluonUser<T> {
         // get the data, it must be a complex type
         let data = match data.as_ref() {
             ValueRef::Data(data) => data,
@@ -285,24 +294,24 @@ where
             inner: User {
                 // lookup the fields by name; in case of a tuple variant we
                 // would use Data::get_variant instead
-                name: String::from_value(vm, data.lookup_field(vm, "name").unwrap()),
-                age: u32::from_value(vm, data.lookup_field(vm, "age").unwrap()),
-                data: T::from_value(vm, data.lookup_field(vm, "data").unwrap()),
+                name: String::from_value(thread, data.lookup_field(thread, "name").unwrap()),
+                age: u32::from_value(thread, data.lookup_field(thread, "age").unwrap()),
+                data: T::from_value(thread, data.lookup_field(thread, "data").unwrap()),
             },
         }
     }
 }
 
 fn marshal_wrapper() -> Result<()> {
-    let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let thread = new_vm();
+    let compiler = Compiler::new_lock();
 
     let src = r#"
         type User a = { name: String, age: Int, data: a }
         { User }
     "#;
 
-    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    fn load_mod(thread: &Thread) -> vm::Result<ExternModule> {
         let module = record! {
             roundtrip => primitive!(1, |user: GluonUser<OpaqueValue<RootedThread, A>>| {
                 println!("name: {}, age: {}", user.inner.name, user.inner.age);
@@ -310,11 +319,13 @@ fn marshal_wrapper() -> Result<()> {
             }),
         };
 
-        ExternModule::new(vm, module)
+        ExternModule::new(thread, module)
     }
 
-    compiler.load_script(&vm, "examples.wrapper", src).unwrap();
-    import::add_extern_module(&vm, "examples.prim", load_mod);
+    compiler
+        .load_script(&thread, "examples.wrapper", src)
+        .unwrap();
+    import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"
         let { User } = import! examples.wrapper
@@ -329,7 +340,7 @@ fn marshal_wrapper() -> Result<()> {
         assert (actual.data == expected.data)
     "#;
 
-    compiler.run_expr::<()>(&vm, "example", script)?;
+    compiler.run_expr::<()>(&thread, "example", script)?;
 
     Ok(())
 }
@@ -341,8 +352,8 @@ struct WindowHandle {
     metadata: Arc<str>,
 }
 
-fn load_mod(vm: &gluon::Thread) -> vm::Result<ExternModule> {
-    vm.register_type::<WindowHandle>("WindowHandle", &[])?;
+fn load_mod(thread: &gluon::Thread) -> vm::Result<ExternModule> {
+    thread.register_type::<WindowHandle>("WindowHandle", &[])?;
 
     let module = record! {
         create_hwnd => primitive!(2, create_hwnd),
@@ -350,7 +361,7 @@ fn load_mod(vm: &gluon::Thread) -> vm::Result<ExternModule> {
         metadata => primitive!(1, metadata),
     };
 
-    ExternModule::new(vm, module)
+    ExternModule::new(thread, module)
 }
 
 fn create_hwnd(id: u64, metadata: String) -> WindowHandle {
@@ -369,13 +380,13 @@ fn metadata(hwnd: &WindowHandle) -> String {
 }
 
 fn marshal_userdata() -> Result<()> {
-    let vm = new_vm();
-    let mut compiler = gluon::Compiler::new();
+    let thread = new_vm();
+    let compiler = gluon::Compiler::new();
 
-    gluon::import::add_extern_module(&vm, "hwnd", load_mod);
+    gluon::import::add_extern_module(&thread, "hwnd", load_mod);
 
     // Load the extern module so that the next run_expr call can access the registered type
-    compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", "import! hwnd")?;
+    compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "", "import! hwnd")?;
 
     let script = r#"
         let { assert } = import! std.test
@@ -388,14 +399,14 @@ fn marshal_userdata() -> Result<()> {
 
     // `UserdataValue` lets us extract a `Clone` of its inner userdata value
     let (UserdataValue(handle), _) =
-        compiler.run_expr::<UserdataValue<WindowHandle>>(&vm, "test", script)?;
+        compiler.run_expr::<UserdataValue<WindowHandle>>(&thread, "test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
 
     // If cloning would be expansive we can instate use `OpaqueValue` to get a smart pointer to the
     // userdata which implements `Deref` for easy access
     let (handle, _) =
-        compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&vm, "test", script)?;
+        compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&thread, "test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
     Ok(())

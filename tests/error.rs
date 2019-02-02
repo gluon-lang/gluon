@@ -8,7 +8,7 @@ mod support;
 use gluon::check::typecheck::TypeError;
 use gluon::compiler_pipeline::*;
 use gluon::vm::Error as VMError;
-use gluon::{Compiler, Error};
+use gluon::{Compiler, Error, ThreadExt};
 
 #[test]
 fn dont_panic_when_error_span_is_at_eof() {
@@ -66,7 +66,7 @@ fn panics_contain_stacktrace() {
 fn undefined_infix() {
     let _ = ::env_logger::try_init();
 
-    use crate::base::pos::{self, BytePos};
+    use crate::base::pos;
     use crate::parser::{InfixError, ParseErrors};
 
     let expr = r#"
@@ -76,7 +76,9 @@ fn undefined_infix() {
 
     let vm = support::make_vm();
     let result = expr.reparse_infix(
-        &mut Compiler::new().implicit_prelude(false),
+        &mut Compiler::new_lock()
+            .implicit_prelude(false)
+            .module_compiler(&vm.get_database()),
         &vm,
         "test",
         expr,
@@ -84,7 +86,8 @@ fn undefined_infix() {
     match result {
         Err((_, Error::Parse(err))) => {
             let error = parser::Error::Infix(InfixError::UndefinedFixity("+".to_string()));
-            let span = pos::span(BytePos::from(10), BytePos::from(13));
+            let map = vm.get_database().get_filemap("test").unwrap();
+            let span = map.span().subspan(9.into(), 12.into());
             assert_eq!(
                 err.errors(),
                 ParseErrors::from(vec![pos::spanned(span, error)])

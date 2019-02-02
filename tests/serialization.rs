@@ -18,7 +18,7 @@ use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::serialization::{DeSeed, SeSeed};
 use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use gluon::vm::Variants;
-use gluon::{new_vm, Compiler};
+use gluon::{new_vm, Compiler, ThreadExt};
 
 fn serialize_value(value: Variants) {
     let mut buffer = Vec::new();
@@ -161,18 +161,30 @@ fn precompile() {
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
+            .run_expr(
+                &mut Compiler::new().module_compiler(&thread.get_database()),
+                &*thread,
+                "test",
+                "",
+                (),
+            )
             .wait()
             .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
-                .wait()
-                .unwrap()
-                .value
-                .get_variant()
+            text.run_expr(
+                &mut Compiler::new().module_compiler(&thread2.get_database()),
+                &*thread2,
+                "test",
+                &text,
+                None
+            )
+            .wait()
+            .unwrap()
+            .value
+            .get_variant()
         ),
         serialize_value(precompiled_result.value.get_variant())
     );

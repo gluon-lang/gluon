@@ -1099,9 +1099,18 @@ mod test {
         test(
             r#"03.1415 1036.2 -0.0"#,
             vec![
-                (r#"~~~~~~~            "#, FloatLiteral(3.1415)),
-                (r#"        ~~~~~~     "#, FloatLiteral(1036.2)),
-                (r#"               ~~~~"#, FloatLiteral(-0.0)),
+                (
+                    r#"~~~~~~~            "#,
+                    FloatLiteral(NotNan::new(3.1415).unwrap()),
+                ),
+                (
+                    r#"        ~~~~~~     "#,
+                    FloatLiteral(NotNan::new(1036.2).unwrap()),
+                ),
+                (
+                    r#"               ~~~~"#,
+                    FloatLiteral(NotNan::new(-0.0).unwrap()),
+                ),
             ],
         );
     }

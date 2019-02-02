@@ -22,13 +22,13 @@ fn new_vm() -> RootedThread {
 }
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let thread = new_vm();
     compiler.format_expr(&mut format::Formatter::default(), &thread, "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let thread = new_vm();
     compiler.format_expr(
         &mut format::Formatter { expanded: true },
@@ -38,20 +38,22 @@ fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     )
 }
 
-fn test_format(name: &str) {
+fn test_format(filename: &str) {
     let _ = env_logger::try_init();
 
     let mut contents = String::new();
-    File::open(Path::new("../").join(name))
-        .or_else(|_| File::open(name))
+    File::open(Path::new("../").join(filename))
+        .or_else(|_| File::open(filename))
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
 
-    let mut compiler = Compiler::new();
+    let name = base::filename_to_module(filename);
+
+    let compiler = Compiler::new();
     let thread = new_vm();
     let out_str = compiler
-        .format_expr(&mut format::Formatter::default(), &thread, name, &contents)
+        .format_expr(&mut format::Formatter::default(), &thread, &name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
     if contents != out_str {
@@ -60,7 +62,7 @@ fn test_format(name: &str) {
             .parent()
             .and_then(|p| p.parent())
             .expect("folder")
-            .join(Path::new(name).file_name().unwrap());
+            .join(Path::new(filename).file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())

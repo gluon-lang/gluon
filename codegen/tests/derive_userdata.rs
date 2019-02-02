@@ -48,7 +48,7 @@ fn metadata(hwnd: &WindowHandle) -> String {
 #[test]
 fn userdata() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     import::add_extern_module(&vm, "hwnd", load_mod);
 

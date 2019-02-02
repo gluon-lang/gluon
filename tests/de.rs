@@ -174,7 +174,7 @@ fn enum_() {
     let _ = env_logger::try_init();
 
     let thread = new_vm();
-    Compiler::new()
+    Compiler::new_lock()
         .implicit_prelude(false)
         .load_script(
             &thread,
@@ -183,7 +183,7 @@ fn enum_() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let (De(enum_), _) = Compiler::new()
+    let (De(enum_), _) = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<De<Enum>>(
             &thread,
@@ -193,7 +193,7 @@ fn enum_() {
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(enum_, Enum::A("abc".to_string()));
 
-    let (De(enum_), _) = Compiler::new()
+    let (De(enum_), _) = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<De<Enum>>(
             &thread,

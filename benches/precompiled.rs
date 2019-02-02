@@ -32,7 +32,7 @@ fn precompiled_prelude(b: &mut Bencher) {
         let mut serializer = serde_json::Serializer::new(&mut serialized_prelude);
         compile_to(
             &prelude[..],
-            &mut Compiler::new(),
+            &mut Compiler::new().module_compiler(),
             &thread,
             "std.prelude",
             &prelude,
@@ -46,7 +46,13 @@ fn precompiled_prelude(b: &mut Bencher) {
 
         let mut deserializer = serde_json::Deserializer::from_slice(&serialized_prelude);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "std.prelude", "", ())
+            .run_expr(
+                &mut Compiler::new().module_compiler(),
+                &*thread,
+                "std.prelude",
+                "",
+                (),
+            )
             .wait()
             .unwrap()
     })
@@ -64,7 +70,7 @@ fn source_prelude(b: &mut Bencher) {
 
         prelude_source
             .run_expr(
-                &mut Compiler::new(),
+                &mut Compiler::new().module_compiler(),
                 &*thread,
                 "std.prelude",
                 &prelude_source,

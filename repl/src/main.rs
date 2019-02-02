@@ -50,7 +50,7 @@ use crate::base::filename_to_module;
 
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
-use gluon::{new_vm, Compiler, Error, Result, Thread};
+use gluon::{new_vm, Compiler, Error, Result, Thread, ThreadExt};
 
 mod repl;
 
@@ -171,7 +171,7 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let thread = new_vm();
 
     Ok(compiler.format_expr(
@@ -298,7 +298,7 @@ fn main() {
             Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
             _ => {
                 let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
-                if let Err(err) = err.emit(&mut stderr, &compiler.code_map()) {
+                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
                     eprintln!("{}", err);
                 } else {
                     eprintln!("");

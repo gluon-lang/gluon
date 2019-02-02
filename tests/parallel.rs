@@ -21,7 +21,7 @@ fn parallel() {
 
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
 
     compiler.run_expr::<()>(&vm, "<top>", " let _ = import! std.channel in () ")?;
 
@@ -45,7 +45,7 @@ fn parallel_() -> Result<(), Error> {
             ()
         f
         "#;
-        let mut compiler = Compiler::new();
+        let compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> =
             compiler.run_expr(&child, "<top>", expr)?.0;
         Ok(f.call(sender)?)
@@ -69,7 +69,7 @@ fn parallel_() -> Result<(), Error> {
 
         f
         "#;
-        let mut compiler = Compiler::new();
+        let compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> =
             compiler.run_expr(&child2, "<top>", expr)?.0;
         Ok(f.call(receiver)?)

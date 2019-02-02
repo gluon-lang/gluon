@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "serde")]
 use either::Either;
-
 use futures::{future, Future};
 
 use crate::base::ast::SpannedExpr;
@@ -23,9 +22,8 @@ use crate::base::error::{Errors, InFile};
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::Metadata;
 use crate::base::resolve;
-use crate::base::source::Source;
 use crate::base::symbol::{Name, NameBuf, Symbol, SymbolModule};
-use crate::base::types::{ArcType, NullInterner, Type};
+use crate::base::types::{ArcType, NullInterner, Type, TypeCache};
 
 use crate::check::{metadata, rename};
 
@@ -34,23 +32,11 @@ use crate::vm::core;
 use crate::vm::macros::MacroExpander;
 use crate::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot};
 
-use crate::{Compiler, Error, Result};
+use crate::{query::Compilation, Error, ModuleCompiler, Result};
 
 pub type BoxFuture<'vm, T, E> = Box<Future<Item = T, Error = E> + Send + 'vm>;
 
-macro_rules! try_future {
-    ($e:expr) => {
-        try_future!($e, Box::new)
-    };
-    ($e:expr, $f:expr) => {
-        match $e {
-            Ok(x) => x,
-            Err(err) => return $f(::futures::future::err(err.into())),
-        }
-    };
-}
-
-pub type SalvageResult<T> = StdResult<T, (Option<T>, Error)>;
+pub type SalvageResult<T, E = Error> = StdResult<T, (Option<T>, E)>;
 
 fn join_result<T, U, V>(
     result: SalvageResult<T>,
@@ -85,7 +71,27 @@ fn join_result<T, U, V>(
     }
 }
 
+pub fn parse_expr(
+    compiler: &mut ModuleCompiler,
+    type_cache: &TypeCache<Symbol, ArcType>,
+    file: &str,
+    expr_str: &str,
+) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    let map = compiler.add_filemap(file, expr_str);
+
+    Ok(parser::parse_partial_expr(
+        &mut SymbolModule::new(file.into(), &mut compiler.symbols),
+        type_cache,
+        &*map,
+    )
+    .map_err(|(expr, err)| {
+        info!("Parse error: {}", err);
+        (expr, InFile::new(compiler.code_map().clone(), err))
+    })?)
+}
+
 /// Result type of successful macro expansion
+#[derive(Debug)]
 pub struct MacroValue<E> {
     pub expr: E,
 }
@@ -95,7 +101,7 @@ pub trait MacroExpandable {
 
     fn expand_macro(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -103,7 +109,7 @@ pub trait MacroExpandable {
     where
         Self: Sized,
     {
-        let mut macros = MacroExpander::new(thread);
+        let mut macros = MacroExpander::new(thread, compiler.database);
         let expr = self.expand_macro_with(compiler, &mut macros, file, expr_str)?;
         if let Err(err) = macros.finish() {
             return Err((
@@ -116,7 +122,7 @@ pub trait MacroExpandable {
 
     fn expand_macro_with(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         macros: &mut MacroExpander,
         file: &str,
         expr_str: &str,
@@ -128,14 +134,13 @@ impl<'s> MacroExpandable for &'s str {
 
     fn expand_macro_with(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         macros: &mut MacroExpander,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         join_result(
-            compiler
-                .parse_partial_expr(macros.vm.global_env().type_cache(), file, self)
+            parse_expr(compiler, macros.vm.global_env().type_cache(), file, self)
                 .map_err(|(x, err)| (x, err.into())),
             |expr| {
                 expr.expand_macro_with(compiler, macros, file, expr_str)
@@ -152,19 +157,18 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
 
     fn expand_macro_with(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         macros: &mut MacroExpander,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.settings.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
+        if compiler.compiler_settings().implicit_prelude
+            && compiler.compiler.implicit_prelude
+            && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE")
+        {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-        macros.state.insert(
-            crate::import::COMPILER_KEY.into(),
-            Box::new(compiler.split()),
-        );
         macros.run(&mut compiler.symbols, self);
         let errors = mem::replace(&mut macros.errors, prev_errors);
         let value = MacroValue { expr: self };
@@ -184,7 +188,7 @@ impl MacroExpandable for SpannedExpr<Symbol> {
 
     fn expand_macro_with(
         mut self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         macros: &mut MacroExpander,
         file: &str,
         expr_str: &str,
@@ -211,7 +215,7 @@ pub trait Renameable: Sized {
 
     fn rename(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -226,7 +230,7 @@ where
 
     fn rename(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -254,7 +258,7 @@ where
 
     fn rename(
         mut self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         _thread: &Thread,
         file: &str,
         _expr_str: &str,
@@ -276,7 +280,7 @@ pub trait MetadataExtractable: Sized {
 
     fn extract_metadata(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -291,7 +295,7 @@ where
 
     fn extract_metadata(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -326,7 +330,7 @@ where
 
     fn extract_metadata(
         mut self,
-        _compiler: &mut Compiler,
+        _compiler: &mut ModuleCompiler,
         thread: &Thread,
         _file: &str,
         _expr_str: &str,
@@ -353,7 +357,7 @@ pub trait InfixReparseable: Sized {
 
     fn reparse_infix(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -368,7 +372,7 @@ where
 
     fn reparse_infix(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -403,7 +407,7 @@ where
 
     fn reparse_infix(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         _thread: &Thread,
         _file: &str,
         _expr_str: &str,
@@ -434,6 +438,7 @@ where
 }
 
 /// Result type of successful typechecking
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct TypecheckValue<E> {
     pub expr: E,
     pub typ: ArcType,
@@ -441,12 +446,29 @@ pub struct TypecheckValue<E> {
     pub metadata: Arc<Metadata>,
 }
 
+impl<E> TypecheckValue<E> {
+    pub fn map<F>(self, f: impl FnOnce(E) -> F) -> TypecheckValue<F> {
+        let TypecheckValue {
+            expr,
+            typ,
+            metadata_map,
+            metadata,
+        } = self;
+        TypecheckValue {
+            expr: f(expr),
+            typ,
+            metadata_map,
+            metadata,
+        }
+    }
+}
+
 pub trait Typecheckable: Sized {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
     fn typecheck(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -455,7 +477,7 @@ pub trait Typecheckable: Sized {
     }
     fn typecheck_expected(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -471,7 +493,7 @@ where
 
     fn typecheck_expected(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -507,7 +529,7 @@ where
 
     fn typecheck_expected(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         _expr_str: &str,
@@ -535,14 +557,11 @@ where
 
                 tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
             };
-            result.map_err(|err| {
-                info!("Error when typechecking `{}`: {}", file, err);
-                InFile::new(compiler.state().code_map.clone(), err)
-            })?
+            result.map_err(|err| InFile::new(compiler.database.state().code_map.clone(), err))?
         };
 
         // Some metadata requires typechecking so recompute it if full metadata is required
-        let (metadata, metadata_map) = if compiler.settings.full_metadata {
+        let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
             let env = thread.get_env();
             metadata::metadata(&*env, expr.borrow_mut())
         } else {
@@ -559,6 +578,7 @@ where
 }
 
 /// Result of successful compilation
+#[derive(PartialEq, Debug, Clone)]
 pub struct CompileValue<E> {
     pub expr: E,
     pub typ: ArcType,
@@ -571,7 +591,7 @@ pub trait Compileable<Extra> {
 
     fn compile(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -586,7 +606,7 @@ where
 
     fn compile(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -604,14 +624,18 @@ where
 
     fn compile(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         thread: &Thread,
         filename: &str,
-        expr_str: &str,
+        _expr_str: &str,
         _: Extra,
     ) -> Result<CompileValue<Self::Expr>> {
         use crate::vm::compiler::Compiler;
+
         info!("Compile `{}`", filename);
+
+        let settings = compiler.compiler_settings();
+
         let mut module = {
             let env = thread.get_env();
 
@@ -624,13 +648,16 @@ where
                 core::optimize::optimize(&translator.allocator, expr)
             };
 
+            let source = compiler
+                .get_filemap(filename)
+                .expect("Filemap does not exist");
+
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
             let symbols = SymbolModule::new(
                 String::from(AsRef::<str>::as_ref(&name)),
                 &mut compiler.symbols,
             );
-            let source = Source::new(expr_str);
 
             let mut compiler = Compiler::new(
                 &*env,
@@ -638,7 +665,7 @@ where
                 symbols,
                 &source,
                 filename.to_string(),
-                compiler.settings.emit_debug_info,
+                settings.emit_debug_info,
             );
             compiler.compile_expr(expr)?
         };
@@ -669,7 +696,7 @@ pub trait Executable<'vm, Extra> {
 
     fn run_expr<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         name: &str,
         expr_str: &str,
@@ -680,7 +707,7 @@ pub trait Executable<'vm, Extra> {
 
     fn load_script<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         filename: &str,
         expr_str: &str,
@@ -698,7 +725,7 @@ where
 
     fn run_expr<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         name: &str,
         expr_str: &str,
@@ -714,7 +741,7 @@ where
     }
     fn load_script<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         filename: &str,
         expr_str: &str,
@@ -737,7 +764,7 @@ where
 
     fn run_expr<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         name: &str,
         _expr_str: &str,
@@ -752,7 +779,7 @@ where
             mut module,
             metadata,
         } = self;
-        let run_io = compiler.settings.run_io;
+        let run_io = compiler.compiler.run_io;
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module));
@@ -779,7 +806,7 @@ where
     }
     fn load_script<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         filename: &str,
         expr_str: &str,
@@ -788,7 +815,7 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        let run_io = compiler.settings.run_io;
+        let run_io = compiler.compiler.run_io;
         let filename = filename.to_string();
 
         let vm1 = vm.clone();
@@ -853,7 +880,7 @@ where
 
     fn run_expr<T>(
         self,
-        _compiler: &mut Compiler,
+        _compiler: &mut ModuleCompiler,
         vm: T,
         filename: &str,
         _expr_str: &str,
@@ -891,7 +918,7 @@ where
     }
     fn load_script<T>(
         self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: T,
         name: &str,
         _expr_str: &str,
@@ -926,7 +953,7 @@ where
 #[cfg(feature = "serde")]
 pub fn compile_to<S, T, E>(
     self_: T,
-    compiler: &mut Compiler,
+    compiler: &mut ModuleCompiler,
     thread: &Thread,
     file: &str,
     expr_str: &str,

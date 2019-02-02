@@ -15,14 +15,19 @@ use gluon::{compiler_pipeline::*, new_vm, Compiler};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let MacroValue { expr } = {
         let text = fs::read_to_string("std/prelude.glu").unwrap();
-        text.expand_macro(&mut compiler, &vm, "std.prelude", &text)
+        text.expand_macro(&mut compiler.module_compiler(), &vm, "std.prelude", &text)
             .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     b.iter(|| {
-        let result = MacroValue { expr: expr.clone() }.typecheck(&mut compiler, &vm, "<top>", "");
+        let result = MacroValue { expr: expr.clone() }.typecheck(
+            &mut compiler.module_compiler(),
+            &vm,
+            "<top>",
+            "",
+        );
         if let Err(ref err) = result {
             println!("{}", err);
             assert!(false);
@@ -33,10 +38,10 @@ fn typecheck_prelude(b: &mut Bencher) {
 
 fn clone_prelude(b: &mut Bencher) {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let TypecheckValue { expr, .. } = {
         let text = fs::read_to_string("std/prelude.glu").unwrap();
-        text.typecheck(&mut compiler, &vm, "std.prelude", &text)
+        text.typecheck(&mut compiler.module_compiler(), &vm, "std.prelude", &text)
             .unwrap_or_else(|err| panic!("{}", err))
     };
     b.iter(|| expr.clone())
@@ -44,14 +49,19 @@ fn clone_prelude(b: &mut Bencher) {
 
 fn typecheck_24(b: &mut Bencher) {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let MacroValue { expr } = {
         let text = fs::read_to_string("examples/24.glu").unwrap();
-        text.expand_macro(&mut compiler, &vm, "examples.24", &text)
+        text.expand_macro(&mut compiler.module_compiler(), &vm, "examples.24", &text)
             .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     b.iter(|| {
-        let result = MacroValue { expr: expr.clone() }.typecheck(&mut compiler, &vm, "<top>", "");
+        let result = MacroValue { expr: expr.clone() }.typecheck(
+            &mut compiler.module_compiler(),
+            &vm,
+            "<top>",
+            "",
+        );
         if let Err(ref err) = result {
             println!("{}", err);
             assert!(false);
@@ -62,11 +72,16 @@ fn typecheck_24(b: &mut Bencher) {
 
 fn typecheck_file(b: &mut Bencher, file: &str) {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     let reparsed = {
         let text = fs::read_to_string(file).unwrap();
-        text.reparse_infix(&mut compiler, &vm, &base::filename_to_module(file), &text)
-            .unwrap_or_else(|(_, err)| panic!("{}", err))
+        text.reparse_infix(
+            &mut compiler.module_compiler(),
+            &vm,
+            &base::filename_to_module(file),
+            &text,
+        )
+        .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     let InfixReparsed {
         metadata,
@@ -80,7 +95,7 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
             expr: expr.clone(),
         },
         |input| {
-            let result = input.typecheck(&mut compiler, &vm, "<top>", "");
+            let result = input.typecheck(&mut compiler.module_compiler(), &vm, "<top>", "");
             if let Err(ref err) = result {
                 println!("{}", err);
                 assert!(false);

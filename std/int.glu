@@ -1,7 +1,12 @@
 //@NO-IMPLICIT-PRELUDE
 //! The signed 64-bit integer type.
 
-let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.prelude
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Group } = import! std.group
+let { Eq, Ord, Ordering } = import! std.cmp
+let { Num } = import! std.num
+let { Show } = import! std.show
 
 let additive =
     let semigroup : Semigroup Int = {

@@ -18,7 +18,7 @@ fn out_of_memory() {
     vm.set_memory_limit(10);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
@@ -38,7 +38,7 @@ fn stack_overflow() {
     vm.context().set_max_stack_size(3);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new()
+    let result = Compiler::new_lock()
         .implicit_prelude(false)
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 

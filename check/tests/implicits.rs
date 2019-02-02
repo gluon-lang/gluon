@@ -19,6 +19,13 @@ use crate::check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
 use crate::support::MockEnv;
 
+fn pretty_expr(text: &str, expr: &SpannedExpr<Symbol>) -> String {
+    format::pretty_expr(
+        &codespan::FileMap::new("test".into(), text.to_string()),
+        expr,
+    )
+}
+
 #[macro_use]
 #[allow(unused_macros)]
 mod support;
@@ -74,7 +81,7 @@ f 42
 #[implicit]
 let i = 123
 f ?i 42"#,
-        format::pretty_expr(text, &expr).trim()
+        pretty_expr(text, &expr).trim()
     );
 }
 
@@ -268,7 +275,7 @@ f (Cons 1 Nil)
                         assert!(implicit_args.len() == 1);
                         let implicit = &implicit_args[0];
 
-                        assert_eq!("list int", format::pretty_expr(self.text, implicit).trim());
+                        assert_eq!("list int", pretty_expr(self.text, implicit).trim());
                         self.done = true;
                     }
                     _ => base::ast::walk_expr(self, expr),
@@ -364,10 +371,7 @@ g 2
                 ast::Expr::LetBindings(ref bindings, _) => {
                     if let ast::Pattern::Ident(ref id) = bindings[0].name.value {
                         if id.name.definition_name() == "g" {
-                            assert_eq!(
-                                "f ?x ()",
-                                format::pretty_expr(self.text, &bindings[0].expr).trim()
-                            );
+                            assert_eq!("f ?x ()", pretty_expr(self.text, &bindings[0].expr).trim());
                             self.done = true;
                         }
                     }
@@ -781,7 +785,7 @@ let (<) l r : [Ord a] -> a -> a -> Bool =
                         if id.name.definition_name() == "compare" {
                             assert_eq!(
                                 "__implicit_arg",
-                                format::pretty_expr(self.text, &implicit_args[0]).trim()
+                                pretty_expr(self.text, &implicit_args[0]).trim()
                             );
                             self.done = true;
                         }

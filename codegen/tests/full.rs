@@ -36,7 +36,7 @@ fn new_struct(_: ()) -> Struct {
 #[test]
 fn normal_struct() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     import::add_extern_module(&vm, "functions", load_struct_mod);
 
     let script = r#"
@@ -77,7 +77,7 @@ fn newtype_id(val: Newtype) -> Newtype {
 #[test]
 fn newtype() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
+    let compiler = Compiler::new();
     import::add_extern_module(&vm, "functions", load_newtype_mod);
 
     // newtypes should map to the inner type

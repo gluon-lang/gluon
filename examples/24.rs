@@ -20,7 +20,7 @@ fn main_() -> Result<(), Box<std::error::Error>> {
     let mut file = File::open("examples/24.glu")?;
     file.read_to_string(&mut source)?;
 
-    gluon::Compiler::new()
+    gluon::Compiler::new_lock()
         .run_io(true)
         .run_expr::<IO<()>>(&thread, "24", &source)?;
     Ok(())
