@@ -228,6 +228,7 @@ fn typechecked_module(
         expected_type.as_ref(),
     )
     .map(|value| value.map(Arc::new))
+    .map_err(|(_, err)| err)
 }
 
 fn compiled_module(

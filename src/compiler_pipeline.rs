@@ -16,20 +16,24 @@ use std::sync::Arc;
 use either::Either;
 use futures::{future, Future};
 
-use crate::base::ast::SpannedExpr;
-use crate::base::error::{Errors, InFile};
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::Metadata;
-use crate::base::resolve;
-use crate::base::symbol::{Name, NameBuf, Symbol, SymbolData, SymbolModule};
-use crate::base::types::{ArcType, NullInterner, Type, TypeCache};
+use crate::base::{
+    ast::{SpannedExpr, Typed},
+    error::{Errors, InFile},
+    fnv::FnvMap,
+    metadata::Metadata,
+    resolve,
+    symbol::{Name, NameBuf, Symbol, SymbolModule},
+    types::{ArcType, NullInterner, Type, TypeCache},
+};
 
 use crate::check::{metadata, rename};
 
-use crate::vm::compiler::CompiledModule;
-use crate::vm::core;
-use crate::vm::macros::MacroExpander;
-use crate::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot};
+use crate::vm::{
+    compiler::CompiledModule,
+    core,
+    macros::MacroExpander,
+    thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
+};
 
 use crate::{query::Compilation, Error, ModuleCompiler, Result};
 
@@ -472,7 +476,7 @@ pub trait Typecheckable: Sized {
         thread: &Thread,
         file: &str,
         expr_str: &str,
-    ) -> Result<TypecheckValue<Self::Expr>> {
+    ) -> SalvageResult<TypecheckValue<Self::Expr>> {
         self.typecheck_expected(compiler, thread, file, expr_str, None)
     }
     fn typecheck_expected(
@@ -482,7 +486,7 @@ pub trait Typecheckable: Sized {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<TypecheckValue<Self::Expr>>;
+    ) -> SalvageResult<TypecheckValue<Self::Expr>>;
 }
 
 impl<T> Typecheckable for T
@@ -498,7 +502,7 @@ where
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<TypecheckValue<Self::Expr>> {
+    ) -> SalvageResult<TypecheckValue<Self::Expr>> {
         let mut macro_error = None;
         let expr = match self.reparse_infix(compiler, thread, file, expr_str) {
             Ok(expr) => expr,
@@ -506,17 +510,17 @@ where
                 macro_error = Some(err);
                 expr
             }
-            Err((None, err)) => return Err(err),
+            Err((None, err)) => return Err((None, err)),
         };
         match expr.typecheck_expected(compiler, thread, file, expr_str, expected_type) {
             Ok(value) => match macro_error {
-                Some(err) => return Err(err),
+                Some(err) => return Err((Some(value), err)),
                 None => Ok(value),
             },
-            Err(err) => Err(Errors::from(
-                macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>(),
-            )
-            .into()),
+            Err((opt, err)) => Err((
+                opt,
+                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            )),
         }
     }
 }
@@ -534,7 +538,7 @@ where
         file: &str,
         _expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<TypecheckValue<Self::Expr>> {
+    ) -> SalvageResult<TypecheckValue<Self::Expr>> {
         use crate::check::typecheck::Typecheck;
         trace!("Typecheck: {}", file);
 
@@ -557,7 +561,23 @@ where
 
                 tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
             };
-            result.map_err(|err| InFile::new(compiler.database.state().code_map.clone(), err))?
+            match result {
+                Ok(typ) => typ,
+                Err(err) => {
+                    return Err((
+                        Some(TypecheckValue {
+                            typ: expr
+                                .borrow_mut()
+                                .try_type_of(&*thread.get_env())
+                                .unwrap_or_else(|_| thread.global_env().type_cache().error()),
+                            expr,
+                            metadata_map,
+                            metadata,
+                        }),
+                        InFile::new(compiler.database.state().code_map.clone(), err).into(),
+                    ));
+                }
+            }
         };
 
         // Some metadata requires typechecking so recompute it if full metadata is required
@@ -584,6 +604,23 @@ pub struct CompileValue<E> {
     pub typ: ArcType,
     pub metadata: Arc<Metadata>,
     pub module: CompiledModule,
+}
+
+impl<E> CompileValue<E> {
+    pub fn map<F>(self, f: impl FnOnce(E) -> F) -> CompileValue<F> {
+        let CompileValue {
+            expr,
+            typ,
+            metadata,
+            module,
+        } = self;
+        CompileValue {
+            expr: f(expr),
+            typ,
+            metadata,
+            module,
+        }
+    }
 }
 
 pub trait Compileable<Extra> {
@@ -613,6 +650,7 @@ where
         expected_type: Option<&'b ArcType>,
     ) -> Result<CompileValue<Self::Expr>> {
         self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
+            .map_err(|(_, err)| err)
             .and_then(|tc_value| tc_value.compile(compiler, thread, file, expr_str, ()))
     }
 }
@@ -621,6 +659,39 @@ where
     E: Borrow<SpannedExpr<Symbol>>,
 {
     type Expr = E;
+
+    fn compile(
+        self,
+        compiler: &mut ModuleCompiler,
+        thread: &Thread,
+        filename: &str,
+        expr_str: &str,
+        extra: Extra,
+    ) -> Result<CompileValue<Self::Expr>> {
+        (&self)
+            .compile(compiler, thread, filename, expr_str, extra)
+            .map(|value| value.map(|_| ()))
+            .map(
+                |CompileValue {
+                     typ,
+                     metadata,
+                     module,
+                     ..
+                 }| CompileValue {
+                    expr: self.expr,
+                    typ,
+                    metadata,
+                    module,
+                },
+            )
+    }
+}
+
+impl<'e, E, Extra> Compileable<Extra> for &'e TypecheckValue<E>
+where
+    E: Borrow<SpannedExpr<Symbol>>,
+{
+    type Expr = &'e E;
 
     fn compile(
         self,
@@ -671,9 +742,9 @@ where
         };
         module.function.id = Symbol::from(filename);
         Ok(CompileValue {
-            expr: self.expr,
-            typ: self.typ,
-            metadata: self.metadata,
+            expr: &self.expr,
+            typ: self.typ.clone(),
+            metadata: self.metadata.clone(),
             module,
         })
     }
@@ -719,7 +790,7 @@ pub trait Executable<'vm, Extra> {
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
 where
     C: Compileable<Extra>,
-    C::Expr: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
+    C::Expr: Borrow<SpannedExpr<Symbol>> + Send + 'vm,
 {
     type Expr = C::Expr;
 
@@ -758,7 +829,7 @@ where
 }
 impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
+    E: Borrow<SpannedExpr<Symbol>> + Send + 'vm,
 {
     type Expr = E;
 
