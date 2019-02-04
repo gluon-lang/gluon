@@ -765,12 +765,12 @@ impl Compiler {
 }
 
 pub trait ThreadExt {
-    fn get_database(&self) -> salsa::Snapshot<query::CompilerDatabase>;
+    fn get_database(&self) -> import::DatabaseSnapshot;
     fn get_database_mut(&self) -> import::CompilerLock;
 }
 
 impl ThreadExt for Thread {
-    fn get_database(&self) -> salsa::Snapshot<query::CompilerDatabase> {
+    fn get_database(&self) -> import::DatabaseSnapshot {
         get_db_snapshot(self)
     }
     fn get_database_mut(&self) -> import::CompilerLock {
@@ -778,7 +778,7 @@ impl ThreadExt for Thread {
     }
 }
 
-fn get_db_snapshot(vm: &Thread) -> salsa::Snapshot<query::CompilerDatabase> {
+fn get_db_snapshot(vm: &Thread) -> import::DatabaseSnapshot {
     get_import(vm).snapshot(vm.root_thread())
 }
 

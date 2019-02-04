@@ -33,7 +33,7 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::*,
-    query::{Compilation, CompilerDatabase},
+    query::{Compilation, CompilationBase, CompilerDatabase},
     IoError, ModuleCompiler,
 };
 
@@ -78,7 +78,6 @@ pub trait Importer: Any + Clone + Sync + Send {
         compiler: &mut ModuleCompiler,
         vm: &Thread,
         modulename: &str,
-        input: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)>;
 }
 
@@ -90,14 +89,17 @@ impl Importer for DefaultImporter {
         compiler: &mut ModuleCompiler,
         vm: &Thread,
         modulename: &str,
-        input: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
+        let text = compiler
+            .database
+            .module_text(modulename.to_string())
+            .map_err(|err| (None, err))?;
         let value = compiler
             .database
             .compiled_module(modulename.to_string())
             .map_err(|err| (None, err))?;
         let typ = value.typ.clone();
-        Executable::load_script(value, compiler, vm, modulename, input, ())
+        Executable::load_script(value, compiler, vm, modulename, &text, ())
             .wait()
             .map_err(|err| (Some(typ), err))?;
         Ok(())
@@ -105,8 +107,33 @@ impl Importer for DefaultImporter {
 }
 
 enum UnloadedModule {
-    Source(Cow<'static, str>),
+    Source,
     Extern(ExternModule),
+}
+
+pub struct DatabaseSnapshot {
+    snapshot: Option<salsa::Snapshot<CompilerDatabase>>,
+}
+
+impl Drop for DatabaseSnapshot {
+    fn drop(&mut self) {
+        let import = crate::get_import(self.thread());
+
+        self.snapshot.take();
+
+        let mut compiler = import.compiler.lock().unwrap();
+        if Arc::get_mut(&mut compiler.state).is_some() {
+            let new_states = compiler.state().module_states.clone();
+            compiler.set_module_states(Arc::new(new_states));
+        }
+    }
+}
+
+impl Deref for DatabaseSnapshot {
+    type Target = CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        self.snapshot.as_ref().unwrap()
+    }
 }
 
 pub struct CompilerLock<I = DefaultImporter> {
@@ -200,23 +227,36 @@ impl<I> Import<I> {
         compiler
     }
 
-    pub fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase> {
+    pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         let mut compiler = self.compiler.lock().unwrap();
 
         compiler.thread = Some(thread);
         let snapshot = compiler.snapshot();
         compiler.thread = None;
 
-        snapshot
+        DatabaseSnapshot {
+            snapshot: Some(snapshot),
+        }
     }
 
-    fn get_unloaded_module(
+    fn get_unloaded_module(&self, vm: &Thread, module: &str) -> Result<UnloadedModule, MacroError> {
+        {
+            let mut loaders = self.loaders.write().unwrap();
+            if let Some(loader) = loaders.get_mut(module) {
+                let value = loader(vm).map_err(MacroError::new)?;
+                return Ok(UnloadedModule::Extern(value));
+            }
+        }
+        Ok(UnloadedModule::Source)
+    }
+
+    pub(crate) fn get_module_source(
         &self,
         compiler: &mut Compiler,
         vm: &Thread,
         module: &str,
         filename: &str,
-    ) -> Result<UnloadedModule, MacroError> {
+    ) -> Result<Cow<'static, str>, Error> {
         let mut buffer = String::new();
 
         // Retrieve the source, first looking in the standard library included in the
@@ -228,15 +268,8 @@ impl<I> Import<I> {
             None
         };
         Ok(match std_file {
-            Some(tup) => UnloadedModule::Source(Cow::Borrowed(tup.1)),
+            Some(tup) => Cow::Borrowed(tup.1),
             None => {
-                {
-                    let mut loaders = self.loaders.write().unwrap();
-                    if let Some(loader) = loaders.get_mut(module) {
-                        let value = loader(vm).map_err(MacroError::new)?;
-                        return Ok(UnloadedModule::Extern(value));
-                    }
-                }
                 let paths = self.paths.read().unwrap();
                 let file = paths
                     .iter()
@@ -249,18 +282,18 @@ impl<I> Import<I> {
                     })
                     .next();
                 let mut file = file.ok_or_else(|| {
-                    MacroError::new(Error::String(format!(
+                    Error::String(format!(
                         "Could not find module '{}'. Searched {}.",
                         module,
                         paths
                             .iter()
                             .map(|p| format!("`{}`", p.display()))
                             .format(", ")
-                    )))
+                    ))
                 })?;
                 file.read_to_string(&mut buffer)
-                    .map_err(|err| MacroError::new(Error::IO(err.into())))?;
-                UnloadedModule::Source(Cow::Owned(buffer))
+                    .map_err(|err| Error::IO(err.into()))?;
+                Cow::Owned(buffer)
             }
         })
     }
@@ -276,33 +309,10 @@ impl<I> Import<I> {
     {
         assert!(module_id.is_global());
         let modulename = module_id.name().definition_name();
-        let mut filename = modulename.replace(".", "/");
-        filename.push_str(".glu");
-
-        if vm.global_env().global_exists(module_id.definition_name()) {
-            return Ok(());
-        }
-
-        let result = self.load_module_(compiler, vm, module_id, &filename);
-
-        result
-    }
-
-    fn load_module_(
-        &self,
-        compiler: &mut ModuleCompiler,
-        vm: &Thread,
-        module_id: &Symbol,
-        filename: &str,
-    ) -> Result<(), (Option<ArcType>, MacroError)>
-    where
-        I: Importer,
-    {
-        let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
         let unloaded_module = self
-            .get_unloaded_module(compiler, vm, &modulename, &filename)
+            .get_unloaded_module(vm, &modulename)
             .map_err(|err| (None, MacroError::new(err)))?;
 
         match unloaded_module {
@@ -314,9 +324,9 @@ impl<I> Import<I> {
                 vm.set_global(module_id.clone(), typ, metadata, value.get_value())
                     .map_err(|err| (None, MacroError::new(err)))?;
             }
-            UnloadedModule::Source(file_contents) => {
+            UnloadedModule::Source => {
                 self.importer
-                    .import(compiler, vm, &modulename, &file_contents)
+                    .import(compiler, vm, &modulename)
                     .map_err(|(t, err)| (t, MacroError::new(err)))?;
             }
         }
