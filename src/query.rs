@@ -128,7 +128,8 @@ impl CompilerDatabase {
             runtime: Default::default(),
             thread,
         };
-        compiler.set_compiler_settings(Settings::default());
+        compiler.set_compiler_settings(Default::default());
+        compiler.set_module_states(Default::default());
         compiler
     }
 
