@@ -454,6 +454,7 @@ impl Compiler {
             None,
         )
         .map(|result| result.typ)
+        .map_err(|t| t.1)
     }
 
     pub fn typecheck_str(
@@ -463,13 +464,15 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ, .. } = expr_str.typecheck_expected(
-            &mut self.module_compiler(&get_db_snapshot(&vm)),
-            vm,
-            file,
-            expr_str,
-            expected_type,
-        )?;
+        let TypecheckValue { expr, typ, .. } = expr_str
+            .typecheck_expected(
+                &mut self.module_compiler(&get_db_snapshot(&vm)),
+                vm,
+                file,
+                expr_str,
+                expected_type,
+            )
+            .map_err(|t| t.1)?;
         Ok((expr, typ))
     }
 

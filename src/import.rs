@@ -18,7 +18,6 @@ use salsa::ParallelDatabase;
 
 use crate::base::{
     ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed},
-    error::Errors,
     filename_to_module,
     fnv::FnvMap,
     pos,
@@ -34,6 +33,7 @@ use crate::vm::{
 };
 
 use crate::{
+    compiler_pipeline::*,
     query::{Compilation, CompilerDatabase},
     IoError, ModuleCompiler,
 };
@@ -78,10 +78,9 @@ pub trait Importer: Any + Clone + Sync + Send {
         &self,
         compiler: &mut ModuleCompiler,
         vm: &Thread,
-        earlier_errors_exist: bool,
         modulename: &str,
         input: &str,
-        expr: SpannedExpr<Symbol>,
+        value: &TypecheckValue<SpannedExpr<Symbol>>,
     ) -> Result<(), (Option<ArcType>, crate::Error)>;
 }
 
@@ -92,39 +91,13 @@ impl Importer for DefaultImporter {
         &self,
         compiler: &mut ModuleCompiler,
         vm: &Thread,
-        earlier_errors_exist: bool,
         modulename: &str,
         input: &str,
-        mut expr: SpannedExpr<Symbol>,
+        value: &TypecheckValue<SpannedExpr<Symbol>>,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        use crate::compiler_pipeline::*;
+        let result = Executable::load_script(value, compiler, vm, modulename, input, ()).wait();
 
-        let result = {
-            let result = MacroValue { expr: &mut expr }
-                .typecheck(compiler, vm, modulename, input)
-                .map_err(|err| err.into());
-
-            if result.is_ok() && earlier_errors_exist {
-                trace!(
-                    "Typechecked {} but earlier errors exist, bailing",
-                    modulename
-                );
-                // We must not pass error patterns or expressions to the core translator so break
-                // early. An error will be returned by the macro expander so we can just return Ok
-                return Err((
-                    Some(expr.env_type_of(&*vm.get_env())),
-                    crate::Error::Multiple(Errors::default()),
-                ));
-            }
-
-            result.and_then(|value| {
-                value
-                    .load_script(compiler, vm, modulename, input, ())
-                    .wait()
-            })
-        };
-
-        result.map_err(|err| (Some(expr.env_type_of(&*vm.get_env())), err))
+        result.map_err(|err| (Some(value.expr.env_type_of(&*vm.get_env())), err))
     }
 }
 
@@ -339,11 +312,9 @@ impl<I> Import<I> {
                     .map_err(|err| (None, MacroError::new(err)))?;
             }
             UnloadedModule::Source(file_contents) => {
-                let result = file_contents.expand_macro(compiler, vm, &modulename, &file_contents);
+                let result = file_contents.typecheck(compiler, vm, &modulename, &file_contents);
 
-                let has_errors = result.is_err();
-
-                let (macro_value, error) = match result {
+                let (typecheck_value, error) = match result {
                     Ok(m) => (m, None),
                     Err((None, err)) => {
                         return Err((None, MacroError::new(err)));
@@ -354,10 +325,9 @@ impl<I> Import<I> {
                 let mut result = self.importer.import(
                     compiler,
                     vm,
-                    has_errors,
                     &modulename,
                     &file_contents,
-                    macro_value.expr,
+                    &typecheck_value,
                 );
 
                 if let Some(error1) = error {
