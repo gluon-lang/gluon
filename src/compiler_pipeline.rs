@@ -790,7 +790,7 @@ pub trait Executable<'vm, Extra> {
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
 where
     C: Compileable<Extra>,
-    C::Expr: Borrow<SpannedExpr<Symbol>> + Send + 'vm,
+    C::Expr: Send + 'vm,
 {
     type Expr = C::Expr;
 
@@ -829,7 +829,7 @@ where
 }
 impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
 where
-    E: Borrow<SpannedExpr<Symbol>> + Send + 'vm,
+    E: Send + 'vm,
 {
     type Expr = E;
 

@@ -8,8 +8,7 @@ use std::{
     mem,
     ops::{Deref, DerefMut},
     path::PathBuf,
-    sync::Arc,
-    sync::{Mutex, MutexGuard, RwLock},
+    sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
 use futures::{future, Future};
@@ -17,7 +16,7 @@ use itertools::Itertools;
 use salsa::ParallelDatabase;
 
 use crate::base::{
-    ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed},
+    ast::{expr_to_path, Expr, Literal, SpannedExpr},
     filename_to_module,
     fnv::FnvMap,
     pos,
@@ -80,7 +79,6 @@ pub trait Importer: Any + Clone + Sync + Send {
         vm: &Thread,
         modulename: &str,
         input: &str,
-        value: &TypecheckValue<SpannedExpr<Symbol>>,
     ) -> Result<(), (Option<ArcType>, crate::Error)>;
 }
 
@@ -93,11 +91,16 @@ impl Importer for DefaultImporter {
         vm: &Thread,
         modulename: &str,
         input: &str,
-        value: &TypecheckValue<SpannedExpr<Symbol>>,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        let result = Executable::load_script(value, compiler, vm, modulename, input, ()).wait();
-
-        result.map_err(|err| (Some(value.expr.env_type_of(&*vm.get_env())), err))
+        let value = compiler
+            .database
+            .compiled_module(modulename.to_string())
+            .map_err(|err| (None, err))?;
+        let typ = value.typ.clone();
+        Executable::load_script(value, compiler, vm, modulename, input, ())
+            .wait()
+            .map_err(|err| (Some(typ), err))?;
+        Ok(())
     }
 }
 
@@ -293,8 +296,6 @@ impl<I> Import<I> {
     where
         I: Importer,
     {
-        use crate::compiler_pipeline::*;
-
         let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
@@ -312,31 +313,9 @@ impl<I> Import<I> {
                     .map_err(|err| (None, MacroError::new(err)))?;
             }
             UnloadedModule::Source(file_contents) => {
-                let result = file_contents.typecheck(compiler, vm, &modulename, &file_contents);
-
-                let (typecheck_value, error) = match result {
-                    Ok(m) => (m, None),
-                    Err((None, err)) => {
-                        return Err((None, MacroError::new(err)));
-                    }
-                    Err((Some(m), err)) => (m, Some(err)),
-                };
-
-                let mut result = self.importer.import(
-                    compiler,
-                    vm,
-                    &modulename,
-                    &file_contents,
-                    &typecheck_value,
-                );
-
-                if let Some(error1) = error {
-                    result = match result {
-                        Ok(_) => Err((None, error1)),
-                        Err((t, error2)) => Err((t, error1.merge(error2))),
-                    };
-                }
-                result.map_err(|(t, err)| (t, MacroError::new(err)))?;
+                self.importer
+                    .import(compiler, vm, &modulename, &file_contents)
+                    .map_err(|(t, err)| (t, MacroError::new(err)))?;
             }
         }
         Ok(())
