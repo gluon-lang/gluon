@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    borrow::Cow,
     result::Result as StdResult,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -13,10 +13,13 @@ use {
         symbol::Symbol,
         types::ArcType,
     },
-    vm::thread::{RootedThread, Thread},
+    vm::{
+        macros,
+        thread::{RootedThread, Thread},
+    },
 };
 
-use crate::{compiler_pipeline::*, Compiler, Error, IoError, Settings};
+use crate::{compiler_pipeline::*, Compiler, Error, Settings};
 
 #[derive(Default)]
 pub(crate) struct State {
@@ -86,7 +89,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .expect("Thread was not set in the compiler")
     }
 
-    fn new_module(&self, module: String, contents: Arc<String>) {
+    fn new_module(&self, module: String, contents: &str) {
         self.state().add_filemap(&module, &contents[..]);
     }
     fn report_errors(&self, error: &mut Iterator<Item = Error>) {
@@ -153,7 +156,7 @@ impl CompilerDatabase {
 pub(crate) trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
-    fn new_module(&self, module: String, contents: Arc<String>);
+    fn new_module(&self, module: String, contents: &str);
     fn report_errors(&self, error: &mut Iterator<Item = Error>);
 }
 
@@ -164,7 +167,7 @@ pub(crate) trait Compilation: CompilationBase {
 
     fn module_state(&self, module: String) -> usize;
 
-    fn module_text(&self, module: String) -> StdResult<Arc<String>, IoError>;
+    fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::input]
     fn compiler_settings(&self) -> Settings;
@@ -191,14 +194,19 @@ fn module_state(db: &impl Compilation, module: String) -> usize {
     db.module_states().get(&module).cloned().unwrap_or_default()
 }
 
-fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<String>, IoError> {
+fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
     // We just need to depend on updates to the state, we don't care what it is
     db.module_state(module.clone());
 
     let mut filename = module.replace(".", "/");
     filename.push_str(".glu");
-    let contents = Arc::new(fs::read_to_string(&filename[..])?);
-    db.new_module(module, contents.clone());
+
+    let contents = Arc::new(
+        crate::get_import(db.thread())
+            .get_module_source(&module, &filename)
+            .map_err(macros::Error::new)?,
+    );
+    db.new_module(module, &contents);
     Ok(contents)
 }
 
