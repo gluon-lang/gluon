@@ -26,6 +26,7 @@ pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
     pub(crate) index_map: FnvMap<String, BytePos>,
     pub(crate) errors: Errors<Error>,
+    pub(crate) module_states: FnvMap<String, usize>,
 }
 
 impl State {
@@ -72,7 +73,7 @@ impl State {
 #[salsa::database(CompileStorage)]
 pub struct CompilerDatabase {
     runtime: salsa::Runtime<CompilerDatabase>,
-    state: Arc<Mutex<State>>,
+    pub(crate) state: Arc<Mutex<State>>,
     // This is only set after calling snapshot on `Import`. `Import` itself can't contain a
     // `RootedThread` as that would create a cycle
     pub(crate) thread: Option<RootedThread>,
@@ -90,7 +91,14 @@ impl crate::query::CompilationBase for CompilerDatabase {
     }
 
     fn new_module(&self, module: String, contents: &str) {
-        self.state().add_filemap(&module, &contents[..]);
+        error!("NEW {}", module);
+        let mut state = self.state();
+        state.add_filemap(&module, &contents[..]);
+        state
+            .module_states
+            .entry(module)
+            .and_modify(|v| *v += 1)
+            .or_default();
     }
     fn report_errors(&self, error: &mut Iterator<Item = Error>) {
         self.state().errors.extend(error);
@@ -163,14 +171,14 @@ pub(crate) trait CompilationBase: salsa::Database {
 #[salsa::query_group(CompileStorage)]
 pub(crate) trait Compilation: CompilationBase {
     #[salsa::input]
+    fn compiler_settings(&self) -> Settings;
+
+    #[salsa::input]
     fn module_states(&self) -> Arc<FnvMap<String, usize>>;
 
     fn module_state(&self, module: String) -> usize;
 
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
-
-    #[salsa::input]
-    fn compiler_settings(&self) -> Settings;
 
     #[salsa::volatile]
     fn typechecked_module(
@@ -185,7 +193,6 @@ pub(crate) trait Compilation: CompilationBase {
         module: String,
     ) -> StdResult<CompileValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
-    #[salsa::volatile]
     #[salsa::cycle]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 }
@@ -215,6 +222,7 @@ fn typechecked_module(
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error> {
+    error!("CHECK {}", module);
     let text = db.module_text(module.clone())?;
 
     let thread = db.thread();
@@ -247,6 +255,7 @@ fn compiled_module(
 }
 
 fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
+    eprintln!("IMPORT {}", modulename);
     let compiler = db.compiler();
     let thread = db.thread();
 

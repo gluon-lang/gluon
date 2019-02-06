@@ -33,7 +33,7 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::*,
-    query::{Compilation, CompilerDatabase},
+    query::{Compilation, CompilationBase, CompilerDatabase},
     IoError, ModuleCompiler,
 };
 
@@ -109,6 +109,31 @@ impl Importer for DefaultImporter {
 enum UnloadedModule {
     Source,
     Extern(ExternModule),
+}
+
+pub struct DatabaseSnapshot {
+    snapshot: Option<salsa::Snapshot<CompilerDatabase>>,
+}
+
+impl Drop for DatabaseSnapshot {
+    fn drop(&mut self) {
+        let import = crate::get_import(self.thread());
+
+        self.snapshot.take();
+
+        let mut compiler = import.compiler.lock().unwrap();
+        if Arc::get_mut(&mut compiler.state).is_some() {
+            let new_states = compiler.state().module_states.clone();
+            compiler.set_module_states(Arc::new(new_states));
+        }
+    }
+}
+
+impl Deref for DatabaseSnapshot {
+    type Target = CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        self.snapshot.as_ref().unwrap()
+    }
 }
 
 pub struct CompilerLock<I = DefaultImporter> {
@@ -202,14 +227,16 @@ impl<I> Import<I> {
         compiler
     }
 
-    pub fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase> {
+    pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         let mut compiler = self.compiler.lock().unwrap();
 
         compiler.thread = Some(thread);
         let snapshot = compiler.snapshot();
         compiler.thread = None;
 
-        snapshot
+        DatabaseSnapshot {
+            snapshot: Some(snapshot),
+        }
     }
 
     fn get_unloaded_module(&self, vm: &Thread, module: &str) -> Result<UnloadedModule, MacroError> {
