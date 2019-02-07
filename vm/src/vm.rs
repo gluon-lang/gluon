@@ -278,10 +278,10 @@ impl TypeEnv for VmEnv {
 }
 
 impl PrimitiveEnv for VmEnv {
-    fn get_bool(&self) -> &ArcType {
+    fn get_bool(&self) -> ArcType {
         self.find_type_info("std.types.Bool")
             .map(|alias| match alias {
-                Cow::Borrowed(alias) => alias.as_type(),
+                Cow::Borrowed(alias) => alias.as_type().clone(),
                 Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed bool type"),
             })
             .expect("std.types.Bool")
