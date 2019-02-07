@@ -899,8 +899,9 @@ impl<'a> ImplicitResolver<'a> {
                 .and_then(|typename| {
                     self.metadata
                         .get(typename)
+                        .cloned()
                         .or_else(|| self.environment.get_metadata(typename))
-                        .map(|m| has_implicit_attribute(m))
+                        .map(|m| has_implicit_attribute(&m))
                 })
                 .unwrap_or(false);
         }

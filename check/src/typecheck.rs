@@ -111,7 +111,7 @@ impl<'a> PrimitiveEnv for Environment<'a> {
 }
 
 impl<'a> MetadataEnv for Environment<'a> {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         self.environment.get_metadata(id)
     }
 }
