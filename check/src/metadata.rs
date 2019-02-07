@@ -249,11 +249,12 @@ pub fn metadata(
             self.env.stack.insert(id, arc_metadata);
         }
 
-        fn metadata(&self, id: &Symbol) -> Option<&Arc<Metadata>> {
+        fn metadata(&self, id: &Symbol) -> Option<Arc<Metadata>> {
             debug!("Lookup {}", id);
             self.env
                 .stack
                 .get(id)
+                .cloned()
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
@@ -265,7 +266,6 @@ pub fn metadata(
                     .typ
                     .alias_ident()
                     .and_then(|id| self.metadata(id))
-                    .cloned()
                 {
                     let mut type_metadata =
                         Arc::try_unwrap(type_metadata).unwrap_or_else(|arc| (*arc).clone());
@@ -281,7 +281,7 @@ pub fn metadata(
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> MaybeMetadata {
             match expr.value {
-                Expr::Ident(ref id) => self.metadata(&id.name).cloned().into(),
+                Expr::Ident(ref id) => self.metadata(&id.name).into(),
                 Expr::Record {
                     ref exprs,
                     ref types,
@@ -292,7 +292,7 @@ pub fn metadata(
                     for field in exprs {
                         let maybe_metadata = match field.value {
                             Some(ref expr) => self.metadata_expr(expr),
-                            None => self.metadata(&field.name.value).cloned().into(),
+                            None => self.metadata(&field.name.value).into(),
                         };
                         let maybe_metadata = MaybeMetadata::merge(&field.metadata, &maybe_metadata);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata {
@@ -302,7 +302,7 @@ pub fn metadata(
                     }
 
                     for field in types {
-                        let maybe_metadata = self.metadata(&field.name.value).cloned();
+                        let maybe_metadata = self.metadata(&field.name.value);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
                             let name = Name::new(field.name.value.as_ref()).name().as_str();
                             module.insert(String::from(name), metadata);

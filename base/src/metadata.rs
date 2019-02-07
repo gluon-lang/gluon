@@ -6,17 +6,17 @@ use crate::{
 };
 
 pub trait MetadataEnv {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>>;
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>>;
 }
 
 impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         (**self).get_metadata(id)
     }
 }
 
 impl MetadataEnv for () {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<Arc<Metadata>> {
         None
     }
 }

@@ -40,26 +40,26 @@ fn spliterator<'a>(
 }
 
 fn split_type<'a>(
-    subs: &'a Substitution<RcType>,
-    typ: &'a RcType,
+        subs: &'a Substitution<RcType>,
+        typ: &'a RcType,
 ) -> Option<(SymbolKey, Option<&'a RcType>)> {
     let symbol = match &**subs.real(typ) {
         Type::App(id, args) => {
             return split_type(subs, id).map(|(key, _)| (key, args.get(0)));
-        }
+            }
         Type::Forall(_, typ) | Type::Function(ArgType::Implicit, _, typ) => {
             return split_type(subs, typ)
-        }
-        Type::Function(ArgType::Explicit, ..) => {
-            Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
-        }
+            }
+            Type::Function(ArgType::Explicit, ..) => {
+                Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
+            }
         Type::Skolem(skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
         Type::Ident(id) => Some(SymbolKey::Owned(id.clone())),
         Type::Alias(alias) => Some(SymbolKey::Owned(alias.name.clone())),
         Type::Builtin(builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-        _ => None,
-    };
-    symbol.map(|s| (s, None))
+            _ => None,
+        };
+        symbol.map(|s| (s, None))
 }
 
 type ImplicitBinding = (Rc<[TypedIdent<Symbol, RcType>]>, RcType);
@@ -145,19 +145,19 @@ impl<T> Partition<T> {
         for symbol in spliterator(subs, typ) {
             partition = partition.partition.entry(symbol).or_default();
             partition.rest.push((level, value.clone()));
-        }
     }
+                }
 
     fn remove(&mut self, subs: &Substitution<RcType>, typ: &RcType) {
         let mut partition = self;
         for symbol in spliterator(subs, typ) {
             partition = partition
-                .partition
-                .get_mut(&symbol)
-                .expect("Entry from insert call");
-            partition.rest.pop();
-        }
-    }
+                    .partition
+                    .get_mut(&symbol)
+                    .expect("Entry from insert call");
+                    partition.rest.pop();
+                }
+            }
 
     fn get_candidates<'a>(
         &'a self,
@@ -176,15 +176,15 @@ impl<T> Partition<T> {
             match partition.partition.get(&symbol) {
                 Some(bindings) => partition = bindings,
                 None => break,
-            }
-        }
+                        }
+                    }
         let end = partition
-            .rest
-            .iter()
-            .rposition(|(level, _)| *level <= implicit_bindings_level)
-            .map_or(0, |i| i + 1);
+                    .rest
+                    .iter()
+                    .rposition(|(level, _)| *level <= implicit_bindings_level)
+                    .map_or(0, |i| i + 1);
         partition.rest[..end].iter().map(f).for_each(&mut *consumer);
-    }
+                }
 }
 
 impl Partition<ImplicitBinding> {
@@ -201,10 +201,10 @@ impl Partition<ImplicitBinding> {
                 let name = &path[0].name;
                 if let Some(t) = f(name) {
                     *typ = t;
+                    }
                 }
             }
         }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -730,7 +730,7 @@ impl<'a> ImplicitResolver<'a> {
         let meta = self.metadata.get(id).cloned();
 
         self.add_implicits_of_ident(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
-    }
+        }
 
     pub fn add_implicits_of_record(
         &mut self,
@@ -815,10 +815,10 @@ impl<'a> ImplicitResolver<'a> {
             },
         );
         let raw_type = match t {
-            Ok(t) => t,
-            // Don't recurse into self recursive aliases
-            Err(_) => return,
-        };
+                Ok(t) => t,
+                // Don't recurse into self recursive aliases
+                Err(_) => return,
+            };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
@@ -850,12 +850,12 @@ impl<'a> ImplicitResolver<'a> {
         metadata: Option<&'m Metadata>,
         typ: &RcType,
     ) -> Option<Option<&'m Symbol>> {
-        // Look at the type without any implicit arguments
-        let mut iter = types::implicit_arg_iter(typ.remove_forall());
-        for _ in iter.by_ref() {}
+            // Look at the type without any implicit arguments
+            let mut iter = types::implicit_arg_iter(typ.remove_forall());
+            for _ in iter.by_ref() {}
         let is_implicit = iter
-            .typ
-            .remove_forall()
+                .typ
+                .remove_forall()
             .applied_alias()
             .map_or(false, |alias| alias.is_implicit())
             || metadata

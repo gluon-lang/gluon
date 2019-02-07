@@ -196,8 +196,8 @@ impl<T> AliasRemover<T> {
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         match peek_alias(env, &typ)? {
-            Some(alias) if predicate(alias) => {
-                self.remove_alias_to_concrete_inner(interner, typ, alias)
+            Some(ref alias) if predicate(alias) => {
+                self.remove_alias_to_concrete_inner(interner, typ, &alias)
             }
             _ => Ok(None),
         }
@@ -207,7 +207,7 @@ impl<T> AliasRemover<T> {
         &mut self,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
-        alias: &'a AliasRef<Symbol, T>,
+        alias: &AliasRef<Symbol, T>,
     ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,

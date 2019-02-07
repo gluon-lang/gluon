@@ -92,7 +92,7 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<RcType> {
         self.stack
             .get(id)
-            .map(|bind| &bind.typ.concrete.clone())
+            .map(|bind| bind.typ.concrete.clone())
             .or_else(|| self.environment.find_type(id))
     }
 
@@ -111,16 +111,16 @@ impl<'a> PrimitiveEnv for Environment<'a> {
 }
 
 impl<'a> MetadataEnv for Environment<'a> {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         self.environment.get_metadata(id)
     }
 }
 
 impl Environment<'_> {
-    fn find_mod_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
+    fn find_mod_type(&self, id: &SymbolRef) -> Option<ModType> {
         self.stack
             .get(id)
-            .map(|bind| bind.typ.as_ref())
+            .map(|bind| bind.typ.clone())
             .or_else(|| self.environment.find_type(id).map(ModType::rigid))
     }
 }
