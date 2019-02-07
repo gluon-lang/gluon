@@ -105,7 +105,7 @@ impl<'a> TypeEnv for Environment<'a> {
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
-    fn get_bool(&self) -> &ArcType {
+    fn get_bool(&self) -> ArcType {
         self.environment.get_bool()
     }
 }

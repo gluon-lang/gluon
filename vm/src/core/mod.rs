@@ -816,7 +816,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn bool_constructor(&self, variant: bool) -> TypedIdent<Symbol> {
         let b = self.env.get_bool();
-        match **b {
+        match *b {
             Type::Alias(ref alias) => match **alias.typ(&mut NullInterner) {
                 Type::Variant(ref variants) => TypedIdent {
                     name: variants
