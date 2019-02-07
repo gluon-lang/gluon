@@ -1779,7 +1779,7 @@ impl<'b> ExecuteContext<'b> {
                     self.stack
                         .push(String(function.strings[string_index as usize].inner()));
                 }
-                PushFloat(f) => self.stack.push(Float(f)),
+                PushFloat(f) => self.stack.push(Float(f.into())),
                 Call(args) => {
                     self.stack.frame.state.instruction_index = index + 1;
                     return self.do_call(args).map(|x| Async::Ready(Some(x)));

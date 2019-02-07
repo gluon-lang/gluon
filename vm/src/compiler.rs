@@ -75,7 +75,7 @@ pub struct DebugInfo {
     pub source_name: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -99,7 +99,7 @@ pub struct CompiledModule {
     pub function: CompiledFunction,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -643,7 +643,7 @@ impl<'a> Compiler<'a> {
             Expr::Const(ref lit, _) => match *lit {
                 Literal::Int(i) => function.emit(PushInt(i)),
                 Literal::Byte(b) => function.emit(PushByte(b)),
-                Literal::Float(f) => function.emit(PushFloat(f.into_inner())),
+                Literal::Float(f) => function.emit(PushFloat(f.into_inner().into())),
                 Literal::String(ref s) => function.emit_string(self.intern(&s)?),
                 Literal::Char(c) => function.emit(PushInt(u32::from(c).into())),
             },
@@ -832,7 +832,7 @@ impl<'a> Compiler<'a> {
                                 }
                                 ast::Literal::Float(f) => {
                                     function.emit(Push(lhs_i));
-                                    function.emit(PushFloat(f.into_inner()));
+                                    function.emit(PushFloat(f.into_inner().into()));
                                     function.emit(FloatEQ);
                                 }
                                 ast::Literal::String(ref s) => {
