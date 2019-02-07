@@ -451,12 +451,12 @@ impl<'a> KindEnv for Compiler<'a> {
 impl<'a> TypeEnv for Compiler<'a> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
         None
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types.get(id)
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        self.stack_types.get(id).cloned()
     }
 }
 

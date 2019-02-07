@@ -247,7 +247,7 @@ impl KindEnv for TypeInfos {
 impl TypeEnv for TypeInfos {
     type Type = ArcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
         let id = id.definition_name();
         self.id_to_type
             .iter()
@@ -256,11 +256,11 @@ impl TypeEnv for TypeInfos {
                 _ => None,
             })
             .next()
-            .map(|field| &field.typ)
+            .map(|field| field.typ.clone())
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.id_to_type.get(id.definition_name())
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        self.id_to_type.get(id.definition_name()).cloned()
     }
 }
 

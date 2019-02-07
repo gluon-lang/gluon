@@ -74,20 +74,20 @@ macro_rules! forward_eq_hash {
 pub trait TypeEnv: KindEnv {
     type Type;
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type>;
+    fn find_type(&self, id: &SymbolRef) -> Option<Self::Type>;
 
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, Self::Type>>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     type Type = T::Type;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type> {
+    fn find_type(&self, id: &SymbolRef) -> Option<Self::Type> {
         (**self).find_type(id)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, Self::Type>> {
         (**self).find_type_info(id)
     }
 }
@@ -95,11 +95,11 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 impl TypeEnv for EmptyEnv<Symbol> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
         None
     }
 
-    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         None
     }
 }

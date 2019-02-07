@@ -229,10 +229,10 @@ impl KindEnv for VmEnv {
 impl TypeEnv for VmEnv {
     type Type = ArcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
         self.globals
             .get(id.definition_name())
-            .map(|g| &g.typ)
+            .map(|g| g.typ.clone())
             .or_else(|| {
                 self.type_infos
                     .id_to_type
@@ -241,7 +241,7 @@ impl TypeEnv for VmEnv {
                         Type::Variant(ref row) => row
                             .row_iter()
                             .find(|field| *field.name == *id)
-                            .map(|field| &field.typ),
+                            .map(|field| field.typ.clone()),
                         _ => None,
                     })
                     .next()
@@ -249,7 +249,7 @@ impl TypeEnv for VmEnv {
             })
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         self.type_infos.find_type_info(id)
     }
 }

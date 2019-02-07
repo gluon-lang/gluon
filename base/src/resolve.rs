@@ -57,7 +57,7 @@ impl AliasRemover {
                 }
                 self.reduced_aliases.push(alias.name.clone());
 
-                if canonical(alias) {
+                if canonical(&alias) {
                     Cow::Borrowed(typ)
                 } else {
                     match alias.typ(interner).apply_args(
@@ -166,7 +166,7 @@ where
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
-            if canonical(alias) {
+            if canonical(&alias) {
                 Cow::Borrowed(typ)
             } else {
                 alias
@@ -206,7 +206,7 @@ where
 pub fn peek_alias<'t, T>(
     env: &'t TypeEnv<Type = T>,
     typ: &'t T,
-) -> Result<Option<&'t AliasRef<Symbol, T>>, Error>
+) -> Result<Option<AliasRef<Symbol, T>>, Error>
 where
     T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
@@ -215,8 +215,8 @@ where
     match typ.alias_ident() {
         Some(id) => {
             let alias = match maybe_alias {
-                Some(alias) => Some(alias),
-                None => env.find_type_info(id).map(|a| &**a),
+                Some(alias) => Some(alias.clone()),
+                None => env.find_type_info(id).map(|a| (*a).clone()),
             };
             Ok(alias)
         }
