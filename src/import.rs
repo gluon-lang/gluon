@@ -210,15 +210,15 @@ impl<I> Import<I> {
             .collect()
     }
 
-    pub fn compiler_lock(self: Arc<Self>, thread: RootedThread) -> CompilerLock<I> {
+    pub fn compiler_lock(self_: Arc<Self>, thread: RootedThread) -> CompilerLock<I> {
         // Since `self` lives longer than the lifetime in the mutex guard this is safe
         let mut compiler = unsafe {
             CompilerLock {
                 compiler: Some(mem::transmute::<
                     MutexGuard<CompilerDatabase>,
                     MutexGuard<CompilerDatabase>,
-                >(self.compiler.lock().unwrap())),
-                _import: self,
+                >(self_.compiler.lock().unwrap())),
+                _import: self_,
             }
         };
 
