@@ -102,6 +102,23 @@ fn new_bytecode_function(
     }))
 }
 
+impl Eq for Global {}
+
+impl PartialEq for Global {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl std::hash::Hash for Global {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.id.hash(hasher)
+    }
+}
+
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -615,6 +632,7 @@ impl GlobalVmState {
 
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
+        self.macros.get_capabilities::<TypeEnv<Type = ArcType>>();
         self.env.read().unwrap()
     }
 

@@ -860,8 +860,8 @@ where
             vm1.call_thunk_top(closure)
                 .map(move |value| ExecuteValue {
                     id: module_id,
-                    expr: expr,
-                    typ: typ,
+                    expr,
+                    typ,
                     value,
                     metadata,
                 })

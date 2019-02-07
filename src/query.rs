@@ -8,20 +8,27 @@ use salsa::Database;
 
 use {
     base::{
-        ast::{Expr, SpannedExpr, TypedIdent},
+        ast::{self, Expr, SpannedExpr, TypedIdent},
         error::Errors,
         fnv::FnvMap,
+        kind::{ArcKind, KindEnv},
+        metadata::{Metadata, MetadataEnv},
         pos::BytePos,
-        symbol::Symbol,
-        types::ArcType,
+        symbol::{Name, Symbol, SymbolRef},
+        types::{Alias, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
     },
     vm::{
+        self,
+        api::ValueRef,
+        compiler::{CompilerEnv, Variable},
         macros,
         thread::{RootedThread, Thread},
+        vm::Global,
+        Variants,
     },
 };
 
-use crate::{compiler_pipeline::*, Compiler, Error, Settings};
+use crate::{compiler_pipeline::*, Compiler, Error, Result, Settings};
 
 #[derive(Default)]
 pub(crate) struct State {
@@ -204,6 +211,11 @@ pub(crate) trait Compilation: CompilationBase {
 
     #[salsa::cycle]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
+
+    fn globals(&self) -> Arc<FnvMap<String, Global>>;
+
+    #[salsa::volatile]
+    fn global(&self, name: String) -> Option<Global>;
 }
 
 fn module_state(db: &impl Compilation, module: String) -> usize {
@@ -284,4 +296,208 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     result?;
 
     Ok(Expr::Ident(TypedIdent::new(name)))
+}
+
+fn globals(db: &impl Compilation) -> Arc<FnvMap<String, Global>> {
+    let compiler = db.compiler();
+    let vm = db.thread();
+    let globals = db
+        .module_states()
+        .keys()
+        .map(|name| {
+            let compile_value = db.compiled_module(name.clone());
+            let execute_value = Executable::load_script(
+                compile_value,
+                &mut Compiler::new().module_compiler(compiler),
+                vm,
+                &name,
+                "",
+                None,
+            )
+            .expect("ICE: Script loading failed unexpectedly");
+
+            Global {
+                id: execute_value.id,
+                typ: execute_value.typ,
+                metadata: execute_value.metadata,
+                value: execute_value.value,
+            }
+        })
+        .collect();
+    Arc::new(globals)
+}
+
+fn global(db: &impl Compilation, name: String) -> Option<Global> {
+    db.globals().get(&name).cloned()
+}
+
+impl CompilerEnv for CompilerDatabase {
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
+        self.global(id.definition_name().into())
+            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+    }
+}
+
+impl KindEnv for CompilerDatabase {
+    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
+        None
+    }
+}
+
+impl TypeEnv for CompilerDatabase {
+    type Type = ArcType;
+
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
+        self.global(id.definition_name().into())
+            .map(|g| g.typ.clone())
+    }
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        None
+    }
+}
+
+impl PrimitiveEnv for CompilerDatabase {
+    fn get_bool(&self) -> ArcType {
+        self.find_type_info("std.types.Bool")
+            .expect("std.types.Bool")
+    }
+}
+
+impl MetadataEnv for CompilerDatabase {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
+        self.global(id.definition_name().into())
+            .map(|g| g.metadata.clone())
+    }
+}
+
+fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
+where
+    T: Clone,
+    U: Clone,
+    F: FnOnce(&T) -> Option<&U>,
+{
+    match cow {
+        Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
+        Cow::Owned(o) => f(&o).map(|u| Cow::Owned(u.clone())),
+    }
+}
+
+impl CompilerDatabase {
+    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, ArcType>>> {
+        let name = Name::new(name);
+        let module_str = name.module().as_str();
+        if module_str == "" {
+            return match self.type_infos.id_to_type.get(name.as_str()) {
+                Some(alias) => Ok(Cow::Borrowed(alias)),
+                None => Err(vm::Error::UndefinedBinding(name.as_str().into()).into()),
+            };
+        }
+        let (_, typ) = self.get_binding(name.module().as_str())?;
+        let maybe_type_info = map_cow_option(typ.clone(), |typ| {
+            let field_name = name.name();
+            typ.type_field_iter()
+                .find(|field| field.name.as_ref() == field_name.as_str())
+                .map(|field| &field.typ)
+        });
+        maybe_type_info.ok_or_else(move || {
+            vm::Error::UndefinedField(typ.into_owned(), name.name().as_str().into()).into()
+        })
+    }
+
+    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, Global)> {
+        let mut module = Name::new(name.trim_start_matches('@'));
+        let global;
+        // Try to find a global by successively reducing the module path
+        // Input: "x.y.z.w"
+        // Test: "x.y.z"
+        // Test: "x.y"
+        // Test: "x"
+        // Test: -> Error
+        loop {
+            if module.as_str() == "" {
+                return None;
+            }
+            if let Some(g) = self.global(module.as_str().into()) {
+                global = g;
+                break;
+            }
+            module = module.module();
+        }
+        let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
+        let remaining_fields = Name::new(&name[remaining_offset..]);
+        Some((remaining_fields, global))
+    }
+
+    pub fn get_binding(&self, name: &str) -> Result<(Variants, Cow<ArcType>)> {
+        use crate::base::resolve;
+
+        let (remaining_fields, global) = self
+            .get_global(name)
+            .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?;
+
+        if remaining_fields.as_str().is_empty() {
+            // No fields left
+            return Ok((
+                unsafe { Variants::new(&global.value) },
+                Cow::Borrowed(&global.typ),
+            ));
+        }
+
+        let mut typ = Cow::Borrowed(&global.typ);
+        let mut value = unsafe { Variants::new(&global.value) };
+
+        for mut field_name in remaining_fields.components() {
+            if field_name.starts_with('(') && field_name.ends_with(')') {
+                field_name = &field_name[1..field_name.len() - 1];
+            } else if field_name.contains(ast::is_operator_char) {
+                return Err(vm::Error::Message(format!(
+                    "Operators cannot be used as fields \
+                     directly. To access an operator field, \
+                     enclose the operator with parentheses \
+                     before passing it in. (test.(+) instead of \
+                     test.+)"
+                ))
+                .into());
+            }
+            typ = match typ {
+                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, &mut NullInterner, typ),
+                Cow::Owned(typ) => {
+                    Cow::Owned(resolve::remove_aliases(self, &mut NullInterner, typ))
+                }
+            };
+            // HACK Can't return the data directly due to the use of cow on the type
+            let next_type = map_cow_option(typ.clone(), |typ| {
+                typ.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .map(|(index, field)| match value.as_ref() {
+                        ValueRef::Data(data) => {
+                            value = data.get_variant(index).unwrap();
+                            &field.typ
+                        }
+                        _ => ice!("Unexpected value {:?}", value),
+                    })
+            });
+            typ = next_type.ok_or_else(move || {
+                vm::Error::UndefinedField(typ.into_owned(), field_name.into())
+            })?;
+        }
+        Ok((value, typ))
+    }
+
+    pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
+        self.get_metadata_(name_str)
+            .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
+    }
+
+    fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
+        let (remaining, global) = self.get_global(name_str)?;
+
+        let mut metadata = &global.metadata;
+        for field_name in remaining.components() {
+            metadata = metadata.module.get(field_name)?
+        }
+        Some(metadata.clone())
+    }
 }

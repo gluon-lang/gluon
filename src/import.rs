@@ -1,7 +1,7 @@
 //! Implementation of the `import!` macro.
 
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     borrow::Cow,
     fs::File,
     io::Read,
@@ -26,6 +26,7 @@ use crate::base::{
 
 use crate::vm::{
     self,
+    compiler::CompilerEnv,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread, ThreadInternal},
     ExternLoader, ExternModule,
@@ -413,6 +414,14 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
+    fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
+        if id == TypeId::of::<CompilerEnv<Type = ArcType>>() {
+            Some(Box::new(Box::new(self) as Box<CompilerEnv<Type = ArcType>>))
+        } else {
+            None
+        }
+    }
+
     fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
         fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, Error> {
             if args.len() != 1 {
