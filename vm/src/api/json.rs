@@ -1,10 +1,8 @@
 extern crate serde_json;
 
-use std::borrow::Borrow;
-use std::fmt;
-use std::result::Result as StdResult;
+use std::{borrow::Borrow, fmt, result::Result as StdResult};
 
-use crate::base::types::{ArcType, Type};
+use crate::base::types::ArcType;
 
 use crate::api::{Getable, OpaqueValue, VmType};
 use crate::thread::{ActiveThread, RootedThread, Thread, ThreadInternal};
@@ -134,17 +132,10 @@ impl VmType for Value {
     }
 }
 
+#[derive(VmType)]
+#[gluon(vm_type = "std.json.value.Value")]
+#[gluon(gluon_vm)]
 pub struct JsonValue(crate::vm::RootedValue<RootedThread>);
-
-impl VmType for JsonValue {
-    type Type = <Value as VmType>::Type;
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.find_type_info("std.json.value.Value")
-            .map(|t| t.clone().into_type())
-            .ok()
-            .unwrap_or_else(Type::error)
-    }
-}
 
 impl<'vm> crate::api::Pushable<'vm> for JsonValue {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {

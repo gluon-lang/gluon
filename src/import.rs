@@ -1,7 +1,7 @@
 //! Implementation of the `import!` macro.
 
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     borrow::Cow,
     fs::File,
     io::Read,
@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
-use futures::{future, Future};
+use futures::future;
 use itertools::Itertools;
 use salsa::ParallelDatabase;
 
@@ -28,12 +28,12 @@ use crate::vm::{
     self,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread, ThreadInternal},
+    vm::VmEnv,
     ExternLoader, ExternModule,
 };
 
 use crate::{
-    compiler_pipeline::*,
-    query::{Compilation, CompilationBase, CompilerDatabase},
+    query::{Compilation, CompilerDatabase},
     IoError, ModuleCompiler,
 };
 
@@ -87,17 +87,13 @@ impl Importer for DefaultImporter {
     fn import(
         &self,
         compiler: &mut ModuleCompiler,
-        vm: &Thread,
+        _vm: &Thread,
         modulename: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        let value = compiler
+        compiler
             .database
-            .compiled_module(modulename.to_string())
+            .global(modulename.to_string())
             .map_err(|err| (None, err))?;
-        let typ = value.typ.clone();
-        Executable::load_script(value, compiler, vm, modulename, "", ())
-            .wait()
-            .map_err(|err| (Some(typ), err))?;
         Ok(())
     }
 }
@@ -113,14 +109,16 @@ pub struct DatabaseSnapshot {
 
 impl Drop for DatabaseSnapshot {
     fn drop(&mut self) {
-        let import = crate::get_import(self.thread());
+        if let Some(thread) = self.thread.as_ref() {
+            let import = crate::get_import(thread);
 
-        self.snapshot.take();
+            self.snapshot.take();
 
-        let mut compiler = import.compiler.lock().unwrap();
-        if Arc::get_mut(&mut compiler.state).is_some() {
-            let new_states = compiler.state().module_states.clone();
-            compiler.set_module_states(Arc::new(new_states));
+            let mut compiler = import.compiler.lock().unwrap();
+            if Arc::get_mut(&mut compiler.state).is_some() {
+                let new_states = compiler.state().module_states.clone();
+                compiler.set_module_states(Arc::new(new_states));
+            }
         }
     }
 }
@@ -224,9 +222,13 @@ impl<I> Import<I> {
     }
 
     pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
+        self.snapshot_(Some(thread))
+    }
+
+    fn snapshot_(&self, thread: Option<RootedThread>) -> DatabaseSnapshot {
         let mut compiler = self.compiler.lock().unwrap();
 
-        compiler.thread = Some(thread);
+        compiler.thread = thread;
         let snapshot = compiler.snapshot();
         compiler.thread = None;
 
@@ -317,7 +319,7 @@ impl<I> Import<I> {
                 typ,
                 metadata,
             }) => {
-                vm.set_global(module_id.clone(), typ, metadata, value.get_value())
+                vm.set_global(module_id.clone(), typ, metadata.into(), value.get_value())
                     .map_err(|err| (None, MacroError::new(err)))?;
             }
             UnloadedModule::Source => {
@@ -419,6 +421,16 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
+        if id == TypeId::of::<VmEnv>() {
+            Some(Box::new(
+                Box::new(self.snapshot(thread.root_thread())) as Box<VmEnv>
+            ))
+        } else {
+            None
+        }
+    }
+
     fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
         fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, Error> {
             if args.len() != 1 {
@@ -452,7 +464,7 @@ where
 
         info!("import! {}", modulename);
 
-        let compiler = try_future!(macros
+        let db = try_future!(macros
             .user_data
             .downcast_ref::<CompilerDatabase>()
             .ok_or_else(|| MacroError::new(Error::String(
@@ -460,10 +472,8 @@ where
             ))));
 
         Box::new(future::result(
-            compiler
-                .import(modulename)
+            db.import(modulename)
                 .map_err(|err| MacroError::message(err.to_string()))
-                .and_then(|result| result.map_err(MacroError::new))
                 .map(|expr| pos::spanned(args[0].span, expr)),
         ))
     }

@@ -547,9 +547,9 @@ impl DocCollector<'_> {
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
-        let mut compiler = Compiler::new().full_metadata(true);
+        let compiler = Compiler::new();
         let (expr, typ) = compiler.typecheck_str(thread, &name, &content, None)?;
-        let (meta, _) = metadata(&*thread.get_env(), &expr);
+        let (meta, _) = metadata(&thread.get_env(), &expr);
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
@@ -562,7 +562,8 @@ impl DocCollector<'_> {
             .format("\n")
             .to_string();
 
-        let source = compiler
+        let source = thread
+            .get_database()
             .get_filemap(&name)
             .expect("SourceMap not inserted by compilation");
 

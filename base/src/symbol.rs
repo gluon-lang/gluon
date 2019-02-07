@@ -115,7 +115,7 @@ impl fmt::Display for Symbol {
             write!(f, ":{}", x)?;
             if y != 0 {
                 write!(f, "_{}", y)?;
-            }
+    }
         }
         Ok(())
     }
@@ -185,7 +185,7 @@ where
                 name = &name[..i];
 
                 opt
-            }
+    }
             _ => None,
         };
 
@@ -358,7 +358,7 @@ impl Name {
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+            &self.0
     }
 
     pub fn components(&self) -> Components {
@@ -543,7 +543,7 @@ impl Symbols {
             })
             .1
             .clone()
-    }
+        }
 
     pub fn contains_name<N>(&mut self, name: N) -> bool
     where

@@ -49,7 +49,7 @@ use crate::{
         ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String},
         VariantDef,
     },
-    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnv},
+    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnv, VmEnvInstance},
     BoxFuture, Error, Result, Variants,
 };
 
@@ -845,7 +845,7 @@ impl Thread {
             self.set_global(
                 Symbol::from(format!("@{}", name)),
                 T::make_forall_type(self),
-                Metadata::default(),
+                Default::default(),
                 &value,
             )
         }
@@ -897,24 +897,24 @@ impl Thread {
         let (value, actual) = env.get_binding(name)?;
 
         // Finally check that type of the returned value is correct
-        if check_signature(&*env, &expected, &actual) {
-            Ok(T::from_value(self, value))
+        if check_signature(&env, &expected, &actual) {
+            Ok(T::from_value(self, unsafe { Variants::new(&value) }))
         } else {
-            Err(Error::WrongType(expected, actual.into_owned()))
+            Err(Error::WrongType(expected, actual))
         }
     }
 
     pub fn get_global_type(&self, name: &str) -> Result<ArcType> {
         let env = self.get_env();
         let (_value, actual) = env.get_binding(name)?;
-        Ok(actual.into_owned())
+        Ok(actual)
     }
 
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
-        env.find_type_info(name).map(|alias| alias.into_owned())
+        env.find_type_info(name)
     }
 
     /// Returns the gluon type that was bound to `T`
@@ -940,8 +940,8 @@ impl Thread {
     }
 
     /// Locks and retrieves the global environment of the vm
-    pub fn get_env<'b>(&'b self) -> sync::RwLockReadGuard<'b, VmEnv> {
-        self.global_env().get_env()
+    pub fn get_env<'b>(&'b self) -> VmEnvInstance<'b> {
+        self.global_env().get_env(self)
     }
 
     /// Retrieves the macros defined for this vm
@@ -1178,7 +1178,7 @@ where
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: &Value,
     ) -> Result<()>;
 
@@ -1278,7 +1278,7 @@ impl ThreadInternal for Thread {
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: &Value,
     ) -> Result<()> {
         let mut gc = self.global_env().gc.lock().unwrap();

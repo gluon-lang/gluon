@@ -191,8 +191,8 @@ pub fn from_value<T>(thread: &Thread, value: Variants, typ: &ArcType) -> Result<
 where
     T: DeserializeOwned,
 {
-    let env = thread.global_env().get_env();
-    let mut deserializer = Deserializer::from_value(thread, &*env, value, typ);
+    let env = thread.get_env();
+    let mut deserializer = Deserializer::from_value(thread, &env, value, typ);
     T::deserialize(&mut deserializer)
 }
 

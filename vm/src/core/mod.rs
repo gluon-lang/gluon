@@ -1999,7 +1999,7 @@ mod tests {
 
         let vm = RootedThread::new();
         let env = vm.get_env();
-        let translator = Translator::new(&*env);
+        let translator = Translator::new(&env);
 
         let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate_expr(&expr);

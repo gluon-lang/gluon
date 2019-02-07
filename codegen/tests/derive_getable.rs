@@ -182,7 +182,7 @@ fn derive_generates_same_type_as_gluon_define() {
     let _ = env_logger::try_init();
 
     let vm = new_vm();
-    let mut compiler = Compiler::new().implicit_prelude(false);
+    let compiler = Compiler::new().implicit_prelude(false);
 
     import::add_extern_module(&vm, "test", |vm| {
         ExternModule::new(vm, primitive!(1, "test", |_: Enum| ()))

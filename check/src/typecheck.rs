@@ -601,48 +601,48 @@ impl<'a> Typecheck<'a> {
     ) -> ModType {
         let returned_type;
 
-        match self.typecheck_(expr, &mut expected_type) {
+            match self.typecheck_(expr, &mut expected_type) {
             Ok((typ, args)) => {
-                if !args.is_empty() {
-                    match expr.value {
-                        Expr::App {
-                            ref mut implicit_args,
-                            ..
-                        } => {
-                            if implicit_args.is_empty() {
-                                *implicit_args = args;
-                            } else {
-                                implicit_args.extend(args);
+                            if !args.is_empty() {
+                                match expr.value {
+                                    Expr::App {
+                                        ref mut implicit_args,
+                                        ..
+                                    } => {
+                                        if implicit_args.is_empty() {
+                                            *implicit_args = args;
+                                        } else {
+                                            implicit_args.extend(args);
+                                        }
+                                    }
+                                    _ => {
+                                        let dummy = Expr::Literal(Literal::Int(0));
+                                        let func = mem::replace(&mut expr.value, dummy);
+                                        expr.value = Expr::App {
+                                            func: Box::new(pos::spanned(expr.span, func)),
+                                            implicit_args: args,
+                                            args: vec![],
+                                        }
+                                    }
+                                }
                             }
-                        }
-                        _ => {
-                            let dummy = Expr::Literal(Literal::Int(0));
-                            let func = mem::replace(&mut expr.value, dummy);
-                            expr.value = Expr::App {
-                                func: Box::new(pos::spanned(expr.span, func)),
-                                implicit_args: args,
-                                args: vec![],
-                            }
-                        }
-                    }
-                }
 
-                returned_type = match expected_type {
-                    Some(expected_type) => ModType::new(
-                        expected_type.modifier,
+                            returned_type = match expected_type {
+                                Some(expected_type) => ModType::new(
+                                    expected_type.modifier,
                         self.subsumes_expr(expr.span, &typ, expected_type.concrete.clone(), expr),
-                    ),
-                    None => typ,
-                };
+                                    ),
+                                None => typ,
+                            };
+                        }
+                Err(err) => {
+                    returned_type = ModType::wobbly(self.subs.error());
+                    self.errors.push(Spanned {
+                        span: expr_check_span(expr),
+                        value: err.into(),
+                    });
+                }
             }
-            Err(err) => {
-                returned_type = ModType::wobbly(self.subs.error());
-                self.errors.push(Spanned {
-                    span: expr_check_span(expr),
-                    value: err.into(),
-                });
-            }
-        }
         returned_type
     }
 
@@ -670,11 +670,11 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Literal(ref lit) => Ok((
                 ModType::rigid(match *lit {
-                    Literal::Int(_) => self.subs.int(),
-                    Literal::Byte(_) => self.subs.byte(),
-                    Literal::Float(_) => self.subs.float(),
-                    Literal::String(_) => self.subs.string(),
-                    Literal::Char(_) => self.subs.char(),
+                Literal::Int(_) => self.subs.int(),
+                Literal::Byte(_) => self.subs.byte(),
+                Literal::Float(_) => self.subs.float(),
+                Literal::String(_) => self.subs.string(),
+                Literal::Char(_) => self.subs.char(),
                 }),
                 Vec::new(),
             )),
@@ -1230,9 +1230,9 @@ impl<'a> Typecheck<'a> {
 
             Expr::Error(ref typ) => Ok((
                 ModType::wobbly(
-                    typ.as_ref()
-                        .map(|typ| self.translate_arc_type(typ))
-                        .unwrap_or_else(|| self.subs.new_var()),
+                typ.as_ref()
+                    .map(|typ| self.translate_arc_type(typ))
+                    .unwrap_or_else(|| self.subs.new_var()),
                 ),
                 Vec::new(),
             )),
@@ -1726,8 +1726,8 @@ impl<'a> Typecheck<'a> {
                     typ = ret;
                 }
                 None => return Err(TypeError::PatternError(typ.clone(), len)),
-            }
         }
+    }
         Ok(typ.clone())
     }
 
@@ -1864,8 +1864,8 @@ impl<'a> Typecheck<'a> {
                     resolved_types[i].concrete.clone()
                 };
                 self.typecheck_let_pattern(&mut bind.name, typ);
-            }
-        }
+                    }
+                }
 
         let mut types = Vec::new();
         for (i, bind) in bindings.iter_mut().enumerate() {
@@ -2469,7 +2469,7 @@ impl<'a> Typecheck<'a> {
 
                 merge::merge(types, new_types, rest, new_rest, |types, rest| {
                     self.intern(Type::ExtendTypeRow { types, rest })
-                })
+                        })
             }
 
             Type::Forall(ref params, ref typ) => {

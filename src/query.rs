@@ -4,28 +4,36 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use salsa::Database;
+use {futures::Future, salsa::Database};
 
 use {
     base::{
-        ast::{Expr, SpannedExpr, TypedIdent},
+        ast::{self, Expr, SpannedExpr, TypedIdent},
         error::Errors,
         fnv::FnvMap,
+        kind::{ArcKind, KindEnv},
+        metadata::{Metadata, MetadataEnv},
         pos::BytePos,
-        symbol::Symbol,
-        types::ArcType,
+        symbol::{Name, Symbol, SymbolRef},
+        types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
     vm::{
+        self,
+        api::ValueRef,
+        compiler::{CompilerEnv, Variable},
+        internal::Value,
         macros,
-        thread::{RootedThread, Thread},
+        thread::{RootedThread, RootedValue, Thread, ThreadInternal},
+        vm::VmEnv,
     },
 };
 
-use crate::{compiler_pipeline::*, Compiler, Error, Settings};
+use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Compiler, Error, Result, Settings};
 
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
+    pub(crate) inline_modules: FnvMap<String, String>,
     pub(crate) index_map: FnvMap<String, BytePos>,
     pub(crate) errors: Errors<Error>,
     pub(crate) module_states: FnvMap<String, usize>,
@@ -112,6 +120,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .and_modify(|v| *v += 1)
             .or_default();
     }
+
     fn report_errors(&self, error: &mut Iterator<Item = Error>) {
         self.state().errors.extend(error);
     }
@@ -183,6 +192,31 @@ impl CompilerDatabase {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct DatabaseGlobal {
+    pub id: Symbol,
+    pub typ: ArcType,
+    pub metadata: Arc<Metadata>,
+    pub value: RootedValue<RootedThread>,
+}
+
+impl Eq for DatabaseGlobal {}
+
+impl PartialEq for DatabaseGlobal {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl std::hash::Hash for DatabaseGlobal {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.id.hash(hasher)
+    }
+}
+
 pub(crate) trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
@@ -201,20 +235,57 @@ pub(crate) trait Compilation: CompilationBase {
     fn module_state(&self, module: String) -> usize;
 
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
+    fn module_text_inner(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
+    #[salsa::cycle(recover_cycle_typecheck)]
     fn typechecked_module(
         &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
+    #[salsa::cycle(recover_cycle)]
     fn compiled_module(
         &self,
         module: String,
     ) -> StdResult<CompileValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
-    #[salsa::cycle]
+    #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
+
+    fn globals(&self) -> Arc<FnvMap<String, DatabaseGlobal>>;
+
+    #[salsa::cycle(recover_cycle)]
+    fn global(&self, name: String) -> Result<DatabaseGlobal>;
+}
+
+fn recover_cycle_typecheck<T>(
+    db: &impl Compilation,
+    cycle: &[String],
+    module: &String,
+    _: &Option<ArcType>,
+) -> StdResult<T, Error> {
+    recover_cycle(db, cycle, module)
+}
+fn recover_cycle<T>(
+    _db: &impl Compilation,
+    cycle: &[String],
+    module: &String,
+) -> StdResult<T, Error> {
+    Err(macros::Error::new(crate::import::Error::CyclicDependency(
+        module.to_string(),
+        cycle
+            .iter()
+            .filter(|k| k.contains("import"))
+            .map(|k| {
+                k.trim_matches(|c: char| c != '"')
+                    .trim_matches('"')
+                    .trim_start_matches('@')
+                    .to_string()
+            })
+            .collect(),
+    ))
+    .into())
 }
 
 fn module_state(db: &impl Compilation, module: String) -> usize {
@@ -222,18 +293,32 @@ fn module_state(db: &impl Compilation, module: String) -> usize {
 }
 
 fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
+    let contents = db.module_text_inner(module.clone())?;
+    // By using an inner query we only update our own revision if the source actually changed
+    db.new_module(module, &contents);
+    Ok(contents)
+}
+
+fn module_text_inner(
+    db: &impl Compilation,
+    module: String,
+) -> StdResult<Arc<Cow<'static, str>>, Error> {
     // We just need to depend on updates to the state, we don't care what it is
     db.module_state(module.clone());
 
-    let mut filename = module.replace(".", "/");
-    filename.push_str(".glu");
+    let contents = if let Some(contents) = db.compiler().state().inline_modules.get(&module) {
+        Arc::new(contents.to_string().into()) // FIXME Avoid copying
+    } else {
+        let mut filename = module.replace(".", "/");
+        filename.push_str(".glu");
 
-    let contents = Arc::new(
-        crate::get_import(db.thread())
-            .get_module_source(&module, &filename)
-            .map_err(macros::Error::new)?,
-    );
-    db.new_module(module, &contents);
+        Arc::new(
+            crate::get_import(db.thread())
+                .get_module_source(&module, &filename)
+                .map_err(macros::Error::new)?,
+        )
+    };
+
     Ok(contents)
 }
 
@@ -295,4 +380,206 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     result?;
 
     Ok(Expr::Ident(TypedIdent::new(name)))
+}
+
+fn globals(db: &impl Compilation) -> Arc<FnvMap<String, DatabaseGlobal>> {
+    let globals = db
+        .module_states()
+        .keys()
+        .filter_map(|name| db.global(name.clone()).ok().map(|g| (name.clone(), g)))
+        .collect();
+    Arc::new(globals)
+}
+
+fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
+    let vm = db.thread();
+    let compiler = db.compiler();
+    let compile_value = db.compiled_module(name.clone())?;
+    let execute_value = Executable::run_expr(
+        compile_value,
+        &mut Compiler::new().module_compiler(compiler),
+        vm,
+        &name,
+        "",
+        (),
+    )
+    .wait()?;
+
+    vm.set_global(
+        execute_value.id.clone(),
+        execute_value.typ.clone(),
+        execute_value.metadata.clone(),
+        execute_value.value.get_value(),
+    )
+    .unwrap();
+
+    Ok(DatabaseGlobal {
+        id: execute_value.id,
+        typ: execute_value.typ,
+        metadata: execute_value.metadata,
+        value: execute_value.value,
+    })
+}
+
+impl CompilerEnv for DatabaseSnapshot {
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
+        self.global(id.definition_name().into())
+            .ok()
+            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+    }
+}
+
+impl KindEnv for DatabaseSnapshot {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
+        None
+    }
+}
+
+impl TypeEnv for DatabaseSnapshot {
+    type Type = ArcType;
+
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
+        self.global(id.definition_name().into())
+            .ok()
+            .map(|g| g.typ.clone())
+    }
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        self.thread()
+            .get_env()
+            .find_type_info(id.definition_name())
+            .ok()
+    }
+}
+
+impl PrimitiveEnv for DatabaseSnapshot {
+    fn get_bool(&self) -> ArcType {
+        self.find_type_info("std.types.Bool")
+            .expect("std.types.Bool")
+            .into_type()
+    }
+}
+
+impl MetadataEnv for DatabaseSnapshot {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
+        self.thread()
+            .get_env()
+            .get_metadata(id.definition_name())
+            .ok()
+    }
+}
+
+impl VmEnv for DatabaseSnapshot {
+    fn get_global(&self, name: &str) -> Option<vm::vm::Global> {
+        self.global(name.into()).ok().map(|g| vm::vm::Global {
+            id: g.id,
+            metadata: g.metadata,
+            typ: g.typ,
+            value: g.value.get_value(),
+        })
+    }
+}
+
+impl DatabaseSnapshot {
+    pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
+        let name = Name::new(name);
+        let (_, typ) = self.get_binding(name.module().as_str())?;
+        let maybe_type_info = {
+            let field_name = name.name();
+            typ.type_field_iter()
+                .find(|field| field.name.as_ref() == field_name.as_str())
+                .map(|field| &field.typ)
+                .cloned()
+        };
+        maybe_type_info
+            .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
+    }
+
+    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
+        let mut module = Name::new(name.trim_start_matches('@'));
+        let global;
+        // Try to find a global by successively reducing the module path
+        // Input: "x.y.z.w"
+        // Test: "x.y.z"
+        // Test: "x.y"
+        // Test: "x"
+        // Test: -> Error
+        loop {
+            if module.as_str() == "" {
+                return None;
+            }
+            if let Ok(g) = self.global(module.as_str().into()) {
+                global = g;
+                break;
+            }
+            module = module.module();
+        }
+        let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
+        let remaining_fields = Name::new(&name[remaining_offset..]);
+        Some((remaining_fields, global))
+    }
+
+    pub fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
+        use crate::base::resolve;
+
+        let (remaining_fields, global) = self
+            .get_global(name)
+            .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?;
+
+        if remaining_fields.as_str().is_empty() {
+            // No fields left
+            return Ok((global.value.get_value(), global.typ.clone()));
+        }
+
+        let mut typ = global.typ;
+        let mut value = global.value.get_variant();
+
+        for mut field_name in remaining_fields.components() {
+            if field_name.starts_with('(') && field_name.ends_with(')') {
+                field_name = &field_name[1..field_name.len() - 1];
+            } else if field_name.contains(ast::is_operator_char) {
+                return Err(vm::Error::Message(format!(
+                    "Operators cannot be used as fields \
+                     directly. To access an operator field, \
+                     enclose the operator with parentheses \
+                     before passing it in. (test.(+) instead of \
+                     test.+)"
+                ))
+                .into());
+            }
+            typ = resolve::remove_aliases(self, &mut NullInterner, typ);
+            let next_type = {
+                typ.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .map(|(index, field)| match value.as_ref() {
+                        ValueRef::Data(data) => {
+                            value = data.get_variant(index).unwrap();
+                            &field.typ
+                        }
+                        _ => ice!("Unexpected value {:?}", value),
+                    })
+                    .cloned()
+            };
+            typ =
+                next_type.ok_or_else(move || vm::Error::UndefinedField(typ, field_name.into()))?;
+        }
+        Ok((value.get_value(), typ))
+    }
+
+    pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
+        eprintln!("META {}", name_str);
+        self.get_metadata_(name_str)
+            .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
+    }
+
+    fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
+        let (remaining, global) = self.get_global(name_str)?;
+
+        let mut metadata = &global.metadata;
+        for field_name in remaining.components() {
+            metadata = metadata.module.get(field_name)?
+        }
+        Some(metadata.clone())
+    }
 }

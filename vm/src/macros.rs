@@ -1,6 +1,6 @@
 //! Module providing the building blocks to create macros and expand them.
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     error::Error as StdError,
     fmt, mem,
     sync::{Arc, RwLock},
@@ -141,24 +141,52 @@ impl Error {
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
 pub trait Macro: ::mopa::Any + Send + Sync {
+    fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
+    where
+        Self: Sized,
+        T: ?Sized + Any,
+    {
+        self.get_capability_impl(thread, TypeId::of::<T>())
+            .map(|b| {
+                *b.downcast::<Box<T>>()
+                    .ok()
+                    .expect("get_capability_impl return an unexpected type")
+            })
+    }
+
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        let _ = (thread, id);
+        None
+    }
+
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture;
 }
 
 mopafy!(Macro);
 
-impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
+impl<M> Macro for Box<M>
 where
-    F: Fn(
-        &mut MacroExpander,
-        Vec<SpannedExpr<Symbol>>,
-    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
+    M: Macro + ?Sized,
 {
-    fn expand(
-        &self,
-        env: &mut MacroExpander,
-        args: Vec<SpannedExpr<Symbol>>,
-    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send> {
-        self(env, args)
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, id)
+    }
+
+    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+        (**self).expand(env, args)
+    }
+}
+
+impl<M> Macro for Arc<M>
+where
+    M: Macro + ?Sized,
+{
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, id)
+    }
+
+    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+        (**self).expand(env, args)
     }
 }
 
@@ -188,6 +216,17 @@ impl MacroEnv {
     /// Retrieves the macro bound to `symbol`
     pub fn get(&self, name: &str) -> Option<Arc<dyn Macro>> {
         self.macros.read().unwrap().get(name).cloned()
+    }
+
+    pub fn get_capabilities<T>(&self, thread: &Thread) -> Vec<Box<T>>
+    where
+        T: ?Sized + Any,
+    {
+        let macros = self.macros.read().unwrap();
+        macros
+            .values()
+            .filter_map(|mac| mac.get_capability::<T>(thread))
+            .collect()
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion

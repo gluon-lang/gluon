@@ -1338,7 +1338,7 @@ impl ValueArray {
     }
 
     pub fn size_of(repr: Repr, len: usize) -> usize {
-        ::std::mem::size_of::<ValueArray>() + repr.size_of() * len
+        size_of::<ValueArray>() + repr.size_of() * len
     }
 
     pub fn repr(&self) -> Repr {
@@ -1723,12 +1723,12 @@ mod tests {
     impl TypeEnv for MockEnv {
         type Type = ArcType;
 
-        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
             None
         }
 
-        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-            self.0.as_ref()
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+            self.0.clone()
         }
     }
 
@@ -1813,19 +1813,18 @@ mod tests {
 
     #[test]
     fn closure_data_upvars_location() {
-        use std::mem;
         use std::ptr;
 
         unsafe {
             let p: *const ClosureData = ptr::null();
             assert_eq!(p as *const u8, &(*p).function as *const _ as *const u8);
-            assert!((p as *const u8).offset(mem::size_of::<*const ()>() as isize) != ptr::null());
+            assert!((p as *const u8).offset(size_of::<*const ()>() as isize) != ptr::null());
         }
     }
 
     #[test]
     fn value_size() {
-        assert!(::std::mem::size_of::<Value>() <= 16);
+        assert!(size_of::<Value>() <= 16);
     }
 
 }

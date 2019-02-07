@@ -81,7 +81,7 @@ use crate::vm::{
 use crate::{
     compiler_pipeline::*,
     import::{add_extern_module, DefaultImporter, Import},
-    query::Compilation,
+    query::{Compilation, CompilationBase},
 };
 
 quick_error! {
@@ -469,16 +469,15 @@ impl Compiler {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ, .. } = expr_str
-            .typecheck_expected(
-                &mut self.module_compiler(&get_db_snapshot(&vm)),
-                vm,
-                file,
-                expr_str,
-                expected_type,
-            )
-            .map_err(|t| t.1)?;
+    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
+        let db = get_db_snapshot(&vm);
+        db.compiler()
+            .state()
+            .inline_modules
+            .insert(file.into(), expr_str.into());
+
+        let TypecheckValue { expr, typ, .. } =
+            db.typechecked_module(file.into(), expected_type.cloned())?;
         Ok((expr, typ))
     }
 
@@ -560,11 +559,11 @@ impl Compiler {
         vm: &Thread,
         file: &str,
         expr_str: &str,
-    ) -> Result<(SpannedExpr<Symbol>, ArcType, Arc<Metadata>)> {
+    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
-        let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
+        let (expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
-        let (metadata, _) = metadata::metadata(&*vm.get_env(), &mut expr);
+        let (metadata, _) = metadata::metadata(&vm.get_env(), &expr);
         Ok((expr, typ, metadata))
     }
 
@@ -750,13 +749,15 @@ impl Compiler {
 
         fn skip_implicit_prelude(
             span: Span<BytePos>,
-            l: &SpannedExpr<Symbol>,
+            mut l: &SpannedExpr<Symbol>,
         ) -> &SpannedExpr<Symbol> {
-            match l.value {
-                ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                    skip_implicit_prelude(span, e)
+            loop {
+                match l.value {
+                    ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
+                        l = e;
+                    }
+                    _ => break l,
                 }
-                _ => l,
             }
         }
 

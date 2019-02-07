@@ -44,15 +44,15 @@ impl api::VmType for Enum {
     }
 }
 
-impl<'thread, 'value> api::Pushable<'thread> for Enum {
-    fn push(self, context: &mut ActiveThread<'thread>) -> vm::Result<()> {
+impl<'vm, 'value> api::Pushable<'vm> for Enum {
+    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
         api::ser::Ser(self).push(context)
     }
 }
 
-impl<'thread, 'value> api::Getable<'thread, 'value> for Enum {
+impl<'vm, 'value> api::Getable<'vm, 'value> for Enum {
     impl_getable_simple!();
-    fn from_value(thread: &'thread Thread, value: vm::Variants<'value>) -> Self {
+    fn from_value(thread: &'vm Thread, value: vm::Variants<'value>) -> Self {
         api::de::De::from_value(thread, value).0
     }
 }
@@ -86,8 +86,8 @@ fn marshal_enum() -> Result<()> {
             value = C "hello" "world"
         }
     "#;
-    type SourceType<'thread> = record_type! {
-        unwrap_b => api::FunctionRef<'thread, fn (Enum) -> i32>,
+    type SourceType<'vm> = record_type! {
+        unwrap_b => api::FunctionRef<'vm, fn (Enum) -> i32>,
         value => Enum,
     };
     let (record_p! { mut unwrap_b, value, }, _) =
@@ -115,11 +115,7 @@ where
     let thread = new_vm();
 
     // Load std.map so that we can retrieve the `Map` type through the `VmType` trait
-    Compiler::new().run_expr::<()>(
-        &thread,
-        "example",
-        "let _ = import! std.map in ()",
-    )?;
+    Compiler::new().run_expr::<()>(&thread, "example", "let _ = import! std.map in ()")?;
 
     let config_example = r#"
         let array = import! std.array
@@ -263,11 +259,11 @@ where
     }
 }
 
-impl<'thread, T> Pushable<'thread> for GluonUser<T>
+impl<'vm, T> Pushable<'vm> for GluonUser<T>
 where
-    T: Pushable<'thread>,
+    T: Pushable<'vm>,
 {
-    fn push(self, ctx: &mut ActiveThread<'thread>) -> vm::Result<()> {
+    fn push(self, ctx: &mut ActiveThread<'vm>) -> vm::Result<()> {
         (record! {
             name => self.inner.name,
             age => self.inner.age,
@@ -277,13 +273,13 @@ where
     }
 }
 
-impl<'thread, 'value, T> Getable<'thread, 'value> for GluonUser<T>
+impl<'vm, 'value, T> Getable<'vm, 'value> for GluonUser<T>
 where
-    T: Getable<'thread, 'value>,
+    T: Getable<'vm, 'value>,
 {
     impl_getable_simple!();
 
-    fn from_value(vm: &'thread Thread, data: Variants<'value>) -> GluonUser<T> {
+    fn from_value(thread: &'vm Thread, data: Variants<'value>) -> GluonUser<T> {
         // get the data, it must be a complex type
         let data = match data.as_ref() {
             ValueRef::Data(data) => data,

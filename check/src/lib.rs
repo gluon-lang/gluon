@@ -93,10 +93,10 @@ mod tests {
 
     impl TypeEnv for MockEnv {
         type Type = RcType;
-        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
             None
         }
-        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, RcType>> {
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, RcType>> {
             None
         }
     }

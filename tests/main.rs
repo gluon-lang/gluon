@@ -14,18 +14,23 @@ extern crate tensile;
 extern crate tokio;
 extern crate walkdir;
 
-use gluon::base::ast::{Expr, Pattern, SpannedExpr};
-use gluon::base::filename_to_module;
-use gluon::base::symbol::Symbol;
-use gluon::base::types::{ArcType, Type};
+use gluon::{
+    base::{
+        ast::{Expr, Pattern, SpannedExpr},
+        filename_to_module,
+        symbol::Symbol,
+        types::{ArcType, Type},
+    },
+    new_vm,
+    vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO},
+    Compiler, RootedThread, Thread,
+};
 
-use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO};
-
-use gluon::{new_vm, Compiler, RootedThread, Thread};
-
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::{self, Read},
+    path::{Path, PathBuf},
+};
 
 use futures::{future, stream, Future, Stream};
 use tokio::runtime::current_thread::Runtime;
@@ -103,9 +108,7 @@ macro_rules! define_test_type {
             fn make_type(vm: &Thread) -> ArcType {
                 let typ = concat!("std.test.", stringify!($name));
                 Type::app(
-                    (*vm.global_env().get_env().find_type_info(typ).unwrap())
-                        .clone()
-                        .into_type(),
+                    vm.get_env().find_type_info(typ).unwrap().into_type(),
                     collect![$($args::make_type(vm),)* Type::unit()],
                 )
             }

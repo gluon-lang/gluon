@@ -27,7 +27,7 @@ use crate::support::intern;
 struct MockEnv;
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<Arc<Metadata>> {
         None
     }
 }

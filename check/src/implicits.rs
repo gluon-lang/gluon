@@ -40,26 +40,26 @@ fn spliterator<'a>(
 }
 
 fn split_type<'a>(
-        subs: &'a Substitution<RcType>,
-        typ: &'a RcType,
+    subs: &'a Substitution<RcType>,
+    typ: &'a RcType,
 ) -> Option<(SymbolKey, Option<&'a RcType>)> {
     let symbol = match &**subs.real(typ) {
         Type::App(id, args) => {
             return split_type(subs, id).map(|(key, _)| (key, args.get(0)));
-            }
+        }
         Type::Forall(_, typ) | Type::Function(ArgType::Implicit, _, typ) => {
             return split_type(subs, typ)
-            }
-            Type::Function(ArgType::Explicit, ..) => {
-                Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
-            }
+        }
+        Type::Function(ArgType::Explicit, ..) => {
+            Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
+        }
         Type::Skolem(skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
         Type::Ident(id) => Some(SymbolKey::Owned(id.clone())),
         Type::Alias(alias) => Some(SymbolKey::Owned(alias.name.clone())),
         Type::Builtin(builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-            _ => None,
-        };
-        symbol.map(|s| (s, None))
+        _ => None,
+    };
+    symbol.map(|s| (s, None))
 }
 
 type ImplicitBinding = (Rc<[TypedIdent<Symbol, RcType>]>, RcType);
@@ -201,10 +201,10 @@ impl Partition<ImplicitBinding> {
                 let name = &path[0].name;
                 if let Some(t) = f(name) {
                     *typ = t;
-                    }
                 }
             }
         }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -730,7 +730,7 @@ impl<'a> ImplicitResolver<'a> {
         let meta = self.metadata.get(id).cloned();
 
         self.add_implicits_of_ident(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
-        }
+    }
 
     pub fn add_implicits_of_record(
         &mut self,
