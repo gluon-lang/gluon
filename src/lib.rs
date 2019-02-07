@@ -77,9 +77,11 @@ use crate::base::{
 
 use crate::format::Formatter;
 
-use crate::vm::api::{Getable, Hole, OpaqueValue, VmType};
-use crate::vm::compiler::CompiledModule;
-use crate::vm::macros;
+use crate::vm::{
+    api::{Getable, Hole, OpaqueValue, VmType},
+    compiler::CompiledModule,
+    macros::{self, Macro},
+};
 
 use crate::{
     compiler_pipeline::*,
@@ -770,7 +772,7 @@ impl ThreadExt for Thread {
         get_db_snapshot(self)
     }
     fn get_database_mut(&self) -> import::CompilerLock {
-        get_import(self).compiler_lock(self.root_thread())
+        Import::compiler_lock(get_import(self), self.root_thread())
     }
 }
 
@@ -780,7 +782,7 @@ fn get_db_snapshot(vm: &Thread) -> import::DatabaseSnapshot {
 
 fn get_import(vm: &Thread) -> Arc<Import> {
     let opt_macro = vm.get_macros().get("import");
-    match opt_macro.and_then(|mac| mac.downcast_arc::<Import>().ok()) {
+    match opt_macro.and_then(|mac| Macro::downcast_arc::<Import>(mac).ok()) {
         Some(import) => import,
         None => Arc::new(Import::new(DefaultImporter)),
     }
