@@ -1,0 +1,5 @@
+type Indexable ind = {
+    index : ind a -> Int -> a
+}
+
+index ?ind : [Indexable ind] -> ind a -> Int -> a = ind.index

@@ -1,0 +1,99 @@
+//! The state monad transformer.
+
+let { Applicative, Functor, Monad } = import! std.prelude
+let { Alternative, (<|>), empty } = import! std.alternative
+let { wrap, (<*>) } = import! std.applicative
+let { (>>), (<<), ? } = import! std.function
+let { map } = import! std.functor
+let { (>>=) } = import! std.monad
+let { Transformer } = import! std.transformer
+
+type StateOut s a = { value : a, state : s }
+type WrStateOut s m a = m { value : a, state : s }
+
+type StateT s m a = s -> m { value : a, state : s }
+
+let map_sout f st : (a -> b) -> StateOut s a -> StateOut s b =
+    {value = f st.value, state = st.state}
+
+let functor ?fr : [Functor m] -> Functor (StateT s m) =
+    let map f sr : (a -> b) -> StateT s m a -> StateT s m b =
+        fr.map (map_sout f) << sr
+
+    { map }
+
+let applicative ?mo : [Monad m] -> Applicative (StateT s m) =
+    let apply srf sr : StateT s m (a -> b) -> StateT s m a -> StateT s m b = \state ->
+        srf state >>= \fout ->
+            let {value = f, state = state'} = fout
+            mo.applicative.functor.map (map_sout f) (sr state')
+
+    let wrap value : a -> StateT s m a = \state ->
+        mo.applicative.wrap { value, state }
+
+    { functor = functor ?mo.applicative.functor, apply, wrap }
+
+let monad ?mo : [Monad m] -> Monad (StateT s m) =
+    let flat_map f sr : (a -> StateT s m b) -> StateT s m a -> StateT s m b = \state ->
+        sr state >>= \sout ->
+            let {value, state = state'} = sout
+            f value state'
+
+    { applicative, flat_map }
+
+// FIXME implicit parameter troubles
+/* // TEMPORARY FOR TESTING PURPOSES */
+/* #[implicit] */
+/* type Transformer t = { */
+/*     monad : forall m . [Monad m] -> Monad (t m), */
+/*     wrap_monad : forall m a . [Monad m] -> m a -> t m a */
+/* } */
+/* // END TEMPORARY */
+
+/* let transformer : Transformer (StateT s) = */
+/*     let wrap_monad ?mo ma : [Monad m] -> m a -> StateT s m a = \state -> */
+/*         ma >>= \value -> */
+/*             mo.applicative.wrap {value, state} */
+
+/*     { monad, wrap_monad } */
+
+/* #[implicit] */
+/* type MonadAlternative a = { */
+/*     monad : Monad a, */
+/*     alternative : Alternative a */
+/* } */
+
+/* let monad_alternative ?monad ?alternative : [Monad a] -> [Alternative a] -> MonadAlternative a = {monad, alternative} */
+
+// needs [transformer (StateT s)] parameter?
+let alternative ?mo ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) = 
+    let or sra srb = alt.or << sra <*> srb
+    /* let empty = transformer.wrap_monad alt.empty */
+    let empty = \state -> empty >>= \value ->
+        mo.applicative.wrap {value, state}
+
+    { applicative, or, empty }
+
+let put ?mo value : [Monad m] -> s -> StateT s m () = \state ->
+    mo.applicative.wrap { value = (), state = value }
+
+let get ?mo : [Monad m] -> StateT s m s = \state ->
+    mo.applicative.wrap { value = state, state }
+
+let gets ?mo f : [Monad m] -> (s -> a) -> StateT s m a =
+    get >>= (wrap << f)
+
+let modify f : [Monad m] -> (s -> s) -> StateT s m () =
+    get >>= (put << f)
+
+// Just remove this, since it's superfluous?
+let runStateT f state : StateT s m a -> s -> m { value : a, state : s } =
+    f state
+
+let evalStateT f state : [Functor m] -> StateT s m a -> s -> m a =
+    map (\x -> x.value) (runStateT f state)
+
+let execStateT f state : [Functor m] -> StateT s m a -> s -> m s =
+    map (\x -> x.state) (runStateT f state)
+
+{ StateT, applicative, functor, monad, put, get, modify, runStateT, evalStateT, execStateT }
