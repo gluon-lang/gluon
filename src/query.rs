@@ -102,7 +102,6 @@ impl crate::query::CompilationBase for CompilerDatabase {
     }
 
     fn new_module(&self, module: String, contents: &str) {
-        error!("NEW {}", module);
         let mut state = self.state();
         state.add_filemap(&module, &contents[..]);
         state
@@ -191,14 +190,12 @@ pub(crate) trait Compilation: CompilationBase {
 
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
-    #[salsa::volatile]
     fn typechecked_module(
         &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
-    #[salsa::volatile]
     fn compiled_module(
         &self,
         module: String,
@@ -233,7 +230,6 @@ fn typechecked_module(
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error> {
-    error!("CHECK {}", module);
     let text = db.module_text(module.clone())?;
 
     let thread = db.thread();
@@ -266,7 +262,6 @@ fn compiled_module(
 }
 
 fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
-    eprintln!("IMPORT {}", modulename);
     let compiler = db.compiler();
     let thread = db.thread();
 

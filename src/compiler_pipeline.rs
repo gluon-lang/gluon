@@ -598,7 +598,7 @@ where
 }
 
 /// Result of successful compilation
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub struct CompileValue<E> {
     pub expr: E,
     pub typ: ArcType,

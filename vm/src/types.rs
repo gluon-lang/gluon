@@ -11,10 +11,50 @@ pub type VmIndex = u32;
 pub type VmTag = u32;
 pub type VmInt = i64;
 
+#[repr(transparent)]
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub struct EqFloat(pub f64);
+
+impl From<f64> for EqFloat {
+    fn from(f: f64) -> Self {
+        EqFloat(f)
+    }
+}
+
+impl From<EqFloat> for f64 {
+    fn from(f: EqFloat) -> Self {
+        f.0
+    }
+}
+
+impl EqFloat {
+    fn key(&self) -> u64 {
+        unsafe { std::mem::transmute(self.0) }
+    }
+}
+
+impl Eq for EqFloat {}
+
+impl PartialEq for EqFloat {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl std::hash::Hash for EqFloat {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.key().hash(hasher)
+    }
+}
+
 /// Enum which represent the instructions executed by the virtual machine.
 ///
 /// The binary arithmetic instructions pop two values of the stack and then push the result.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum Instruction {
     /// Push an integer to the stack
@@ -22,7 +62,7 @@ pub enum Instruction {
     /// Push a byte to the stack
     PushByte(u8),
     /// Push a float to the stack
-    PushFloat(f64),
+    PushFloat(EqFloat),
     /// Push a string to the stack by loading the string at `index` in the currently executing
     /// function
     PushString(VmIndex),
