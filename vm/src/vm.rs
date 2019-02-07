@@ -116,7 +116,7 @@ fn new_bytecode_function<'gc>(
     }))
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde_derive_state",
     derive(DeserializeState, SerializeState)

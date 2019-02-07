@@ -4,6 +4,8 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use salsa::Database;
+
 use {
     base::{
         ast::{Expr, SpannedExpr, TypedIdent},
@@ -169,6 +171,16 @@ impl CompilerDatabase {
     {
         self.state().add_filemap(file, source)
     }
+
+    pub(crate) fn collect_garbage(&self) {
+        let strategy = salsa::SweepStrategy::default()
+            .discard_values()
+            .sweep_all_revisions();
+
+        self.query(ModuleTextQuery).sweep(strategy);
+        self.query(TypecheckedModuleQuery).sweep(strategy);
+        self.query(CompiledModuleQuery).sweep(strategy);
+    }
 }
 
 pub(crate) trait CompilationBase: salsa::Database {
@@ -270,12 +282,17 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     } else {
         format!("@{}", modulename)
     });
-    crate::get_import(thread)
+    let result = crate::get_import(thread)
         .load_module(
             &mut Compiler::new().module_compiler(compiler),
             thread,
             &name,
         )
-        .map_err(|(_, err)| err)?;
+        .map_err(|(_, err)| err);
+
+    compiler.collect_garbage();
+
+    result?;
+
     Ok(Expr::Ident(TypedIdent::new(name)))
 }

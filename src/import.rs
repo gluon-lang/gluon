@@ -90,16 +90,12 @@ impl Importer for DefaultImporter {
         vm: &Thread,
         modulename: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        let text = compiler
-            .database
-            .module_text(modulename.to_string())
-            .map_err(|err| (None, err))?;
         let value = compiler
             .database
             .compiled_module(modulename.to_string())
             .map_err(|err| (None, err))?;
         let typ = value.typ.clone();
-        Executable::load_script(value, compiler, vm, modulename, &text, ())
+        Executable::load_script(value, compiler, vm, modulename, "", ())
             .wait()
             .map_err(|err| (Some(typ), err))?;
         Ok(())
