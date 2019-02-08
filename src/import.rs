@@ -225,9 +225,13 @@ impl<I> Import<I> {
     }
 
     pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
+        self.snapshot_(Some(thread))
+    }
+
+    fn snapshot_(&self, thread: Option<RootedThread>) -> DatabaseSnapshot {
         let mut compiler = self.compiler.lock().unwrap();
 
-        compiler.thread = Some(thread);
+        compiler.thread = thread;
         let snapshot = compiler.snapshot();
         compiler.thread = None;
 
@@ -416,7 +420,9 @@ where
 {
     fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
         if id == TypeId::of::<CompilerEnv<Type = ArcType>>() {
-            Some(Box::new(Box::new(self) as Box<CompilerEnv<Type = ArcType>>))
+            Some(Box::new(
+                Box::new(self.snapshot_(None)) as Box<CompilerEnv<Type = ArcType>>
+            ))
         } else {
             None
         }

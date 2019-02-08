@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
+use futures::Future;
 use salsa::Database;
 
 use {
@@ -15,12 +16,13 @@ use {
         metadata::{Metadata, MetadataEnv},
         pos::BytePos,
         symbol::{Name, Symbol, SymbolRef},
-        types::{Alias, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
+        types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
     vm::{
         self,
         api::ValueRef,
         compiler::{CompilerEnv, Variable},
+        internal::Value,
         macros,
         thread::{RootedThread, Thread},
         vm::Global,
@@ -28,7 +30,7 @@ use {
     },
 };
 
-use crate::{compiler_pipeline::*, Compiler, Error, Result, Settings};
+use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Compiler, Error, Result, Settings};
 
 #[derive(Default)]
 pub(crate) struct State {
@@ -304,24 +306,28 @@ fn globals(db: &impl Compilation) -> Arc<FnvMap<String, Global>> {
     let globals = db
         .module_states()
         .keys()
-        .map(|name| {
-            let compile_value = db.compiled_module(name.clone());
-            let execute_value = Executable::load_script(
+        .filter_map(|name| {
+            let compile_value = db.compiled_module(name.clone()).ok()?;
+            let execute_value = Executable::run_expr(
                 compile_value,
                 &mut Compiler::new().module_compiler(compiler),
                 vm,
                 &name,
                 "",
-                None,
+                (),
             )
-            .expect("ICE: Script loading failed unexpectedly");
+            .wait()
+            .ok()?;
 
-            Global {
-                id: execute_value.id,
-                typ: execute_value.typ,
-                metadata: execute_value.metadata,
-                value: execute_value.value,
-            }
+            Some((
+                name.clone(),
+                Global {
+                    id: execute_value.id,
+                    typ: execute_value.typ,
+                    metadata: execute_value.metadata,
+                    value: execute_value.value.get_value(),
+                },
+            ))
         })
         .collect();
     Arc::new(globals)
@@ -331,20 +337,20 @@ fn global(db: &impl Compilation, name: String) -> Option<Global> {
     db.globals().get(&name).cloned()
 }
 
-impl CompilerEnv for CompilerDatabase {
+impl CompilerEnv for DatabaseSnapshot {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         self.global(id.definition_name().into())
             .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
     }
 }
 
-impl KindEnv for CompilerDatabase {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
+impl KindEnv for DatabaseSnapshot {
+    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
         None
     }
 }
 
-impl TypeEnv for CompilerDatabase {
+impl TypeEnv for DatabaseSnapshot {
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
@@ -352,57 +358,39 @@ impl TypeEnv for CompilerDatabase {
             .map(|g| g.typ.clone())
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         None
     }
 }
 
-impl PrimitiveEnv for CompilerDatabase {
+impl PrimitiveEnv for DatabaseSnapshot {
     fn get_bool(&self) -> ArcType {
         self.find_type_info("std.types.Bool")
             .expect("std.types.Bool")
+            .into_type()
     }
 }
 
-impl MetadataEnv for CompilerDatabase {
+impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         self.global(id.definition_name().into())
             .map(|g| g.metadata.clone())
     }
 }
 
-fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
-where
-    T: Clone,
-    U: Clone,
-    F: FnOnce(&T) -> Option<&U>,
-{
-    match cow {
-        Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
-        Cow::Owned(o) => f(&o).map(|u| Cow::Owned(u.clone())),
-    }
-}
-
-impl CompilerDatabase {
-    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, ArcType>>> {
+impl DatabaseSnapshot {
+    pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
-        let module_str = name.module().as_str();
-        if module_str == "" {
-            return match self.type_infos.id_to_type.get(name.as_str()) {
-                Some(alias) => Ok(Cow::Borrowed(alias)),
-                None => Err(vm::Error::UndefinedBinding(name.as_str().into()).into()),
-            };
-        }
         let (_, typ) = self.get_binding(name.module().as_str())?;
-        let maybe_type_info = map_cow_option(typ.clone(), |typ| {
+        let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
                 .find(|field| field.name.as_ref() == field_name.as_str())
                 .map(|field| &field.typ)
-        });
-        maybe_type_info.ok_or_else(move || {
-            vm::Error::UndefinedField(typ.into_owned(), name.name().as_str().into()).into()
-        })
+                .cloned()
+        };
+        maybe_type_info
+            .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
     fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, Global)> {
@@ -429,7 +417,7 @@ impl CompilerDatabase {
         Some((remaining_fields, global))
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Variants, Cow<ArcType>)> {
+    pub fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
@@ -438,13 +426,10 @@ impl CompilerDatabase {
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((
-                unsafe { Variants::new(&global.value) },
-                Cow::Borrowed(&global.typ),
-            ));
+            return Ok((global.value, global.typ.clone()));
         }
 
-        let mut typ = Cow::Borrowed(&global.typ);
+        let mut typ = global.typ;
         let mut value = unsafe { Variants::new(&global.value) };
 
         for mut field_name in remaining_fields.components() {
@@ -460,14 +445,8 @@ impl CompilerDatabase {
                 ))
                 .into());
             }
-            typ = match typ {
-                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, &mut NullInterner, typ),
-                Cow::Owned(typ) => {
-                    Cow::Owned(resolve::remove_aliases(self, &mut NullInterner, typ))
-                }
-            };
-            // HACK Can't return the data directly due to the use of cow on the type
-            let next_type = map_cow_option(typ.clone(), |typ| {
+            typ = resolve::remove_aliases(self, &mut NullInterner, typ);
+            let next_type = {
                 typ.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
@@ -478,12 +457,12 @@ impl CompilerDatabase {
                         }
                         _ => ice!("Unexpected value {:?}", value),
                     })
-            });
-            typ = next_type.ok_or_else(move || {
-                vm::Error::UndefinedField(typ.into_owned(), field_name.into())
-            })?;
+                    .cloned()
+            };
+            typ =
+                next_type.ok_or_else(move || vm::Error::UndefinedField(typ, field_name.into()))?;
         }
-        Ok((value, typ))
+        Ok((value.get_value(), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
