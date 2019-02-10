@@ -25,7 +25,7 @@ use {
         internal::Value,
         macros,
         thread::{RootedThread, Thread},
-        vm::Global,
+        vm::{Global, VmEnv},
         Variants,
     },
 };
@@ -303,6 +303,7 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
 fn globals(db: &impl Compilation) -> Arc<FnvMap<String, Global>> {
     let compiler = db.compiler();
     let vm = db.thread();
+
     let globals = db
         .module_states()
         .keys()
@@ -375,6 +376,12 @@ impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         self.global(id.definition_name().into())
             .map(|g| g.metadata.clone())
+    }
+}
+
+impl VmEnv for DatabaseSnapshot {
+    fn get_global(&self, name: &str) -> Option<Global> {
+        self.global(name.into())
     }
 }
 

@@ -51,7 +51,7 @@ where
         value: value,
         index: 0,
         resolved_type: resolve::remove_aliases_cow(
-            &*thread.global_env().get_env(),
+            &thread.global_env().get_env(),
             &mut NullInterner,
             typ,
         ),

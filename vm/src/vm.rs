@@ -1,6 +1,5 @@
 use std::{
     any::{Any, TypeId},
-    borrow::Cow,
     result::Result as StdResult,
     string::String as StdString,
     sync::{Arc, Mutex, RwLock, RwLockReadGuard},
@@ -38,7 +37,7 @@ pub use crate::{
 };
 
 fn new_bytecode(
-    env: &VmEnv,
+    env: &VmEnv<Type = ArcType>,
     interner: &mut Interner,
     gc: &mut Gc,
     vm: &GlobalVmState,
@@ -52,7 +51,11 @@ fn new_bytecode(
 
     let globals = module_globals
         .into_iter()
-        .map(|index| env.globals[index.definition_name()].value.clone())
+        .map(|index| {
+            env.get_global(index.definition_name())
+                .expect("ICE: Global is missing from environment")
+                .value
+        })
         .collect::<Vec<_>>();
 
     gc.alloc(ClosureDataDef(bytecode_function, &globals))
@@ -92,13 +95,13 @@ fn new_bytecode_function(
 
     gc.alloc(Move(BytecodeFunction {
         name: id,
-        args: args,
-        max_stack_size: max_stack_size,
-        instructions: instructions,
+        args,
+        max_stack_size,
+        instructions,
         inner_functions: fs?,
-        strings: strings,
+        strings,
         records: records?,
-        debug_info: debug_info,
+        debug_info,
     }))
 }
 
@@ -165,8 +168,7 @@ impl Traverseable for Global {
 )]
 pub struct GlobalVmState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    env: RwLock<VmEnv>,
-
+    env: RwLock<Globals>,
     #[cfg_attr(
         feature = "serde_derive",
         serde(state_with = "crate::serialization::borrow")
@@ -210,9 +212,7 @@ impl Traverseable for GlobalVmState {
     }
 }
 
-/// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
-/// typechecker and compiler to lookup things in the virtual machine.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -222,90 +222,87 @@ impl Traverseable for GlobalVmState {
     feature = "serde_derive",
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
-pub struct VmEnv {
+pub struct Globals {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub globals: FnvMap<StdString, Global>,
 }
 
-impl CompilerEnv for VmEnv {
+pub trait VmEnv: CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv {
+    fn get_global(&self, name: &str) -> Option<Global>;
+}
+
+pub struct VmEnvInstance<'a>(Box<VmEnv>, RwLockReadGuard<'a, Globals>);
+
+impl<'a> CompilerEnv for VmEnvInstance<'a> {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
-        self.globals
-            .get(id.definition_name())
-            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
-            .or_else(|| self.type_infos.find_var(id))
+        self.0.find_var(id).or_else(|| {
+            self.1
+                .globals
+                .get(id.definition_name())
+                .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+                .or_else(|| self.1.type_infos.find_var(id))
+        })
     }
 }
 
-impl KindEnv for VmEnv {
-    fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
-        self.type_infos.find_kind(type_name)
+impl<'a> KindEnv for VmEnvInstance<'a> {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
+        self.0.find_kind(id)
     }
 }
-impl TypeEnv for VmEnv {
+
+impl<'a> TypeEnv for VmEnvInstance<'a> {
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
-        self.globals
-            .get(id.definition_name())
-            .map(|g| g.typ.clone())
-            .or_else(|| {
-                self.type_infos
-                    .id_to_type
-                    .values()
-                    .filter_map(|alias| match **alias.unresolved_type() {
-                        Type::Variant(ref row) => row
-                            .row_iter()
-                            .find(|field| *field.name == *id)
-                            .map(|field| field.typ.clone()),
-                        _ => None,
-                    })
-                    .next()
-                    .map(|ctor| ctor)
-            })
+        self.0.find_type(id).or_else(|| {
+            self.1
+                .globals
+                .get(id.definition_name())
+                .map(|g| g.typ.clone())
+        })
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        self.type_infos.find_type_info(id)
+        self.0
+            .find_type_info(id)
+            .or_else(|| self.1.type_infos.find_type_info(id))
     }
 }
 
-impl PrimitiveEnv for VmEnv {
+impl<'a> PrimitiveEnv for VmEnvInstance<'a> {
     fn get_bool(&self) -> ArcType {
-        self.find_type_info("std.types.Bool")
-            .map(|alias| match alias {
-                Cow::Borrowed(alias) => alias.as_type().clone(),
-                Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed bool type"),
-            })
-            .expect("std.types.Bool")
+        self.0.get_bool()
     }
 }
 
-impl MetadataEnv for VmEnv {
+impl<'a> MetadataEnv for VmEnvInstance<'a> {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        self.get_metadata_(id.definition_name())
+        self.0.get_metadata(id).or_else(|| {
+            self.1
+                .globals
+                .get(id.definition_name())
+                .map(|g| g.metadata.clone())
+        })
     }
 }
 
-fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
-where
-    T: Clone,
-    U: Clone,
-    F: FnOnce(&T) -> Option<&U>,
-{
-    match cow {
-        Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
-        Cow::Owned(o) => f(&o).map(|u| Cow::Owned(u.clone())),
+impl<'a> VmEnv for VmEnvInstance<'a> {
+    fn get_global(&self, name: &str) -> Option<Global> {
+        self.0
+            .get_global(name)
+            .or_else(|| self.1.globals.get(name).cloned())
     }
 }
 
-impl VmEnv {
-    pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, ArcType>>> {
+impl<'a> VmEnvInstance<'a> {
+    pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
 
-        if let Some(alias) = self.type_infos.id_to_type.get(name.as_str()) {
-            return Ok(Cow::Borrowed(alias));
+        if let Some(alias) = self.1.type_infos.id_to_type.get(name.as_str()) {
+            return Ok(alias.clone());
         }
 
         let (_, typ) = self
@@ -317,19 +314,17 @@ impl VmEnv {
                 }
                 err
             })?;
-        let maybe_type_info = map_cow_option(typ.clone(), |typ| {
+        let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
                 .find(|field| field.name.as_ref() == field_name.as_str())
                 .map(|field| &field.typ)
-        });
-        maybe_type_info.ok_or_else(move || {
-            Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
-        })
+                .cloned()
+        };
+        maybe_type_info.ok_or_else(move || Error::UndefinedField(typ, name.name().as_str().into()))
     }
 
-    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, &'s Global)> {
-        let globals = &self.globals;
+    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, Global)> {
         let mut module = Name::new(name.trim_start_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
@@ -342,7 +337,7 @@ impl VmEnv {
             if module.as_str() == "" {
                 return None;
             }
-            if let Some(g) = globals.get(module.as_str()) {
+            if let Some(g) = self.get_global(module.as_str()) {
                 global = g;
                 break;
             }
@@ -353,22 +348,19 @@ impl VmEnv {
         Some((remaining_fields, global))
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Variants, Cow<ArcType>)> {
+    pub(crate) fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
-            .get_global(name)
+            .get_scoped_global(name)
             .ok_or_else(|| Error::UndefinedBinding(name.into()))?;
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((
-                unsafe { Variants::new(&global.value) },
-                Cow::Borrowed(&global.typ),
-            ));
+            return Ok((global.value, global.typ));
         }
 
-        let mut typ = Cow::Borrowed(&global.typ);
+        let mut typ = global.typ;
         let mut value = unsafe { Variants::new(&global.value) };
 
         for mut field_name in remaining_fields.components() {
@@ -383,14 +375,9 @@ impl VmEnv {
                      test.+)"
                 )));
             }
-            typ = match typ {
-                Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, &mut NullInterner, typ),
-                Cow::Owned(typ) => {
-                    Cow::Owned(resolve::remove_aliases(self, &mut NullInterner, typ))
-                }
-            };
+            typ = resolve::remove_aliases(self, &mut NullInterner, typ);
             // HACK Can't return the data directly due to the use of cow on the type
-            let next_type = map_cow_option(typ.clone(), |typ| {
+            let next_type = {
                 typ.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
@@ -401,11 +388,11 @@ impl VmEnv {
                         }
                         _ => ice!("Unexpected value {:?}", value),
                     })
-            });
-            typ = next_type
-                .ok_or_else(move || Error::UndefinedField(typ.into_owned(), field_name.into()))?;
+                    .cloned()
+            };
+            typ = next_type.ok_or_else(move || Error::UndefinedField(typ, field_name.into()))?;
         }
-        Ok((value, typ))
+        Ok((value.get_value(), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
@@ -414,7 +401,7 @@ impl VmEnv {
     }
 
     fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
-        let (remaining, global) = self.get_global(name_str)?;
+        let (remaining, global) = self.get_scoped_global(name_str)?;
 
         let mut metadata = &global.metadata;
         for field_name in remaining.components() {
@@ -434,10 +421,7 @@ impl GlobalVmStateBuilder {
 
     pub fn build(self) -> GlobalVmState {
         let mut vm = GlobalVmState {
-            env: RwLock::new(VmEnv {
-                globals: FnvMap::default(),
-                type_infos: TypeInfos::new(),
-            }),
+            env: Default::default(),
             generics: RwLock::new(FnvMap::default()),
             typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
@@ -507,7 +491,7 @@ impl GlobalVmState {
     }
 
     pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
-        let env = self.env.read().unwrap();
+        let env = self.get_env();
         let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
         new_bytecode(&env, &mut interner, &mut gc, self, f)
@@ -631,9 +615,17 @@ impl GlobalVmState {
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
-        self.macros.get_capabilities::<TypeEnv<Type = ArcType>>();
-        self.env.read().unwrap()
+    pub fn get_env(&self) -> VmEnvInstance {
+        let mut capabilities = self.macros.get_capabilities::<VmEnv>();
+        assert!(
+            !capabilities.is_empty(),
+            "Expected at least one instance of VmEnv"
+        );
+        VmEnvInstance(
+            capabilities.swap_remove(0),
+            // FIXME
+            self.env.read().unwrap(),
+        )
     }
 
     pub fn get_debug_level(&self) -> DebugLevel {

@@ -215,7 +215,7 @@ impl Instruction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",

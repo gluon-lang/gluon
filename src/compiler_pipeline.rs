@@ -340,7 +340,7 @@ where
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
         let env = thread.get_env();
-        let (metadata, metadata_map) = metadata::metadata(&*env, self.expr.borrow_mut());
+        let (metadata, metadata_map) = metadata::metadata(&env, self.expr.borrow_mut());
         Ok(WithMetadata {
             expr: self.expr,
             metadata,
@@ -554,7 +554,7 @@ where
                 let mut tc = Typecheck::new(
                     file.into(),
                     &mut compiler.symbols,
-                    &*env,
+                    &env,
                     &thread.global_env().type_cache(),
                     &mut metadata_map,
                 );
@@ -568,7 +568,7 @@ where
                         Some(TypecheckValue {
                             typ: expr
                                 .borrow_mut()
-                                .try_type_of(&*thread.get_env())
+                                .try_type_of(&thread.get_env())
                                 .unwrap_or_else(|_| thread.global_env().type_cache().error()),
                             expr,
                             metadata_map,
@@ -583,7 +583,7 @@ where
         // Some metadata requires typechecking so recompute it if full metadata is required
         let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
             let env = thread.get_env();
-            metadata::metadata(&*env, expr.borrow_mut())
+            metadata::metadata(&env, expr.borrow_mut())
         } else {
             (metadata, metadata_map)
         };
@@ -710,7 +710,7 @@ where
         let mut module = {
             let env = thread.get_env();
 
-            let translator = core::Translator::new(&*env);
+            let translator = core::Translator::new(&env);
             let expr = {
                 let expr = translator.translate_expr(self.expr.borrow());
 
@@ -731,7 +731,7 @@ where
             );
 
             let mut compiler = Compiler::new(
-                &*env,
+                &env,
                 thread.global_env(),
                 symbols,
                 &source,
@@ -893,13 +893,6 @@ where
         let vm2 = vm.clone();
         Box::new(
             self.run_expr(compiler, vm1, &filename, expr_str, ())
-                .and_then(move |v| {
-                    if run_io {
-                        future::Either::B(crate::compiler_pipeline::run_io(vm2, v))
-                    } else {
-                        future::Either::A(future::ok(v))
-                    }
-                })
                 .and_then(move |value| {
                     vm.set_global(
                         value.id.clone(),
@@ -1069,7 +1062,7 @@ where
     use crate::vm::api::generic::A;
     use crate::vm::api::{VmType, IO};
 
-    if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
+    if check_signature(&vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
         let ExecuteValue {
             id,
             expr,
@@ -1084,7 +1077,7 @@ where
                 .map(move |value| {
                     // The type of the new value will be `a` instead of `IO a`
                     let actual =
-                        resolve::remove_aliases_cow(&*vm.get_env(), &mut NullInterner, &typ);
+                        resolve::remove_aliases_cow(&vm.get_env(), &mut NullInterner, &typ);
                     let actual = match **actual {
                         Type::App(_, ref arg) => arg[0].clone(),
                         _ => ice!("ICE: Expected IO type found: `{}`", actual),

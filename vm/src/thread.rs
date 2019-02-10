@@ -34,7 +34,7 @@ use crate::value::{
     PartialApplicationDataDef, RecordDef, UninitializedRecord, UninitializedVariantDef, Userdata,
     Value, ValueRepr, VariantDef,
 };
-use crate::vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
+use crate::vm::{GlobalVmState, GlobalVmStateBuilder, VmEnvInstance};
 use crate::{BoxFuture, Error, Result, Variants};
 
 use crate::value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
@@ -663,24 +663,24 @@ impl Thread {
         let (value, actual) = env.get_binding(name)?;
 
         // Finally check that type of the returned value is correct
-        if check_signature(&*env, &expected, &actual) {
-            Ok(T::from_value(self, value))
+        if check_signature(&env, &expected, &actual) {
+            Ok(T::from_value(self, unsafe { Variants::new(&value) }))
         } else {
-            Err(Error::WrongType(expected, actual.into_owned()))
+            Err(Error::WrongType(expected, actual))
         }
     }
 
     pub fn get_global_type(&self, name: &str) -> Result<ArcType> {
         let env = self.get_env();
         let (_value, actual) = env.get_binding(name)?;
-        Ok(actual.into_owned())
+        Ok(actual)
     }
 
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
-        env.find_type_info(name).map(|alias| alias.into_owned())
+        env.find_type_info(name)
     }
 
     /// Returns the gluon type that was bound to `T`
@@ -706,7 +706,7 @@ impl Thread {
     }
 
     /// Locks and retrieves the global environment of the vm
-    pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
+    pub fn get_env<'b>(&'b self) -> VmEnvInstance<'b> {
         self.global_env().get_env()
     }
 

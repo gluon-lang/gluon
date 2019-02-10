@@ -26,9 +26,9 @@ use crate::base::{
 
 use crate::vm::{
     self,
-    compiler::CompilerEnv,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread, ThreadInternal},
+    vm::VmEnv,
     ExternLoader, ExternModule,
 };
 
@@ -114,14 +114,16 @@ pub struct DatabaseSnapshot {
 
 impl Drop for DatabaseSnapshot {
     fn drop(&mut self) {
-        let import = crate::get_import(self.thread());
+        if let Some(thread) = self.thread.as_ref() {
+            let import = crate::get_import(thread);
 
-        self.snapshot.take();
+            self.snapshot.take();
 
-        let mut compiler = import.compiler.lock().unwrap();
-        if Arc::get_mut(&mut compiler.state).is_some() {
-            let new_states = compiler.state().module_states.clone();
-            compiler.set_module_states(Arc::new(new_states));
+            let mut compiler = import.compiler.lock().unwrap();
+            if Arc::get_mut(&mut compiler.state).is_some() {
+                let new_states = compiler.state().module_states.clone();
+                compiler.set_module_states(Arc::new(new_states));
+            }
         }
     }
 }
@@ -419,10 +421,8 @@ where
     I: Importer,
 {
     fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
-        if id == TypeId::of::<CompilerEnv<Type = ArcType>>() {
-            Some(Box::new(
-                Box::new(self.snapshot_(None)) as Box<CompilerEnv<Type = ArcType>>
-            ))
+        if id == TypeId::of::<VmEnv>() {
+            Some(Box::new(Box::new(self.snapshot_(None)) as Box<VmEnv>))
         } else {
             None
         }

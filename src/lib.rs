@@ -52,6 +52,7 @@ macro_rules! try_future {
 pub mod compiler_pipeline;
 #[macro_use]
 pub mod import;
+mod query;
 pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
@@ -560,7 +561,7 @@ impl Compiler {
         use crate::check::metadata;
         let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
-        let (metadata, _) = metadata::metadata(&*vm.get_env(), &mut expr);
+        let (metadata, _) = metadata::metadata(&vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
     }
 

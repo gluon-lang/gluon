@@ -921,7 +921,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for f32 {
 impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        (*vm.global_env()
+        (vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
             .unwrap())
@@ -1532,7 +1532,7 @@ where
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
-        let alias = env.find_type_info("std.io.IO").unwrap().into_owned();
+        let alias = env.find_type_info("std.io.IO").unwrap();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
     fn extra_args() -> VmIndex {
