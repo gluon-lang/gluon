@@ -1,110 +1,295 @@
-//! A simple parser combinator library
+//! A simple parser combinator library.
 
 let prelude = import! std.prelude
-let { Functor, Applicative, Alternative, Monad, (<>) } = prelude
-let { id, flip, (>>), (<<), (|>), (<|) } = import! std.function
-
+let { Functor, Applicative, Alternative, Monad } = prelude
+let { id, flip } = import! std.function
 let { Bool } = import! std.bool
-let char @ { Char, ? } = import! std.char
+let char @ { ? } = import! std.char
 let int = import! std.int
+let { Result } = import! std.result
+let string = import! std.string
+let { (<>) } = import! std.prelude
 let list @ { List } = import! std.list
 let { Option } = import! std.option
-let { Result } = import! std.result
-let string @ { String, ? } = import! std.string
 
-// TODO How handle atom streams generically? Stream-like interface?
-// TODO How handle error position generically? Zip stream with enumeration?
-type Parser s e a = StateT s (Result e) a
-// TODO How have Parser (Result Err) on surface but Streamer type (Option) internally?
-//   How handle custom error types this way? Do I need to build mini-failure lib?
-
-// use implicit argument that user fills in with error type and end case?
-let sr_to_psr end sr : e -> Streamer s a -> Parser s e a =
-    sr >> \opt -> match opt with
-        | Some next -> Ok next
-        | None -> Err end
-
-// terrible idea?
-let any_atom : [Streamlike atm srm] -> Parser srm e atm =
-    sr_to_psr ? uncons
-
-let take n : [Streamlike atm srm] -> Int -> Parser srm e () =
-    \xs -> Ok {value = (), state = streamlike.take n xs}
-
-// TODO What error type should library functions return?
-let satisfy_map pred : [Streamlike atm srm] -> (atm -> Option a) -> Parser srm e a =
-    any_atom >>= \atm ->
-        match pred atm with
-        | Some a -> wrap a
-        | None -> // TODO Error handling
-
-let satisfy pred : [Streamlike atm srm] -> (atm -> Bool) -> Parser srm e atm =
-    satisfy_map (\c -> if pred c then Some c else None)
-
-let atom x : [Streamlike atm srm] -> [Eq atm] -> atm -> Parser srm e atm =
-    satisfy <| (==) x
-
-rec let token ts : [Streamlike atm srm] -> [Streamlike atm tknsrm] -> [Eq atm] -> tknsrm -> Parser srm e atm =
-    any_atom >>= \x ->
-        match any_atom ts with
-        | Ok {value = t, state = ts'} ->
-            if x == t then
-                map (\_ -> ts) (token ts')
-            else
-                Err ? // TODO Error handling
-        | Err ? -> wrap ts // TODO Error handling: needs to be EndOfStream error
-        | Err e -> (\_ -> Err e) // unreachable?
-
-// end - matches end of stream
-// take_while1?
-// many
-// many1
-// skip_many?
-// between
-// one_of
-// sep_by
-// sep_by1
-// chain
-// chain1
-// parse
-
+type OffsetString = { start : Int, end : Int, buffer : String }
 type Position = Int
-type OffsetString = { start : Position, end : Position, buffer : String }
 type Error = { position : Position, message : String }
-type StringParser a = Parser OffsetString Error a
+type ParseResult a = Result Error { value : a, buffer : OffsetString }
 
-let eolsym c : Char -> Bool =
-    elem c ['\r', '\n']
+/// `Parser` is a monad which parses a `String` into structured values
+type Parser a =
+        OffsetString -> ParseResult a
 
-let space : [Streamlike Char srm] -> Parser srm e Char =
-    atom ' '
+let parser : Parser a -> Parser a = id
 
-let eol : [Streamlike Char srm] -> Parser srm e Char = (atom '\r' *> atom '\n') <|> atom '\n' <|> atom '\r'
+let functor : Functor Parser = {
+    map = \f m -> parser (\buffer ->
+            let result = parser m buffer
+            match result with
+            | Ok a -> Ok { value = f a.value, buffer = a.buffer }
+            | Err err -> Err err)
+}
 
-let whitespace : [Streamlike Char srm] -> Parser srm e Char =
-    satisfy char.is_whitespace
+let { map } = functor
 
-let letter : [Streamlike Char srm] -> Parser srm e Char =
-    satisfy char.is_alphabetic
+let applicative : Applicative Parser = {
+    functor,
 
-let digit : [Streamlike Char srm] -> Parser srm e Char =
-    satisfy <| flip char.is_digit 10
+    apply = \f m -> parser (\buffer ->
+            let result1 = parser f buffer
+            match result1 with
+            | Ok g ->
+                let result2 = parser m g.buffer
+                match result2 with
+                | Ok a -> Ok { value = g.value a.value, buffer = a.buffer }
+                | Err err -> Err err
+            | Err err -> Err err),
 
-let alphanum : [Streamlike Char srm] -> Parser srm e Char =
-    letter <|> digit
+    wrap = \value -> parser (\buffer -> Ok { value, buffer }),
+}
 
-// spaces
-// whitespace
-// whitespaces?
-// end of line / new line
-// rest of line (all but line break)?
+let { (*>), (<*), wrap } = import! std.applicative
 
-type ByteParser a = // TODO
+let alternative : Alternative Parser = {
+    applicative,
+
+    or = \l r -> parser (\stream ->
+            match parser l stream with
+            | Ok a -> Ok a
+            | Err _ -> parser r stream),
+    empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
+}
+
+let { (<|>) } = import! std.alternative
+
+let monad : Monad Parser = {
+    applicative,
+
+    flat_map = \f m -> parser (\buffer ->
+            match parser m buffer with
+            | Ok a -> parser (f a.value) a.buffer
+            | Err err -> Err err),
+}
+
+let { flat_map } = import! std.monad
+
+let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } =
+    if stream.start == stream.end then
+        None
+    else
+        let c = string.char_at stream.buffer stream.start
+        let char_len = char.len_utf8 c
+        Some {
+                char = c,
+                rest = {
+                    start = stream.start + char_len,
+                    end = stream.end,
+                    buffer = stream.buffer,
+                },
+            }
+
+let update_position c position : Char -> Position -> Position =
+    position + char.len_utf8 c
+
+/// Returns `message` as what was expected by `p`
+#[infix(left, 0)]
+let (<?>) p message : Parser a -> String -> Parser a =
+    parser (\stream ->
+        match p stream with
+        | Ok x -> Ok x
+        | Err _ -> Err { position = stream.start, message })
+
+/// Parses any character. Only errors if the stream is out of input
+let any : Parser Char =
+    parser (\stream ->
+        match uncons stream with
+        | Some record ->
+            let { char, rest } = record
+            Ok { value = char, buffer = rest }
+        | None -> Err { position = stream.start, message = "End of stream" })
+
+/// Fails the parser with `message` as the cause
+let fail message : String -> Parser a =
+    parser (\stream -> Err { position = stream.start, message })
+
+/// Succeeds if `predicate` returns `Some`, fails if `None` is returned
+let satisfy_map predicate : (Char -> Option a) -> Parser a =
+    let f c =
+        match predicate c with
+        | Some x -> wrap x
+        | None -> fail ("Unexpected character " <> char.show.show c)
+    flat_map f any
+
+/// Succeeds if `predicate` returns True, fails if `False` is returned
+let satisfy predicate : (Char -> Bool) -> Parser Char =
+    satisfy_map (\c -> if predicate c then Some c else None)
+
+/// Succeeds if the next token is `expected`
+let token expected : Char -> Parser Char =
+    satisfy (\c -> expected == c)
+
+/// Succeds if the next token is a letter
+let letter : Parser Char = satisfy char.is_alphabetic <?> "letter"
+
+/// Succeds if the next token is a digit
+let digit : Parser Char = satisfy (flip char.is_digit 10) <?> "digit"
+
+/// Succeds if the next token is alphanumeric
+let alpha_num : Parser Char = satisfy char.is_alphanumeric <?> "letter or digit"
+
+/// Succeds if the next token is a space
+let space : Parser Char = token ' '
+
+/// Succeds if the next token is a tab
+let tab : Parser Char = token '\t'
+
+/// Parses one or more tokens passing `predicate` and returns the `String` between the start and
+/// end of those tokens
+let take1 predicate : (Char -> Bool) -> Parser String =
+    parser (\stream ->
+        let take_ stream2 =
+            match uncons stream2 with
+            | Some record ->
+                if predicate record.char then take_ record.rest
+                else if stream.start == stream2.start then
+                    Err { position = stream.start, message = "Unexpected token" }
+                else Ok {
+                            value = string.slice stream.buffer stream.start stream2.start,
+                            buffer = stream2,
+                        }
+            | None -> Ok {
+                        value = string.slice stream.buffer stream.start stream.end,
+                        buffer = stream2,
+                    }
+        take_ stream)
+
+/// Parses zero or more tokens passing `predicate` and returns the `String` between the start and
+/// end of those tokens
+let take predicate : (Char -> Bool) -> Parser String =
+    take1 predicate <|> wrap ""
+
+/// Parses using `p` and returns the `String` between the start and of what `p` parsed
+let recognize p : Parser a -> Parser String =
+    parser (\stream ->
+        match parser p stream with
+        | Ok a ->
+            Ok {
+                    value = string.slice stream.buffer stream.start a.buffer.start,
+                    buffer = a.buffer,
+                }
+        | Err err -> Err err)
+
+/// Skips over whitespace characters
+let spaces = take char.is_whitespace
+
+/// Creates a parser from a factory function. Useful to prevent mutually recursive parser from looping forever
+let lazy_parser f : (() -> Parser a) -> Parser a =
+    parser (\stream -> f () stream)
+
+/// Parses `x` between `l` and `r`, returning the result of `x`
+let between l r x : Parser a -> Parser b -> Parser c -> Parser c =
+    l *> x <* r
+
+rec
+/// Parses with `p` zero or more times
+let many p : Parser a -> Parser (List a) =
+    many1 p <|> wrap Nil
+
+/// Parses with `p` one or more times
+let many1 p : Parser a -> Parser (List a) =
+    do h = p
+    map (\t -> Cons h t) (many p)
+in
+rec
+/// Parses with `p` zero or more times, ignoring the result of the parser
+let skip_many p : Parser a -> Parser () =
+    skip_many1 p <|> wrap ()
+/// Parses with `p` one or more times, ignoring the result of the parser
+let skip_many1 p : Parser a -> Parser () =
+    seq p
+    skip_many p
+in
+/// Parses one of the characters of `s`
+let one_of s : String -> Parser Char =
+    satisfy (\first ->
+        let len = string.len s
+        let one_of_ i =
+            if i == len then
+                False
+            else
+                let c = string.char_at s i
+                if first == c then True
+                else one_of_ (i + char.len_utf8 c)
+        one_of_ 0)
+        <|> fail ("Expected one of `" <> s <> "`")
 
 
-// practice parser implementation
-type PsrErr =
-    | ParseFailure String
-    | EndOfStream
+/// Parses at least one element of `parser` separated by `sep`
+let sep_by1 parser sep : Parser a -> Parser b -> Parser (List a) =
+    do x = parser
+    do xs = many (sep *> parser)
+    wrap (Cons x xs)
 
-type Parser a = Parser [Byte] PsrErr a
+/// Parses `parser` separated by `sep`
+let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
+    sep_by1 parser sep <|> wrap Nil
+
+/// Like `sep_by1` but applies the function returned by `op` on the left fold of successive parses
+let chainl1 p op : Parser a -> Parser (a -> a -> a) -> Parser a =
+    do l = p
+    let rest x =
+        (
+        do f = op
+        do r = p
+        rest (f x r)) <|> wrap x
+    rest l
+
+/// Like `sep_by` but applies the function returned by `op` on the left fold of successive parses
+let chainl p op v : Parser a -> Parser (a -> a -> a) -> a -> Parser a =
+    chainl1 p op <|> wrap v
+
+
+/// Parses `input` using `p`
+let parse p input : Parser a -> String -> Result String a =
+    match p { start = 0, end = string.len input, buffer = input } with
+    | Ok ok -> Ok ok.value
+    | Err err -> Err (int.show.show err.position <> ":" <> err.message)
+
+{
+    Position, Error, ParseResult, Parser,
+
+    functor, applicative, alternative, monad,
+
+    parser,
+
+    any,
+    between,
+    token,
+    many,
+    many1,
+    satisfy,
+    satisfy_map,
+    spaces,
+    take1,
+    take,
+    lazy_parser,
+    fail,
+    recognize,
+    skip_many,
+    skip_many1,
+    one_of,
+    sep_by,
+    sep_by1,
+    chainl1,
+    chainl,
+    (<?>),
+
+    alpha_num,
+    letter,
+    digit,
+    space,
+    tab,
+
+    parse,
+}
