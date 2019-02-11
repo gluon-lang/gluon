@@ -190,21 +190,6 @@ impl<V> FixedVecMap<V> {
         self.map.get_mut().get(k).map(move |&key| &mut values[key])
     }
 
-    pub fn remove(&mut self, k: usize) -> Option<V> {
-        let values = self.values.values.get_mut();
-        self.map.get_mut().remove(k).and_then(|(i, j)| {
-            if values.len() == i as usize + 1 && values[i as usize].len() == j as usize + 1 {
-                let x = values[i as usize].pop();
-                if values[i as usize].is_empty() {
-                    values.pop();
-                }
-                x
-            } else {
-                unimplemented!()
-            }
-        })
-    }
-
     pub fn truncate(&mut self, index: usize) {
         self.map.get_mut().retain(|i, _| i < index);
         self.values.truncate(index);
@@ -308,8 +293,23 @@ impl<T> IndexMut<usize> for FixedVec<T> {
 }
 
 #[derive(Debug)]
+struct BufferInner<T> {
+    values: Vec<Vec<T>>,
+    current: usize,
+}
+
+#[derive(Debug)]
 struct Buffer<T> {
-    values: RefCell<Vec<Vec<T>>>,
+    values: RefCell<BufferInner<T>>,
+}
+
+impl<T> Default for BufferInner<T> {
+    fn default() -> Self {
+        BufferInner {
+            values: Vec::new(),
+            current: 0,
+        }
+    }
 }
 
 impl<T> Default for Buffer<T> {
@@ -326,19 +326,21 @@ impl<T> Buffer<T> {
     }
 
     fn total_len(&self) -> usize {
-        self.values
-            .borrow()
-            .iter()
-            .map(|vec| vec.len())
-            .sum::<usize>()
+        let values = self.values.borrow();
+        values.values.iter().map(|vec| vec.len()).sum::<usize>()
     }
 
     fn push(&self, value: T) -> (u32, u32) {
         let mut values = self.values.borrow_mut();
-        let cap = match values.last() {
-            Some(vec) => {
-                if vec.len() == vec.capacity() {
-                    Some(vec.capacity() * 2)
+        let cap = match values.current().map(|vec| (vec.len(), vec.capacity())) {
+            Some((len, capacity)) => {
+                if len == capacity {
+                    values.current += 1;
+                    if values.current + 1 < values.values.len() {
+                        None
+                    } else {
+                        Some(capacity * 2)
+                    }
                 } else {
                     None
                 }
@@ -346,11 +348,11 @@ impl<T> Buffer<T> {
             None => Some(4),
         };
         if let Some(cap) = cap {
-            values.push(Vec::with_capacity(cap));
+            values.values.push(Vec::with_capacity(cap));
         }
 
-        let i = values.len() as u32 - 1;
-        let inner = values.last_mut().unwrap();
+        let i = values.current as u32;
+        let inner = values.current_mut().unwrap();
         let j = inner.len() as u32;
         inner.push(value);
         (i, j)
@@ -360,10 +362,11 @@ impl<T> Buffer<T> {
         let mut left = self.total_len() - index;
         let values = self.values.get_mut();
         while left != 0 {
-            let inner = values.last_mut().expect("Not values left");
-            if inner.len() <= left {
+            let inner = values.current_mut().expect("No values left");
+            if inner.len() < left {
                 left -= inner.len();
-                values.pop();
+                inner.clear();
+                values.current -= 1;
             } else {
                 let i = inner.len() - left;
                 inner.truncate(i);
@@ -373,18 +376,31 @@ impl<T> Buffer<T> {
     }
 
     fn drain<'a>(&'a mut self) -> impl Iterator<Item = T> + 'a {
-        self.values.get_mut().drain(..).flat_map(|vec| vec)
+        let values = self.values.get_mut();
+        values.current = 0;
+        values.values.iter_mut().flat_map(|vec| vec.drain(..))
     }
 
     fn pop(&mut self) -> Option<T> {
         let values = self.values.get_mut();
-        let out = values.last_mut().and_then(|vec| vec.pop());
+        let out = values.current_mut().and_then(|vec| vec.pop());
         if out.is_some() {
             out
         } else {
-            values.pop();
-            values.last_mut().and_then(|vec| vec.pop())
+            if values.current != 0 {
+                values.current -= 1;
+            }
+            values.current_mut().and_then(|vec| vec.pop())
         }
+    }
+}
+
+impl<T> BufferInner<T> {
+    fn current(&self) -> Option<&Vec<T>> {
+        self.values.get(self.current)
+    }
+    fn current_mut(&mut self) -> Option<&mut Vec<T>> {
+        self.values.get_mut(self.current)
     }
 }
 
@@ -396,6 +412,7 @@ impl<T> Index<(u32, u32)> for Buffer<T> {
                 &self
                     .values
                     .borrow()
+                    .values
                     .get(i as usize)
                     .and_then(|v| v.get(j as usize))
                     .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j))),
@@ -408,6 +425,7 @@ impl<T> IndexMut<(u32, u32)> for Buffer<T> {
     fn index_mut(&mut self, (i, j): (u32, u32)) -> &mut T {
         self.values
             .get_mut()
+            .values
             .get_mut(i as usize)
             .and_then(|v| v.get_mut(j as usize))
             .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j)))
