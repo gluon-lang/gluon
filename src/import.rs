@@ -95,10 +95,8 @@ impl Importer for DefaultImporter {
             .database
             .compiled_module(modulename.to_string())
             .map_err(|err| (None, err))?;
-        let typ = value.typ.clone();
-        Executable::load_script(value, compiler, vm, modulename, "", ())
-            .wait()
-            .map_err(|err| (Some(typ), err))?;
+
+        compiler.database.global(modulename.to_string());
         Ok(())
     }
 }

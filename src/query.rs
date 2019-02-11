@@ -374,14 +374,22 @@ impl PrimitiveEnv for DatabaseSnapshot {
 
 impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        self.global(id.definition_name().into())
-            .map(|g| g.metadata.clone())
+        if id.is_global() {
+            self.global(id.definition_name().into())
+                .map(|g| g.metadata.clone())
+        } else {
+            None
+        }
     }
 }
 
 impl VmEnv for DatabaseSnapshot {
     fn get_global(&self, name: &str) -> Option<Global> {
-        self.global(name.into())
+        if name.starts_with('@') {
+            self.global(name.into())
+        } else {
+            None
+        }
     }
 }
 
