@@ -206,6 +206,7 @@ impl Traverseable for GlobalVmState {
         for g in self.env.read().unwrap().globals.values() {
             g.traverse(gc);
         }
+
         // Also need to check the interned string table
         self.interner.read().unwrap().traverse(gc);
         self.generation_0_threads.read().unwrap().traverse(gc);
@@ -490,8 +491,12 @@ impl GlobalVmState {
         &self.type_cache
     }
 
-    pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
-        let env = self.get_env();
+    pub fn new_global_thunk(
+        &self,
+        thread: &Thread,
+        f: CompiledModule,
+    ) -> Result<GcPtr<ClosureData>> {
+        let env = self.get_env(thread);
         let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
         new_bytecode(&env, &mut interner, &mut gc, self, f)
@@ -615,8 +620,8 @@ impl GlobalVmState {
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn get_env(&self) -> VmEnvInstance {
-        let mut capabilities = self.macros.get_capabilities::<VmEnv>();
+    pub fn get_env(&self, thread: &Thread) -> VmEnvInstance {
+        let mut capabilities = self.macros.get_capabilities::<VmEnv>(thread);
         assert!(
             !capabilities.is_empty(),
             "Expected at least one instance of VmEnv"

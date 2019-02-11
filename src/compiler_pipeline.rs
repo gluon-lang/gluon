@@ -853,7 +853,7 @@ where
         let run_io = compiler.compiler.run_io;
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
-        let closure = try_future!(vm.global_env().new_global_thunk(module));
+        let closure = try_future!(vm.global_env().new_global_thunk(&vm, module));
 
         let vm1 = vm.clone();
         Box::new(
@@ -967,7 +967,7 @@ where
 
         let typ = module.typ;
         let metadata = module.metadata;
-        let closure = try_future!(vm.global_env().new_global_thunk(module.module));
+        let closure = try_future!(vm.global_env().new_global_thunk(&vm, module.module));
         Box::new(
             vm.call_thunk_top(closure)
                 .map(move |value| ExecuteValue {

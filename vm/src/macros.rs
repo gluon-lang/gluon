@@ -141,20 +141,21 @@ impl Error {
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
 pub trait Macro: ::mopa::Any + Send + Sync {
-    fn get_capability<T>(&self) -> Option<Box<T>>
+    fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
     where
         Self: Sized,
         T: ?Sized + Any,
     {
-        self.get_capability_impl(TypeId::of::<T>()).map(|b| {
-            *b.downcast::<Box<T>>()
-                .ok()
-                .expect("get_capability_impl return an unexpected type")
-        })
+        self.get_capability_impl(thread, TypeId::of::<T>())
+            .map(|b| {
+                *b.downcast::<Box<T>>()
+                    .ok()
+                    .expect("get_capability_impl return an unexpected type")
+            })
     }
 
-    fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
-        let _ = id;
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
+        let _ = (thread, id);
         None
     }
 
@@ -167,8 +168,8 @@ impl<M> Macro for Box<M>
 where
     M: Macro + ?Sized,
 {
-    fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
-        (**self).get_capability_impl(id)
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
+        (**self).get_capability_impl(thread, id)
     }
 
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
@@ -180,8 +181,8 @@ impl<M> Macro for Arc<M>
 where
     M: Macro + ?Sized,
 {
-    fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
-        (**self).get_capability_impl(id)
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
+        (**self).get_capability_impl(thread, id)
     }
 
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
@@ -217,14 +218,14 @@ impl MacroEnv {
         self.macros.read().unwrap().get(name).cloned()
     }
 
-    pub fn get_capabilities<T>(&self) -> Vec<Box<T>>
+    pub fn get_capabilities<T>(&self, thread: &Thread) -> Vec<Box<T>>
     where
         T: ?Sized + Any,
     {
         let macros = self.macros.read().unwrap();
         macros
             .values()
-            .filter_map(|mac| mac.get_capability::<T>())
+            .filter_map(|mac| mac.get_capability::<T>(thread))
             .collect()
     }
 

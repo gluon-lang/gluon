@@ -80,7 +80,7 @@ where
     type Type = Lazy<T::Type>;
 
     fn make_type(vm: &Thread) -> ArcType {
-        let env = vm.global_env().get_env();
+        let env = vm.get_env();
         let alias = env.find_type_info("std.lazy.Lazy").unwrap().into_type();
         types::Type::app(alias, collect![T::make_type(vm)])
     }

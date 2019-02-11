@@ -707,7 +707,7 @@ impl Thread {
 
     /// Locks and retrieves the global environment of the vm
     pub fn get_env<'b>(&'b self) -> VmEnvInstance<'b> {
-        self.global_env().get_env()
+        self.global_env().get_env(self)
     }
 
     /// Retrieves the macros defined for this vm

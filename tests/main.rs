@@ -103,7 +103,7 @@ macro_rules! define_test_type {
             fn make_type(vm: &Thread) -> ArcType {
                 let typ = concat!("std.test.", stringify!($name));
                 Type::app(
-                    vm.global_env().get_env().find_type_info(typ).unwrap().into_type(),
+                    vm.get_env().find_type_info(typ).unwrap().into_type(),
                     collect![$($args::make_type(vm),)* Type::unit()],
                 )
             }

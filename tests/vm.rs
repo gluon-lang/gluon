@@ -838,7 +838,7 @@ let from f : (Int -> Option a) -> Stream a =
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::find(
-        &*vm.get_env(),
+        &vm.get_env(),
         lines.span(),
         &expr,
         lines.byte_index(16.into(), 29.into()).unwrap(),
@@ -860,7 +860,7 @@ fn completion_with_prelude_at_0() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let file_map = vm.get_database().get_filemap("example").expect("file_map");
-    let result = completion::find(&*vm.get_env(), file_map.span(), &expr, BytePos::from(0))
+    let result = completion::find(&vm.get_env(), file_map.span(), &expr, BytePos::from(0))
         .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
@@ -879,7 +879,7 @@ fn suggestion_from_implicit_prelude() {
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::suggest(
-        &*vm.get_env(),
+        &vm.get_env(),
         lines.span(),
         &expr,
         lines.byte_index(0.into(), 2.into()).unwrap(),

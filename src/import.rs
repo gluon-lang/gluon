@@ -91,12 +91,10 @@ impl Importer for DefaultImporter {
         vm: &Thread,
         modulename: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        let value = compiler
+        compiler
             .database
-            .compiled_module(modulename.to_string())
+            .global(modulename.to_string())
             .map_err(|err| (None, err))?;
-
-        compiler.database.global(modulename.to_string());
         Ok(())
     }
 }
@@ -418,9 +416,11 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
-    fn get_capability_impl(&self, id: TypeId) -> Option<Box<Any>> {
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
         if id == TypeId::of::<VmEnv>() {
-            Some(Box::new(Box::new(self.snapshot_(None)) as Box<VmEnv>))
+            Some(Box::new(
+                Box::new(self.snapshot(thread.root_thread())) as Box<VmEnv>
+            ))
         } else {
             None
         }

@@ -92,13 +92,7 @@ where
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm
-            .global_env()
-            .get_env()
-            .find_type_info("std.channel.Sender")
-            .unwrap()
-            .name
-            .clone();
+        let symbol = vm.get_env().find_type_info("std.channel.Sender").unwrap().name.clone();
         Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
@@ -110,7 +104,6 @@ where
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let symbol = vm
-            .global_env()
             .get_env()
             .find_type_info("std.channel.Receiver")
             .unwrap()

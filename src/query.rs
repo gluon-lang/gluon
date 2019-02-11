@@ -24,8 +24,8 @@ use {
         compiler::{CompilerEnv, Variable},
         internal::Value,
         macros,
-        thread::{RootedThread, Thread},
-        vm::{Global, VmEnv},
+        thread::{RootedThread, RootedValue, Thread},
+        vm::VmEnv,
         Variants,
     },
 };
@@ -171,13 +171,38 @@ impl CompilerDatabase {
     }
 
     pub(crate) fn collect_garbage(&self) {
-        let strategy = salsa::SweepStrategy::default()
-            .discard_values()
-            .sweep_all_revisions();
+        // let strategy = salsa::SweepStrategy::default()
+        //     .discard_values()
+        //     .sweep_all_revisions();
 
-        self.query(ModuleTextQuery).sweep(strategy);
-        self.query(TypecheckedModuleQuery).sweep(strategy);
-        self.query(CompiledModuleQuery).sweep(strategy);
+        // self.query(ModuleTextQuery).sweep(strategy);
+        // self.query(TypecheckedModuleQuery).sweep(strategy);
+        // self.query(CompiledModuleQuery).sweep(strategy);
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DatabaseGlobal {
+    pub id: Symbol,
+    pub typ: ArcType,
+    pub metadata: Arc<Metadata>,
+    pub value: RootedValue<RootedThread>,
+}
+
+impl Eq for DatabaseGlobal {}
+
+impl PartialEq for DatabaseGlobal {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl std::hash::Hash for DatabaseGlobal {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.id.hash(hasher)
     }
 }
 
@@ -214,10 +239,10 @@ pub(crate) trait Compilation: CompilationBase {
     #[salsa::cycle]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
-    fn globals(&self) -> Arc<FnvMap<String, Global>>;
+    fn globals(&self) -> Arc<FnvMap<String, DatabaseGlobal>>;
 
     #[salsa::volatile]
-    fn global(&self, name: String) -> Option<Global>;
+    fn global(&self, name: String) -> Result<DatabaseGlobal>;
 }
 
 fn module_state(db: &impl Compilation, module: String) -> usize {
@@ -300,47 +325,41 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     Ok(Expr::Ident(TypedIdent::new(name)))
 }
 
-fn globals(db: &impl Compilation) -> Arc<FnvMap<String, Global>> {
-    let compiler = db.compiler();
-    let vm = db.thread();
-
+fn globals(db: &impl Compilation) -> Arc<FnvMap<String, DatabaseGlobal>> {
     let globals = db
         .module_states()
         .keys()
-        .filter_map(|name| {
-            let compile_value = db.compiled_module(name.clone()).ok()?;
-            let execute_value = Executable::run_expr(
-                compile_value,
-                &mut Compiler::new().module_compiler(compiler),
-                vm,
-                &name,
-                "",
-                (),
-            )
-            .wait()
-            .ok()?;
-
-            Some((
-                name.clone(),
-                Global {
-                    id: execute_value.id,
-                    typ: execute_value.typ,
-                    metadata: execute_value.metadata,
-                    value: execute_value.value.get_value(),
-                },
-            ))
-        })
+        .filter_map(|name| db.global(name.clone()).ok().map(|g| (name.clone(), g)))
         .collect();
     Arc::new(globals)
 }
 
-fn global(db: &impl Compilation, name: String) -> Option<Global> {
-    db.globals().get(&name).cloned()
+fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
+    let vm = db.thread();
+    let compiler = db.compiler();
+    let compile_value = db.compiled_module(name.clone())?;
+    let execute_value = Executable::run_expr(
+        compile_value,
+        &mut Compiler::new().module_compiler(compiler),
+        vm,
+        &name,
+        "",
+        (),
+    )
+    .wait()?;
+
+    Ok(DatabaseGlobal {
+        id: execute_value.id,
+        typ: execute_value.typ,
+        metadata: execute_value.metadata,
+        value: execute_value.value,
+    })
 }
 
 impl CompilerEnv for DatabaseSnapshot {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         self.global(id.definition_name().into())
+            .ok()
             .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
     }
 }
@@ -356,11 +375,14 @@ impl TypeEnv for DatabaseSnapshot {
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
         self.global(id.definition_name().into())
+            .ok()
             .map(|g| g.typ.clone())
     }
 
-    fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        None
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        DatabaseSnapshot::find_type_info(self, id.definition_name())
+            .map_err(|err| panic!("{}", err))
+            .ok()
     }
 }
 
@@ -376,6 +398,7 @@ impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         if id.is_global() {
             self.global(id.definition_name().into())
+                .ok()
                 .map(|g| g.metadata.clone())
         } else {
             None
@@ -384,12 +407,13 @@ impl MetadataEnv for DatabaseSnapshot {
 }
 
 impl VmEnv for DatabaseSnapshot {
-    fn get_global(&self, name: &str) -> Option<Global> {
-        if name.starts_with('@') {
-            self.global(name.into())
-        } else {
-            None
-        }
+    fn get_global(&self, name: &str) -> Option<vm::vm::Global> {
+        self.global(name.into()).ok().map(|g| vm::vm::Global {
+            id: g.id,
+            metadata: g.metadata,
+            typ: g.typ,
+            value: g.value.get_value(),
+        })
     }
 }
 
@@ -408,7 +432,7 @@ impl DatabaseSnapshot {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, Global)> {
+    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
         let mut module = Name::new(name.trim_start_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
@@ -421,7 +445,7 @@ impl DatabaseSnapshot {
             if module.as_str() == "" {
                 return None;
             }
-            if let Some(g) = self.global(module.as_str().into()) {
+            if let Ok(g) = self.global(module.as_str().into()) {
                 global = g;
                 break;
             }
@@ -441,11 +465,11 @@ impl DatabaseSnapshot {
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((global.value, global.typ.clone()));
+            return Ok((global.value.get_value(), global.typ.clone()));
         }
 
         let mut typ = global.typ;
-        let mut value = unsafe { Variants::new(&global.value) };
+        let mut value = global.value.get_variant();
 
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {

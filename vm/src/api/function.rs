@@ -580,7 +580,9 @@ impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
             "".into(),
         ));
         compiled_module.function.instructions = self.instructions;
-        let closure = thread.global_env().new_global_thunk(compiled_module)?;
+        let closure = thread
+            .global_env()
+            .new_global_thunk(thread, compiled_module)?;
         context.stack.push(ValueRepr::Closure(closure));
         Ok(())
     }
