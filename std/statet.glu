@@ -42,33 +42,17 @@ let monad ?mo : [Monad m] -> Monad (StateT s m) =
     { applicative, flat_map }
 
 // FIXME implicit parameter troubles
-/* // TEMPORARY FOR TESTING PURPOSES */
-/* #[implicit] */
-/* type Transformer t = { */
-/*     monad : forall m . [Monad m] -> Monad (t m), */
-/*     wrap_monad : forall m a . [Monad m] -> m a -> t m a */
-/* } */
-/* // END TEMPORARY */
+let transformer : Transformer (StateT s) =
+    let wrap_monad ?mo ma : [Monad m] -> m a -> StateT s m a = \state ->
+        ma >>= \value ->
+            mo.applicative.wrap {value, state}
 
-/* let transformer : Transformer (StateT s) = */
-/*     let wrap_monad ?mo ma : [Monad m] -> m a -> StateT s m a = \state -> */
-/*         ma >>= \value -> */
-/*             mo.applicative.wrap {value, state} */
-
-/*     { monad, wrap_monad } */
-
-/* #[implicit] */
-/* type MonadAlternative a = { */
-/*     monad : Monad a, */
-/*     alternative : Alternative a */
-/* } */
-
-/* let monad_alternative ?monad ?alternative : [Monad a] -> [Alternative a] -> MonadAlternative a = {monad, alternative} */
+    { /* monad, */ wrap_monad }
 
 // needs [transformer (StateT s)] parameter?
 let alternative ?mo ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) = 
     let or sra srb = alt.or << sra <*> srb
-    /* let empty = transformer.wrap_monad alt.empty */
+    /* let empty = transformer.wrap_monad alt.empty */ // TODO switch back to this after Transformer (StateT s) is fixed
     let empty = \state -> empty >>= \value ->
         mo.applicative.wrap {value, state}
 

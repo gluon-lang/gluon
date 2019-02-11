@@ -1,20 +1,34 @@
-let { lazy, force } = import! std.lazy
-let { Applicative, Functor, Monad } = std.prelude
+//@NO-IMPLICIT-PRELUDE
 
-type LazyT m a = () -> m a
+let { (<<) } = import! std.function
+let { lazy, force } = import! std.lazy
+let { Applicative, Functor, Monad } = import! std.prelude
+
+type LazyT m a = Lazy (m a)
 
 let functor ?fr : [Functor m] -> Functor (LazyT m) =
-    let map f ma = lazy <| \_ -> fr.map f (force ma)
+    let map f ma = lazy (\_ -> fr.map f (force ma))
 
     { map }
 
 let applicative ?ap : [Applicative m] -> Applicative (LazyT m) =
-    let wrap a = lazy <| \_ -> ap.wrap a
-    let apply mf ma = lazy <| \_ -> ap.apply (force mf) (force ma)
+    let wrap a = lazy (\_ -> ap.wrap a)
+    let apply mf ma = lazy (\_ -> ap.apply (force mf) (force ma))
 
-    { applicative, wrap, apply }
+    { functor, apply, wrap }
 
 let monad ?mo : [Monad m] -> Monad (LazyT m) =
-    let flat_map f ma = lazy <| \_ -> mo.flat_map (force << f) ma
+    let flat_map f ma = lazy (\_ -> mo.flat_map (force << f) (force ma))
 
     { applicative, flat_map }
+
+{ 
+    LazyT,
+
+    lazy,
+    force,
+
+    functor,
+    applicative,
+    monad,
+}
