@@ -634,7 +634,7 @@ where
 
             match (&lhs_base, &rhs_base) {
                 (&None, &None) => {
-                    debug!("Unify error: {:?} <=> {:?}", expected, actual);
+                    debug!("Unify error: {} <=> {}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
@@ -1100,6 +1100,31 @@ pub fn subsumes(
     }
 }
 
+pub fn subsumes_implicit(
+    subs: &Substitution<RcType>,
+    state: State,
+    l: &RcType,
+    r: &RcType,
+    receiver: &mut FnMut(&RcType),
+) -> Result<RcType, (RcType, Errors<Error<Symbol>>)> {
+    debug!("Subsume {} <=> {}", l, r);
+    let mut unifier = UnifierState {
+        state: state,
+        unifier: Subsume {
+            subs: subs,
+            errors: Errors::new(),
+            allow_returned_type_replacement: true,
+        },
+    };
+
+    let typ = unifier.subsumes_implicit(l, r, receiver);
+    if unifier.unifier.errors.has_errors() {
+        Err((typ.unwrap_or_else(|| l.clone()), unifier.unifier.errors))
+    } else {
+        Ok(typ.unwrap_or_else(|| l.clone()))
+    }
+}
+
 pub fn subsumes_no_subst(
     state: State,
     l: &RcType,
@@ -1130,6 +1155,68 @@ struct Subsume<'e> {
 }
 
 impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
+    fn subsumes_implicit(
+        &mut self,
+        l: &RcType,
+        r: &RcType,
+        receiver: &mut FnMut(&RcType),
+    ) -> Option<RcType> {
+        debug!("Subsume implicit {} <=> {}", l, r);
+
+        // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
+        // specified to have implicit arguments)
+
+        let l_orig = &l;
+        let mut map = FnvMap::default();
+
+        let r = r.instantiate_generics(&mut self.unifier.subs, &mut FnvMap::default());
+        let typ = match *r {
+            Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
+                let l = l.skolemize(&mut self.unifier.subs, &mut map);
+
+                match **self.unifier.subs.real(&l) {
+                    Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => {
+                        self.subsume_check(&l, &r)
+                    }
+
+                    _ => {
+                        receiver(&arg_type);
+
+                        self.subsumes_implicit(&l, r_ret, receiver);
+                        None
+                    }
+                }
+            }
+            _ => self.try_match(&l, &r),
+        };
+
+        // If a skolem variable we just created somehow appears in the original type it has been
+        // unified with a type variable outside of this skolem scope meaning it has escaped
+        //
+        // Unifying:
+        // forall s . Test s 2 <=> Test 1 1
+        //      ^ skolemize
+        // ==> 1 <=> s@3
+        // ==> 1 <=> 2
+        // ==> s@3 <=> 2
+        //
+        // `l_orig` is still `forall s . Test s 2` so we can detect `s@2` escaping in the
+        // variable `2`
+        if !map.is_empty() {
+            self.skolem_escape_check(&map, l_orig);
+        }
+
+        typ.or(if l_orig.forall_params().next().is_some() {
+            Some(l.clone())
+        } else {
+            None
+        })
+        .map(|typ| {
+            self.unifier.allow_returned_type_replacement = false;
+            self.unifier.subs.with_forall(typ, l_orig)
+        })
+    }
+
     fn subsume_check(&mut self, l: &RcType, r: &RcType) -> Option<RcType> {
         let l_orig = &l;
         let mut map = FnvMap::default();
