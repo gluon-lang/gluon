@@ -1,3 +1,14 @@
+<a name="v0.11.1"></a>
+### v0.11.1 (2019-02-13)
+
+
+#### Bug Fixes
+
+*   Don't build release artifacts with full debug info ([fe935835](https://github.com/gluon-lang/gluon/commit/fe9358358a30d06103e6ca51d0af41a1bdff7c60))
+* **check:**  Subsume implicit functions with forall correctly ([6de5c256](https://github.com/gluon-lang/gluon/commit/6de5c256ecfa0a82ddea0f50d13e5441aefb722c))
+
+
+
 <a name="v0.11.0"></a>
 ## v0.11.0 (2019-02-11)
 
