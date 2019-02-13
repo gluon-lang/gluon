@@ -175,9 +175,3 @@ path = "examples/lisp/main.rs"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]
-
-[profile.bench]
-debug = true
-
-[profile.release]
-debug = true
