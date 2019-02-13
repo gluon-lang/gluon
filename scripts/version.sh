@@ -40,5 +40,5 @@ cargo fetch
 
 git add .
 CHANGES=$(git diff  HEAD --unified=0 CHANGELOG.md | tail +6 | sed -e 's/^\+//')
-git commit -m "Version ${1}\n\n${CHANGES}"
+git commit -m "Version ${1}"$'\n\n'"${CHANGES}"
 git tag "v${1}"
