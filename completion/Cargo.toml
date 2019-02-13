@@ -1,6 +1,6 @@
 [package]
 name = "gluon_completion"
-version = "0.11.0" # GLUON
+version = "0.11.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -17,11 +17,11 @@ itertools = "0.8"
 walkdir = "2"
 codespan = "0.2"
 
-gluon_base = { path = "../base", version = "0.11.0" } # GLUON
+gluon_base = { path = "../base", version = "0.11.1" } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
 env_logger = "0.6"
 
-gluon_check = { path = "../check", version = "0.11.0" } # GLUON
-gluon_parser = { path = "../parser", version = "0.11.0" } # GLUON
+gluon_check = { path = "../check", version = "0.11.1" } # GLUON
+gluon_parser = { path = "../parser", version = "0.11.1" } # GLUON

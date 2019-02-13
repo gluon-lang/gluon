@@ -2400,75 +2400,63 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         error_order: ErrorOrder,
         expected: &RcType,
-        mut actual: RcType,
+        actual: RcType,
         receiver: &mut FnMut(Expr<Symbol>),
     ) -> RcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
 
         self.environment.type_variables.enter_scope();
 
-        // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
-        // specified to have implicit arguments)
-        loop {
-            actual = self.instantiate_generics(&actual);
-            actual = match *actual {
-                Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
-                    match **self.subs.real(expected) {
-                        Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => break,
-                        _ => {
-                            let name = self.implicit_resolver.make_implicit_ident(arg_type);
+        let state = unify_type::State::new(&self.environment, &self.subs);
 
-                            receiver(Expr::Ident(TypedIdent {
-                                name,
-                                typ: self.subs.bind_arc(&arg_type),
-                            }));
+        let implicit_resolver = &mut self.implicit_resolver;
+        let mut receiver = |implicit_type: &RcType| {
+            let name = implicit_resolver.make_implicit_ident(implicit_type);
 
-                            r_ret.clone()
-                        }
+            receiver(Expr::Ident(TypedIdent {
+                name,
+                typ: implicit_type.clone(),
+            }));
+        };
+        let typ = match unify_type::subsumes_implicit(
+            &self.subs,
+            state,
+            &expected,
+            &actual,
+            &mut receiver,
+        ) {
+            Ok(typ) => typ,
+            Err((typ, mut errors)) => {
+                let expected = expected.clone();
+                debug!(
+                    "Error '{}' between:\n>> {}\n>> {}",
+                    errors, expected, actual
+                );
+                let err = match error_order {
+                    ErrorOrder::ExpectedActual => {
+                        TypeError::Unification(expected, actual, errors.into())
                     }
-                }
-                _ => break,
-            };
-        }
-        let original_expected = expected;
-        let mut expected = expected.clone();
-        let mut resolved_implicit = false;
-
-        let mut skolem_scope = FnvMap::default();
-        loop {
-            expected = expected.skolemize(&mut &self.subs, &mut skolem_scope);
-            self.environment.type_variables.extend(skolem_scope.drain());
-
-            expected = match *expected {
-                Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
-                    match **self.subs.real(&actual) {
-                        Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => break,
-                        _ => {
-                            resolved_implicit = true;
-
-                            let name = self.implicit_resolver.make_implicit_ident(arg_type);
-
-                            receiver(Expr::Ident(TypedIdent {
-                                name,
-                                typ: self.subs.bind_arc(&arg_type),
-                            }));
-
-                            r_ret.clone()
+                    ErrorOrder::ActualExpected => {
+                        for err in &mut errors {
+                            match err {
+                                unify::Error::TypeMismatch(l, r) => mem::swap(l, r),
+                                unify::Error::Other(unify_type::TypeError::FieldMismatch(l, r)) => {
+                                    mem::swap(l, r)
+                                }
+                                _ => (),
+                            }
                         }
+                        TypeError::Unification(actual, expected, errors.into())
                     }
-                }
-                _ => break,
-            };
-        }
-
-        // HACK Need to move elaboration/implicit argument insertion into the normal subsumption so
-        // variables get correctly subsumed with forall
-        if !resolved_implicit {
-            expected = original_expected.clone();
-        }
-
-        let new_type = self.subsumes(span, error_order, &expected, actual);
-        let typ = self.with_forall(original_expected, new_type);
+                };
+                self.errors.push(Spanned {
+                    span: span,
+                    // TODO Help what caused this unification failure
+                    value: err.into(),
+                });
+                typ
+            }
+        };
 
         self.environment.type_variables.exit_scope();
 
@@ -2489,7 +2477,7 @@ impl<'a> Typecheck<'a> {
             Err((typ, mut errors)) => {
                 let expected = expected.clone();
                 debug!(
-                    "Error '{:?}' between:\n>> {}\n>> {}",
+                    "Error '{}' between:\n>> {}\n>> {}",
                     errors, expected, actual
                 );
                 let err = match error_order {
