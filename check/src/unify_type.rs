@@ -1286,27 +1286,45 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
     }
 
     fn unify_function(&mut self, actual: &RcType) -> (RcType, RcType) {
+        self.remove_aliases_in(actual, |self_, actual| {
+            let subs = self_.state.subs;
+
+            match actual.as_explicit_function() {
+                Some((arg, ret)) => return (arg.clone(), ret.clone()),
+                None => (),
+            }
+
+            let arg = subs.new_var();
+            let ret = subs.new_var();
+            let f = self_.state.subs.function(Some(arg.clone()), ret.clone());
+            if let Err(errors) = unify::unify(subs, self_.state.clone(), &f, &actual) {
+                for err in errors {
+                    self_.report_error(err);
+                }
+            }
+
+            (arg, ret)
+        })
+    }
+
+    fn remove_aliases_in<R>(&mut self, typ: &RcType, f: impl FnOnce(&mut Self, &RcType) -> R) -> R {
         let subs = self.state.subs;
-        let actual = match self.state.remove_aliases(subs, &actual) {
-            Ok(t) => t.map_or_else(|| Cow::Borrowed(actual), Cow::Owned),
+
+        let before = self.state.reduced_aliases.len();
+
+        let typ = match self.state.remove_aliases(subs, &typ) {
+            Ok(t) => t.map_or_else(|| Cow::Borrowed(typ), Cow::Owned),
             Err(err) => {
                 self.report_error(UnifyError::Other(err));
-                Cow::Borrowed(actual)
+                Cow::Borrowed(typ)
             }
         };
-        match actual.as_explicit_function() {
-            Some((arg, ret)) => return (arg.clone(), ret.clone()),
-            None => (),
-        }
-        let arg = subs.new_var();
-        let ret = subs.new_var();
-        let f = self.state.subs.function(Some(arg.clone()), ret.clone());
-        if let Err(errors) = unify::unify(subs, self.state.clone(), &f, &actual) {
-            for err in errors {
-                self.report_error(err);
-            }
-        }
-        (arg, ret)
+
+        let r = f(self, &typ);
+
+        self.state.reduced_aliases.truncate(before);
+
+        r
     }
 }
 
