@@ -545,7 +545,8 @@ let { x, y } = { x = 1, y = 2 }
 
     let symbols = completion::all_symbols(expr.span, &expr);
 
-    assert_eq!(symbols.len(), 4);
+    assert_eq!(symbols.len(), 3);
+    assert_eq!(symbols[1].value.children.len(), 1);
 }
 
 #[test]
