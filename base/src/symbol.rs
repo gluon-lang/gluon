@@ -109,6 +109,18 @@ impl PartialEq for Symbol {
     }
 }
 
+impl PartialEq<SymbolRef> for Symbol {
+    fn eq(&self, other: &SymbolRef) -> bool {
+        **self == *other
+    }
+}
+
+impl PartialEq<Symbol> for SymbolRef {
+    fn eq(&self, other: &Symbol) -> bool {
+        *self == **other
+    }
+}
+
 impl PartialOrd for Symbol {
     fn partial_cmp(&self, other: &Symbol) -> Option<Ordering> {
         (**self).partial_cmp(other)
