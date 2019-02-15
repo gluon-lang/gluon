@@ -788,19 +788,19 @@ where
     }
 }
 
-pub trait Extract: Sized {
+pub trait Extract<'a>: Sized {
     type Output;
-    fn extract(self, found: &Found) -> Result<Self::Output, ()>;
-    fn match_extract(self, match_: &Match) -> Result<Self::Output, ()>;
+    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()>;
+    fn match_extract(self, match_: &Match<'a>) -> Result<Self::Output, ()>;
 }
 
 #[derive(Clone, Copy)]
 pub struct TypeAt<'a> {
     pub env: &'a TypeEnv<Type = ArcType>,
 }
-impl<'a> Extract for TypeAt<'a> {
+impl<'a> Extract<'a> for TypeAt<'a> {
     type Output = Either<ArcKind, ArcType>;
-    fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
             None => self.match_extract(found.enclosing_match()),
@@ -825,30 +825,31 @@ impl<'a> Extract for TypeAt<'a> {
 
 #[derive(Clone, Copy)]
 pub struct IdentAt;
-impl Extract for IdentAt {
-    type Output = Symbol;
-    fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+impl<'a> Extract<'a> for IdentAt {
+    type Output = &'a SymbolRef;
+    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
             None => self.match_extract(found.enclosing_match()),
         }
     }
 
-    fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
-        Ok(match *found {
-            Match::Expr(&Spanned {
-                value: Expr::Ident(ref id),
+    fn match_extract(self, found: &Match<'a>) -> Result<Self::Output, ()> {
+        Ok(match found {
+            Match::Expr(Spanned {
+                value: Expr::Ident(id),
                 ..
             })
-            | Match::Pattern(&Spanned {
-                value: Pattern::Ident(ref id),
+            | Match::Pattern(Spanned {
+                value: Pattern::Ident(id),
                 ..
-            }) => id.name.clone(),
-            Match::Ident(_, id, _) => id.clone(),
-            Match::Pattern(&Spanned {
-                value: Pattern::As(ref id, _),
+            }) => &id.name,
+            Match::Ident(_, id, _) => id,
+            Match::Pattern(Spanned {
+                value: Pattern::As(id, _),
                 ..
-            }) => id.value.clone(),
+            }) => &id.value,
+            Match::Type(_, id, _) => id,
             _ => return Err(()),
         })
     }
@@ -856,7 +857,7 @@ impl Extract for IdentAt {
 
 #[derive(Copy, Clone)]
 pub struct SpanAt;
-impl Extract for SpanAt {
+impl<'a> Extract<'a> for SpanAt {
     type Output = Span<BytePos>;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
@@ -882,13 +883,13 @@ macro_rules! tuple_extract {
 macro_rules! tuple_extract_ {
     ($($id: ident)*) => {
         #[allow(non_snake_case)]
-        impl<$($id : Extract),*> Extract for ( $($id),* ) {
+        impl<'a, $($id : Extract<'a>),*> Extract<'a> for ( $($id),* ) {
             type Output = ( $($id::Output),* );
-            fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+            fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
                 let ( $($id),* ) = self;
                 Ok(( $( $id.extract(found)? ),* ))
             }
-            fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
+            fn match_extract(self, found: &Match<'a>) -> Result<Self::Output, ()> {
                 let ( $($id),* ) = self;
                 Ok(( $( $id.match_extract(found)? ),* ))
             }
@@ -898,14 +899,14 @@ macro_rules! tuple_extract_ {
 
 tuple_extract! {A B C D E F G H}
 
-pub fn completion<T>(
+pub fn completion<'a, T>(
     extract: T,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Result<T::Output, ()>
 where
-    T: Extract,
+    T: Extract<'a>,
 {
     let found = complete_at((), source_span, expr, pos)?;
     extract.extract(&found)
@@ -931,16 +932,16 @@ pub fn find_all_symbols(
 ) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let extract = IdentAt;
     completion(extract, source_span, expr, pos).map(|symbol| {
-        struct ExtractIdents {
+        struct ExtractIdents<'b> {
             result: Vec<Span<BytePos>>,
-            symbol: Symbol,
+            symbol: &'b SymbolRef,
         }
-        impl<'a> Visitor<'a> for ExtractIdents {
+        impl<'a, 'b> Visitor<'a> for ExtractIdents<'b> {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
                 match e.value {
-                    Expr::Ident(ref id) if id.name == self.symbol => {
+                    Expr::Ident(ref id) if id.name == *self.symbol => {
                         self.result.push(e.span);
                     }
                     _ => walk_expr(self, e),
@@ -949,11 +950,11 @@ pub fn find_all_symbols(
 
             fn visit_pattern(&mut self, p: &'a SpannedPattern<Self::Ident>) {
                 match p.value {
-                    Pattern::As(ref id, ref pat) if id.value == self.symbol => {
+                    Pattern::As(ref id, ref pat) if id.value == *self.symbol => {
                         self.result.push(p.span);
                         walk_pattern(self, &pat.value);
                     }
-                    Pattern::Ident(ref id) if id.name == self.symbol => {
+                    Pattern::Ident(ref id) if id.name == *self.symbol => {
                         self.result.push(p.span);
                     }
                     _ => walk_pattern(self, &p.value),
@@ -973,7 +974,7 @@ pub fn symbol(
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
-) -> Result<Symbol, ()> {
+) -> Result<&SymbolRef, ()> {
     let extract = IdentAt;
     completion(extract, source_span, expr, pos)
 }
@@ -1019,7 +1020,11 @@ pub fn all_symbols(
                             pos::spanned(
                                 bind.name.span,
                                 CompletionSymbol {
-                                    name: &bind.name.value,
+                                    name: bind
+                                        .finalized_alias
+                                        .as_ref()
+                                        .map(|alias| &alias.name)
+                                        .unwrap_or(&bind.name.value),
                                     content: CompletionSymbolContent::Type {
                                         alias: &bind.alias.value,
                                     },
