@@ -3,7 +3,7 @@
 set -ex
 
 if [[ $1 == *"apple"* ]]; then
-    TARGET=$1
+    exit 0
 else
     TARGET='x86_64-unknown-linux-musl'
 fi
