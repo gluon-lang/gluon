@@ -141,7 +141,8 @@ test_check! {
     alt_effect_generalization_bug,
     r#"
 type Eff r a =
-    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+    | Pure : a -> Eff r a
+    | Impure : forall x . r x -> (x -> Eff r a) -> Eff r a
 
 type Alt a = forall r . (| Empty .. r)
 

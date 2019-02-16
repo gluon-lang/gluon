@@ -1239,7 +1239,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a . | Ok\n.. a".to_string())
+        Ok("forall a a0 a1 . | Ok\n.. a1".to_string())
     );
 }
 

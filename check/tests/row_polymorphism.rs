@@ -265,8 +265,8 @@ fn polymorphic_variants() {
     let _ = env_logger::try_init();
 
     let text = r#"
-type AA r = (| A Int .. r)
-type BB r = (| B String .. r)
+type AA r = | A Int .. r
+type BB r = | B String .. r
 if True then
     A 123
 else

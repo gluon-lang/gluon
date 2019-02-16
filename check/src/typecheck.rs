@@ -278,32 +278,13 @@ impl<'a> Typecheck<'a> {
 
         if let Type::Variant(ref variants) = **inner_type {
             for field in variants.row_iter().cloned() {
-                let params = canonical_alias
-                    .params()
-                    .iter()
-                    .map(|g| self.generic(g.clone()))
-                    .collect();
                 let a = self.intern(Type::Alias(canonical_alias.clone()));
-                let variant_type = self.app(a, params);
 
-                let ctor_type = self.subs.function(
-                    field
-                        .typ
-                        .row_iter()
-                        .map(|f| f.typ.clone())
-                        .collect::<AppVec<_>>(),
-                    variant_type,
-                );
-
-                let typ = self.forall(
-                    canonical_alias
-                        .params()
-                        .iter()
-                        .chain(outer_params.iter())
-                        .cloned()
-                        .collect(),
-                    ctor_type,
-                );
+                let typ =
+                    types::walk_move_type(field.typ.clone(), &mut |typ: &ArcType| match &**typ {
+                        Type::Ident(ref id) if canonical_alias.name == *id => Some(a.clone()),
+                        _ => None,
+                    });
 
                 let symbol = self.symbols.symbols().symbol(field.name.as_str());
                 self.stack_var(symbol, typ);

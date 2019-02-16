@@ -123,7 +123,7 @@ fn type_mutually_recursive() {
     );
     let test = Type::variant(vec![Field::new(
         intern("Test"),
-        Type::tuple(&mut MockEnv::new(), vec![typ("Int")]),
+        Type::function(vec![typ("Int")], typ("Test")),
     )]);
     let test2 = Type::record(
         Vec::new(),
@@ -212,8 +212,9 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Option a = | None | Some a in Some 1");
-    let none = Type::unit();
-    let some = Type::tuple(&mut MockEnv::new(), vec![typ("a")]);
+    let option = Type::app(typ("Option"), collect![typ("a")]);
+    let none = option.clone();
+    let some = Type::function(collect![typ("a")], option);
     assert_eq!(
         e,
         type_decl(
@@ -961,10 +962,14 @@ rec let y = 2
 }
 
 #[test]
-fn effect_def() {
+fn gadt() {
     let _ = ::env_logger::try_init();
     let text = r#"
-type OptionEff a = forall r . (| OptionEff .. r)
+type Expr a =
+    | Int : Int -> Expr Int
+    | Add : Expr Int -> Expr Int -> Expr Int
+    | If : Expr Bool -> Expr a -> Expr a -> Expr a
+
 
 1
 "#;

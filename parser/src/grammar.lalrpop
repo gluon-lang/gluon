@@ -11,7 +11,7 @@ use crate::base::{
 
 use std::str::FromStr;
 
-use crate::{ReplLine, new_ident};
+use crate::{ReplLine, Variant, new_ident};
 use crate::token::Token;
 use crate::ordered_float::NotNan;
 
@@ -264,43 +264,82 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
     },
 };
 
-VariantField: (Id, Vec<AstType<Id>>) =
-    "|" <CtorIdent> <AtomicType*> => (<>);
+VariantField: Variant<Id> = {
+    "|" <CtorIdent> <AtomicType*> => Variant::Simple(<>),
+    "|" <CtorIdent> ":" <Type> => Variant::Gadt(<>)
+};
 
-VariantType: Type<Id, AstType<Id>> = {
-    <rest: (".." <AtomicType>)> => {
-        Type::Variant(rest)
+VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
+
+    <row: VariantField+> <rest: (".." <AtomicType>)?> => {
+        (Vec::new(), row, rest)
     },
 
-    <row: Sp<VariantField+>> <rest: (".." <AtomicType>)?> => {
-        let rest = rest.unwrap_or_else(Type::empty_row);
-        let row_span = row.span;
-        let row = row.value.into_iter()
-            .map(|(id, params)| {
-                Field::new(id.clone(), Type::tuple(env, params))
-            })
-            .collect();
-        Type::Variant(Type::extend_row(vec![], row, rest))
+    "forall" <args: Ident+> "." "(" <ty: VariantType> ")" => {
+        let mut ty = ty;
+        ty.0.extend(args);
+        ty
     }
 };
 
-TypeTop: AstType<Id> = {
-    Type,
-    <Sp<VariantType>> => AstType::from(<>),
+TypeTop: Either<AstType<Id>, Spanned<(Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>), BytePos>> = {
+    Type => Either::Left(<>),
+    <rest: Sp<(".." <AtomicType>)>> => {
+        let Spanned { span, value: rest } = rest;
+        Either::Left(
+            pos::spanned(span, Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), types: Vec::new(), rest }).into())).into()
+        )
+    },
+    <Sp<VariantType>> => Either::Right(<>),
 };
 
 TypeBinding: Box<TypeBinding<Id>> = {
-    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
-        if !env.string(&id.value).starts_with(char::is_uppercase) {
+    <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
+        if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
-                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
+                error: pos::spanned(type_name.span, format!("A type must start with an uppercase letter").into()),
             });
         }
 
+        let body = match body {
+            Either::Left(body) => body,
+            Either::Right(Spanned { span, value: (forall_params, variants, rest) }) => {
+                let rest: AstType<_> = rest.unwrap_or_else(|| pos::spanned(span, Type::EmptyRow).into());
+                let row = if variants.is_empty() {
+                    rest
+                } else {
+                    let fields = variants.into_iter()
+                        .map(|variant| match variant {
+                            Variant::Gadt(name, typ) => Field::new(name, typ),
+                            Variant::Simple(name, types) => Field::new(
+                                name,
+                                Type::forall(
+                                    params.iter().cloned().collect(),
+                                    Type::function(
+                                        types,
+                                        Type::app(
+                                            Type::ident(type_name.value.clone()),
+                                            params.iter().cloned().map(Type::generic).collect(),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        })
+                        .collect();
+                    AstType::from(pos::spanned(span, Type::ExtendRow { types: Vec::new(), fields, rest }))
+                };
+
+                AstType::from(Type::forall(
+                    forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole())).collect(),
+                    AstType::from(pos::spanned(span, Type::Variant(row)))
+                ))
+            }
+        };
+
         Box::new(TypeBinding {
             metadata: metadata.unwrap_or_default(),
-            name: id.clone(),
-            alias: pos::spanned(body.span(), AliasData::new(id.value.clone(), params, body)),
+            name: type_name.clone(),
+            alias: pos::spanned(body.span(), AliasData::new(type_name.value.clone(), params, body)),
             finalized_alias: None,
         })
     },
@@ -339,8 +378,11 @@ AtomicType_: Type<Id, AstType<Id>> = {
         }
     },
 
+    "(" <rest: Sp<(".." <AtomicType>)>> ")" => {
+        let Spanned { span, value: rest } = rest;
+        Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), types: Vec::new(), rest }).into())
+    },
 
-    "(" <VariantType> ")",
 
     "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
         let rest = rest.unwrap_or_else(Type::empty_row);

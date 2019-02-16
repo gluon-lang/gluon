@@ -178,7 +178,7 @@ impl<'a> KindCheck<'a> {
         let kind = self.kindcheck(typ)?;
         let kind = self.unify(typ.span(), expected, kind)?;
         self.finalize_type(typ);
-        info!("Kindchecked {:#?}", typ);
+        trace!("Kindchecked {:#?}", typ);
         Ok(kind)
     }
 

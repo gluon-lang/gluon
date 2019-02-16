@@ -213,7 +213,7 @@ f (Test ())
     let result = support::typecheck(text);
 
     let test = support::alias_variant("Test", &[], &[("Test", &[Type::unit()])]);
-    assert_req!(result, Ok(test));
+    assert_eq!(result, Ok(test));
 }
 
 test_check! {

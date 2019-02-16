@@ -718,15 +718,23 @@ impl<Id, T> Field<Id, T> {
         Field { name, typ }
     }
 
-    pub fn ctor<S, I>(symbols: &mut S, name: Id, elems: I) -> Self
+    pub fn ctor<I, J>(alias_name: Id, params: I, ctor_name: Id, elems: J) -> Self
     where
-        S: ?Sized + IdentEnv<Ident = Id>,
-        I: IntoIterator<Item = T>,
+        I: IntoIterator<Item = Generic<Id>>,
+        J: IntoIterator<Item = T>,
+        J::IntoIter: DoubleEndedIterator,
         T: From<Type<Id, T>>,
     {
+        let typ = Type::function(
+            elems,
+            Type::app(
+                Type::ident(alias_name),
+                params.into_iter().map(Type::generic).collect(),
+            ),
+        );
         Field {
-            name,
-            typ: Type::tuple(symbols, elems),
+            name: ctor_name,
+            typ,
         }
     }
 }
@@ -962,9 +970,10 @@ where
         T::from(Type::EmptyRow)
     }
 
-    pub fn function(args: Vec<T>, ret: T) -> T
+    pub fn function<I>(args: I, ret: T) -> T
     where
-        T: Clone,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
     {
         Self::function_type(ArgType::Explicit, args, ret)
     }
@@ -2170,6 +2179,7 @@ where
                             ..
                         } => {
                             doc = doc.append(arena.concat(fields.iter().map(|field| {
+                                let typ = remove_forall(&field.typ);
                                 chain![arena;
                                     if first {
                                         first = false;
@@ -2179,15 +2189,15 @@ where
                                     },
                                     "| ",
                                     field.name.as_ref(),
-                                    if field.typ.as_function().is_some() {
-                                        arena.concat(arg_iter(&field.typ).map(|arg| {
+                                    if typ.as_function().is_some() {
+                                        arena.concat(arg_iter(typ).map(|arg| {
                                             chain![arena;
                                                 " ",
                                                 dt(Prec::Constructor, arg).pretty(printer)
                                             ]
                                         }))
                                     } else {
-                                        arena.concat(row_iter(&field.typ).map(|field| {
+                                        arena.concat(row_iter(typ).map(|field| {
                                             chain![arena;
                                                 " ",
                                                 dt(Prec::Constructor, &field.typ).pretty(printer)
