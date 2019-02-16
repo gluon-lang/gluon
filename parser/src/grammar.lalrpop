@@ -4,7 +4,7 @@ use crate::base::{
     ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
     kind::{ArcKind, Kind},
-    pos::{self, BytePos, Spanned},
+    pos::{self, BytePos, HasSpan, Spanned},
     types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache},
     metadata::{Attribute, Metadata, Comment},
 };
@@ -284,32 +284,13 @@ VariantType: Type<Id, AstType<Id>> = {
     }
 };
 
+TypeTop: AstType<Id> = {
+    Type,
+    <Sp<VariantType>> => AstType::from(<>),
+};
+
 TypeBinding: Box<TypeBinding<Id>> = {
-    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantType>> => {
-        if !env.string(&id.value).starts_with(char::is_uppercase) {
-            errors.push(::lalrpop_util::ParseError::User {
-                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
-            });
-        }
-
-        let row_span = row.span;
-
-        Box::new(TypeBinding {
-            metadata: metadata.unwrap_or_default(),
-            name: id.clone(),
-            alias: pos::spanned(
-                row_span,
-                AliasData::new(
-                    id.value.clone(),
-                    params,
-                    AstType::from(row),
-                )
-            ),
-            finalized_alias: None,
-        })
-    },
-
-    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
+    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
         if !env.string(&id.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
@@ -319,7 +300,7 @@ TypeBinding: Box<TypeBinding<Id>> = {
         Box::new(TypeBinding {
             metadata: metadata.unwrap_or_default(),
             name: id.clone(),
-            alias: pos::spanned(body.span, AliasData::new(id.value.clone(), params, body.value)),
+            alias: pos::spanned(body.span(), AliasData::new(id.value.clone(), params, body)),
             finalized_alias: None,
         })
     },
@@ -414,7 +395,7 @@ Type_ = {
         )
 };
 
-Type : AstType<Id> = {
+Type: AstType<Id> = {
     <typ: Sp<Type_>> => AstType::from(typ),
 };
 
