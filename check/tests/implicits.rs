@@ -974,3 +974,28 @@ let show_Test : Show (Test a) =
 "#,
 "()"
 }
+
+test_check! {
+field_with_implicit_parameter,
+r#"
+#[implicit]
+type Monad m = { wrap : a -> m a }
+
+type StateT s m a = s -> m { value : a, state : s }
+
+let any x = any x
+
+#[implicit]
+type Transformer t = {
+    wrap_monad : forall a m . [Monad m] -> m a -> t m a
+}
+
+let transformer : Transformer (StateT s) =
+    let wrap_monad : [Monad m] -> m a -> StateT s m a = any ()
+
+    { wrap_monad }
+
+()
+"#,
+"()"
+}
