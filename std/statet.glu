@@ -58,13 +58,13 @@ let alternative ?_ ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s 
 
     { applicative, or, empty }
 
-let put ?mo value : [Monad m] -> s -> StateT s m () = \state ->
-    mo.applicative.wrap { value = (), state = value }
+let put value : [Monad m] -> s -> StateT s m () = \state ->
+    wrap { value = (), state = value }
 
-let get ?mo : [Monad m] -> StateT s m s = \state ->
-    mo.applicative.wrap { value = state, state }
+let get : [Monad m] -> StateT s m s = \state ->
+    wrap { value = state, state }
 
-let gets ?mo f : [Monad m] -> (s -> a) -> StateT s m a =
+let gets f : [Monad m] -> (s -> a) -> StateT s m a =
     get >>= (wrap << f)
 
 let modify f : [Monad m] -> (s -> s) -> StateT s m () =
