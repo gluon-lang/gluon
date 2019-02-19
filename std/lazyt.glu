@@ -1,8 +1,10 @@
 //@NO-IMPLICIT-PRELUDE
 
+let { Applicative, apply } = import! std.applicative
 let { (<<) } = import! std.function
+let { Functor, map } = import! std.functor
 let { lazy, force } = import! std.lazy
-let { Applicative, Functor, Monad } = import! std.prelude
+let { Monad, flat_map } = import! std.monad
 
 type LazyT m a = Lazy (m a)
 
@@ -22,7 +24,7 @@ let monad ?mo : [Monad m] -> Monad (LazyT m) =
 
     { applicative, flat_map }
 
-{ 
+{
     LazyT,
 
     lazy,

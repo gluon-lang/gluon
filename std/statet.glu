@@ -1,7 +1,7 @@
 //! The state monad transformer.
 
 let { Applicative, Functor, Monad } = import! std.prelude
-let { Alternative, (<|>), empty } = import! std.alternative
+let { Alternative, (<|>), or, empty } = import! std.alternative
 let { wrap, (<*>) } = import! std.applicative
 let { (>>), (<<), ? } = import! std.function
 let { map } = import! std.functor
@@ -50,11 +50,11 @@ let transformer : Transformer (StateT s) =
     { /* monad, */ wrap_monad }
 
 // needs [transformer (StateT s)] parameter?
-let alternative ?mo ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) = 
+let alternative ?_ ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
     let or sra srb = alt.or << sra <*> srb
-    /* let empty = transformer.wrap_monad alt.empty */ // TODO switch back to this after Transformer (StateT s) is fixed
-    let empty = \state -> empty >>= \value ->
-        mo.applicative.wrap {value, state}
+    let empty = transformer.wrap_monad empty // TODO switch back to this after Transformer (StateT s) is fixed
+//    let empty = \state -> empty >>= \value ->
+//        mo.applicative.wrap {value, state}
 
     { applicative, or, empty }
 
@@ -70,14 +70,13 @@ let gets ?mo f : [Monad m] -> (s -> a) -> StateT s m a =
 let modify f : [Monad m] -> (s -> s) -> StateT s m () =
     get >>= (put << f)
 
-// Just remove this, since it's superfluous?
-let runStateT f state : StateT s m a -> s -> m { value : a, state : s } =
+let run_state_t f state : StateT s m a -> s -> m { value : a, state : s } =
     f state
 
-let evalStateT f state : [Functor m] -> StateT s m a -> s -> m a =
-    map (\x -> x.value) (runStateT f state)
+let eval_state_t f state : [Functor m] -> StateT s m a -> s -> m a =
+    map (\x -> x.value) (run_state_t f state)
 
-let execStateT f state : [Functor m] -> StateT s m a -> s -> m s =
-    map (\x -> x.state) (runStateT f state)
+let exec_state_t f state : [Functor m] -> StateT s m a -> s -> m s =
+    map (\x -> x.state) (run_state_t f state)
 
-{ StateT, applicative, functor, monad, put, get, modify, runStateT, evalStateT, execStateT }
+{ StateT, applicative, functor, monad, put, get, modify, run_state_t, eval_state_t, exec_state_t }
