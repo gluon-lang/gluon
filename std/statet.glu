@@ -1,11 +1,10 @@
 //! The state monad transformer.
 
-let { Applicative, Functor, Monad } = import! std.prelude
-let { Alternative, (<|>), or, empty } = import! std.alternative
-let { wrap, (<*>) } = import! std.applicative
+let { Alternative, or, empty } = import! std.alternative
+let { Applicative, wrap, (<*>) } = import! std.applicative
 let { (>>), (<<), ? } = import! std.function
-let { map } = import! std.functor
-let { (>>=) } = import! std.monad
+let { Functor, map } = import! std.functor
+let { Monad, (>>=) } = import! std.monad
 let { Transformer } = import! std.transformer
 
 type StateOut s a = { value : a, state : s }
@@ -16,24 +15,25 @@ type StateT s m a = s -> m { value : a, state : s }
 let map_sout f st : (a -> b) -> StateOut s a -> StateOut s b =
     {value = f st.value, state = st.state}
 
-let functor ?fr : [Functor m] -> Functor (StateT s m) =
-    let map f sr : (a -> b) -> StateT s m a -> StateT s m b =
-        fr.map (map_sout f) << sr
+let functor : [Functor m] -> Functor (StateT s m) =
+    let stmap f sr : (a -> b) -> StateT s m a -> StateT s m b =
+        map (map_sout f) << sr
 
-    { map }
+    { map = stmap }
 
+// the typechecker can't find map and Functor m without help
 let applicative ?mo : [Monad m] -> Applicative (StateT s m) =
     let apply srf sr : StateT s m (a -> b) -> StateT s m a -> StateT s m b = \state ->
         srf state >>= \fout ->
             let {value = f, state = state'} = fout
             mo.applicative.functor.map (map_sout f) (sr state')
 
-    let wrap value : a -> StateT s m a = \state ->
-        mo.applicative.wrap { value, state }
+    let stwrap value : a -> StateT s m a = \state ->
+        wrap { value, state }
 
-    { functor = functor ?mo.applicative.functor, apply, wrap }
+    { functor = functor ?mo.applicative.functor, apply, wrap = stwrap }
 
-let monad ?mo : [Monad m] -> Monad (StateT s m) =
+let monad : [Monad m] -> Monad (StateT s m) =
     let flat_map f sr : (a -> StateT s m b) -> StateT s m a -> StateT s m b = \state ->
         sr state >>= \sout ->
             let {value, state = state'} = sout
@@ -43,20 +43,17 @@ let monad ?mo : [Monad m] -> Monad (StateT s m) =
 
 // FIXME implicit parameter troubles
 let transformer : Transformer (StateT s) =
-    let wrap_monad ?mo ma : [Monad m] -> m a -> StateT s m a = \state ->
-        ma >>= \value ->
-            mo.applicative.wrap {value, state}
+    let wrap_monad ma : [Monad m] -> m a -> StateT s m a = \state ->
+        ma >>= \value -> wrap {value, state}
 
     { /* monad, */ wrap_monad }
 
 // needs [transformer (StateT s)] parameter?
 let alternative ?_ ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
-    let or sra srb = alt.or << sra <*> srb
-    let empty = transformer.wrap_monad empty // TODO switch back to this after Transformer (StateT s) is fixed
-//    let empty = \state -> empty >>= \value ->
-//        mo.applicative.wrap {value, state}
+    let stor sra srb = or << sra <*> srb
+    let stempty = transformer.wrap_monad empty
 
-    { applicative, or, empty }
+    { applicative, or = stor, empty = stempty }
 
 let put value : [Monad m] -> s -> StateT s m () = \state ->
     wrap { value = (), state = value }
