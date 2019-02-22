@@ -1,0 +1,53 @@
+
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
+let { StateT, put, get, modify, run_state_t, eval_state_t, exec_state_t, ? } = import! std.statet
+let { Applicative, wrap, (*>) } = import! std.applicative
+let { Monad, (>>=) } = import! std.monad
+let { Option, ? } = import! std.option
+let { (++), ? } = import! std.string
+// let { ? } = import! std.array
+let list @ { List, ? } = import! std.list
+let { Transformer, wrap_monad } = import! std.transformer
+
+#[infix(right,7)]
+let (::) x xs = Cons x xs
+
+let left_identity x f : [Eq a] -> [Show a] -> a -> (a -> StateT _ Option a) -> _ = \_ ->
+    let mx : StateT _ Option _ = wrap x
+    let s = ()
+    assert_eq (eval_state_t (mx >>= f) s) (eval_state_t (f x) s)
+
+let right_identity x : [Eq a] -> [Show a] -> a -> _ = \_ ->
+    let mx : StateT _ Option _ = wrap x
+    let s = ()
+    assert_eq (eval_state_t (mx >>= wrap) s) (eval_state_t mx s)
+
+let associativity mx f g : [Monad m] -> [Show (m a)] -> [Eq (m a)] -> m a -> _ -> _ -> _ = \_ ->
+    // FIXME gives recursion error when type is StateT _ m _. Implicit-parameter-flushing bug not totally fixed yet?
+    // FIXME typechecker cannot resolve Transformer (StateT s)
+    let mx : StateT _ _ _ = wrap_monad mx
+    let s = ()
+    // FIXME typechecker cannot resolve Functor m
+    assert_eq (eval_state_t ((mx >>= f) >>= g) s) (eval_state_t (mx >>= (\x -> f x >>= g)) s)
+
+group "statet" [
+    group "StateT s m is monadic" [
+        test "left identity" <| left_identity 324 (\x -> wrap <| x + 89),
+        test "right identity" <| right_identity "hello",
+        test "associativity" <| associativity (1 :: 2 :: 3 :: Nil) (\x -> wrap (x+5)) (\x -> wrap (x*2)),
+    ],
+    // FIXME without concrete type, below expressions assume type of List, as used above, instead of referring to a generic type
+    // TODO convert from state tests to statet tests
+    group "StateT s m has state effects" [
+        test "modify exec_state_t" <| \_ -> (assert_eq (exec_state_t (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8),
+        test "modify eval_state_t" <| \_ -> (assert_eq (eval_state_t (modify (\x -> x + 2) *> get) 0) 2),
+        test "put get eval_state_t" <| \_ -> (assert_eq (eval_state_t (put "hello" *> get) "") "hello"),
+        test "put get run_state_t" <| \_ -> (assert_eq (run_state_t (put "hello" *> get) "").value "hello"),
+        //test "gets ..." <| // TODO
+    ],
+    // TODO
+    //group "StateT s m has effects of monad m" [
+    //    test "",
+    //],
+]
