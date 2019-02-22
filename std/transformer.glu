@@ -8,4 +8,7 @@ type Transformer t = {
     wrap_monad : forall a m . [Monad m] -> m a -> t m a
 }
 
-{ Transformer }
+let wrap_monad ?_ ?tr ma : [Monad m] -> [Transformer t] -> m a -> t m a =
+    tr.wrap_monad ma
+
+{ Transformer, wrap_monad }
