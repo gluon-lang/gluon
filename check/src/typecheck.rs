@@ -1478,6 +1478,39 @@ impl<'a> Typecheck<'a> {
                 match_type = self.instantiate_generics(&match_type);
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
+
+                {
+                    let ctor_return_type = {
+                        let mut iter = types::arg_iter(ctor_type.remove_forall());
+                        for _ in &mut iter {}
+                        iter.typ.clone()
+                    };
+                    let match_return_type = {
+                        let mut iter = types::arg_iter(&match_type);
+                        for _ in &mut iter {}
+                        iter.typ.clone()
+                    };
+
+                    // Test Int a String <=> Test b c String
+                    // b = Int
+                    // c = a
+                    match (&*ctor_return_type, &*match_return_type) {
+                        (Type::App(l_id, l_args), Type::App(r_id, r_args)) if l_id == r_id => {
+                            for (l, r) in l_args.iter().zip(r_args) {
+                                match (&**l, &**r) {
+                                    (_, Type::Skolem(r_skolem)) => {
+                                        self.subs.replace(r_skolem.id, l.clone());
+                                    }
+                                    _ => {
+                                        self.unify_span(pattern.span, l, r.clone());
+                                    }
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+
                 id.typ = self.subs.bind_arc(&ctor_type);
                 let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
                     Ok(return_type) => return_type,

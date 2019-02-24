@@ -348,8 +348,8 @@ where
     /// just returns the type itself. Note that the returned type may contain terms which also need
     /// to have `real` called on them.
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
-        match typ.get_var() {
-            Some(var) => match self.find_type_for_var(var.get_id()) {
+        match typ.get_id() {
+            Some(id) => match self.find_type_for_var(id) {
                 Some(t) => t,
                 None => typ,
             },
@@ -402,8 +402,8 @@ where
     where
         T: Clone,
     {
-        match typ.get_var() {
-            Some(id) => self.find_type_for_var(id.get_id()).cloned(),
+        match typ.get_id() {
+            Some(id) => self.find_type_for_var(id).cloned(),
             None => None,
         }
     }
