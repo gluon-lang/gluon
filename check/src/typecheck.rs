@@ -280,11 +280,24 @@ impl<'a> Typecheck<'a> {
             for field in variants.row_iter().cloned() {
                 let a = self.intern(Type::Alias(canonical_alias.clone()));
 
-                let typ =
+                let ctor_type =
                     types::walk_move_type(field.typ.clone(), &mut |typ: &ArcType| match &**typ {
+                        Type::Function(ArgType::Constructor, arg, ret) => {
+                            Some(Type::function(Some(arg.clone()), ret.clone()))
+                        }
                         Type::Ident(ref id) if canonical_alias.name == *id => Some(a.clone()),
                         _ => None,
                     });
+
+                let typ = self.forall(
+                    canonical_alias
+                        .params()
+                        .iter()
+                        .chain(outer_params.iter())
+                        .cloned()
+                        .collect(),
+                    ctor_type,
+                );
 
                 let symbol = self.symbols.symbols().symbol(field.name.as_str());
                 self.stack_var(symbol, typ);
@@ -1410,8 +1423,9 @@ impl<'a> Typecheck<'a> {
                             arg_types.push(arg_type.clone());
                             self.stack_var(arg.name.clone(), arg_type);
                         }
-                        None => break,
+                        _ => break,
                     },
+                    ArgType::Constructor => unreachable!(),
                 }
                 return_type = ret_type;
             }

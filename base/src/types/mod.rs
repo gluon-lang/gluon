@@ -725,7 +725,8 @@ impl<Id, T> Field<Id, T> {
         J::IntoIter: DoubleEndedIterator,
         T: From<Type<Id, T>>,
     {
-        let typ = Type::function(
+        let typ = Type::function_type(
+            ArgType::Constructor,
             elems,
             Type::app(
                 Type::ident(alias_name),
@@ -744,6 +745,7 @@ impl<Id, T> Field<Id, T> {
 pub enum ArgType {
     Explicit,
     Implicit,
+    Constructor,
 }
 
 /// The representation of gluon's types.
@@ -1411,9 +1413,9 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
         }
-        match **self {
-            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            Type::Forall(ref params, ref typ) => {
+        match &**self {
+            Type::Generic(generic) => named_variables.get(&generic.id).cloned(),
+            Type::Forall(params, typ) => {
                 let removed: AppVec<_> = params
                     .iter()
                     .flat_map(|param| named_variables.remove_entry(&param.id))
@@ -1426,6 +1428,18 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
 
                 new_typ
             }
+            Type::Function(ArgType::Constructor, arg, ret) => match &**ret {
+                Type::Function(ArgType::Constructor, ..) => walk_move_type_opt(
+                    self,
+                    &mut InternerVisitor::control(interner, |interner, typ: &Self| {
+                        typ.replace_generics(interner, named_variables)
+                    }),
+                ),
+
+                _ => arg.replace_generics(interner, named_variables).map(|arg| {
+                    interner.function_type(ArgType::Constructor, Some(arg), ret.clone())
+                }),
+            },
             _ => walk_move_type_opt(
                 self,
                 &mut InternerVisitor::control(interner, |interner, typ: &Self| {

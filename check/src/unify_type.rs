@@ -273,7 +273,16 @@ impl Substitutable for RcType<Symbol> {
     where
         F: types::Walker<'a, Self>,
     {
-        types::walk_type_(self, f)
+        match &**self {
+            Type::Function(ArgType::Constructor, arg, ret) => match &**ret {
+                Type::Function(ArgType::Constructor, ..) => {
+                    f.walk(arg);
+                    f.walk(arg);
+                }
+                _ => f.walk(arg),
+            },
+            _ => types::walk_type_(self, f),
+        }
     }
 
     fn instantiate(&self, mut subs: &Substitution<Self>) -> Self {

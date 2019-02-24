@@ -266,11 +266,7 @@ y
 
     assert_multi_unify_err!(
         result,
-        [
-            Other(SelfRecursiveAlias(..)),
-            Other(SelfRecursiveAlias(..)),
-            Other(SelfRecursiveAlias(..))
-        ]
+        [Other(SelfRecursiveAlias(..)), Other(SelfRecursiveAlias(..))]
     );
 }
 

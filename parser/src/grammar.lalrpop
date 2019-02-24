@@ -310,19 +310,26 @@ TypeBinding: Box<TypeBinding<Id>> = {
                 } else {
                     let fields = variants.into_iter()
                         .map(|variant| match variant {
-                            Variant::Gadt(name, typ) => Field::new(name, typ),
+                            Variant::Gadt(name, mut typ) => {
+                                {
+                                    let mut typ = &mut typ;
+                                    while let Type::Function(arg_type, _, ret) = &mut **typ {
+                                        *arg_type = ArgType::Constructor;
+                                        typ = ret;
+                                    }
+                                }
+                                Field::new(name, typ)
+                            }
                             Variant::Simple(name, types) => Field::new(
                                 name,
-                                Type::forall(
-                                    params.iter().cloned().collect(),
-                                    Type::function(
-                                        types,
-                                        Type::app(
-                                            Type::ident(type_name.value.clone()),
-                                            params.iter().cloned().map(Type::generic).collect(),
-                                        ),
+                                Type::function_type(
+                                    ArgType::Constructor,
+                                    types,
+                                    Type::app(
+                                        Type::ident(type_name.value.clone()),
+                                        params.iter().cloned().map(Type::generic).collect(),
                                     ),
-                                ),
+                                )
                             ),
                         })
                         .collect();
