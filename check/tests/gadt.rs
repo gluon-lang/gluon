@@ -49,3 +49,18 @@ test_check! {
     "#,
     "()"
 }
+
+test_check! {
+    basic3,
+    r#"
+    type Test a =
+        | Int : Int -> Test Int
+
+    let f x : Test a -> a =
+        match x with
+        | Int x -> x
+    
+    ()
+    "#,
+    "()"
+}
