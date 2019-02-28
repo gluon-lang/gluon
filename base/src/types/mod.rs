@@ -2510,7 +2510,7 @@ macro_rules! chain {
     }}
 }
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 impl<'a, I, T> DisplayType<'a, T>
 where
@@ -2586,7 +2586,7 @@ where
                                         first = false;
                                         arena.nil()
                                     } else {
-                                        arena.newline()
+                                        arena.hardline()
                                     },
                                     "| ",
                                     field.name.as_ref(),
@@ -2613,7 +2613,7 @@ where
                         _ => {
                             doc = chain![arena;
                                 doc,
-                                arena.newline(),
+                                arena.hardline(),
                                 ".. ",
                                 top(row).pretty(printer)
                             ];
@@ -2704,10 +2704,10 @@ where
     {
         let arena = printer.arena;
 
-        let forced_newline = row_iter(row).any(|field| field.typ.comment().is_some());
+        let forced_hardline = row_iter(row).any(|field| field.typ.comment().is_some());
 
-        let newline = if forced_newline {
-            arena.newline()
+        let hardline = if forced_hardline {
+            arena.hardline()
         } else {
             arena.space()
         };
@@ -2730,7 +2730,7 @@ where
                 .nest(INDENT),
         };
         if !empty_fields && open != "(" {
-            doc = doc.append(newline);
+            doc = doc.append(hardline);
         }
 
         doc.append(close).group()
@@ -2760,10 +2760,10 @@ where
                 }
             }
         };
-        let forced_newline = fields.iter().any(|field| field.typ.comment().is_some());
+        let forced_hardline = fields.iter().any(|field| field.typ.comment().is_some());
 
-        let newline = if forced_newline {
-            arena.newline()
+        let hardline = if forced_hardline {
+            arena.hardline()
         } else {
             arena.space()
         };
@@ -2801,7 +2801,7 @@ where
                 }
             ]
             .group();
-            doc = doc.append(newline.clone()).append(f);
+            doc = doc.append(hardline.clone()).append(f);
         }
 
         let mut row_iter = row_iter(typ);
@@ -2835,29 +2835,29 @@ where
             let space_before = if i == 0 && open == "(" {
                 arena.nil()
             } else {
-                newline.clone()
+                hardline.clone()
             };
             doc = doc.append(space_before).append(f);
         }
         typ = row_iter.typ;
 
         let doc = if filtered {
-            if let Doc::Nil = doc.1 {
+            if let Doc::Nil = *doc.1 {
                 chain![arena;
-                    newline.clone(),
+                    hardline.clone(),
                     "..."
                 ]
             } else {
                 chain![arena;
-                    newline.clone(),
+                    hardline.clone(),
                     "...,",
                     doc,
-                    if let Doc::Space = newline.1 {
-                        arena.text(",")
-                    } else {
+                    if forced_hardline {
                         arena.nil()
+                    } else {
+                        arena.text(",")
                     },
-                    newline.clone(),
+                    hardline.clone(),
                     "..."
                 ]
             }

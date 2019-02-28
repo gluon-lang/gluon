@@ -33,25 +33,25 @@ pub fn doc_comment<'a, A>(
                 comment
                     .content
                     .lines()
-                    .map(|line| arena.text("/// ").append(line).append(arena.newline())),
+                    .map(|line| arena.text("/// ").append(line).append(arena.hardline())),
             ),
             CommentType::Block => chain![arena;
                 "/**",
-                arena.newline(),
+                arena.hardline(),
                 arena.concat(comment.content.lines().map(|line| {
                     let line = line.trim();
                     if line.is_empty() {
-                        arena.newline()
+                        arena.hardline()
                     } else {
                         chain![arena;
                             " ",
                             line,
-                            arena.newline()
+                            arena.hardline()
                         ]
                     }
                 })),
                 "*/",
-                arena.newline()
+                arena.hardline()
             ],
         },
         None => arena.nil(),
@@ -213,7 +213,7 @@ impl<'a, I, A> Printer<'a, I, A> {
 
     pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let (doc, comments) = self.comments_before_(pos);
-        if let Doc::Nil = doc.1 {
+        if let Doc::Nil = *doc.1 {
             self.arena.space()
         } else if comments {
             self.arena.space().append(doc).append(self.arena.space())
@@ -225,7 +225,7 @@ impl<'a, I, A> Printer<'a, I, A> {
     pub fn space_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         let doc = self.comments_after(end);
-        if let Doc::Nil = doc.1 {
+        if let Doc::Nil = *doc.1 {
             arena.space()
         } else {
             arena.space().append(doc)
@@ -256,9 +256,9 @@ impl<'a, I, A> Printer<'a, I, A> {
             .rev()
         {
             let x = if comment.is_empty() {
-                arena.newline()
+                arena.hardline()
             } else if comment.starts_with("//") {
-                arena.text(comment).append(arena.newline())
+                arena.text(comment).append(arena.hardline())
             } else {
                 comments += 1;
                 arena.text(comment)
@@ -293,19 +293,19 @@ impl<'a, I, A> Printer<'a, I, A> {
         }
 
         let mut comments = 0;
-        let mut ends_with_newline = false;
+        let mut ends_with_hardline = false;
         let doc = arena.concat(self.source.comments_between(span).map(|comment| {
-            ends_with_newline = false;
+            ends_with_hardline = false;
             if comment.is_empty() {
-                ends_with_newline = true;
-                arena.newline()
+                ends_with_hardline = true;
+                arena.hardline()
             } else if comment.starts_with("//") {
-                arena.text(comment).append(arena.newline())
+                arena.text(comment).append(arena.hardline())
             } else {
                 comments += 1;
                 arena.text(comment)
             }
         }));
-        (doc, comments, ends_with_newline)
+        (doc, comments, ends_with_hardline)
     }
 }

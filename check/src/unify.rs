@@ -63,11 +63,11 @@ where
             TypeMismatch(ref l, ref r) => {
                 let arena = Arena::new();
                 let doc = chain![&arena;
-                    arena.newline(),
+                    arena.hardline(),
                     "Expected:",
                     arena.space(),
                     l.to_doc(&arena, ()).group(),
-                    arena.newline(),
+                    arena.hardline(),
                     "Found:",
                     arena.space(),
                     r.to_doc(&arena, ()).group()

@@ -15,9 +15,9 @@ use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::source;
 use base::types::{self, ArgType, Prec, Type};
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
-macro_rules! newlines_iter {
+macro_rules! hardlines_iter {
     ($self_:ident, $iterable:expr) => {
         $iterable
             .into_iter()
@@ -26,7 +26,7 @@ macro_rules! newlines_iter {
     };
 }
 
-macro_rules! rev_newlines_iter {
+macro_rules! rev_hardlines_iter {
     ($self_:ident, $iterable:expr) => {
         $iterable
             .into_iter()
@@ -35,8 +35,8 @@ macro_rules! rev_newlines_iter {
     };
 }
 
-fn is_newline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
-    if let Doc::Newline = doc.1 {
+fn is_hardline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
+    if let Doc::BorrowedText("\n") = *doc.1 {
         true
     } else {
         false
@@ -44,7 +44,7 @@ fn is_newline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
 }
 
 fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
-    if let Doc::Nil = doc.1 {
+    if let Doc::Nil = *doc.1 {
         true
     } else {
         false
@@ -71,7 +71,7 @@ where
         }
     }
 
-    pub(super) fn format(&self, width: usize, newline: &'a str, expr: &'a SpannedExpr<I>) -> String
+    pub(super) fn format(&self, width: usize, hardline: &'a str, expr: &'a SpannedExpr<I>) -> String
     where
         A: Clone,
     {
@@ -80,7 +80,7 @@ where
             .pretty(width)
             .to_string()
             .lines()
-            .map(|s| format!("{}{}", s.trim_end(), newline))
+            .map(|s| format!("{}{}", s.trim_end(), hardline))
             .collect()
     }
 
@@ -202,7 +202,7 @@ where
             Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref()),
 
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
-                let space = newline(arena, expr);
+                let space = hardline(arena, expr);
                 chain![arena;
                     chain![arena;
                         "if ",
@@ -225,7 +225,7 @@ where
             } => chain![arena;
                 pretty(lhs).group(),
                 chain![arena;
-                    newline(arena, rhs),
+                    hardline(arena, rhs),
                     op.value.name.as_ref(),
                     " ",
                     pretty(rhs).group()
@@ -270,7 +270,7 @@ where
                         self.pretty_attributes(&bind.metadata.attributes),
                         self.hang(decl, &bind.expr).group(),
                         if self.formatter.expanded {
-                            arena.newline()
+                            arena.hardline()
                         } else {
                             arena.nil()
                         }
@@ -282,18 +282,18 @@ where
                 };
                 chain![arena;
                     if is_recursive {
-                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.newline() })
+                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.hardline() })
                     } else {
                         arena.nil()
                     },
                     arena.concat(
                         binds.iter()
                             .map(|bind| binding(bind))
-                            .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
+                            .interleave(hardlines_iter!(self, binds.iter().map(|bind| bind.span())))
                     ),
                     if is_recursive {
                         match body.value {
-                            Expr::LetBindings(..) => arena.newline().append(arena.text("in")),
+                            Expr::LetBindings(..) => arena.hardline().append(arena.text("in")),
                             _ => arena.nil()
                         }
                     } else {
@@ -338,7 +338,7 @@ where
                     pretty(expr),
                     " with"
                 ].group(),
-                arena.newline(),
+                arena.hardline(),
                 arena.concat(alts.iter().map(|alt| {
                     chain![arena;
                         "| ",
@@ -346,7 +346,7 @@ where
                         " ->",
                         self.hang(arena.nil(), &alt.expr).group()
                     ]
-                }).intersperse(arena.newline()))
+                }).intersperse(arena.hardline()))
             ],
 
             Expr::Projection(ref expr, ref field, _) => chain![arena;
@@ -360,26 +360,36 @@ where
                 x.append(y).group()
             }
 
-            Expr::Tuple { ref elems, .. } => chain![arena;
-                "(",
-                arena.concat(
-                    self.comma_sep_paren(
-                    elems
-                        .iter()
-                        .map(|elem| pos::spanned(elem.span, pretty(elem))),
-                    |spanned| spanned.value,
-                    ),
-                ),
-                ")"
-            ]
-            .group(),
+            Expr::Tuple { ref elems, .. } => {
+                let inner = chain![arena;
+                    arena.softline(),
+                    arena.concat(
+                        self.comma_sep_paren(
+                        elems
+                            .iter()
+                            .map(|elem| pos::spanned(elem.span, pretty(elem))),
+                        |spanned| spanned.value,
+                        ),
+                    )
+                ];
+                chain![arena;
+                    "(",
+                    if elems.len() == 1 {
+                        inner
+                    } else {
+                        inner.nest(INDENT).append(arena.softline())
+                    },
+                    ")"
+                ]
+                .group()
+            }
 
             Expr::TypeBindings(ref binds, ref body) => {
                 let is_recursive = binds.len() > 1;
 
                 chain![arena;
                     if is_recursive && binds.len() != 1 {
-                        arena.text("rec").append(arena.newline())
+                        arena.text("rec").append(arena.hardline())
                     } else {
                         arena.nil()
                     },
@@ -440,7 +450,7 @@ where
                                 Type::Variant(_) => {
                                     chain![arena;
                                         "=",
-                                        arena.newline(),
+                                        arena.hardline(),
                                         type_doc
                                     ].nest(INDENT)
                                 }
@@ -452,14 +462,14 @@ where
                                 }
                             }
                         ].group()
-                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
+                    }).interleave(hardlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     if is_recursive {
-                        arena.newline().append(arena.text("in"))
+                        arena.hardline().append(arena.text("in"))
                     } else {
                         arena.nil()
                     },
                     if self.formatter.expanded {
-                        arena.newline()
+                        arena.hardline()
                     } else {
                         arena.nil()
                     },
@@ -514,13 +524,13 @@ where
         default: DocBuilder<'a, Arena<'a, A>, A>,
     ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
-        let (doc, count, ends_with_newline) = self.comments_count(span);
-        if let Doc::Nil = doc.1 {
+        let (doc, count, ends_with_hardline) = self.comments_count(span);
+        if let Doc::Nil = *doc.1 {
             default
         } else if count == 0 {
-            // No comments, only newlines from the iterator
+            // No comments, only hardlines from the iterator
             doc
-        } else if ends_with_newline {
+        } else if ends_with_hardline {
             arena.space().append(doc)
         } else {
             arena.space().append(doc).append(arena.space())
@@ -577,7 +587,7 @@ where
                 ];
                 let (next_lambda, body) =
                     self.pretty_lambda(lambda.body.span.start(), &lambda.body);
-                if let Doc::Nil = next_lambda.1 {
+                if let Doc::Nil = *next_lambda.1 {
                     let decl = decl.append(self.space_before(lambda.body.span.start()));
                     (decl, body)
                 } else {
@@ -608,27 +618,27 @@ where
                 };
 
                 // Preserve comments before and after the comma
-                let newlines = newlines_iter!(self, spans())
-                    .zip(rev_newlines_iter!(self, spans()))
+                let hardlines = hardlines_iter!(self, spans())
+                    .zip(rev_hardlines_iter!(self, spans()))
                     .collect::<Vec<_>>();
 
-                let mut line = newline(arena, expr);
+                let mut line = hardline(arena, expr);
                 // If there are any explicit line breaks then we need put each field on a separate
                 // line
-                let newline_in_fields = newlines
+                let hardline_in_fields = hardlines
                     .iter()
                     .any(|&(ref l, ref r)| !is_nil(l) || !is_nil(r));
-                let newline_from_doc_comment = expr.value.field_iter().any(|either| {
+                let hardline_from_doc_comment = expr.value.field_iter().any(|either| {
                     either
                         .either(|f| &f.metadata, |f| &f.metadata)
                         .comment
                         .is_some()
                 });
-                let newline_in_base = base
+                let hardline_in_base = base
                     .as_ref()
                     .map_or(false, |base| !is_nil(&self.space_before(base.span.start())));
-                if newline_in_fields || newline_in_base | newline_from_doc_comment {
-                    line = arena.newline();
+                if hardline_in_fields || hardline_in_base | hardline_from_doc_comment {
+                    line = arena.hardline();
                 }
 
                 let last_field_end = spans()
@@ -666,7 +676,7 @@ where
                         |spanned| spanned.value,
                     ))
                     .append(
-                        if (!exprs.is_empty() || !types.is_empty()) && is_newline(&line) {
+                        if (!exprs.is_empty() || !types.is_empty()) && is_hardline(&line) {
                             arena.text(",")
                         } else {
                             arena.nil()
@@ -676,7 +686,7 @@ where
                         Some(ref base) => {
                             let comments = self.comments_after(last_field_end);
                             chain![arena;
-                                if let Doc::Nil = comments.1 {
+                                if let Doc::Nil = *comments.1 {
                                     line.clone()
                                 } else {
                                     comments
@@ -738,7 +748,7 @@ where
                     None => arena.nil(),
                 },
                 "]",
-                arena.newline()
+                arena.hardline()
             ]
         }))
     }
@@ -865,7 +875,7 @@ where
                 //     {
                 //         y,
                 //     }
-                let needs_indent = if let Doc::Space = spaces.1 {
+                let needs_indent = if let Doc::BorrowedText(" ") = *spaces.1 {
                     false
                 } else {
                     true
@@ -887,10 +897,10 @@ where
             }
             _ => {
                 let mut spaces = self.space_before(expr.span.start());
-                if let Doc::Space = spaces.1 {
+                if let Doc::BorrowedText(" ") = *spaces.1 {
                     match expr.value {
                         Expr::Lambda(..) => (),
-                        _ => spaces = newline(arena, expr),
+                        _ => spaces = hardline(arena, expr),
                     }
                 }
 
@@ -944,9 +954,9 @@ where
             .rev()
             .map(|comment| {
                 if comment.is_empty() {
-                    arena.newline()
+                    arena.hardline()
                 } else if comment.starts_with("//") {
-                    arena.text(comment).append(arena.newline())
+                    arena.text(comment).append(arena.hardline())
                 } else {
                     arena.text(comment)
                 }
@@ -1034,12 +1044,12 @@ fn pretty_kind<'a, A>(
     }
 }
 
-fn newline<'a, Id, A>(
+fn hardline<'a, Id, A>(
     arena: &'a Arena<'a, A>,
     expr: &'a SpannedExpr<Id>,
 ) -> DocBuilder<'a, Arena<'a, A>, A> {
     if forced_new_line(expr) {
-        arena.newline()
+        arena.hardline()
     } else {
         arena.space()
     }

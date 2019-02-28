@@ -2,7 +2,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use pretty::{Doc, DocAllocator, DocBuilder};
+use pretty::{DocAllocator, DocBuilder};
 
 use crate::ast::EmptyEnv;
 use crate::symbol::{Symbol, SymbolRef};
@@ -115,7 +115,7 @@ impl<'a, A, B, E> ToDoc<'a, A, B, E> for ArcKind {
     where
         A: DocAllocator<'a, B>,
     {
-        DocBuilder(allocator, Doc::text(self.to_string()))
+        allocator.text(self.to_string())
     }
 }
 

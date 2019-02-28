@@ -149,7 +149,7 @@ fn repl() {
 }
 
 #[test]
-fn json() {
+fn json_de() {
     test_format("std/json/de.glu");
 }
 
@@ -183,6 +183,20 @@ r##"abc
     "  "##
 "####;
     assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
+fn long_tuple() {
+    let expr = r#"
+(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+"#;
+    assert_eq!(&format_expr(expr).unwrap(),
+r#"
+(
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+)
+"#);
 }
 
 #[test]
