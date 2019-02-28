@@ -149,13 +149,13 @@ pub trait Substitutable: Sized {
     }
 }
 
-pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
+pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: u32) -> bool
 where
     T: Substitutable,
 {
     struct Occurs<'a, T: Substitutable + 'a> {
         occurs: bool,
-        var: &'a T::Variable,
+        var: u32,
         subs: &'a Substitution<T>,
     }
     impl<'a, 't, T> Walker<'t, T> for Occurs<'a, T>
@@ -173,7 +173,7 @@ where
                     typ.traverse(self);
                     return;
                 }
-                self.subs.update_level(self.var.get_id(), other.get_id());
+                self.subs.update_level(self.var, other.get_id());
             }
             typ.traverse(self);
         }
@@ -181,8 +181,8 @@ where
 
     let mut occurs = Occurs {
         occurs: false,
-        var: var,
-        subs: subs,
+        var,
+        subs,
     };
     occurs.walk(typ);
     occurs.occurs
@@ -292,6 +292,10 @@ where
     pub fn replace(&mut self, var: u32, t: T) {
         debug_assert!(t.get_id() != Some(var));
         self.types.insert(var as usize, t.into());
+    }
+
+    pub fn reset(&mut self, var: u32) {
+        self.types.remove(var as usize);
     }
 
     /// Assumes that no variables unified with anything (but variables < level may exist)
@@ -424,43 +428,40 @@ impl<T: Substitutable + Clone> Substitution<T> {
 
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union(&self, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
+    pub fn union(&self, variable: &T, typ: &T) -> Result<Option<T>, Error<T>>
     where
         T::Variable: Clone,
         T: fmt::Display,
     {
+        assert!(variable.get_id().is_some(), "Expected a variable");
+        let id = variable.get_id().unwrap();
+
         let resolved_type = typ.on_union();
         let typ = resolved_type.unwrap_or(typ);
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
-        if typ
-            .get_var()
-            .map_or(false, |other| other.get_id() == id.get_id())
-        {
+        if typ.get_var().map_or(false, |other| other.get_id() == id) {
             return Ok(None);
         }
         if occurs(typ, self, id) {
-            return Err(Error::Occurs(
-                T::from_variable(self, id.clone()),
-                typ.clone(),
-            ));
+            return Err(Error::Occurs(variable.clone(), typ.clone()));
         }
         {
-            let id_type = self.find_type_for_var(id.get_id());
+            let id_type = self.find_type_for_var(id);
             let other_type = self.real(typ);
             if id_type.map_or(false, |x| x == other_type)
-                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+                || other_type.get_var().map(|y| y.get_id()) == Some(id)
             {
                 return Ok(None);
             }
         }
         {
             let typ = resolved_type.unwrap_or(typ);
-            match typ.get_var().map(|id| id.get_id()) {
-                Some(other_id) => {
+            match typ.get_id() {
+                Some(other_id) if variable.get_var().is_some() == typ.get_var().is_some() => {
                     self.union
                         .borrow_mut()
-                        .union(id.get_id() as usize, other_id as usize);
+                        .union(id as usize, other_id as usize);
                     self.update_level(id.get_id(), other_id);
                     self.update_level(other_id, id.get_id());
                 }

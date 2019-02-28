@@ -64,3 +64,69 @@ test_check! {
     "#,
     "()"
 }
+
+test_check! {
+    different_types_concrete,
+    r#"
+    type Test a =
+        | Int : Int -> Test Int
+        | Float : Float -> Test Float
+
+    let f x : Test a -> a =
+        match x with
+        | Int x -> x
+        | Float x -> x
+    
+    ()
+    "#,
+    "()"
+}
+
+test_check! {
+    different_types_a,
+    r#"
+    type Test a =
+        | Int : Int -> Test Int
+        | A : a -> Test a
+
+    let f x : Test a -> a =
+        match x with
+        | Int x -> x
+        | A x -> x
+    
+    ()
+    "#,
+    "()"
+}
+
+test_check_err! {
+    different_types_error,
+    r#"
+    type Test a =
+        | Int : Int -> Test Int
+        | A : Test a
+
+    let f x y : Test a -> b -> a =
+        match x with
+        | Int x -> x
+        | A -> y
+    
+    ()
+    "#,
+    Unification(..)
+}
+
+test_check_err! {
+    using_parameter_with_specific_type_errors,
+    r#"
+    type Test a =
+        | Test : a -> Test Int
+
+    let f x : Test a -> a =
+        match x with
+        | Test x -> x
+    
+    ()
+    "#,
+    Unification(..)
+}

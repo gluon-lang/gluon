@@ -133,6 +133,7 @@ pub struct Typecheck<'a> {
 
     pub(crate) implicit_resolver: implicits::ImplicitResolver<'a>,
     unbound_variables: ScopedMap<Symbol, ArcKind>,
+    refined_variables: ScopedMap<u32, ()>,
 }
 
 impl<'a> TypeContext<Symbol, RcType> for Typecheck<'a> {
@@ -169,6 +170,7 @@ impl<'a> Typecheck<'a> {
             kind_cache: interner.kind_cache.clone(),
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
+            refined_variables: ScopedMap::new(),
             subs,
         }
     }
@@ -806,6 +808,8 @@ impl<'a> Typecheck<'a> {
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
+                    self.refined_variables.enter_scope();
+
                     self.typecheck_pattern(&mut alt.pattern, scrutinee_type.clone());
 
                     let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
@@ -815,6 +819,9 @@ impl<'a> Typecheck<'a> {
                             alt_type = self.unify_span(alt.expr.span, expr_type, alt_type);
                         }
                         _ => (),
+                    }
+                    for (var, _) in self.refined_variables.exit_scope() {
+                        self.subs.reset(var);
                     }
                     self.exit_scope();
 
@@ -1479,45 +1486,26 @@ impl<'a> Typecheck<'a> {
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
 
-                {
-                    let ctor_return_type = {
-                        let mut iter = types::arg_iter(ctor_type.remove_forall());
-                        for _ in &mut iter {}
-                        iter.typ.clone()
-                    };
-                    let match_return_type = {
-                        let mut iter = types::arg_iter(&match_type);
-                        for _ in &mut iter {}
-                        iter.typ.clone()
-                    };
-
-                    // Test Int a String <=> Test b c String
-                    // b = Int
-                    // c = a
-                    match (&*ctor_return_type, &*match_return_type) {
-                        (Type::App(l_id, l_args), Type::App(r_id, r_args)) if l_id == r_id => {
-                            for (l, r) in l_args.iter().zip(r_args) {
-                                match (&**l, &**r) {
-                                    (_, Type::Skolem(r_skolem)) => {
-                                        self.subs.replace(r_skolem.id, l.clone());
-                                    }
-                                    _ => {
-                                        self.unify_span(pattern.span, l, r.clone());
-                                    }
-                                }
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-
                 id.typ = self.subs.bind_arc(&ctor_type);
+
+                let wobbly = match_type.flags().contains(types::Flags::HAS_VARIABLES);
+                let ctor_type = if wobbly {
+                    self.instantiate_generics(&ctor_type)
+                } else {
+                    self.skolemize(&ctor_type)
+                };
+
                 let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
                 let return_type = self.instantiate_generics(&return_type);
-                self.subsumes(span, ErrorOrder::ExpectedActual, &match_type, return_type)
+
+                if wobbly {
+                    self.subsumes(span, ErrorOrder::ExpectedActual, &return_type, match_type)
+                } else {
+                    self.refines(span, ErrorOrder::ExpectedActual, &return_type, match_type)
+                }
             }
             Pattern::Record {
                 typ: ref mut curr_typ,
@@ -1664,16 +1652,13 @@ impl<'a> Typecheck<'a> {
     ) -> TcResult<RcType> {
         let len = args.len();
         match args.split_first_mut() {
-            Some((head, tail)) => {
-                let typ = self.instantiate_generics(&typ);
-                match typ.as_function() {
-                    Some((arg, ret)) => {
-                        self.typecheck_pattern(head, arg.clone());
-                        self.typecheck_pattern_rec(tail, ret.clone())
-                    }
-                    None => Err(TypeError::PatternError(typ.clone(), len)),
+            Some((head, tail)) => match typ.as_function() {
+                Some((arg, ret)) => {
+                    self.typecheck_pattern(head, arg.clone());
+                    self.typecheck_pattern_rec(tail, ret.clone())
                 }
-            }
+                None => Err(TypeError::PatternError(typ.clone(), len)),
+            },
             None => Ok(typ),
         }
     }
@@ -2500,6 +2485,55 @@ impl<'a> Typecheck<'a> {
     ) -> RcType {
         debug!("Merge {} : {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs);
+        match unify_type::subsumes(&self.subs, state, &expected, &actual) {
+            Ok(typ) => typ,
+            Err((typ, mut errors)) => {
+                let expected = expected.clone();
+                debug!(
+                    "Error '{}' between:\n>> {}\n>> {}",
+                    errors, expected, actual
+                );
+                let err = match error_order {
+                    ErrorOrder::ExpectedActual => {
+                        TypeError::Unification(expected, actual, errors.into())
+                    }
+                    ErrorOrder::ActualExpected => {
+                        for err in &mut errors {
+                            match err {
+                                unify::Error::TypeMismatch(l, r) => mem::swap(l, r),
+                                unify::Error::Other(unify_type::TypeError::FieldMismatch(l, r)) => {
+                                    mem::swap(l, r)
+                                }
+                                _ => (),
+                            }
+                        }
+                        TypeError::Unification(actual, expected, errors.into())
+                    }
+                };
+                self.errors.push(Spanned {
+                    span: span,
+                    // TODO Help what caused this unification failure
+                    value: err.into(),
+                });
+                typ
+            }
+        }
+    }
+
+    fn refines(
+        &mut self,
+        span: Span<BytePos>,
+        error_order: ErrorOrder,
+        expected: &RcType,
+        actual: RcType,
+    ) -> RcType {
+        debug!("Refine {} : {}", expected, actual);
+        types::walk_type(&actual, &mut |typ: &RcType| {
+            if let Type::Skolem(skolem) = &**typ {
+                self.refined_variables.entry(skolem.id).or_insert(());
+            }
+        });
+        let state = unify_type::State::with_refinement(&self.environment, &self.subs, true);
         match unify_type::subsumes(&self.subs, state, &expected, &actual) {
             Ok(typ) => typ,
             Err((typ, mut errors)) => {

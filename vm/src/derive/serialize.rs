@@ -173,7 +173,7 @@ pub fn generate(
         ))],
         expr: serializer_expr,
         metadata: Default::default(),
-        typ: Some(Type::function(collect![self_type.clone()], Type::hole())),
+        typ: Some(Type::function(Some(self_type.clone()), Type::hole())),
         resolved_type: Type::hole(),
     };
 

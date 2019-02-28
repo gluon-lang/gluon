@@ -41,9 +41,9 @@ let monad : Monad (Eff r) = {
     flat_map = flat_map_eff,
 }
 
-type OpenVariant r a = .. r
+type OpenVariant a = forall r . (.. r)
 #[doc(hidden)]
-let inject_rest x : forall e . OpenVariant r a -> [| | r |] a = convert_effect! x
+let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
 
 let run_pure eff : Eff [| |] a -> a =
     match eff with
