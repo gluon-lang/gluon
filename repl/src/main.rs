@@ -286,7 +286,7 @@ async fn main() {
             Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
             _ => {
                 let mut stderr = termcolor::StandardStream::stderr(color.into());
-                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
+                if let Err(err) = err.emit(&mut stderr) {
                     eprintln!("{}", err);
                 } else {
                     eprintln!("");

@@ -8,10 +8,10 @@ let { wrap } = import! std.applicative
 
 /// The `Error` effects adds "exceptions" to the `Eff` monad
 type Error e r a =
-    | Error : e -> Error e r a
-    .. r
+    | Error e .. r
 
-let send_error f : Error e r a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
+let send_error f : Error e r a -> Eff [| error : Error e | r |] a =
+    Impure (convert_effect! error f) Pure
 
 let extract_error x : forall e . [| error : Error e | r |] a -> Error e r a = convert_variant! x
 
@@ -35,7 +35,7 @@ let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] 
         match ve with
         | Pure v -> wrap (Ok v)
         | Impure e f ->
-            match extract_error e with 
+            match extract_error e with
             | Error err ->
                 wrap (Err err)
             | rest ->
@@ -43,12 +43,20 @@ let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] 
     loop eff
 
 /// Catches an "exception", allowing the effect to continue executing
-let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff [| error : Error e | r |] a) -> Eff [| error : Error e | r |] a =
+let catch eff handler : forall e .
+
+
+
+
+        Eff [| error : Error e | r |] a
+        -> (e -> Eff [| error : Error e | r |] a)
+        -> Eff [| error : Error e | r |] a
+    =
     let loop ve : Eff [| error : Error e | r |] a -> Eff [| error : Error e | r |] a =
         match ve with
         | Pure v -> wrap v
         | Impure e f ->
-            match extract_error e with 
+            match extract_error e with
             | Error err ->
                 handler err
             | rest ->

@@ -36,13 +36,18 @@ let { flat_map } = import! std.monad
     Group,
 
     Eq,
-    (==), (/=),
+    (==),
+    (/=),
 
     Ord,
-    (<), (<=), (>=), (>),
+    (<),
+    (<=),
+    (>=),
+    (>),
 
     Category,
-    id, compose,
+    id,
+    compose,
 
     Functor,
     Applicative,
@@ -50,7 +55,11 @@ let { flat_map } = import! std.monad
     Monad,
 
     Num,
-    (+), (-), (*), (/), negate,
+    (+),
+    (-),
+    (*),
+    (/),
+    negate,
 
     Show,
     show,

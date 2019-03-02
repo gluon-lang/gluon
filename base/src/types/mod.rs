@@ -1208,6 +1208,17 @@ where
         }
     }
 
+    fn is_simple_constructor(&self) -> bool {
+        let mut typ = self;
+        while let Some((_, ret)) = typ.as_function() {
+            typ = ret;
+        }
+        match typ {
+            Type::Opaque => true,
+            _ => false,
+        }
+    }
+
     pub fn as_function(&self) -> Option<(&T, &T)> {
         self.as_function_with_type().map(|t| (t.1, t.2))
     }
@@ -2499,17 +2510,6 @@ where
     }
 }
 
-#[macro_export]
-macro_rules! chain {
-    ($alloc: expr; $first: expr, $($rest: expr),+) => {{
-        let mut doc = ::pretty::DocBuilder($alloc, $first.into());
-        $(
-            doc = doc.append($rest);
-        )*
-        doc
-    }}
-}
-
 const INDENT: isize = 4;
 
 impl<'a, I, T> DisplayType<'a, T>
@@ -2521,12 +2521,28 @@ where
     where
         A: Clone,
     {
+        let typ = self.typ;
+
+        let doc = self.pretty_(printer);
+        match **typ {
+            Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
+            _ => {
+                let comment = printer.comments_before(typ.span().start());
+                comment.append(doc)
+            }
+        }
+    }
+
+    fn pretty_<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = printer.arena;
 
         let p = self.prec;
         let typ = self.typ;
 
-        let doc = match **typ {
+        match **typ {
             Type::Hole => arena.text("_"),
             Type::Error => arena.text("!"),
             Type::Opaque => arena.text("<opaque>"),
@@ -2535,14 +2551,14 @@ where
                     chain![arena;
                         "forall ",
                         arena.concat(args.iter().map(|arg| {
-                            arena.text(arg.id.as_ref()).append(arena.space())
+                            arena.text(arg.id.as_ref()).append(arena.line())
                         })),
                         "."
                     ].group(),
-                    arena.space(),
+                    arena.line(),
                     top(typ).pretty(printer)
                 ];
-                p.enclose(Prec::Function, arena, doc)
+                p.enclose(Prec::Function, arena, doc).group()
             }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Skolem(ref skolem) => chain![
@@ -2556,11 +2572,11 @@ where
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
                 None => {
-                    let doc = dt(Prec::Top, t).pretty(printer);
+                    let doc = dt(Prec::Top, t).pretty_(printer);
                     let arg_doc = arena.concat(args.iter().map(|arg| {
-                        arena
-                            .space()
-                            .append(dt(Prec::Constructor, arg).pretty(printer))
+                        printer
+                            .space_before(arg.span().start())
+                            .append(dt(Prec::Constructor, arg).pretty_(printer))
                     }));
                     let doc = doc.append(arg_doc.nest(INDENT));
                     p.enclose(Prec::Constructor, arena, doc).group()
@@ -2580,7 +2596,6 @@ where
                             ..
                         } => {
                             doc = doc.append(arena.concat(fields.iter().map(|field| {
-                                let typ = remove_forall(&field.typ);
                                 chain![arena;
                                     if first {
                                         first = false;
@@ -2588,32 +2603,37 @@ where
                                     } else {
                                         arena.hardline()
                                     },
-                                    "| ",
-                                    field.name.as_ref(),
-                                    if typ.as_function().is_some() {
-                                        arena.concat(arg_iter(typ).map(|arg| {
+                                    chain![arena;
+                                        "| ",
+                                        field.name.as_ref(),
+                                        if field.typ.is_simple_constructor() {
+                                            arena.concat(arg_iter(&field.typ).map(|arg| {
+                                                chain![arena;
+                                                    " ",
+                                                    dt(Prec::Constructor, arg).pretty(printer)
+                                                ]
+                                            }))
+                                        } else {
                                             chain![arena;
-                                                " ",
-                                                dt(Prec::Constructor, arg).pretty(printer)
-                                            ]
-                                        }))
-                                    } else {
-                                        arena.concat(row_iter(typ).map(|field| {
-                                            chain![arena;
-                                                " ",
-                                                dt(Prec::Constructor, &field.typ).pretty(printer)
-                                            ]
-                                        }))
-                                    }
+                                                " :",
+                                                arena.line(),
+                                                top(&field.typ).pretty(printer),
+                                            ].nest(INDENT)
+                                        }
+                                    ]
+                                    .group()
                                 ]
-                                .group()
                             })));
                             rest
                         }
                         _ => {
                             doc = chain![arena;
                                 doc,
-                                arena.hardline(),
+                                    if first {
+                                        arena.nil()
+                                    } else {
+                                        arena.line()
+                                    },
                                 ".. ",
                                 top(row).pretty(printer)
                             ];
@@ -2678,17 +2698,6 @@ where
                     .intersperse(arena.text(".")),
             ),
             Type::Alias(ref alias) => printer.symbol(&alias.name),
-        };
-        match **typ {
-            Type::App(..)
-            | Type::ExtendRow { .. }
-            | Type::ExtendTypeRow { .. }
-            | Type::Variant(..)
-            | Type::Function(..) => doc,
-            _ => {
-                let comment = printer.comments_before(typ.span().start());
-                comment.append(doc)
-            }
         }
     }
 
@@ -2709,7 +2718,7 @@ where
         let hardline = if forced_hardline {
             arena.hardline()
         } else {
-            arena.space()
+            arena.line()
         };
 
         let mut doc = arena.text(open);
@@ -2724,7 +2733,7 @@ where
                 .append(top(row).pretty_row(open, printer, pretty_field))
                 .nest(INDENT),
             _ => doc
-                .append(arena.space())
+                .append(arena.line())
                 .append("| ")
                 .append(top(row).pretty(printer))
                 .nest(INDENT),
@@ -2765,7 +2774,7 @@ where
         let hardline = if forced_hardline {
             arena.hardline()
         } else {
-            arena.space()
+            arena.line()
         };
 
         let print_any_field = fields
@@ -2784,9 +2793,9 @@ where
 
             let f = chain![arena;
                 field.name.as_ref(),
-                arena.space(),
+                arena.line(),
                 arena.concat(field.typ.params().iter().map(|param| {
-                    arena.text(param.id.as_ref()).append(arena.space())
+                    arena.text(param.id.as_ref()).append(arena.line())
                 })),
                 arena.text("= "),
                 if filter == Filter::RetainKey {
@@ -2794,7 +2803,7 @@ where
                 } else {
                      top(&field.typ.typ).pretty(printer)
                 },
-                if i + 1 != types_len || print_any_field {
+            if i + 1 != types_len || print_any_field {
                     arena.text(",")
                 } else {
                     arena.nil()
@@ -2867,7 +2876,7 @@ where
         match **typ {
             Type::EmptyRow => doc,
             _ => doc
-                .append(arena.space())
+                .append(arena.line())
                 .append("| ")
                 .append(top(typ).pretty(printer)),
         }
@@ -2891,9 +2900,11 @@ where
         let arena = printer.arena;
         match self.typ.as_function_with_type() {
             Some((arg_type, arg, ret)) => chain![arena;
-                if arg_type == ArgType::Implicit { "[" } else { "" },
-                dt(Prec::Function, arg).pretty(printer),
-                if arg_type == ArgType::Implicit { "]" } else { "" },
+                chain![arena;
+                    if arg_type == ArgType::Implicit { arena.text("[") } else { arena.nil() },
+                    dt(Prec::Function, arg).pretty(printer),
+                    if arg_type == ArgType::Implicit { arena.text("]") } else { arena.nil() },
+                ].group(),
                 printer.space_after(arg.span().end()),
                 "-> ",
                 top(ret).pretty_function_(printer)

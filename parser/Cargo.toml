@@ -23,7 +23,7 @@ itertools = "0.8"
 quick-error = "1.0.0"
 lalrpop-util = "0.17.2"
 log = "0.4"
-pretty = "0.5"
+pretty = "0.9"
 gluon_base = { path = "../base", version = "0.13.1" } # GLUON
 ordered-float = "1"
 codespan = "0.3"

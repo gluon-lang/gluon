@@ -17,7 +17,7 @@ let xor x y : Bool -> Bool -> Bool = if x then not y else y
 
 let conjunctive =
     let semigroup : Semigroup Bool = {
-        append = \x y -> x && y
+        append = \x y -> x && y,
     }
 
     let monoid : Monoid Bool = {
@@ -29,7 +29,7 @@ let conjunctive =
 
 let disjunctive =
     let semigroup : Semigroup Bool = {
-        append = \x y -> x || y
+        append = \x y -> x || y,
     }
 
     let monoid : Monoid Bool = {
@@ -55,15 +55,16 @@ let exclusive =
     { semigroup, monoid, group }
 
 let eq : Eq Bool = {
-    (==) = \l r -> if l then r else not r
+    (==) = \l r -> if l then r else not r,
 }
 
 let ord : Ord Bool = {
-    eq = eq, compare = \l r -> if l then if r then EQ else GT else LT
+    eq = eq,
+    compare = \l r -> if l then if r then EQ else GT else LT,
 }
 
 let show : Show Bool = {
-    show = \x -> if x then "True" else "False"
+    show = \x -> if x then "True" else "False",
 }
 
 {

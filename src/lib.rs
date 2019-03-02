@@ -243,29 +243,28 @@ impl From<Errors<Error>> for Error {
 }
 
 impl Error {
-    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> ::std::io::Result<String> {
+    pub fn emit_string(&self) -> ::std::io::Result<String> {
         let mut output = Vec::new();
         self.emit(
             &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-            code_map,
         )?;
         Ok(String::from_utf8(output).unwrap())
     }
 
-    pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> ::std::io::Result<()>
+    pub fn emit<W>(&self, writer: &mut W) -> ::std::io::Result<()>
     where
         W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
     {
         match *self {
-            Error::Parse(ref err) => err.emit(writer, code_map),
-            Error::Typecheck(ref err) => err.emit(writer, code_map),
+            Error::Parse(ref err) => err.emit(writer),
+            Error::Typecheck(ref err) => err.emit(writer),
             Error::IO(ref err) => write!(writer, "{}", err),
             Error::VM(ref err) => write!(writer, "{}", err),
-            Error::Macro(ref err) => err.emit(writer, code_map),
+            Error::Macro(ref err) => err.emit(writer),
             Error::Other(ref err) => write!(writer, "{}", err),
             Error::Multiple(ref errors) => {
                 for err in errors {
-                    err.emit(writer, code_map)?;
+                    err.emit(writer)?;
                 }
                 Ok(())
             }

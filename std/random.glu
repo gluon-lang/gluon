@@ -8,7 +8,7 @@ type RandomGen g = { next : g -> { value : Int, gen : g } }
 
 let xor_shift_rng =
     let random_gen : RandomGen XorShiftRng = {
-        next = prim.xor_shift_next
+        next = prim.xor_shift_next,
     }
 
     {

@@ -99,7 +99,7 @@ impl pretty::Render for SymbolLinkRenderer {
     }
 }
 
-impl pretty::RenderAnnotated<String> for SymbolLinkRenderer {
+impl pretty::RenderAnnotated<'_, String> for SymbolLinkRenderer {
     fn push_annotation(&mut self, annotation: &String) -> StdResult<(), Self::Error> {
         self.flush_to_escaped();
         self.escaped
@@ -124,7 +124,7 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
         .pretty(&arena);
     match **typ {
         Type::Record(_) => (),
-        Type::Variant(_) => doc = arena.newline().append(doc).nest(4),
+        Type::Variant(_) => doc = arena.hardline().append(doc).nest(4),
         _ => {
             doc = doc.nest(4);
         }

@@ -8,19 +8,23 @@ let { (<<), id } = import! std.function
 
 /// The `Alt` effect lets `Eff` implement `Alternative`
 type Alt r a =
-    | Empty
-    .. r
+    | Empty .. r
 
 let extract_alt x : forall s . [| alt : Alt | r |] a -> Alt r a = convert_variant! x
 
 let send_alt f : Alt r a -> Eff [| alt : Alt | r |] a = Impure (convert_effect! alt f) Pure
 
-let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | s |] b =
+let run_alt_inner transform fail eff_1 eff_2 : (a -> b)
+        -> (() -> Eff [| | s |] b)
+        -> Eff [| alt : Alt | r |] a
+        -> Eff [| alt : Alt | r |] a
+        -> Eff [| | s |] b
+    =
     let loop next ve : (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> _ =
         match ve with
         | Pure value -> wrap (transform value)
         | Impure e f ->
-            match extract_alt e with 
+            match extract_alt e with
             | Empty ->
                 next ()
             | rest ->
@@ -38,7 +42,7 @@ let alternative : Alternative (Eff [| alt : Alt | r |]) = {
 }
 
 /// Eliminates the `Alt` effect returning `None` if the `Alt` effect is `empty`, otherwise returns `Some a` with the value
-/// 
+///
 /// ```
 /// let { assert_eq, ? } = import! std.test
 /// let alt @ { ? } = import! std.effect.alt
@@ -48,14 +52,17 @@ let alternative : Alternative (Eff [| alt : Alt | r |]) = {
 /// let { Eff, run_pure, ? } = import! std.effect
 ///
 /// let incr = state.modify (\x -> x + 1)
-/// 
+///
 /// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt incr incr))) (1)
 /// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> incr) incr))) (2)
 /// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> empty *> incr) incr))) (2)
 /// assert_eq (run_pure (state.exec_state 0 (alt.run_alt empty incr))) (1)
-/// 
+///
 /// ```
-let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | r |] (Option a) =
+let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a
+        -> Eff [| alt : Alt | r |] a
+        -> Eff [| | r |] (Option a)
+    =
     let fail _ = wrap None
     run_alt_inner Some fail eff_1 eff_2
 

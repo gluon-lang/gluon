@@ -19,18 +19,15 @@ let cons l r = prim.append [l] r
 
 let eq ?eq : [Eq a] -> Eq (Array a) =
     let array_eq l r =
-        if prim.len l /= prim.len r then
-            False
+        if prim.len l /= prim.len r then False
         else
             let len = prim.len l
-            rec
-            let array_eq_ i =
+            rec let array_eq_ i =
                 if i < len then
                     let x = prim.index l i
                     let y = prim.index r i
                     eq.(==) x y && array_eq_ (i + 1)
-                else
-                    True
+                else True
             array_eq_ 0
     { (==) = array_eq }
 
@@ -44,8 +41,7 @@ let ord ?ord : [Ord a] -> Ord (Array a) =
                 match ord.compare x y with
                 | EQ -> array_cmp_ (i + 1)
                 | o -> o
-            else
-                compare (prim.len l) (prim.len r)
+            else compare (prim.len l) (prim.len r)
 
         array_cmp_ 0
     { eq, compare = array_cmp }
@@ -54,15 +50,13 @@ let show ?d : [Show a] -> Show (Array a) =
 
     let show xs =
         let len = prim.len xs
-        if len == 0 then
-            "[]"
+        if len == 0 then "[]"
         else
             rec let show_elems i =
                 if i < len then
                     let x = prim.index xs i
                     ", " ++ d.show x ++ show_elems (i + 1)
-                else
-                    ""
+                else ""
 
             "[" ++ d.show (prim.index xs 0) ++ show_elems 1 ++ "]"
     { show }
@@ -73,8 +67,7 @@ let functor : Functor Array =
             if i < prim.len xs then
                 let y = prim.index xs i
                 cons (f y) (map_ (i + 1))
-            else
-                []
+            else []
         map_ 0
     { map }
 
@@ -82,8 +75,7 @@ let foldable : Foldable Array =
     let foldr f y xs =
         let len = prim.len xs
         rec let foldr_ i y =
-            if i == 0 then
-                y
+            if i == 0 then y
             else
                 let x = prim.index xs (i - 1)
                 foldr_ (i - 1) (f x y)
@@ -95,8 +87,7 @@ let foldable : Foldable Array =
             if i < len then
                 let x = prim.index xs i
                 foldl_ (i + 1) (f y x)
-            else
-                y
+            else y
 
         foldl_ 0 y
 
