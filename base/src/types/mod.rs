@@ -718,21 +718,13 @@ impl<Id, T> Field<Id, T> {
         Field { name, typ }
     }
 
-    pub fn ctor<I, J>(alias_name: Id, params: I, ctor_name: Id, elems: J) -> Self
+    pub fn ctor<J>(ctor_name: Id, elems: J) -> Self
     where
-        I: IntoIterator<Item = Generic<Id>>,
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
         T: From<Type<Id, T>>,
     {
-        let typ = Type::function_type(
-            ArgType::Constructor,
-            elems,
-            Type::app(
-                Type::ident(alias_name),
-                params.into_iter().map(Type::generic).collect(),
-            ),
-        );
+        let typ = Type::function_type(ArgType::Constructor, elems, Type::opaque());
         Field {
             name: ctor_name,
             typ,
@@ -1894,6 +1886,13 @@ where
         }
         None => (Some(self_), Cow::Borrowed(&[][..])),
     }
+}
+
+pub fn ctor_args<Id, T>(typ: &T) -> ArgIterator<T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    ArgIterator { typ }
 }
 
 pub struct ArgIterator<'a, T: 'a> {

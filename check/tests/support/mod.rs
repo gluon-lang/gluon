@@ -301,24 +301,15 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     )
 }
 
-pub fn variant(s: &str, params: &[&str], arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
+pub fn variant(arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
     let arg = intern_unscoped(arg);
-    Field::ctor(
-        intern(s),
-        params
-            .iter()
-            .cloned()
-            .map(intern_unscoped)
-            .map(|p| Generic::new(p, Kind::typ())),
-        arg,
-        types.iter().cloned(),
-    )
+    Field::ctor(arg, types.iter().cloned())
 }
 
 pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> ArcType {
     let variants = Type::variant(
         args.iter()
-            .map(|(arg, types)| variant(s, params, arg, types))
+            .map(|(arg, types)| variant(arg, types))
             .collect(),
     );
     alias(s, params, variants)

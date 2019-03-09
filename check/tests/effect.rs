@@ -162,7 +162,6 @@ let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a
     "()"
 }
 
-
 test_check! {
     inject_open_variant,
     r#"
@@ -172,4 +171,3 @@ let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
     "#,
     "()"
 }
-

@@ -517,9 +517,9 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     type Error = VmError;
 
     fn unit_variant(self) -> Result<()> {
-        self.de.variant = Some(Field::new(
+        self.de.variant = Some(Field::ctor(
             self.de.state.symbols.symbol(self.variant),
-            Type::unit(),
+            vec![],
         ));
         Ok(())
     }
@@ -529,12 +529,9 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
         T: DeserializeSeed<'de>,
     {
         let value = seed.deserialize(&mut *self.de)?;
-        self.de.variant = Some(Field::new(
+        self.de.variant = Some(Field::ctor(
             self.de.state.symbols.symbol(self.variant),
-            Type::tuple(
-                &mut self.de.state.symbols,
-                vec![self.de.typ.take().expect("typ")],
-            ),
+            vec![self.de.typ.take().expect("typ")],
         ));
         Ok(value)
     }
@@ -550,9 +547,9 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
                 seq_deserializer.types,
             )
         };
-        self.de.variant = Some(Field::new(
+        self.de.variant = Some(Field::ctor(
             self.de.state.symbols.symbol(self.variant),
-            Type::tuple(&mut self.de.state.symbols, types),
+            types,
         ));
         Ok(value)
     }
@@ -613,15 +610,9 @@ mod tests {
         assert_eq!(
             typ,
             Type::variant(vec![
-                Field::new(symbols.symbol("A"), Type::unit()),
-                Field::new(
-                    symbols.symbol("B"),
-                    Type::tuple(&mut symbols, vec![Type::int()])
-                ),
-                Field::new(
-                    symbols.symbol("C"),
-                    Type::tuple(&mut symbols, vec![Type::string(), Type::float()],),
-                ),
+                Field::ctor(symbols.symbol("A"), vec![]),
+                Field::ctor(symbols.symbol("B"), vec![Type::int()]),
+                Field::ctor(symbols.symbol("C"), vec![Type::string(), Type::float()],),
             ])
         );
     }

@@ -325,10 +325,7 @@ TypeBinding: Box<TypeBinding<Id>> = {
                                 Type::function_type(
                                     ArgType::Constructor,
                                     types,
-                                    Type::app(
-                                        Type::ident(type_name.value.clone()),
-                                        params.iter().cloned().map(Type::generic).collect(),
-                                    ),
+                                    Type::opaque(),
                                 )
                             ),
                         })

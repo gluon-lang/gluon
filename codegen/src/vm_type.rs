@@ -99,10 +99,6 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                 Fields::Unit => quote!(_gluon_base::types::Type::unit()),
             },
             Data::Enum(ref enum_) => {
-                let enum_ident = ident.to_string();
-                let ty_params = map_type_params(&generics, |ty| {
-                    quote! { _gluon_base::types::Generic::new(#ty) }
-                });
                 let variants = enum_.variants.iter().map(|variant| {
                     let ident = variant.ident.to_string();
                     let args = variant.fields.iter().map(|field| {
@@ -114,28 +110,15 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                     quote! {{
                         let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
                         _gluon_base::types::Field::ctor(
-                            enum_name.clone(),
-                            ty_params.iter().cloned(),
-                            ctor_name.clone(),
+                            ctor_name,
                             vec![#(#args),*],
                         )
                     }}
                 });
                 quote! {
-                    if let Some(typ) = vm.get_type::<Self::Type>() {
-                        typ
-                    } else {
-                        let enum_name = _gluon_base::symbol::Symbol::from(#enum_ident);
-                        let ty_params = [#(#ty_params),*];
-                        let typ = _gluon_base::types::Alias::new(
-                            enum_name.clone(),
-                            ty_params.iter().cloned().collect(),
-                            _gluon_base::types::Type::variant(
-                                vec![#(#variants),*]
-                            )
-                        );
-                        vm.register_type_as(enum_name, typ, ::std::any::TypeId::of::<Self::Type>()).unwrap()
-                    }
+                    _gluon_base::types::Type::variant(
+                        vec![#(#variants),*]
+                    )
                 }
             }
             _ => panic!(

@@ -281,13 +281,20 @@ impl<'a> Typecheck<'a> {
         if let Type::Variant(ref variants) = **inner_type {
             for field in variants.row_iter().cloned() {
                 let a = self.intern(Type::Alias(canonical_alias.clone()));
+                let params = canonical_alias
+                    .params()
+                    .iter()
+                    .map(|g| self.generic(g.clone()))
+                    .collect();
+                let variant_type = self.app(a.clone(), params);
 
                 let ctor_type =
                     types::walk_move_type(field.typ.clone(), &mut |typ: &ArcType| match &**typ {
                         Type::Function(ArgType::Constructor, arg, ret) => {
                             Some(Type::function(Some(arg.clone()), ret.clone()))
                         }
-                        Type::Ident(ref id) if canonical_alias.name == *id => Some(a.clone()),
+                        Type::Ident(id) if canonical_alias.name == *id => Some(a.clone()),
+                        Type::Opaque => Some(variant_type.clone()),
                         _ => None,
                     });
 
@@ -820,6 +827,7 @@ impl<'a> Typecheck<'a> {
                         }
                         _ => (),
                     }
+
                     for (var, _) in self.refined_variables.exit_scope() {
                         self.subs.reset(var);
                     }

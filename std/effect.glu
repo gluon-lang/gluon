@@ -11,7 +11,8 @@ let { Applicative, wrap } = import! std.applicative
 let { Monad } = import! std.monad
 
 type Eff r a =
-    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+    | Pure a
+    | Impure : forall x . (r x) -> (x -> Eff r a) -> Eff r a 
 
 type Arr r a b = a -> Eff r b
 

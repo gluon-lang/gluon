@@ -264,10 +264,7 @@ y
 ";
     let result = support::typecheck(text);
 
-    assert_multi_unify_err!(
-        result,
-        [Other(SelfRecursiveAlias(..)), Other(SelfRecursiveAlias(..))]
-    );
+    assert_multi_unify_err!(result, [Other(SelfRecursiveAlias(..))]);
 }
 
 #[test]

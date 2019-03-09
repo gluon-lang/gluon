@@ -121,10 +121,7 @@ fn type_mutually_recursive() {
         type Test2 = { x: Int, y: {} }
         in 1"#
     );
-    let test = Type::variant(vec![Field::new(
-        intern("Test"),
-        Type::function(vec![typ("Int")], typ("Test")),
-    )]);
+    let test = Type::variant(vec![Field::ctor(intern("Test"), vec![typ("Int")])]);
     let test2 = Type::record(
         Vec::new(),
         vec![
@@ -212,17 +209,14 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Option a = | None | Some a in Some 1");
-    let option = Type::app(typ("Option"), collect![typ("a")]);
-    let none = option.clone();
-    let some = Type::function(collect![typ("a")], option);
     assert_eq!(
         e,
         type_decl(
             intern("Option"),
             vec![generic("a")],
             Type::variant(vec![
-                Field::new(intern("None"), none),
-                Field::new(intern("Some"), some),
+                Field::ctor(intern("None"), vec![]),
+                Field::ctor(intern("Some"), vec![typ("a")]),
             ]),
             app(id("Some"), vec![int(1)]),
         )

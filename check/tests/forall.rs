@@ -1223,7 +1223,7 @@ let flat_map f m : (a -> FEFree r b) -> FEFree r a -> FEFree r b =
 }
 
 #[test]
-fn trim_matched_variants() {
+fn trim_matched_variants_basic() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
@@ -1239,7 +1239,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a a0 a1 . | Ok\n.. a1".to_string())
+        Ok("forall a . | Ok\n.. a".to_string())
     );
 }
 
@@ -1500,4 +1500,25 @@ let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert
 1
 "#,
 "Int"
+}
+
+test_check! { stream_skolem_escape,
+r"
+type Option a =
+    | Some a
+
+rec
+type Stream_ a =
+    | Value a
+type Stream a = () -> Stream_ a
+in
+
+let from f : Option b -> Stream b =
+    let go = \_ ->
+        match f with
+        | Some x -> Value x
+    go
+()
+",
+"()"
 }

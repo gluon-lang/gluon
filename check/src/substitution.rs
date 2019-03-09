@@ -338,6 +338,7 @@ where
     {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel {
+            level: var_id,
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
@@ -495,8 +496,8 @@ impl Substitution<RcType> {
     pub fn zonk(&self, typ: &RcType) -> RcType {
         types::walk_move_type(
             typ.clone(),
-            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_var() {
-                Some(var) => match self.find_type_for_var(var.get_id()) {
+            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_id() {
+                Some(id) => match self.find_type_for_var(id) {
                     Some(t) => Some(self.zonk(t)),
                     None => None,
                 },
