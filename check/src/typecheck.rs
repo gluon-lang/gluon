@@ -383,7 +383,11 @@ impl<'a> Typecheck<'a> {
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
-                | InvalidProjection(ref mut typ) => self.generalize_type(0, typ, err.span),
+                | InvalidProjection(ref mut typ)
+                | TypeConstructorReturnsWrongType {
+                    actual: ref mut typ,
+                    ..
+                } => self.generalize_type(0, typ, err.span),
                 UnableToResolveImplicit(ref mut inner_err) => {
                     use crate::implicits::ErrorKind::*;
                     match inner_err.kind {
@@ -1907,7 +1911,7 @@ impl<'a> Typecheck<'a> {
                         .map(|param| (param.id.clone(), type_cache.hole())),
                 );
             }
-            self.check_undefined_variables(bind.alias.value.unresolved_type());
+            self.check_type_binding(&bind.alias.value.name, bind.alias.value.unresolved_type());
 
             self.environment.type_variables.exit_scope();
         }
@@ -2032,21 +2036,53 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn check_undefined_variables(&mut self, typ: &AstType<Symbol>) {
+    fn check_type_binding(&mut self, alias_name: &Symbol, typ: &AstType<Symbol>) {
         use crate::base::pos::HasSpan;
-        match **typ {
-            Type::Generic(ref id) => {
+        match &**typ {
+            Type::Generic(id) => {
                 if !self.environment.type_variables.contains_key(&id.id) {
                     info!("Undefined type variable {}", id.id);
                     self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
                 }
             }
+
+            Type::Variant(row) => {
+                for field in types::row_iter(row) {
+                    fn ctor_return_type(typ: &AstType<Symbol>) -> &AstType<Symbol> {
+                        match &**typ {
+                            Type::Forall(_, typ) | Type::Function(_, _, typ) => {
+                                ctor_return_type(typ)
+                            }
+                            _ => typ,
+                        }
+                    }
+
+                    let spine = ctor_return_type(&field.typ).spine();
+                    match &**spine {
+                        Type::Ident(id) if id == alias_name => (),
+                        Type::Opaque => (),
+                        _ => {
+                            let actual = self.translate_ast_type(spine);
+                            self.error(
+                                spine.span(),
+                                TypeError::TypeConstructorReturnsWrongType {
+                                    expected: alias_name.clone(),
+                                    actual,
+                                },
+                            );
+                        }
+                    }
+                    self.check_type_binding(alias_name, &field.typ);
+                }
+            }
+
             Type::Record(_) => {
                 // Inside records variables are bound implicitly to the closest field
                 // so variables are allowed to be undefined/implicit
             }
+
             _ => {
-                if let Type::Forall(ref params, ..) = **typ {
+                if let Type::Forall(params, ..) = &**typ {
                     let mut type_cache = &self.subs;
                     self.environment
                         .type_variables
@@ -2055,7 +2091,7 @@ impl<'a> Typecheck<'a> {
                 types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &AstType<_>| {
-                        self.check_undefined_variables(typ);
+                        self.check_type_binding(alias_name, typ);
                         None
                     }),
                 );

@@ -1110,10 +1110,10 @@ where
     }
 
     pub fn alias_ident(&self) -> Option<&Id> {
-        match *self {
-            Type::App(ref id, _) => id.alias_ident(),
-            Type::Ident(ref id) => Some(id),
-            Type::Alias(ref alias) => Some(&alias.name),
+        match self {
+            Type::App(id, _) => id.alias_ident(),
+            Type::Ident(id) => Some(id),
+            Type::Alias(alias) => Some(&alias.name),
             _ => None,
         }
     }
@@ -1361,6 +1361,13 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
     fn new(typ: Type<Self::Id, Self>) -> Self;
 
     fn strong_count(typ: &Self) -> usize;
+
+    fn spine(&self) -> &Self {
+        match &**self {
+            Type::App(ref id, _) => id.spine(),
+            _ => self,
+        }
+    }
 
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`

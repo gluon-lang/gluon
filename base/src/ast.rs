@@ -118,6 +118,21 @@ impl<Id> HasSpan for AstType<Id> {
     }
 }
 
+impl<Id> TypeExt for AstType<Id>
+where
+    Id: Clone,
+{
+    type Id = Id;
+
+    fn new(typ: Type<Id, Self>) -> Self {
+        Self::from(typ)
+    }
+
+    fn strong_count(_typ: &Self) -> usize {
+        1
+    }
+}
+
 pub trait Commented {
     fn comment(&self) -> Option<&Comment>;
 }

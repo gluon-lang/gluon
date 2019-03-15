@@ -130,3 +130,27 @@ test_check_err! {
     "#,
     Unification(..)
 }
+
+test_check_err! {
+    invalid_gadt_return1,
+    r#"
+    type Test2 a = a
+    type Test a =
+        | Test : a -> Test2 Int
+
+    ()
+    "#,
+    TypeConstructorReturnsWrongType { .. }
+}
+
+test_check_err! {
+    invalid_gadt_return2,
+    r#"
+    type Test2 a = a
+    type Test a =
+        | Test : a -> (Int -> Int)
+
+    ()
+    "#,
+    TypeConstructorReturnsWrongType { .. }
+}
