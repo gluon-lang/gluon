@@ -926,7 +926,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                     }
-                    _ => ice!("ICE: Unexpected data type: {}", typ),
+                    _ => ice!("ICE: Unexpected data type for {}: {}", id.name, typ),
                 }
             }
         }

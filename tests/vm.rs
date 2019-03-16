@@ -1092,3 +1092,26 @@ True
 ",
 true
 }
+
+test_expr! {
+recursive_eff_arr,
+r#"
+rec
+type Eff (r : Type -> Type) a =
+    | Pure a
+    | Impure : forall x . Arr r x a -> Eff r a 
+
+type Arr r a b = a -> Eff r b
+in
+
+type Writer a = forall r . (.. r)
+
+let any x = any x
+
+let tell : Eff [| writer : Writer | r |] () =
+    Impure Pure
+
+()
+"#,
+()
+}

@@ -848,6 +848,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         // has no effect and `typ` itself will be used
         let data_type;
         {
+            let typ = remove_aliases_cow(&self.env, &mut NullInterner, typ.remove_forall());
             let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args
                 .by_ref()
