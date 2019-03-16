@@ -10,11 +10,13 @@ let { Functor, map } = import! std.functor
 let { Applicative, wrap } = import! std.applicative
 let { Monad } = import! std.monad
 
+rec
+type Arr r a b = a -> Eff r b
+
 type Eff r a =
     | Pure a
-    | Impure : forall x . (r x) -> (x -> Eff r a) -> Eff r a 
-
-type Arr r a b = a -> Eff r b
+    | Impure : forall x . (r x) -> Arr r x a -> Eff r a 
+in
 
 let compose f g : (Arr r a b) -> (Arr r b c) -> (Arr r a c) = \a ->
     match f a with
