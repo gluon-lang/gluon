@@ -269,6 +269,27 @@ fn handlebars() -> Result<Handlebars> {
     }
     reg.register_helper("module_link", Box::new(module_link_helper));
 
+    fn sibling_link_helper(
+        h: &Helper,
+        _: &Handlebars,
+        context: &Context,
+        _rc: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
+        let parent_breadcrumb = current_module.rsplit('.').nth(1);
+
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        match parent_breadcrumb {
+            Some(parent_breadcrumb) => {
+                out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
+            }
+            None => out.write(&format!("{}.html", param))?,
+        }
+        Ok(())
+    }
+    reg.register_helper("sibling_link", Box::new(sibling_link_helper));
+
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
