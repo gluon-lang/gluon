@@ -12,6 +12,8 @@ use gluon::{new_vm, Compiler, Error};
 
 #[test]
 fn parallel() {
+    let _ = env_logger::try_init();
+
     if let Err(err) = parallel_() {
         assert!(false, "{}", err);
     }

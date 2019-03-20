@@ -1610,7 +1610,7 @@ mod tests {
     use crate::base::{
         kind::{ArcKind, KindEnv},
         symbol::{Symbol, SymbolRef},
-        types::{Alias, ArcType, Field, Type, TypeEnv},
+        types::{Alias, ArcType, Field, ModTypeRef, Type, TypeEnv},
     };
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
@@ -1624,7 +1624,7 @@ mod tests {
     impl TypeEnv for MockEnv {
         type Type = ArcType;
 
-        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<ModTypeRef> {
             None
         }
 

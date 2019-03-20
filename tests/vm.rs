@@ -1104,9 +1104,7 @@ type Eff (r : Type -> Type) a =
 type Arr r a b = a -> Eff r b
 in
 
-type Writer a = forall r . (.. r)
-
-let any x = any x
+type Writer r a = .. r
 
 let tell : Eff [| writer : Writer | r |] () =
     Impure Pure

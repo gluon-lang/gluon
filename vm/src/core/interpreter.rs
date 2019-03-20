@@ -1,18 +1,24 @@
-use crate::base::ast::{Literal, TypedIdent};
-use crate::base::fnv::FnvSet;
-use crate::base::kind::{ArcKind, KindEnv};
-use crate::base::merge::merge_iter;
-use crate::base::scoped_map::ScopedMap;
-use crate::base::symbol::{Symbol, SymbolRef};
-use crate::base::types::{Alias, ArcType, TypeEnv, TypeExt};
-use crate::core::optimize::{
-    walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor,
-};
-use crate::core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
-use crate::types::*;
 use std::ops::{Deref, DerefMut};
 
-use crate::{Error, Result};
+use crate::base::{
+    ast::{Literal, TypedIdent},
+    fnv::FnvSet,
+    kind::{ArcKind, KindEnv},
+    merge::merge_iter,
+    scoped_map::ScopedMap,
+    symbol::{Symbol, SymbolRef},
+    types::{Alias, ArcType, ModTypeRef, TypeEnv, TypeExt},
+};
+
+use crate::{
+    core::{
+        self,
+        optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor},
+        Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern,
+    },
+    types::*,
+    Error, Result,
+};
 
 fn is_variable_in_expression<'a, I>(iter: I, expr: CExpr) -> bool
 where
@@ -287,7 +293,7 @@ impl<'a, 'e> KindEnv for Compiler<'a, 'e> {
 impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ModTypeRef> {
         None
     }
 

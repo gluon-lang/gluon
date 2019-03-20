@@ -458,8 +458,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         {
             let typ = resolved_type.unwrap_or(typ);
-            match typ.get_id() {
-                Some(other_id) if variable.get_var().is_some() == typ.get_var().is_some() => {
+            match typ.get_var().map(|v| v.get_id()) {
+                Some(other_id) if variable.get_var().is_some() => {
                     self.union
                         .borrow_mut()
                         .union(id as usize, other_id as usize);
@@ -470,7 +470,6 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                     if let Some(other_id) = typ.get_id() {
                         self.update_level(id.get_id(), other_id);
                     }
-
                     self.insert(id.get_id(), typ.clone());
                 }
             }

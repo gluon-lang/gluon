@@ -154,3 +154,14 @@ test_check_err! {
     "#,
     TypeConstructorReturnsWrongType { .. }
 }
+
+test_check! {
+    match_on_none,
+    r#"
+type Option a = | None | Some a
+match None with
+| Some y -> y
+| None -> 1
+    "#,
+    "Int"
+}

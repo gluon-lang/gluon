@@ -4,17 +4,19 @@ let { wrap } = import! std.applicative
 let { Alternative } = import! std.alternative
 let { (<<), id } = import! std.function
 
-type Alt a = forall r . (| Empty .. r)
+type Alt r a =
+    | Empty
+    .. r
 
-let extract_alt x : forall s . [| alt : Alt | r |] a -> Alt a = convert_variant! x
+let extract_alt x : forall s . [| alt : Alt | r |] a -> Alt r a = convert_variant! x
 
-let send_alt f : Alt a -> Eff [| alt : Alt | r |] a = Impure (convert_effect! alt f) Pure
+let send_alt f : Alt r a -> Eff [| alt : Alt | r |] a = Impure (convert_effect! alt f) Pure
 
 let empty : forall s . Eff [| alt : Alt | r |] s =
     send_alt Empty
 
 let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | s |] b =
-    let loop next ve =
+    let loop next ve : (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> _ =
         match ve with
         | Pure value -> wrap (transform value)
         | Impure e f ->

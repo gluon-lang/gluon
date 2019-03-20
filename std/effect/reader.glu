@@ -3,11 +3,13 @@ let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
 
-type Reader s a = forall r . (| Ask .. r)
+type Reader s r a =
+    | Ask : Reader s r s
+    .. r
 
-let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s a = convert_variant! x
+let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s r a = convert_variant! x
 
-let send_reader f : Reader s a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! f) Pure
+let send_reader f : Reader s r a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! reader f) Pure
 
 let ask : forall s . Eff [| reader : Reader s | r |] s =
     send_reader Ask
@@ -17,7 +19,8 @@ let asks f : forall s . (s -> a) -> Eff [| reader : Reader s | r |] a =
 
 let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
     do s = asks f
-    let loop ve : Eff [| reader : Reader _ | r |] a -> Eff [| reader : Reader _ | r |] a =
+    let s : s = s // FIXME Remove after this does not affect inference
+    let loop ve : Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
         match ve with
         | Pure value -> wrap value
         | Impure e f ->
@@ -29,7 +32,7 @@ let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Ef
     loop eff
 
 let run_reader s eff : forall s . s -> Eff [| reader : Reader s | r |] a -> Eff [| | r |] a =
-    let loop reader ve : _ -> Eff [| reader : Reader _ | r |] a -> Eff [| | r |] a =
+    let loop reader ve : s -> Eff [| reader : Reader s | r |] a -> Eff [| | r |] a =
         match ve with
         | Pure value -> wrap value
         | Impure e f ->

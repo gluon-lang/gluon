@@ -293,7 +293,7 @@ let make m =
 make 2
 "#;
     let result = support::typecheck(text);
-    assert!(result.is_err(), "{}", result.unwrap());
+    assert_err!(result, Message(..), Message(..));
 }
 
 #[test]

@@ -8,7 +8,7 @@ use crate::base::{
     scoped_map::ScopedMap,
     source::Source,
     symbol::{Symbol, SymbolModule, SymbolRef},
-    types::{Alias, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
+    types::{Alias, ArcType, BuiltinType, ModTypeRef, NullInterner, Type, TypeEnv, TypeExt},
 };
 
 use crate::{
@@ -451,7 +451,7 @@ impl<'a> KindEnv for Compiler<'a> {
 impl<'a> TypeEnv for Compiler<'a> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ModTypeRef> {
         None
     }
 

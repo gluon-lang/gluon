@@ -1471,7 +1471,7 @@ impl SuggestionQuery {
                         name,
                         typ: Either::Right(
                             env.find_type(SymbolRef::new(module))
-                                .cloned()
+                                .map(|t| t.concrete.clone())
                                 .unwrap_or_else(Type::hole),
                         ),
                     }

@@ -14,7 +14,10 @@ use self::{
         metadata::{Metadata, MetadataEnv},
         pos::{BytePos, Spanned},
         symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
-        types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+        types::{
+            self, Alias, ArcType, Field, Generic, ModType, ModTypeRef, PrimitiveEnv, Type,
+            TypeCache, TypeEnv,
+        },
     },
     check::{
         metadata, rename,
@@ -122,9 +125,9 @@ impl KindEnv for MockEnv {
 
 impl TypeEnv for MockEnv {
     type Type = ArcType;
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
         match id.definition_name() {
-            "False" | "True" => Some(&self.bool.as_type()),
+            "False" | "True" => Some(ModType::rigid(&self.bool.as_type())),
             _ => None,
         }
     }
