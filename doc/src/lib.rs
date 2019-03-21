@@ -429,6 +429,8 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     let mut modules = BTreeSet::new();
     let mut content = String::new();
 
+    let parent = path.parent();
+
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
@@ -436,9 +438,10 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         {
             continue;
         }
-        debug!("Indexing module: {}", entry.path().display());
+        let entry_path = entry.path();
+        debug!("Indexing module: {}", entry_path.display());
 
-        let mut input = File::open(&*entry.path()).with_context(|err| {
+        let mut input = File::open(&*entry_path).with_context(|err| {
             format!(
                 "Unable to open gluon file `{}`: {}",
                 entry.path().display(),
@@ -448,9 +451,11 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         content.clear();
         input.read_to_string(&mut content)?;
 
+        let module_path = parent
+            .and_then(|parent| entry_path.strip_prefix(parent).ok())
+            .unwrap_or(entry_path);
         let name = filename_to_module(
-            entry
-                .path()
+            module_path
                 .to_str()
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
@@ -460,7 +465,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             .typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
-        create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
+        create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
         let comment = content
             .lines()

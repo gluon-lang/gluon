@@ -1,6 +1,8 @@
-extern crate gluon;
-extern crate gluon_doc as doc;
-extern crate handlebars;
+use gluon_doc as doc;
+
+use std::{fs, path::Path};
+
+use {itertools::Itertools, rayon::prelude::*};
 
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, RootedThread};
@@ -62,4 +64,24 @@ let test x = x
             values: vec![],
         },
     );
+}
+
+#[test]
+fn check_links() {
+    let _ = env_logger::try_init();
+
+    let out = Path::new("../target/doc_test");
+    if out.exists() {
+        fs::remove_dir_all(out).unwrap_or_else(|err| panic!("{}", err));
+    }
+    doc::generate_for_path(&new_vm(), "../std", out).unwrap_or_else(|err| panic!("{}", err));
+
+    let out = fs::canonicalize(out).unwrap();
+    let errors = cargo_deadlinks::unavailable_urls(
+        &out,
+        &cargo_deadlinks::CheckContext { check_http: true },
+    )
+    .collect::<Vec<_>>();
+
+    assert!(errors.is_empty(), "{}", errors.iter().format("\n"));
 }

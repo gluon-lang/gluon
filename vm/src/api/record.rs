@@ -84,7 +84,7 @@ where
             types::walk_type(&typ, |typ: &ArcType| {
                 if self_symbol.is_none() {
                     match **typ {
-                        Type::Ident(ref id) if id.definition_name() == F::name() => {
+                        Type::Ident(ref id) if { id.definition_name() == F::name() } => {
                             self_symbol = Some(id.clone())
                         }
                         _ => (),
