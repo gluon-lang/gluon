@@ -339,7 +339,7 @@ mod std {
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    vm.register_type::<GluonFile>("File", &[])?;
+    vm.register_type::<GluonFile>("std.io.File", &[])?;
 
     // flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
