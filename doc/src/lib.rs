@@ -312,11 +312,11 @@ fn handlebars() -> Result<Handlebars> {
                     let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
+                    let part = handlebars::html_escape(&part);
                     format!(
-                        r##"<a href="{}{}.html">{}</a>"##,
-                        path,
-                        current_module.split('.').rev().nth(1).unwrap_or(""),
-                        handlebars::html_escape(&part)
+                        r##"<a href="{path}{part}.html">{part}</a>"##,
+                        path = path,
+                        part = part,
                     )
                 },
             ))?;
