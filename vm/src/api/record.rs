@@ -79,30 +79,51 @@ where
         type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
     ) {
         let typ = H::make_type(vm);
-        let name = {
-            let mut self_symbol = None;
-            types::walk_type(&typ, |typ: &ArcType| {
-                if self_symbol.is_none() {
-                    match **typ {
-                        Type::Ident(ref id) if id.definition_name() == F::name() => {
-                            self_symbol = Some(id.clone())
-                        }
-                        _ => (),
-                    }
-                }
-            });
-            self_symbol.unwrap_or_else(|| Symbol::from(F::name()))
-        };
+
         let args = F::args();
-        assert!(
-            name.definition_name().starts_with(char::is_uppercase),
-            "{}",
-            name
-        );
-        type_fields.push(types::Field::new(
-            name.clone(),
+
+        let alias_name = Symbol::from(F::name().replace("::", "."));
+        let field_name = Symbol::from(alias_name.declared_name());
+
+        let mut rhs_is_equivalent = None;
+        if let Type::App(f, a) = &*typ {
+            if let Type::Alias(f) = &**f {
+                if f.name.declared_name() == field_name.declared_name()
+                    && args.len() == a.len()
+                    && args.iter().zip(a).all(|(l, r)| match &**r {
+                        Type::Generic(gen) => *l == gen.id.declared_name(),
+                        _ => false,
+                    })
+                {
+                    rhs_is_equivalent = Some(Alias::from(f.clone()));
+                }
+            }
+        }
+
+        let alias = rhs_is_equivalent.unwrap_or_else(|| {
+            let alias_name = {
+                let mut self_symbol = None;
+                types::walk_type(&typ, |typ: &ArcType| {
+                    if self_symbol.is_none() {
+                        match **typ {
+                            Type::Ident(ref id)
+                                if id.declared_name() == field_name.declared_name() =>
+                            {
+                                self_symbol = Some(id.clone())
+                            }
+                            _ => (),
+                        }
+                    }
+                });
+                self_symbol.unwrap_or_else(|| alias_name)
+            };
+            assert!(
+                field_name.declared_name().starts_with(char::is_uppercase),
+                "Types `{}` does not start with an uppercase letter",
+                field_name
+            );
             Alias::from(AliasData::new(
-                name,
+                alias_name,
                 args.iter()
                     .map(|arg| match *vm.global_env().get_generic(*arg) {
                         Type::Generic(ref gen) => gen.clone(),
@@ -110,8 +131,10 @@ where
                     })
                     .collect(),
                 typ,
-            )),
-        ));
+            ))
+        });
+
+        type_fields.push(types::Field::new(field_name, alias));
         T::field_types(vm, type_fields);
     }
 }

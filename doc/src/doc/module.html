@@ -20,7 +20,7 @@
             <ul class="nav flex-column">
                 {{#each sibling_modules}}
                 <li class="nav-item">
-                    <a class="nav-link active" href="{{module_link this}}">{{this}}</a>
+                    <a class="nav-link active" href="{{sibling_link this}}">{{this}}</a>
                 </li> 
                 {{/each}}
             </ul>
@@ -54,7 +54,7 @@
             {{#each record.types}}
 
                 <h4>
-                    <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
+                    <pre>type <a id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
                     </pre>
                 </h4>
                 <div class="docblock">{{markdown comment}}</div>

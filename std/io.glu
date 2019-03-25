@@ -1,7 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functions for working with I/O
 
-let io_prim = import! std.io.prim
+let io_prim @ { IO } = import! std.io.prim
 let { Read } = import! std.io.read
 let { Write } = import! std.io.write
 let { Disposable } = import! std.disposable

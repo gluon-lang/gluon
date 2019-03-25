@@ -131,6 +131,7 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
     let mut doc = typ
         .display(80)
         .annotate_symbol(&annotate_symbol)
+        .symbol_text(&|s: &Symbol| s.declared_name())
         .pretty(&arena);
     match **typ {
         Type::Record(_) => (),
@@ -269,6 +270,27 @@ fn handlebars() -> Result<Handlebars> {
     }
     reg.register_helper("module_link", Box::new(module_link_helper));
 
+    fn sibling_link_helper(
+        h: &Helper,
+        _: &Handlebars,
+        context: &Context,
+        _rc: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
+        let parent_breadcrumb = current_module.rsplit('.').nth(1);
+
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        match parent_breadcrumb {
+            Some(parent_breadcrumb) => {
+                out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
+            }
+            None => out.write(&format!("{}.html", param))?,
+        }
+        Ok(())
+    }
+    reg.register_helper("sibling_link", Box::new(sibling_link_helper));
+
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
@@ -291,11 +313,11 @@ fn handlebars() -> Result<Handlebars> {
                     let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
+                    let part = handlebars::html_escape(&part);
                     format!(
-                        r##"<a href="{}{}.html">{}</a>"##,
-                        path,
-                        current_module.split('.').rev().nth(1).unwrap_or(""),
-                        handlebars::html_escape(&part)
+                        r##"<a href="{path}{part}.html">{part}</a>"##,
+                        path = path,
+                        part = part,
                     )
                 },
             ))?;
@@ -408,6 +430,8 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     let mut modules = BTreeSet::new();
     let mut content = String::new();
 
+    let parent = path.parent();
+
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
@@ -415,9 +439,10 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         {
             continue;
         }
-        debug!("Indexing module: {}", entry.path().display());
+        let entry_path = entry.path();
+        debug!("Indexing module: {}", entry_path.display());
 
-        let mut input = File::open(&*entry.path()).with_context(|err| {
+        let mut input = File::open(&*entry_path).with_context(|err| {
             format!(
                 "Unable to open gluon file `{}`: {}",
                 entry.path().display(),
@@ -427,9 +452,11 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         content.clear();
         input.read_to_string(&mut content)?;
 
+        let module_path = parent
+            .and_then(|parent| entry_path.strip_prefix(parent).ok())
+            .unwrap_or(entry_path);
         let name = filename_to_module(
-            entry
-                .path()
+            module_path
                 .to_str()
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
@@ -439,7 +466,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             .typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
-        create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
+        create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
         let comment = content
             .lines()

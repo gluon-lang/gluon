@@ -74,8 +74,8 @@ mod std {
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     use self::std;
 
-    vm.register_type::<Regex>("Regex", &[])?;
-    vm.register_type::<Error>("Error", &[])?;
+    vm.register_type::<Regex>("std.regex.Regex", &[])?;
+    vm.register_type::<Error>("std.regex.Error", &[])?;
 
     ExternModule::new(
         vm,
