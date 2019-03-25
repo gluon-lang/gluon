@@ -35,4 +35,4 @@ gluon = { version = "0.11.1", path = ".." } # GLUON
 
 
 [dev-dependencies]
-cargo-deadlinks = { path = "../../cargo-deadlinks" }
+#cargo-deadlinks = { path = "../../cargo-deadlinks" }
