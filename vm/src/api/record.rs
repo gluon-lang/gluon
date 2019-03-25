@@ -82,10 +82,13 @@ where
 
         let args = F::args();
 
+        let alias_name = Symbol::from(F::name().replace("::", "."));
+        let field_name = Symbol::from(alias_name.declared_name());
+
         let mut rhs_is_equivalent = None;
         if let Type::App(f, a) = &*typ {
             if let Type::Alias(f) = &**f {
-                if f.name.declared_name() == F::name()
+                if f.name.declared_name() == field_name.declared_name()
                     && args.len() == a.len()
                     && args.iter().zip(a).all(|(l, r)| match &**r {
                         Type::Generic(gen) => *l == gen.id.declared_name(),
@@ -97,25 +100,25 @@ where
             }
         }
 
-        let field_name = Symbol::from(F::name());
-
         let alias = rhs_is_equivalent.unwrap_or_else(|| {
             let alias_name = {
                 let mut self_symbol = None;
                 types::walk_type(&typ, |typ: &ArcType| {
                     if self_symbol.is_none() {
                         match **typ {
-                            Type::Ident(ref id) if id.declared_name() == F::name() => {
+                            Type::Ident(ref id)
+                                if id.declared_name() == field_name.declared_name() =>
+                            {
                                 self_symbol = Some(id.clone())
                             }
                             _ => (),
                         }
                     }
                 });
-                self_symbol.unwrap_or_else(|| field_name.clone())
+                self_symbol.unwrap_or_else(|| alias_name)
             };
             assert!(
-                field_name.definition_name().starts_with(char::is_uppercase),
+                field_name.declared_name().starts_with(char::is_uppercase),
                 "Types `{}` does not start with an uppercase letter",
                 field_name
             );
