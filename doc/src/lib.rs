@@ -131,6 +131,7 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
     let mut doc = typ
         .display(80)
         .annotate_symbol(&annotate_symbol)
+        .symbol_text(&|s: &Symbol| s.declared_name())
         .pretty(&arena);
     match **typ {
         Type::Record(_) => (),

@@ -1442,7 +1442,10 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         top(self).pretty(&Printer::new(arena, &()))
     }
 
-    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A> {
+    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A>
+    where
+        Self::Id: AsRef<str>,
+    {
         TypeFormatter::new(self).width(width)
     }
 
