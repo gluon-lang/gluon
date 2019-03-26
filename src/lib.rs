@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.11.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.11.2")] // # GLUON
 
 #[cfg(test)]
 extern crate env_logger;
