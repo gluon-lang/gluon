@@ -121,10 +121,7 @@ fn type_mutually_recursive() {
         type Test2 = { x: Int, y: {} }
         in 1"#
     );
-    let test = Type::variant(vec![Field::new(
-        intern("Test"),
-        Type::tuple(&mut MockEnv::new(), vec![typ("Int")]),
-    )]);
+    let test = Type::variant(vec![Field::ctor(intern("Test"), vec![typ("Int")])]);
     let test2 = Type::record(
         Vec::new(),
         vec![
@@ -212,16 +209,14 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Option a = | None | Some a in Some 1");
-    let none = Type::unit();
-    let some = Type::tuple(&mut MockEnv::new(), vec![typ("a")]);
     assert_eq!(
         e,
         type_decl(
             intern("Option"),
             vec![generic("a")],
             Type::variant(vec![
-                Field::new(intern("None"), none),
-                Field::new(intern("Some"), some),
+                Field::ctor(intern("None"), vec![]),
+                Field::ctor(intern("Some"), vec![typ("a")]),
             ]),
             app(id("Some"), vec![int(1)]),
         )
@@ -961,10 +956,14 @@ rec let y = 2
 }
 
 #[test]
-fn effect_def() {
+fn gadt() {
     let _ = ::env_logger::try_init();
     let text = r#"
-type OptionEff a = forall r . (| OptionEff .. r)
+type Expr a =
+    | Int : Int -> Expr Int
+    | Add : Expr Int -> Expr Int -> Expr Int
+    | If : Expr Bool -> Expr a -> Expr a -> Expr a
+
 
 1
 "#;

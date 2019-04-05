@@ -264,7 +264,7 @@ y
 ";
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Other(SelfRecursiveAlias(..)));
+    assert_multi_unify_err!(result, [Other(SelfRecursiveAlias(..))]);
 }
 
 #[test]
@@ -293,7 +293,7 @@ let make m =
 make 2
 "#;
     let result = support::typecheck(text);
-    assert!(result.is_err(), "{}", result.unwrap());
+    assert_err!(result, Message(..), Message(..));
 }
 
 #[test]

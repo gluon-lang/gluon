@@ -21,26 +21,27 @@ extern crate quick_error;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::cell::RefCell;
-use std::fmt;
-use std::hash::Hash;
-use std::sync::Arc;
+use std::{cell::RefCell, fmt, hash::Hash, sync::Arc};
 
-use crate::base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
-use crate::base::error::{AsDiagnostic, Errors};
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::Metadata;
-use crate::base::pos::{self, ByteOffset, BytePos, Span, Spanned};
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, TypeCache};
+use crate::base::{
+    ast::{AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding},
+    error::{AsDiagnostic, Errors},
+    fnv::FnvMap,
+    metadata::Metadata,
+    pos::{self, ByteOffset, BytePos, Span, Spanned},
+    symbol::Symbol,
+    types::{ArcType, TypeCache},
+};
 
-use crate::infix::{Fixity, OpMeta, OpTable, Reparser};
-use crate::layout::Layout;
-use crate::token::{Token, Tokenizer};
+use crate::{
+    infix::{Fixity, OpMeta, OpTable, Reparser},
+    layout::Layout,
+    token::{Token, Tokenizer},
+};
 
-pub use crate::infix::Error as InfixError;
-pub use crate::layout::Error as LayoutError;
-pub use crate::token::Error as TokenizeError;
+pub use crate::{
+    infix::Error as InfixError, layout::Error as LayoutError, token::Error as TokenizeError,
+};
 
 lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -306,6 +307,11 @@ pub enum FieldPattern<Id> {
 pub enum FieldExpr<Id> {
     Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
     Value(Metadata, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
+}
+
+pub enum Variant<Id> {
+    Gadt(Id, AstType<Id>),
+    Simple(Id, Vec<AstType<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax

@@ -108,14 +108,11 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                         }
                     });
                     quote! {{
-                        let name = _gluon_base::symbol::Symbol::from(#ident);
-                        _gluon_base::types::Field {
-                            name: name.clone(),
-                            typ: _gluon_base::types::Type::tuple(
-                                &mut _gluon_base::symbol::Symbols::new(),
-                                vec![#(#args),*],
-                            ),
-                        }
+                        let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
+                        _gluon_base::types::Field::ctor(
+                            ctor_name,
+                            vec![#(#args),*],
+                        )
                     }}
                 });
                 quote! {

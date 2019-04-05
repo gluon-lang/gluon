@@ -3,7 +3,7 @@ use crate::base::ast::{
 };
 use crate::base::pos;
 use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::{remove_forall, row_iter, Type};
+use crate::base::types::{ctor_args, remove_forall, row_iter, Type};
 
 use crate::macros::Error;
 
@@ -22,11 +22,11 @@ pub fn generate(
         Type::Variant(ref variants) => {
             let alts = row_iter(variants)
                 .map(|variant| {
-                    let pattern_args: Vec<_> = row_iter(&variant.typ)
+                    let pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .enumerate()
                         .map(|(i, field)| {
                             (
-                                is_self_type(&bind.alias.value.name, &field.typ),
+                                is_self_type(&bind.alias.value.name, field),
                                 TypedIdent::new(Symbol::from(format!("arg_{}", i))),
                             )
                         })

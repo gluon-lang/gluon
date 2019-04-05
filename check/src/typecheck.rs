@@ -5,6 +5,7 @@ use std::{
     borrow::{BorrowMut, Cow},
     iter::once,
     mem,
+    ops::Deref,
     sync::Arc,
 };
 
@@ -24,8 +25,8 @@ use crate::base::{
     scoped_map::{self, ScopedMap},
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
-        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Generic, PrimitiveEnv, Type,
-        TypeCache, TypeContext, TypeEnv, TypeExt,
+        self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Flags, Generic, ModType,
+        ModTypeRef, PrimitiveEnv, Type, TypeCache, TypeContext, TypeEnv, TypeExt, TypeModifier,
     },
 };
 
@@ -53,7 +54,7 @@ enum ErrorOrder {
 
 #[derive(Clone, Debug)]
 struct StackBinding {
-    typ: RcType,
+    typ: ModType,
 }
 
 pub(crate) struct Environment<'a> {
@@ -65,6 +66,7 @@ pub(crate) struct Environment<'a> {
     stack_types: ScopedMap<Symbol, (RcType, Alias<Symbol, RcType>)>,
     kind_cache: KindCache,
     type_variables: ScopedMap<Symbol, RcType>,
+    skolem_variables: ScopedMap<Symbol, RcType>,
 }
 
 impl<'a> KindEnv for Environment<'a> {
@@ -84,10 +86,10 @@ impl<'a> KindEnv for Environment<'a> {
 impl<'a> TypeEnv for Environment<'a> {
     type Type = RcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&RcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
         self.stack
             .get(id)
-            .map(|bind| &bind.typ)
+            .map(|bind| bind.typ.as_ref())
             .or_else(|| self.environment.find_type(id))
     }
 
@@ -114,8 +116,8 @@ impl<'a> MetadataEnv for Environment<'a> {
 /// Type returned from the main typecheck function to make sure that nested `type` and `let`
 /// expressions dont overflow the stack
 enum TailCall {
-    Type(RcType),
-    TypeImplicit(RcType, Vec<SpannedExpr<Symbol>>),
+    Type(ModType),
+    TypeImplicit(ModType, Vec<SpannedExpr<Symbol>>),
     /// Returned from typechecking a `let` or `type` expresion to indicate that the expression body
     /// should be typechecked now.
     TailCall,
@@ -133,6 +135,7 @@ pub struct Typecheck<'a> {
 
     pub(crate) implicit_resolver: implicits::ImplicitResolver<'a>,
     unbound_variables: ScopedMap<Symbol, ArcKind>,
+    refined_variables: ScopedMap<u32, ()>,
 }
 
 impl<'a> TypeContext<Symbol, RcType> for Typecheck<'a> {
@@ -161,6 +164,7 @@ impl<'a> Typecheck<'a> {
                 stack: ScopedMap::new(),
                 stack_types: ScopedMap::new(),
                 kind_cache: interner.kind_cache.clone(),
+                skolem_variables: ScopedMap::new(),
                 type_variables: ScopedMap::new(),
             },
             symbols: symbols,
@@ -169,6 +173,7 @@ impl<'a> Typecheck<'a> {
             kind_cache: interner.kind_cache.clone(),
             implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
+            refined_variables: ScopedMap::new(),
             subs,
         }
     }
@@ -191,15 +196,15 @@ impl<'a> Typecheck<'a> {
         self.translate_arc_type(&typ)
     }
 
-    fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> RcType {
+    fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> ModType {
         match self.find(id) {
             Ok(typ) => typ,
-            Err(err) => self.error(span, err),
+            Err(err) => ModType::wobbly(self.error(span, err)),
         }
     }
 
-    fn find(&mut self, id: &Symbol) -> TcResult<RcType> {
-        match self.environment.find_type(id).map(RcType::clone) {
+    fn find(&mut self, id: &Symbol) -> TcResult<ModType> {
+        match self.environment.find_type(id).map(|t| t.to_owned()) {
             Some(typ) => {
                 self.named_variables.clear();
                 debug!("Find {} : {}", self.symbols.string(id), typ);
@@ -209,7 +214,7 @@ impl<'a> Typecheck<'a> {
                 // Don't report global variables inserted by the `import!` macro as undefined
                 // (if they don't exist the error will already have been reported by the macro)
                 if id.is_global() {
-                    Ok(self.subs.new_var())
+                    Ok(ModType::wobbly(self.subs.new_var()))
                 } else {
                     info!("Undefined variable {}", id);
                     Err(TypeError::UndefinedVariable(id.clone()))
@@ -239,11 +244,24 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: RcType) {
-        debug!("Insert {} : {}", id, typ);
+        let modifier = if typ
+            .flags()
+            .intersects(Flags::HAS_VARIABLES | Flags::HAS_FORALL)
+        {
+            TypeModifier::Wobbly
+        } else {
+            TypeModifier::Rigid
+        };
+        debug!("Insert {} : {:?} {}", id, modifier, typ);
 
         self.implicit_resolver.on_stack_var(&self.subs, &id, &typ);
 
-        self.environment.stack.insert(id, StackBinding { typ });
+        self.environment.stack.insert(
+            id,
+            StackBinding {
+                typ: ModType::new(modifier, typ),
+            },
+        );
     }
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, RcType>) {
@@ -278,22 +296,23 @@ impl<'a> Typecheck<'a> {
 
         if let Type::Variant(ref variants) = **inner_type {
             for field in variants.row_iter().cloned() {
+                let a = self.intern(Type::Alias(canonical_alias.clone()));
                 let params = canonical_alias
                     .params()
                     .iter()
                     .map(|g| self.generic(g.clone()))
                     .collect();
-                let a = self.intern(Type::Alias(canonical_alias.clone()));
-                let variant_type = self.app(a, params);
+                let variant_type = self.app(a.clone(), params);
 
-                let ctor_type = self.subs.function(
-                    field
-                        .typ
-                        .row_iter()
-                        .map(|f| f.typ.clone())
-                        .collect::<AppVec<_>>(),
-                    variant_type,
-                );
+                let ctor_type =
+                    types::walk_move_type(field.typ.clone(), &mut |typ: &ArcType| match &**typ {
+                        Type::Function(ArgType::Constructor, arg, ret) => {
+                            Some(Type::function(Some(arg.clone()), ret.clone()))
+                        }
+                        Type::Ident(id) if canonical_alias.name == *id => Some(a.clone()),
+                        Type::Opaque => Some(variant_type.clone()),
+                        _ => None,
+                    });
 
                 let typ = self.forall(
                     canonical_alias
@@ -362,7 +381,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type_errors(&mut self, errors: &mut Errors<SpannedTypeError<Symbol, RcType>>) {
-        self.environment.type_variables.enter_scope();
+        self.environment.skolem_variables.enter_scope();
 
         for err in errors {
             use self::TypeError::*;
@@ -380,7 +399,11 @@ impl<'a> Typecheck<'a> {
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
-                | InvalidProjection(ref mut typ) => self.generalize_type(0, typ, err.span),
+                | InvalidProjection(ref mut typ)
+                | TypeConstructorReturnsWrongType {
+                    actual: ref mut typ,
+                    ..
+                } => self.generalize_type(0, typ, err.span),
                 UnableToResolveImplicit(ref mut inner_err) => {
                     use crate::implicits::ErrorKind::*;
                     match inner_err.kind {
@@ -432,7 +455,7 @@ impl<'a> Typecheck<'a> {
             }
         }
 
-        self.environment.type_variables.exit_scope();
+        self.environment.skolem_variables.exit_scope();
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -478,17 +501,21 @@ impl<'a> Typecheck<'a> {
         let expected_type = temp.as_ref().or(expected_type);
 
         let mut typ = if let Some(expected_type) = expected_type {
-            self.skolemize_in(expr.span, &expected_type, |self_, expected_type| {
-                self_.typecheck_opt_(true, expr, Some(&expected_type))
-            })
+            self.skolemize_in(
+                expr.span,
+                ModType::rigid(&expected_type),
+                |self_, expected_type| {
+                    self_.typecheck_opt_(true, expr, Some(ModType::rigid(&expected_type)))
+                },
+            )
         } else {
-            self.typecheck_opt_(true, expr, expected_type)
+            self.typecheck_opt_(true, expr, None)
         };
 
         {
             if let Some(expected_type) = expected_type {
                 let mut type_cache = &self.subs;
-                self.environment.type_variables.extend(
+                self.environment.skolem_variables.extend(
                     expected_type
                         .forall_params()
                         .map(|param| (param.id.clone(), type_cache.hole())),
@@ -553,15 +580,15 @@ impl<'a> Typecheck<'a> {
                 .collect())
         } else {
             debug!("Typecheck result: {}", typ);
-            Ok(typ)
+            Ok(typ.concrete)
         }
     }
 
-    fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> RcType {
+    fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> ModType {
         self.typecheck_opt(expr, None)
     }
 
-    fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: &RcType) -> RcType {
+    fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: ModTypeRef) -> ModType {
         self.typecheck_opt(expr, Some(expected_type))
     }
 
@@ -570,8 +597,8 @@ impl<'a> Typecheck<'a> {
     fn typecheck_opt(
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
-        expected_type: Option<&RcType>,
-    ) -> RcType {
+        expected_type: Option<ModTypeRef>,
+    ) -> ModType {
         self.typecheck_opt_(false, expr, expected_type)
     }
 
@@ -579,8 +606,8 @@ impl<'a> Typecheck<'a> {
         &mut self,
         mut top_level: bool,
         mut expr: &mut SpannedExpr<Symbol>,
-        mut expected_type: Option<&RcType>,
-    ) -> RcType {
+        mut expected_type: Option<ModTypeRef>,
+    ) -> ModType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -639,18 +666,30 @@ impl<'a> Typecheck<'a> {
                             }
 
                             returned_type = match expected_type {
-                                Some(expected_type) => {
-                                    self.subsumes_expr(expr.span, &typ, expected_type.clone(), expr)
-                                }
+                                Some(expected_type) => ModType::new(
+                                    expected_type.modifier,
+                                    self.subsumes_expr(
+                                        expr.span,
+                                        &typ,
+                                        expected_type.concrete.clone(),
+                                        expr,
+                                    ),
+                                ),
                                 None => typ,
                             };
                             break;
                         }
                         TailCall::Type(typ) => {
                             returned_type = match expected_type {
-                                Some(expected_type) => {
-                                    self.subsumes_expr(expr.span, &typ, expected_type.clone(), expr)
-                                }
+                                Some(expected_type) => ModType::new(
+                                    expected_type.modifier,
+                                    self.subsumes_expr(
+                                        expr.span,
+                                        &typ,
+                                        expected_type.concrete.clone(),
+                                        expr,
+                                    ),
+                                ),
                                 None => typ,
                             };
                             break;
@@ -658,7 +697,7 @@ impl<'a> Typecheck<'a> {
                     }
                 }
                 Err(err) => {
-                    returned_type = self.subs.error();
+                    returned_type = ModType::wobbly(self.subs.error());
                     self.errors.push(Spanned {
                         span: expr_check_span(expr),
                         value: err.into(),
@@ -678,7 +717,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_(
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
-        expected_type: &mut Option<&RcType<Symbol>>,
+        expected_type: &mut Option<ModTypeRef>,
     ) -> TcResult<TailCall> {
         if let Some(result) = self.check_macro(expr) {
             return result;
@@ -686,17 +725,22 @@ impl<'a> Typecheck<'a> {
         match expr.value {
             Expr::Ident(ref mut id) => {
                 let typ = self.find(&id.name)?;
-                let (args, typ) = self.instantiate_sigma(expr.span, &typ, expected_type);
+                let modifier = typ.modifier;
+                let (args, typ) = self.instantiate_sigma(
+                    expr.span,
+                    &typ,
+                    &mut expected_type.take().map(|t| t.concrete),
+                );
                 id.typ = self.subs.bind_arc(&typ);
-                Ok(TailCall::TypeImplicit(typ, args))
+                Ok(TailCall::TypeImplicit(ModType::new(modifier, typ), args))
             }
-            Expr::Literal(ref lit) => Ok(TailCall::Type(match *lit {
+            Expr::Literal(ref lit) => Ok(TailCall::Type(ModType::rigid(match *lit {
                 Literal::Int(_) => self.subs.int(),
                 Literal::Byte(_) => self.subs.byte(),
                 Literal::Float(_) => self.subs.float(),
                 Literal::String(_) => self.subs.string(),
                 Literal::Char(_) => self.subs.char(),
-            })),
+            }))),
             Expr::App {
                 ref mut func,
                 ref mut implicit_args,
@@ -707,17 +751,20 @@ impl<'a> Typecheck<'a> {
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let bool_type = self.bool();
-                let pred_type = self.typecheck(&mut **pred, &bool_type);
-                self.unify_span(expr_check_span(pred), &bool_type, pred_type);
+                let pred_type = self.typecheck(&mut **pred, ModType::rigid(&bool_type));
+                self.unify_span(expr_check_span(pred), &bool_type, pred_type.concrete);
 
                 // Both branches must unify to the same type
                 let true_type = self.typecheck_opt(&mut **if_true, expected_type.clone());
                 let false_type = self.typecheck_opt(&mut **if_false, expected_type.take());
 
+                let modifier = true_type.modifier | false_type.modifier;
+
                 let true_type = self.instantiate_generics(&true_type);
                 let false_type = self.instantiate_generics(&false_type);
 
-                self.unify(&true_type, false_type).map(TailCall::Type)
+                self.unify(&true_type, false_type)
+                    .map(|t| TailCall::Type(ModType::new(modifier, t)))
             }
             Expr::Infix {
                 ref mut lhs,
@@ -738,21 +785,22 @@ impl<'a> Typecheck<'a> {
                         "==" | "<" => self.bool(),
                         _ => return Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     };
-                    self.subs.function(
+                    ModType::rigid(self.subs.function(
                         vec![prim_type.clone(), prim_type.clone()],
                         return_type.clone(),
-                    )
+                    ))
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
                             let b = self.bool();
-                            self.subs.function(vec![b.clone(), b.clone()], b)
+                            ModType::rigid(self.subs.function(vec![b.clone(), b.clone()], b))
                         }
                         _ => self.find_at(op.span, &op.value.name),
                     }
                 };
 
-                let func_type = self.instantiate_generics(&func_type);
+                let func_type =
+                    ModType::new(func_type.modifier, self.instantiate_generics(&func_type));
 
                 op.value.typ = self.subs.bind_arc(&func_type);
 
@@ -768,21 +816,23 @@ impl<'a> Typecheck<'a> {
                 elems: ref mut exprs,
             } => {
                 let new_type = match exprs.len() {
-                    0 => self.unit(),
+                    0 => ModType::rigid(self.unit()),
                     1 => self.typecheck_opt(&mut exprs[0], expected_type.take()),
                     _ => {
+                        let mut modifier = TypeModifier::Rigid;
                         let fields = exprs
                             .iter_mut()
                             .enumerate()
                             .map(|(i, expr)| {
                                 let typ = self.infer_expr(expr);
+                                modifier |= typ.modifier;
                                 Field {
                                     name: self.symbols.symbol(format!("_{}", i)),
-                                    typ: typ,
+                                    typ: typ.concrete,
                                 }
                             })
                             .collect();
-                        self.record(vec![], fields)
+                        ModType::new(modifier, self.record(vec![], fields))
                     }
                 };
                 *typ = self.subs.bind_arc(&new_type);
@@ -790,7 +840,8 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Match(ref mut expr, ref mut alts) => {
                 let mut scrutinee_type = self.infer_expr(&mut **expr);
-                let expected_type = expected_type.take().cloned();
+                let modifier = scrutinee_type.modifier;
+                let expected_type = expected_type.take().map(|t| t.to_owned());
 
                 let mut unaliased_scrutinee_type = match alts.first().map(|alt| &alt.pattern.value)
                 {
@@ -800,27 +851,41 @@ impl<'a> Typecheck<'a> {
                             expr.span,
                             ErrorOrder::ExpectedActual,
                             &variant_type,
-                            scrutinee_type.clone(),
+                            scrutinee_type.concrete.clone(),
                         );
                         let typ = self.remove_aliases(scrutinee_type);
-                        self.instantiate_generics(&typ)
+                        ModType::new(modifier, self.instantiate_generics(&typ))
                     }
                     _ => scrutinee_type.clone(),
                 };
 
-                let mut expr_type = None;
+                let mut expr_type: Option<ModType> = None;
+
+                let original_scrutinee_type = scrutinee_type.clone();
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
-                    self.typecheck_pattern(&mut alt.pattern, scrutinee_type.clone());
+                    self.refined_variables.enter_scope();
 
-                    let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
-                    alt_type = self.instantiate_generics(&alt_type);
+                    self.typecheck_pattern(
+                        &mut alt.pattern,
+                        original_scrutinee_type.clone(),
+                        scrutinee_type.concrete.clone(),
+                    );
+
+                    let mut alt_type = self
+                        .typecheck_opt(&mut alt.expr, expected_type.as_ref().map(|t| t.as_ref()));
+                    alt_type.concrete = self.instantiate_generics(&alt_type);
                     match expr_type {
                         Some(ref expr_type) if expected_type.is_none() => {
-                            alt_type = self.unify_span(alt.expr.span, expr_type, alt_type);
+                            alt_type.concrete =
+                                self.unify_span(alt.expr.span, expr_type, alt_type.concrete);
                         }
                         _ => (),
+                    }
+
+                    for (var, _) in self.refined_variables.exit_scope() {
+                        self.subs.reset(var);
                     }
                     self.exit_scope();
 
@@ -830,7 +895,7 @@ impl<'a> Typecheck<'a> {
                     // TODO Make this more general so it can error when not matching on all the
                     // variants
                     {
-                        let replaced = match (&alt.pattern.value, &*unaliased_scrutinee_type) {
+                        let replaced = match (&alt.pattern.value, &**unaliased_scrutinee_type) {
                             (Pattern::Constructor(id, _), Type::Variant(row)) => {
                                 let mut variant_iter = row.row_iter();
                                 let variants = variant_iter
@@ -844,10 +909,8 @@ impl<'a> Typecheck<'a> {
                                 if let Type::EmptyRow = **variant_iter.current_type() {
                                     false
                                 } else {
-                                    scrutinee_type = self.poly_variant(
-                                        variants,
-                                        self.subs.new_var(), // TODO Double check
-                                    );
+                                    let rest = self.subs.new_var();
+                                    scrutinee_type.concrete = self.poly_variant(variants, rest);
                                     true
                                 }
                             }
@@ -868,14 +931,15 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Projection(ref mut expr, ref field_id, ref mut ast_field_typ) => {
                 let mut expr_typ = self.infer_expr(&mut **expr);
+                let modifier = expr_typ.modifier;
                 debug!(
                     "Projection {} . {:?}",
                     &expr_typ,
                     self.symbols.string(field_id)
                 );
                 self.subs.make_real(&mut expr_typ);
-                expr_typ = self.instantiate_generics(&expr_typ);
-                let record = self.remove_aliases(expr_typ.clone());
+                expr_typ.concrete = self.instantiate_generics(&expr_typ);
+                let record = self.remove_aliases(expr_typ.concrete.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
                         let field_type = record
@@ -885,8 +949,11 @@ impl<'a> Typecheck<'a> {
                         let mut implicit_args = Vec::new();
                         let new_ast_field_type = match field_type {
                             Some(typ) => {
-                                let (args, typ) =
-                                    self.instantiate_sigma(expr.span, &typ, expected_type);
+                                let (args, typ) = self.instantiate_sigma(
+                                    expr.span,
+                                    &typ,
+                                    &mut expected_type.take().map(|t| t.concrete),
+                                );
                                 implicit_args = args;
                                 typ
                             }
@@ -904,26 +971,30 @@ impl<'a> Typecheck<'a> {
                             }
                         };
                         *ast_field_typ = self.subs.bind_arc(&new_ast_field_type);
-                        Ok(TailCall::TypeImplicit(new_ast_field_type, implicit_args))
+                        Ok(TailCall::TypeImplicit(
+                            ModType::new(modifier, new_ast_field_type),
+                            implicit_args,
+                        ))
                     }
-                    Type::Error => Ok(TailCall::Type(record.clone())),
+                    Type::Error => Ok(TailCall::Type(ModType::new(modifier, record.clone()))),
                     _ => Err(TypeError::InvalidProjection(record)),
                 }
             }
             Expr::Array(ref mut array) => {
-                let mut expected_element_type = self.subs.new_var();
+                let mut expected_element_type = ModType::rigid(self.subs.new_var());
 
-                let array_type = self.subs.array(expected_element_type.clone());
+                let array_type = self.subs.array(expected_element_type.concrete.clone());
                 array.typ = self.subs.bind_arc(&array_type);
                 if let Some(expected_type) = expected_type.take() {
                     self.unify_span(expr.span, &expected_type, array_type.clone());
                 }
 
                 for expr in &mut array.exprs {
-                    expected_element_type = self.typecheck(expr, &expected_element_type);
+                    expected_element_type |=
+                        self.typecheck(expr, ModType::wobbly(&expected_element_type));
                 }
 
-                Ok(TailCall::Type(array_type))
+                Ok(TailCall::Type(ModType::wobbly(array_type)))
             }
             Expr::Lambda(ref mut lambda) => {
                 let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start());
@@ -931,12 +1002,12 @@ impl<'a> Typecheck<'a> {
                 let level = self.subs.var_id();
                 let function_type = expected_type
                     .take()
-                    .cloned()
-                    .unwrap_or_else(|| self.subs.new_var());
+                    .map(|t| t.to_owned())
+                    .unwrap_or_else(|| ModType::wobbly(self.subs.new_var()));
 
                 let start = expr.span.start();
                 let mut typ =
-                    self.skolemize_in(expr.span, &function_type, |self_, function_type| {
+                    self.skolemize_in(expr.span, function_type.as_ref(), |self_, function_type| {
                         self_.typecheck_lambda(
                             function_type,
                             start,
@@ -961,8 +1032,13 @@ impl<'a> Typecheck<'a> {
             } => {
                 let level = self.subs.var_id();
 
+                let mut modifier = expected_type
+                    .as_ref()
+                    .map(|t| t.modifier)
+                    .unwrap_or_default();
+
                 let expected_record_type = expected_type.and_then(|expected_type| {
-                    let expected_type = self.subs.real(expected_type).clone();
+                    let expected_type = self.subs.real(&expected_type).clone();
                     let typ = resolve::remove_aliases_cow(
                         &self.environment,
                         &mut &self.subs,
@@ -1003,10 +1079,10 @@ impl<'a> Typecheck<'a> {
                 let mut base_record_types = FnvMap::default();
                 let mut base_record_fields = FnvMap::default();
                 let mut base_types: Vec<Field<_, _>> = Vec::new();
-                let mut base_fields: Vec<Field<_, _>> = Vec::new();
+                let mut base_fields: Vec<Field<_, RcType>> = Vec::new();
                 if let Some(ref mut base) = *base {
                     let base_type = self.infer_expr(base);
-                    let base_type = self.remove_aliases(base_type);
+                    let base_type = self.remove_aliases(base_type.concrete);
 
                     let record_type = self.poly_record(vec![], vec![], self.subs.new_var());
                     let base_type = self.unify_span(base.span, &record_type, base_type);
@@ -1051,29 +1127,31 @@ impl<'a> Typecheck<'a> {
                     }
                 }
 
-                let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
+                let mut new_fields: Vec<Field<_, RcType>> = Vec::with_capacity(fields.len());
                 for field in fields {
                     let name = &field.name.value;
                     let expected_field_type = expected_type
+                        .as_ref()
                         .and_then(|expected_type| {
                             expected_type
                                 .row_iter()
                                 .find(|expected_field| expected_field.name.name_eq(&name))
                         })
-                        .map(|field| &field.typ);
+                        .map(|field| ModType::new(modifier, &field.typ));
 
                     let mut typ = match field.value {
                         Some(ref mut expr) => self.typecheck_opt(expr, expected_field_type),
                         None => {
                             let typ = self.find_at(field.name.span, &field.name.value);
+                            let modifier = typ.modifier;
                             match expected_field_type {
                                 Some(expected_field_type) => {
                                     let mut implicit_args = Vec::new();
                                     let typ = self.subsumes_implicit(
                                         field.name.span,
                                         ErrorOrder::ExpectedActual,
-                                        &expected_field_type,
-                                        typ,
+                                        &expected_field_type.concrete,
+                                        typ.concrete,
                                         &mut |implicit_arg| {
                                             implicit_args
                                                 .push(pos::spanned(field.name.span, implicit_arg));
@@ -1097,7 +1175,7 @@ impl<'a> Typecheck<'a> {
                                         ));
                                     }
 
-                                    typ
+                                    ModType::new(modifier, typ)
                                 }
                                 None => typ,
                             }
@@ -1107,10 +1185,14 @@ impl<'a> Typecheck<'a> {
 
                     if self.error_on_duplicated_field(&mut duplicated_fields, &field.name) {
                         match base_record_fields.get(field.name.value.declared_name()) {
-                            Some(&i) => base_fields[i].typ = typ,
-                            None => new_fields.push(Field::new(field.name.value.clone(), typ)),
+                            Some(&i) => base_fields[i].typ = typ.concrete,
+                            None => {
+                                new_fields.push(Field::new(field.name.value.clone(), typ.concrete))
+                            }
                         }
                     }
+
+                    modifier |= typ.modifier;
                 }
 
                 new_types.extend(base_types);
@@ -1118,7 +1200,7 @@ impl<'a> Typecheck<'a> {
                 let new_type = self.subs.record(new_types, new_fields);
                 *typ = self.subs.bind_arc(&new_type);
 
-                Ok(TailCall::Type(new_type))
+                Ok(TailCall::Type(ModType::new(modifier, new_type)))
             }
             Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
@@ -1151,7 +1233,7 @@ impl<'a> Typecheck<'a> {
                                     help: Some(Help::UndefinedFlatMapInDo),
                                 },
                             );
-                            self.subs.error()
+                            ModType::wobbly(self.subs.error())
                         }
                     },
                     _ => ice!("flat_map_id not inserted during renaming"),
@@ -1188,25 +1270,26 @@ impl<'a> Typecheck<'a> {
                 let arg2 = self.subs.new_var();
 
                 let ret = expected_type
-                    .cloned()
-                    .unwrap_or_else(|| self.subs.new_var());
+                    .as_ref()
+                    .map(|t| t.to_owned())
+                    .unwrap_or_else(|| ModType::wobbly(self.subs.new_var()));
                 let func_type = self
                     .subs
-                    .function(vec![arg1.clone(), arg2.clone()], ret.clone());
+                    .function(vec![arg1.clone(), arg2.clone()], ret.concrete.clone());
 
                 self.unify_span(do_span, &flat_map_type, func_type);
 
-                self.typecheck(bound, &arg2);
+                self.typecheck(bound, ModType::wobbly(&arg2));
 
                 if let Some(ref mut id) = *id {
-                    self.typecheck_pattern(id, id_var);
+                    self.typecheck_pattern(id, ModType::wobbly(id_var.clone()), id_var);
                 }
 
-                let body_type = self.typecheck(body, &ret);
+                let body_type = self.typecheck(body, ret.as_ref());
 
-                let ret = self.unify_span(body.span, &ret, body_type);
+                let ret = self.unify_span(body.span, &ret, body_type.concrete.clone());
 
-                Ok(TailCall::Type(ret))
+                Ok(TailCall::Type(ModType::wobbly(ret)))
             }
             Expr::MacroExpansion {
                 ref mut replacement,
@@ -1218,21 +1301,21 @@ impl<'a> Typecheck<'a> {
                 if let Some(new) = self.create_unifiable_signature(&typ) {
                     typ = new;
                 }
-                self.typecheck_(expr, &mut Some(&typ))
+                self.typecheck_(expr, &mut Some(ModType::rigid(&typ)))
             }
 
-            Expr::Error(ref typ) => Ok(TailCall::Type(
+            Expr::Error(ref typ) => Ok(TailCall::Type(ModType::wobbly(
                 typ.as_ref()
                     .map(|typ| self.translate_arc_type(typ))
                     .unwrap_or_else(|| self.subs.new_var()),
-            )),
+            ))),
         }
     }
 
     fn typecheck_application<'e, I>(
         &mut self,
         span: Span<BytePos>,
-        func_type: RcType,
+        func_type: ModType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
         args: I,
     ) -> TcResult<TailCall>
@@ -1246,7 +1329,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_application_<'e>(
         &mut self,
         span: Span<BytePos>,
-        mut func_type: RcType,
+        func_type: ModType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
         args: &mut ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
     ) -> TcResult<TailCall> {
@@ -1271,7 +1354,10 @@ impl<'a> Typecheck<'a> {
 
         let args_len = args.len() as u32;
 
-        func_type = self.instantiate_generics(&func_type);
+        let original_func_type = func_type.concrete.clone();
+        let mut func_type = self.instantiate_generics(&func_type);
+
+        let mut return_variables = FnvSet::default();
 
         for arg in &mut **implicit_args {
             let arg_ty = self.subs.new_var();
@@ -1282,7 +1368,15 @@ impl<'a> Typecheck<'a> {
 
             self.subsumes(arg.span, ErrorOrder::ExpectedActual, &f, func_type.clone());
 
-            self.typecheck(arg, &arg_ty);
+            let arg_ty = self.typecheck(arg, ModType::wobbly(&arg_ty));
+
+            if arg_ty.modifier == TypeModifier::Rigid {
+                types::walk_type(&self.subs.zonk(&arg_ty), &mut |typ: &RcType| {
+                    if let Type::Variable(var) = &**typ {
+                        return_variables.insert(var.id);
+                    }
+                });
+            }
 
             func_type = ret_ty;
         }
@@ -1301,7 +1395,15 @@ impl<'a> Typecheck<'a> {
                 break;
             }
 
-            self.typecheck(arg, &arg_ty);
+            let arg_ty = self.typecheck(arg, ModType::wobbly(&arg_ty));
+
+            if arg_ty.modifier == TypeModifier::Rigid {
+                types::walk_type(&self.subs.zonk(&arg_ty), &mut |typ: &RcType| {
+                    if let Type::Variable(var) = &**typ {
+                        return_variables.insert(var.id);
+                    }
+                });
+            }
 
             func_type = ret_ty;
 
@@ -1317,7 +1419,7 @@ impl<'a> Typecheck<'a> {
             let arg_types = extra_args
                 .map(|arg| {
                     span_end = arg.span.end();
-                    self.infer_expr(arg.borrow_mut())
+                    self.infer_expr(arg.borrow_mut()).concrete
                 })
                 .collect::<Vec<_>>();
             let expected = self.subs.function(arg_types, self.subs.new_var());
@@ -1335,18 +1437,29 @@ impl<'a> Typecheck<'a> {
             func_type = expected;
         }
 
-        Ok(TailCall::Type(func_type))
+        let mut modifier = TypeModifier::Rigid;
+        types::walk_type(&self.subs.zonk(&original_func_type), &mut |typ: &RcType| {
+            if modifier == TypeModifier::Rigid {
+                if let Type::Variable(var) = &**typ {
+                    if !return_variables.contains(&var.id) {
+                        modifier = TypeModifier::Wobbly;
+                    }
+                }
+            }
+        });
+
+        Ok(TailCall::Type(ModType::new(modifier, func_type)))
     }
 
     fn typecheck_lambda(
         &mut self,
-        function_type: RcType,
+        function_type: ModType,
         before_args_pos: BytePos,
         args: &mut Vec<Argument<SpannedIdent<Symbol>>>,
         body: &mut SpannedExpr<Symbol>,
-    ) -> RcType {
+    ) -> ModType {
         debug!("Checking lambda {}", function_type);
-        debug!("Checking lambda {:#?}", self.environment.type_variables);
+        debug!("Checking lambda {:#?}", self.environment.skolem_variables);
         self.enter_scope();
 
         let mut arg_types = Vec::new();
@@ -1366,7 +1479,7 @@ impl<'a> Typecheck<'a> {
                     .map(|a| a.name.span)
                     .unwrap_or_else(|| pos::Span::new(before_args_pos, before_args_pos));
                 let (type_implicit, arg_type, ret_type) =
-                    self.unify_function(span, return_type.clone());
+                    self.unify_function(span, return_type.concrete.clone());
 
                 match type_implicit {
                     ArgType::Implicit => {
@@ -1429,20 +1542,21 @@ impl<'a> Typecheck<'a> {
                             arg_types.push(arg_type.clone());
                             self.stack_var(arg.name.clone(), arg_type);
                         }
-                        None => break,
+                        _ => break,
                     },
+                    ArgType::Constructor => unreachable!(),
                 }
-                return_type = ret_type;
+                return_type = ModType::new(function_type.modifier, ret_type);
             }
 
             return_type
         };
 
-        let body_type = self.typecheck(body, &body_type);
+        let body_type = self.typecheck(body, body_type.as_ref());
         self.exit_scope();
 
-        let f = self.subs.function(arg_types, body_type);
-        let done = self.with_forall(&function_type, f);
+        let f = self.subs.function(arg_types, body_type.concrete);
+        let done = self.with_forall(&function_type, ModType::new(body_type.modifier, f));
 
         debug!("Checked lambda {}", done);
         done
@@ -1462,34 +1576,61 @@ impl<'a> Typecheck<'a> {
                     TypeError::Message(format!("Unexpected type constructor `{}`", id.name)),
                 )
             }
-            _ => self.typecheck_pattern(pattern, match_type),
+            _ => self.typecheck_pattern(pattern, ModType::wobbly(match_type.clone()), match_type),
         }
     }
 
     fn typecheck_pattern(
         &mut self,
         pattern: &mut SpannedPattern<Symbol>,
-        mut match_type: RcType,
+        mut match_type: ModType,
+        partial_match_type: RcType,
     ) -> RcType {
         let span = pattern.span;
         match pattern.value {
             Pattern::As(ref id, ref mut pat) => {
-                self.stack_var(id.value.clone(), match_type.clone());
-                self.typecheck_pattern(pat, match_type.clone());
-                match_type
+                self.stack_var(id.value.clone(), partial_match_type.clone());
+                self.typecheck_pattern(pat, match_type.clone(), partial_match_type.clone());
+                partial_match_type
             }
             Pattern::Constructor(ref mut id, ref mut args) => {
-                match_type = self.subs.real(&match_type).clone();
-                match_type = self.instantiate_generics(&match_type);
+                match_type.concrete = self.subs.real(&match_type).clone();
+                match_type.concrete = self.instantiate_generics(&match_type);
+                match_type.concrete = self.subs.zonk(&match_type);
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
+
                 id.typ = self.subs.bind_arc(&ctor_type);
-                let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
+
+                debug!("Wobbly check {:?}: {}", match_type.modifier, match_type);
+                let wobbly = match_type.modifier == TypeModifier::Wobbly;
+                let ctor_type = if wobbly {
+                    self.instantiate_generics(&ctor_type)
+                } else {
+                    self.skolemize(&ctor_type)
+                };
+
+                let return_type = ctor_return_type(&ctor_type);
+                if wobbly {
+                    self.subsumes(
+                        span,
+                        ErrorOrder::ExpectedActual,
+                        &return_type,
+                        match_type.concrete,
+                    );
+                } else {
+                    self.refines(
+                        span,
+                        ErrorOrder::ExpectedActual,
+                        &return_type,
+                        match_type.concrete,
+                    );
+                }
+
+                match self.typecheck_pattern_rec(args, ctor_type) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
-                };
-                let return_type = self.instantiate_generics(&return_type);
-                self.subsumes(span, ErrorOrder::ExpectedActual, &match_type, return_type)
+                }
             }
             Pattern::Record {
                 typ: ref mut curr_typ,
@@ -1498,7 +1639,7 @@ impl<'a> Typecheck<'a> {
                 ref implicit_import,
             } => {
                 let uninstantiated_match_type = match_type.clone();
-                match_type = self.instantiate_generics(&match_type);
+                match_type.concrete = self.instantiate_generics(&match_type);
                 *curr_typ = self.subs.bind_arc(&match_type);
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
@@ -1516,7 +1657,7 @@ impl<'a> Typecheck<'a> {
                     }
                 }
 
-                let record_match_type = self.remove_alias(match_type.clone());
+                let record_match_type = self.remove_alias(match_type.concrete.clone());
 
                 let mut missing_fields_from_match_type = Vec::new();
 
@@ -1537,7 +1678,11 @@ impl<'a> Typecheck<'a> {
                         });
                     match field.value {
                         Some(ref mut pattern) => {
-                            self.typecheck_pattern(pattern, field_type);
+                            self.typecheck_pattern(
+                                pattern,
+                                ModType::new(match_type.modifier, field_type.clone()),
+                                field_type,
+                            );
                         }
                         None => {
                             self.stack_var(name.clone(), field_type);
@@ -1567,7 +1712,10 @@ impl<'a> Typecheck<'a> {
                         None => {
                             self.error(
                                 field.name.span,
-                                TypeError::UndefinedField(match_type.clone(), name.clone()),
+                                TypeError::UndefinedField(
+                                    match_type.concrete.clone(),
+                                    name.clone(),
+                                ),
                             );
                             // We still define the type so that any uses later on in the program
                             // won't error on UndefinedType
@@ -1586,7 +1734,7 @@ impl<'a> Typecheck<'a> {
                         missing_fields_from_match_type,
                         self.subs.new_var(),
                     );
-                    self.unify_span(pattern.span, &expected, match_type.clone());
+                    self.unify_span(pattern.span, &expected, match_type.concrete.clone());
                 }
 
                 if let Some(ref implicit_import) = *implicit_import {
@@ -1597,7 +1745,7 @@ impl<'a> Typecheck<'a> {
                     );
                 }
 
-                match_type
+                match_type.concrete
             }
             Pattern::Tuple {
                 ref mut typ,
@@ -1607,23 +1755,27 @@ impl<'a> Typecheck<'a> {
                     let subs = &mut self.subs;
                     (&*subs).tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
                 };
-                let new_type = self.unify_span(span, &tuple_type, match_type);
+                let new_type = self.unify_span(span, &tuple_type, match_type.concrete);
                 *typ = self.subs.bind_arc(&new_type);
                 for (elem, field) in elems.iter_mut().zip(tuple_type.row_iter()) {
-                    self.typecheck_pattern(elem, field.typ.clone());
+                    self.typecheck_pattern(
+                        elem,
+                        ModType::new(match_type.modifier, field.typ.clone()),
+                        field.typ.clone(),
+                    );
                 }
                 tuple_type
             }
             Pattern::Ident(ref mut id) => {
-                self.stack_var(id.name.clone(), match_type.clone());
-                id.typ = self.subs.bind_arc(&match_type);
-                match_type
+                self.stack_var(id.name.clone(), partial_match_type.clone());
+                id.typ = self.subs.bind_arc(&partial_match_type);
+                partial_match_type
             }
             Pattern::Literal(ref l) => {
                 let typ = l.env_type_of(&self.environment);
                 let typ = self.translate_arc_type(&typ);
                 self.unify_span(span, &match_type, typ);
-                match_type
+                match_type.concrete
             }
             Pattern::Error => self.subs.new_var(),
         }
@@ -1636,16 +1788,13 @@ impl<'a> Typecheck<'a> {
     ) -> TcResult<RcType> {
         let len = args.len();
         match args.split_first_mut() {
-            Some((head, tail)) => {
-                let typ = self.instantiate_generics(&typ);
-                match typ.as_function() {
-                    Some((arg, ret)) => {
-                        self.typecheck_pattern(head, arg.clone());
-                        self.typecheck_pattern_rec(tail, ret.clone())
-                    }
-                    None => Err(TypeError::PatternError(typ.clone(), len)),
+            Some((head, tail)) => match typ.as_function() {
+                Some((arg, ret)) => {
+                    self.typecheck_pattern(head, ModType::wobbly(arg.clone()), arg.clone());
+                    self.typecheck_pattern_rec(tail, ret.clone())
                 }
-            }
+                None => Err(TypeError::PatternError(typ.clone(), len)),
+            },
             None => Ok(typ),
         }
     }
@@ -1722,6 +1871,7 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) -> TcResult<()> {
         self.enter_scope();
+        self.environment.skolem_variables.enter_scope();
         self.environment.type_variables.enter_scope();
         let level = self.subs.var_id();
 
@@ -1735,17 +1885,17 @@ impl<'a> Typecheck<'a> {
                         self.kindcheck(typ);
                         let rc_type = self.translate_ast_type(typ);
 
-                        resolved_types.push(rc_type);
+                        resolved_types.push(ModType::rigid(rc_type));
                     } else {
-                        resolved_types.push(self.subs.hole());
+                        resolved_types.push(ModType::wobbly(self.subs.hole()));
                     }
 
                     let typ = self.create_unifiable_signature(&resolved_types[i]);
                     if let Some(typ) = typ {
-                        resolved_types[i] = typ;
+                        resolved_types[i].concrete = typ;
                     }
 
-                    resolved_types[i].clone()
+                    resolved_types[i].concrete.clone()
                 };
                 self.typecheck_let_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expr.value {
@@ -1765,18 +1915,23 @@ impl<'a> Typecheck<'a> {
                     self.kindcheck(typ);
                     let rc_type = self.translate_ast_type(typ);
 
-                    resolved_types.push(rc_type);
+                    resolved_types.push(ModType::rigid(rc_type));
                 } else {
-                    resolved_types.push(self.subs.hole());
+                    resolved_types.push(ModType::wobbly(self.subs.hole()));
                 }
 
                 let typ = self.create_unifiable_signature(&resolved_types[i]);
                 if let Some(typ) = typ {
-                    resolved_types[i] = typ;
+                    resolved_types[i].concrete = typ;
                 }
 
-                let typ = &resolved_types[i];
-                self.skolemize_in(bind.expr.span, &typ, |self_, typ| {
+                let typ = resolved_types[i].as_ref();
+                self.skolemize_in(bind.expr.span, typ, |self_, typ| {
+                    self_
+                        .environment
+                        .type_variables
+                        .extend(self_.named_variables.drain());
+
                     self_.typecheck_lambda(
                         typ,
                         bind.name.span.end(),
@@ -1791,12 +1946,17 @@ impl<'a> Typecheck<'a> {
                         self.environment
                             .stack
                             .get(&id.name)
-                            .map_or_else(|| type_cache.error(), |b| b.typ.clone())
+                            .map_or_else(|| ModType::wobbly(type_cache.error()), |b| b.typ.clone())
                     }
-                    _ => self.subs.error(),
+                    _ => ModType::wobbly(self.subs.error()),
                 };
 
-                self.skolemize_in_no_scope(bind.expr.span, &typ, |self_, function_type| {
+                self.skolemize_in_no_scope(bind.expr.span, typ.as_ref(), |self_, function_type| {
+                    self_
+                        .environment
+                        .type_variables
+                        .extend(self_.named_variables.drain());
+
                     self_.typecheck_lambda(
                         function_type,
                         bind.name.span.end(),
@@ -1809,7 +1969,7 @@ impl<'a> Typecheck<'a> {
             debug!("let {:?} : {}", bind.name, typ);
 
             if !is_recursive {
-                let resolved_type = &mut resolved_types[i];
+                let resolved_type = &mut resolved_types[i].concrete;
                 bind.resolved_type = self.subs.bind_arc(&resolved_type);
                 // Merge the type declaration and the actual type
                 debug!("Generalize at {} = {}", level, resolved_type);
@@ -1856,11 +2016,12 @@ impl<'a> Typecheck<'a> {
             let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
 
             let stack = &self.environment.stack;
-            bindings.update(|name| Some(stack.get(name).unwrap().typ.clone()));
+            bindings.update(|name| Some(stack.get(name).unwrap().typ.concrete.clone()));
         }
 
         debug!("Typecheck `in`");
         self.environment.type_variables.exit_scope();
+        self.environment.skolem_variables.exit_scope();
         Ok(())
     }
 
@@ -1874,21 +2035,28 @@ impl<'a> Typecheck<'a> {
         // Rename the types so they get a name which is distinct from types from other
         // modules
         for bind in bindings.iter_mut() {
+            self.environment.skolem_variables.enter_scope();
             self.environment.type_variables.enter_scope();
 
             {
                 let mut type_cache = &self.subs;
-                self.environment.type_variables.extend(
-                    bind.alias
-                        .value
-                        .params()
-                        .iter()
-                        .map(|param| (param.id.clone(), type_cache.hole())),
-                );
+                for (k, v) in bind
+                    .alias
+                    .value
+                    .params()
+                    .iter()
+                    .map(|param| (param.id.clone(), type_cache.hole()))
+                {
+                    self.environment
+                        .skolem_variables
+                        .insert(k.clone(), v.clone());
+                    self.environment.type_variables.insert(k, v);
+                }
             }
-            self.check_undefined_variables(bind.alias.value.unresolved_type());
+            self.check_type_binding(&bind.alias.value.name, bind.alias.value.unresolved_type());
 
             self.environment.type_variables.exit_scope();
+            self.environment.skolem_variables.exit_scope();
         }
 
         {
@@ -1949,6 +2117,7 @@ impl<'a> Typecheck<'a> {
 
         let mut resolved_aliases = Vec::new();
         for bind in &mut *bindings {
+            self.environment.skolem_variables.enter_scope();
             self.environment.type_variables.enter_scope();
 
             let mut alias =
@@ -1969,6 +2138,7 @@ impl<'a> Typecheck<'a> {
             resolved_aliases.push(alias);
 
             self.environment.type_variables.exit_scope();
+            self.environment.skolem_variables.exit_scope();
         }
 
         let arc_alias_group = Alias::group(
@@ -2011,21 +2181,44 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn check_undefined_variables(&mut self, typ: &AstType<Symbol>) {
+    fn check_type_binding(&mut self, alias_name: &Symbol, typ: &AstType<Symbol>) {
         use crate::base::pos::HasSpan;
-        match **typ {
-            Type::Generic(ref id) => {
+        match &**typ {
+            Type::Generic(id) => {
                 if !self.environment.type_variables.contains_key(&id.id) {
                     info!("Undefined type variable {}", id.id);
                     self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
                 }
             }
+
+            Type::Variant(row) => {
+                for field in types::row_iter(row) {
+                    let spine = ctor_return_type(&field.typ).spine();
+                    match &**spine {
+                        Type::Ident(id) if id == alias_name => (),
+                        Type::Opaque => (),
+                        _ => {
+                            let actual = self.translate_ast_type(spine);
+                            self.error(
+                                spine.span(),
+                                TypeError::TypeConstructorReturnsWrongType {
+                                    expected: alias_name.clone(),
+                                    actual,
+                                },
+                            );
+                        }
+                    }
+                    self.check_type_binding(alias_name, &field.typ);
+                }
+            }
+
             Type::Record(_) => {
                 // Inside records variables are bound implicitly to the closest field
                 // so variables are allowed to be undefined/implicit
             }
+
             _ => {
-                if let Type::Forall(ref params, ..) = **typ {
+                if let Type::Forall(params, ..) = &**typ {
                     let mut type_cache = &self.subs;
                     self.environment
                         .type_variables
@@ -2034,7 +2227,7 @@ impl<'a> Typecheck<'a> {
                 types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &AstType<_>| {
-                        self.check_undefined_variables(typ);
+                        self.check_type_binding(alias_name, typ);
                         None
                     }),
                 );
@@ -2044,16 +2237,16 @@ impl<'a> Typecheck<'a> {
 
     fn update_var(&mut self, id: &Symbol, typ: &RcType) {
         if let Some(bind) = self.environment.stack.get_mut(id) {
-            if let Type::Variable(_) = *bind.typ {
+            if let Type::Variable(_) = **bind.typ {
                 self.implicit_resolver.on_stack_var(&self.subs, id, typ);
             }
-            bind.typ = typ.clone();
+            bind.typ.concrete = typ.clone();
         }
         // HACK
         // For type projections
         let id = self.symbols.symbol(id.declared_name());
         if let Some(bind) = self.environment.stack.get_mut(&id) {
-            bind.typ = typ.clone();
+            bind.typ.concrete = typ.clone();
         }
     }
 
@@ -2168,7 +2361,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut RcType, span: Span<BytePos>) {
-        debug!("Start generalize {:#?}", self.environment.type_variables);
+        debug!("Start generalize {:#?}", self.environment.skolem_variables);
         debug!("Start generalize {} >> {}", level, typ);
         let mut generalizer = TypeGeneralizer::new(level, self, typ, span);
         generalizer.generalize_type_top(typ);
@@ -2180,12 +2373,12 @@ impl<'a> Typecheck<'a> {
         typ: &mut RcType,
         span: Span<BytePos>,
     ) {
-        self.environment.type_variables.enter_scope();
+        self.environment.skolem_variables.enter_scope();
 
         let mut generalizer = TypeGeneralizer::new(level, self, typ, span);
         let result_type = generalizer.generalize_type(typ);
 
-        generalizer.environment.type_variables.exit_scope();
+        generalizer.environment.skolem_variables.exit_scope();
 
         if let Some(finished) = result_type {
             *typ = finished;
@@ -2209,7 +2402,12 @@ impl<'a> Typecheck<'a> {
     ) -> Option<RcType> {
         debug!("Creating signature: {:#?}", typ);
 
-        self.environment.type_variables.extend(scope);
+        for (k, v) in scope {
+            self.environment
+                .skolem_variables
+                .insert(k.clone(), v.clone());
+            self.environment.type_variables.insert(k, v);
+        }
 
         let opt = self.create_unifiable_signature2(typ);
         debug!("Created signature: {:#?}", opt.as_ref().unwrap_or(typ));
@@ -2405,7 +2603,7 @@ impl<'a> Typecheck<'a> {
     ) -> RcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
 
-        self.environment.type_variables.enter_scope();
+        self.environment.skolem_variables.enter_scope();
 
         let state = unify_type::State::new(&self.environment, &self.subs);
 
@@ -2458,7 +2656,7 @@ impl<'a> Typecheck<'a> {
             }
         };
 
-        self.environment.type_variables.exit_scope();
+        self.environment.skolem_variables.exit_scope();
 
         typ
     }
@@ -2472,6 +2670,55 @@ impl<'a> Typecheck<'a> {
     ) -> RcType {
         debug!("Merge {} : {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs);
+        match unify_type::subsumes(&self.subs, state, &expected, &actual) {
+            Ok(typ) => typ,
+            Err((typ, mut errors)) => {
+                let expected = expected.clone();
+                debug!(
+                    "Error '{}' between:\n>> {}\n>> {}",
+                    errors, expected, actual
+                );
+                let err = match error_order {
+                    ErrorOrder::ExpectedActual => {
+                        TypeError::Unification(expected, actual, errors.into())
+                    }
+                    ErrorOrder::ActualExpected => {
+                        for err in &mut errors {
+                            match err {
+                                unify::Error::TypeMismatch(l, r) => mem::swap(l, r),
+                                unify::Error::Other(unify_type::TypeError::FieldMismatch(l, r)) => {
+                                    mem::swap(l, r)
+                                }
+                                _ => (),
+                            }
+                        }
+                        TypeError::Unification(actual, expected, errors.into())
+                    }
+                };
+                self.errors.push(Spanned {
+                    span: span,
+                    // TODO Help what caused this unification failure
+                    value: err.into(),
+                });
+                typ
+            }
+        }
+    }
+
+    fn refines(
+        &mut self,
+        span: Span<BytePos>,
+        error_order: ErrorOrder,
+        expected: &RcType,
+        actual: RcType,
+    ) -> RcType {
+        debug!("Refine {} : {}", expected, actual);
+        types::walk_type(&actual, &mut |typ: &RcType| {
+            if let Type::Skolem(skolem) = &**typ {
+                self.refined_variables.entry(skolem.id).or_insert(());
+            }
+        });
+        let state = unify_type::State::with_refinement(&self.environment, &self.subs, true);
         match unify_type::subsumes(&self.subs, state, &expected, &actual) {
             Ok(typ) => typ,
             Err((typ, mut errors)) => {
@@ -2620,40 +2867,42 @@ impl<'a> Typecheck<'a> {
         resolve::remove_aliases(&self.environment, &mut &self.subs, typ)
     }
 
-    fn with_forall(&mut self, from: &RcType, to: RcType) -> RcType {
+    fn with_forall(&mut self, from: &RcType, to: ModType) -> ModType {
         let mut params = Vec::new();
         for param in from.forall_params() {
             params.push(param.clone());
         }
-        self.forall(params, to)
+        ModType::new(to.modifier, self.forall(params, to.concrete))
     }
 
     fn skolemize_in(
         &mut self,
         span: Span<BytePos>,
-        original_type: &RcType,
-        f: impl FnOnce(&mut Self, RcType) -> RcType,
-    ) -> RcType {
+        original_type: ModTypeRef,
+        f: impl FnOnce(&mut Self, ModType) -> ModType,
+    ) -> ModType {
+        self.environment.skolem_variables.enter_scope();
         self.environment.type_variables.enter_scope();
         let t = self.skolemize_in_no_scope(span, original_type, f);
 
         self.environment.type_variables.exit_scope();
+        self.environment.skolem_variables.exit_scope();
         t
     }
 
     fn skolemize_in_no_scope(
         &mut self,
         span: Span<BytePos>,
-        original_type: &RcType,
-        f: impl FnOnce(&mut Self, RcType) -> RcType,
-    ) -> RcType {
-        let skolemized = self.skolemize(original_type);
-        let new_type = f(self, skolemized);
+        original_type: ModTypeRef,
+        f: impl FnOnce(&mut Self, ModType) -> ModType,
+    ) -> ModType {
+        let skolemized = self.skolemize(&original_type);
+        let new_type = f(self, ModType::new(original_type.modifier, skolemized));
 
-        let original_type = self.subs.zonk(original_type);
+        let original_type = self.subs.zonk(&original_type);
         types::walk_type(&original_type, &mut |typ: &RcType| {
             if let Type::Skolem(skolem) = &**typ {
-                if !self.environment.type_variables.contains_key(&skolem.name) {
+                if !self.environment.skolem_variables.contains_key(&skolem.name) {
                     self.error(
                         span,
                         TypeError::Message(format!(
@@ -2672,19 +2921,19 @@ impl<'a> Typecheck<'a> {
         self.named_variables.clear();
         self.named_variables.extend(
             self.environment
-                .type_variables
+                .skolem_variables
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone())),
         );
         let new_type = typ.skolemize(&mut &self.subs, &mut self.named_variables);
-        for (id, typ) in self.named_variables.drain() {
-            match self.environment.type_variables.entry(id) {
+        for (id, typ) in self.named_variables.iter() {
+            match self.environment.skolem_variables.entry(id.clone()) {
                 scoped_map::Entry::Vacant(e) => {
-                    e.insert(typ);
+                    e.insert(typ.clone());
                 }
                 scoped_map::Entry::Occupied(mut e) => {
-                    if *e.get() != typ {
-                        e.insert(typ);
+                    if e.get() != typ {
+                        e.insert(typ.clone());
                     }
                 }
             }
@@ -2725,41 +2974,38 @@ impl<'a> Typecheck<'a> {
                 Expr::Ident(ref id) => match id.name.declared_name() {
                     "convert_effect!" => {
                         let (name, typ) = match args.len() {
-                            1 => (None, self.infer_expr(&mut args[0])),
+                            1 => (None, self.infer_expr(&mut args[0]).concrete),
                             2 => (
                                 Some(match args[0].value {
                                     Expr::Ident(ref id) => id.name.clone(),
                                     _ => unreachable!(),
                                 }),
-                                self.infer_expr(&mut args[1]),
+                                self.infer_expr(&mut args[1]).concrete,
                             ),
                             _ => unreachable!(),
                         };
 
                         let unaliased = self.remove_aliases(typ.clone());
-                        let valid_type = match *unaliased {
-                            Type::Forall(ref params, ref variant) => match **variant {
-                                Type::Variant(ref variant) => {
-                                    let mut iter = variant.row_iter();
-                                    for _ in iter.by_ref() {}
-                                    match **iter.current_type() {
-                                        Type::Generic(ref gen) => {
-                                            params.iter().any(|param| param.id == gen.id)
-                                        }
-                                        _ => false,
-                                    }
+                        let valid_type = match &*unaliased {
+                            Type::Variant(variant) => {
+                                let mut iter = variant.row_iter();
+                                for _ in iter.by_ref() {}
+                                match **iter.current_type() {
+                                    Type::EmptyRow => false,
+                                    _ => true,
                                 }
-                                _ => false,
-                            },
+                            }
                             _ => false,
                         };
                         if !valid_type {
-                            return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `forall a . | Variant X | a` but found `{}`", unaliased))));
+                            return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `type Effect r a = | Variant X | r` but found `{}`", unaliased))));
                         }
 
                         let f = self.subs.new_var();
+                        let row_arg = self.subs.new_var();
                         let arg = self.subs.new_var();
-                        let expected_shape = self.app(f.clone(), collect![arg.clone()]);
+                        let expected_shape =
+                            self.app(f.clone(), collect![row_arg.clone(), arg.clone()]);
                         self.unify_span(expr.span, &expected_shape, typ);
 
                         let eff = self.poly_effect(
@@ -2769,7 +3015,7 @@ impl<'a> Typecheck<'a> {
                             })
                             .into_iter()
                             .collect(),
-                            self.subs.new_var(),
+                            row_arg,
                         );
                         (
                             args.pop().unwrap(),
@@ -2777,31 +3023,58 @@ impl<'a> Typecheck<'a> {
                         )
                     }
                     "convert_variant!" => {
-                        let typ = self.infer_expr(&mut args[0]);
+                        let typ = self.infer_expr(&mut args[0]).concrete;
 
                         let unaliased = self.remove_aliases(typ);
                         let variant_type = match *unaliased {
                             Type::App(ref f, ref type_args) if type_args.len() == 1 => {
                                 let f = self.subs.real(f).clone();
                                 match *f {
-                                    Type::Effect(ref row) => row.row_iter().fold(
-                                        self.poly_variant(vec![], self.subs.new_var()),
-                                        |variant, field| {
-                                            let typ = self.app(
-                                                field.typ.clone(),
-                                                collect![type_args[0].clone()],
-                                            );
-                                            let typ = self.remove_alias(typ);
-                                            let typ = self.instantiate_generics(&typ);
+                                    Type::Effect(ref row) => {
+                                        let variant_type = row.row_iter().fold(
+                                            self.poly_variant(vec![], self.subs.new_var()),
+                                            |variant, field| {
+                                                let typ = self.app(
+                                                    field.typ.clone(),
+                                                    collect![
+                                                        self.subs.new_var(),
+                                                        type_args[0].clone()
+                                                    ],
+                                                );
+                                                let typ = self.remove_alias(typ);
+                                                let typ = self.instantiate_generics(&typ);
 
-                                            self.subsumes(
-                                                args[0].span,
-                                                ErrorOrder::ActualExpected,
-                                                &variant,
-                                                typ,
-                                            )
-                                        },
-                                    ),
+                                                self.subsumes(
+                                                    args[0].span,
+                                                    ErrorOrder::ActualExpected,
+                                                    &variant,
+                                                    typ,
+                                                )
+                                            },
+                                        );
+                                        let variant_type = self.subs.zonk(&variant_type);
+
+                                        let effect_row_rest = {
+                                            let mut iter = row.row_iter();
+                                            for _ in &mut iter {}
+                                            iter.current_type().clone()
+                                        };
+
+                                        let variant_row_rest = {
+                                            let mut iter = variant_type.row_iter();
+                                            for _ in &mut iter {}
+                                            iter.current_type().clone()
+                                        };
+
+                                        self.subsumes(
+                                            args[0].span,
+                                            ErrorOrder::ActualExpected,
+                                            &variant_row_rest,
+                                            effect_row_rest,
+                                        );
+
+                                        variant_type
+                                    }
                                     _ => {
                                         return Some(Err(TypeError::Message(format!(
                                             "Expected an effect type, found `{}`",
@@ -2831,7 +3104,7 @@ impl<'a> Typecheck<'a> {
 
         *expr = Expr::annotated(replacement, self.subs.bind_arc(&typ));
 
-        Some(Ok(TailCall::Type(typ)))
+        Some(Ok(TailCall::Type(ModType::wobbly(typ))))
     }
 }
 
@@ -2869,7 +3142,7 @@ pub fn translate_projected_type(
             }
             None => Some(
                 env.find_type(&symbol)
-                    .cloned()
+                    .map(|t| t.concrete.clone())
                     .or_else(|| {
                         env.find_type_info(&symbol)
                             .map(|alias| alias.typ(interner).into_owned())
@@ -3004,4 +3277,15 @@ fn generalize_binding(
     crate::implicits::resolve(generalizer.tc, &mut binding.expr);
 
     generalizer.generalize_type_top(resolved_type);
+}
+
+fn ctor_return_type<'a, Id, T>(typ: &'a T) -> &'a T
+where
+    T: Deref<Target = Type<Id, T>>,
+    Id: 'a,
+{
+    match &**typ {
+        Type::Forall(_, typ) | Type::Function(_, _, typ) => ctor_return_type(typ),
+        _ => typ,
+    }
 }

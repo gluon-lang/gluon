@@ -6,7 +6,7 @@ use std::{
     iter,
     marker::PhantomData,
     mem,
-    ops::{Deref, DerefMut},
+    ops::{self, Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
@@ -74,7 +74,7 @@ macro_rules! forward_eq_hash {
 pub trait TypeEnv: KindEnv {
     type Type;
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type>;
+    fn find_type(&self, id: &SymbolRef) -> Option<ModType<&Self::Type>>;
 
     /// Returns information about the type `id`
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>>;
@@ -83,7 +83,7 @@ pub trait TypeEnv: KindEnv {
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     type Type = T::Type;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ModType<&Self::Type>> {
         (**self).find_type(id)
     }
 
@@ -95,7 +95,7 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 impl TypeEnv for EmptyEnv<Symbol> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ModType<&ArcType>> {
         None
     }
 
@@ -718,15 +718,16 @@ impl<Id, T> Field<Id, T> {
         Field { name, typ }
     }
 
-    pub fn ctor<S, I>(symbols: &mut S, name: Id, elems: I) -> Self
+    pub fn ctor<J>(ctor_name: Id, elems: J) -> Self
     where
-        S: ?Sized + IdentEnv<Ident = Id>,
-        I: IntoIterator<Item = T>,
+        J: IntoIterator<Item = T>,
+        J::IntoIter: DoubleEndedIterator,
         T: From<Type<Id, T>>,
     {
+        let typ = Type::function_type(ArgType::Constructor, elems, Type::opaque());
         Field {
-            name,
-            typ: Type::tuple(symbols, elems),
+            name: ctor_name,
+            typ,
         }
     }
 }
@@ -736,6 +737,7 @@ impl<Id, T> Field<Id, T> {
 pub enum ArgType {
     Explicit,
     Implicit,
+    Constructor,
 }
 
 /// The representation of gluon's types.
@@ -962,9 +964,10 @@ where
         T::from(Type::EmptyRow)
     }
 
-    pub fn function(args: Vec<T>, ret: T) -> T
+    pub fn function<I>(args: I, ret: T) -> T
     where
-        T: Clone,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
     {
         Self::function_type(ArgType::Explicit, args, ret)
     }
@@ -1107,10 +1110,10 @@ where
     }
 
     pub fn alias_ident(&self) -> Option<&Id> {
-        match *self {
-            Type::App(ref id, _) => id.alias_ident(),
-            Type::Ident(ref id) => Some(id),
-            Type::Alias(ref alias) => Some(&alias.name),
+        match self {
+            Type::App(id, _) => id.alias_ident(),
+            Type::Ident(id) => Some(id),
+            Type::Alias(alias) => Some(&alias.name),
             _ => None,
         }
     }
@@ -1359,6 +1362,13 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
 
     fn strong_count(typ: &Self) -> usize;
 
+    fn spine(&self) -> &Self {
+        match &**self {
+            Type::App(ref id, _) => id.spine(),
+            _ => self,
+        }
+    }
+
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
     fn type_field_iter(&self) -> TypeFieldIterator<Self> {
@@ -1402,9 +1412,9 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
         }
-        match **self {
-            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            Type::Forall(ref params, ref typ) => {
+        match &**self {
+            Type::Generic(generic) => named_variables.get(&generic.id).cloned(),
+            Type::Forall(params, typ) => {
                 let removed: AppVec<_> = params
                     .iter()
                     .flat_map(|param| named_variables.remove_entry(&param.id))
@@ -1873,6 +1883,13 @@ where
     }
 }
 
+pub fn ctor_args<Id, T>(typ: &T) -> ArgIterator<T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    ArgIterator { typ }
+}
+
 pub struct ArgIterator<'a, T: 'a> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
@@ -2170,6 +2187,7 @@ where
                             ..
                         } => {
                             doc = doc.append(arena.concat(fields.iter().map(|field| {
+                                let typ = remove_forall(&field.typ);
                                 chain![arena;
                                     if first {
                                         first = false;
@@ -2179,15 +2197,15 @@ where
                                     },
                                     "| ",
                                     field.name.as_ref(),
-                                    if field.typ.as_function().is_some() {
-                                        arena.concat(arg_iter(&field.typ).map(|arg| {
+                                    if typ.as_function().is_some() {
+                                        arena.concat(arg_iter(typ).map(|arg| {
                                             chain![arena;
                                                 " ",
                                                 dt(Prec::Constructor, arg).pretty(printer)
                                             ]
                                         }))
                                     } else {
-                                        arena.concat(row_iter(&field.typ).map(|field| {
+                                        arena.concat(row_iter(typ).map(|field| {
                                             chain![arena;
                                                 " ",
                                                 dt(Prec::Constructor, &field.typ).pretty(printer)
@@ -3739,5 +3757,102 @@ where
             }))
         }
         Type::EmptyRow => interner.empty_row(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TypeModifier {
+    Wobbly,
+    Rigid,
+}
+
+impl Default for TypeModifier {
+    fn default() -> Self {
+        TypeModifier::Wobbly
+    }
+}
+
+impl ops::BitOr for TypeModifier {
+    type Output = Self;
+
+    fn bitor(mut self, typ: Self) -> Self {
+        self |= typ;
+        self
+    }
+}
+impl ops::BitOrAssign for TypeModifier {
+    fn bitor_assign(&mut self, typ: Self) {
+        match (*self, typ) {
+            (TypeModifier::Rigid, TypeModifier::Rigid) => (),
+            _ => *self = TypeModifier::Wobbly,
+        }
+    }
+}
+
+pub type ModTypeRef<'a> = ModType<&'a ArcType>;
+
+#[derive(Clone, Copy, Debug)]
+pub struct ModType<T = ArcType> {
+    pub modifier: TypeModifier,
+    pub concrete: T,
+}
+
+impl<T> fmt::Display for ModType<T>
+where
+    T: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.concrete.fmt(f)
+    }
+}
+
+impl<T> Deref for ModType<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.concrete
+    }
+}
+
+impl<T> DerefMut for ModType<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.concrete
+    }
+}
+
+impl<T> ops::BitOrAssign for ModType<T> {
+    fn bitor_assign(&mut self, typ: Self) {
+        self.modifier |= typ.modifier;
+        self.concrete = typ.concrete;
+    }
+}
+
+impl<T> ModType<T> {
+    pub fn new(modifier: TypeModifier, typ: T) -> Self {
+        ModType {
+            modifier,
+            concrete: typ,
+        }
+    }
+
+    pub fn rigid(typ: T) -> Self {
+        Self::new(TypeModifier::Rigid, typ)
+    }
+
+    pub fn wobbly(typ: T) -> Self {
+        Self::new(TypeModifier::Wobbly, typ)
+    }
+
+    pub fn as_ref(&self) -> ModType<&T> {
+        ModType::new(self.modifier, &self.concrete)
+    }
+}
+
+impl<'a, T> ModType<&'a T>
+where
+    T: Clone,
+{
+    pub fn to_owned(&self) -> ModType<T> {
+        ModType::new(self.modifier, self.concrete.clone())
     }
 }

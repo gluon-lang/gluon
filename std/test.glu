@@ -20,7 +20,7 @@ let { Writer, run_writer, tell } = import! std.effect.writer
 let { Lift, run_lift } = import! std.effect.lift
 
 
-type Test a = Writer (List String) a
+type Test r a = Writer (List String) r a
 type TestEff r a = Eff [| writer : Test | r |] a
 type TestEffIO r a = Eff [| writer : Test, lift : Lift IO | r |] a
 type TestCase r a =

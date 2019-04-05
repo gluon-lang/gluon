@@ -265,8 +265,8 @@ fn polymorphic_variants() {
     let _ = env_logger::try_init();
 
     let text = r#"
-type AA r = (| A Int .. r)
-type BB r = (| B String .. r)
+type AA r = | A Int .. r
+type BB r = | B String .. r
 if True then
     A 123
 else
@@ -301,9 +301,13 @@ fn state_effect() {
     let _ = env_logger::try_init();
     let text = r#"
 type Eff r a =
-    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+    | Pure a
+    | Impure : forall x . (r x) ->  (x -> Eff r a) -> Eff r a
 
-type State s a = forall r . (| Get | Put s .. r)
+type State s r a =
+    | Get : State s r s
+    | Put : s -> State s r ()
+    .. r
 
 let any x = any x
 
@@ -311,9 +315,9 @@ let wrap x : a -> Eff r a = any ()
 
 let inject_rest x : forall e . (.. r) -> [| | r |] a = any ()
 
-let extract_state x : forall s . [| state : State s | r |] a -> State s a = any ()
+let extract_state x : forall s . [| state : State s | r |] a -> State s r a = any ()
 
-let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { state : _, value : a } =
+let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
     match ve with
     | Pure value -> wrap { state, value }
     | Impure e f ->
@@ -321,7 +325,7 @@ let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { stat
         | Get ->
             loop state (f state)
         | Put state ->
-            loop state (f state)
+            loop state (f ())
         | rest ->
             Impure (inject_rest rest) (\x -> loop state (f x))
 

@@ -1,7 +1,9 @@
-use crate::base::ast::{AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding};
-use crate::base::pos;
-use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::{remove_forall, row_iter, Type};
+use crate::base::{
+    ast::{AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
+    pos,
+    symbol::{Symbol, Symbols},
+    types::{remove_forall, row_iter, Type},
+};
 
 use crate::macros::Error;
 

@@ -64,10 +64,10 @@ where
                 f.add_flags(flags);
                 args.add_flags(flags);
             }
-            Type::Record(ref typ)
-            | Type::Variant(ref typ)
-            | Type::Effect(ref typ)
-            | Type::Forall(_, ref typ) => {
+            Type::Record(ref typ) | Type::Variant(ref typ) | Type::Effect(ref typ) => {
+                typ.add_flags(flags)
+            }
+            Type::Forall(_, ref typ) => {
                 *flags |= Flags::HAS_FORALL;
                 typ.add_flags(flags);
             }

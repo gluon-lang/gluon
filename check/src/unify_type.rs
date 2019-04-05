@@ -45,6 +45,7 @@ pub struct State<'a> {
     subs: &'a Substitution<RcType>,
     record_context: Option<(RcType, RcType)>,
     pub in_alias: bool,
+    refinement: bool,
 }
 
 impl<'a> State<'a> {
@@ -52,12 +53,21 @@ impl<'a> State<'a> {
         env: &'a (TypeEnv<Type = RcType> + 'a),
         subs: &'a Substitution<RcType>,
     ) -> State<'a> {
+        State::with_refinement(env, subs, false)
+    }
+
+    pub fn with_refinement(
+        env: &'a (TypeEnv<Type = RcType> + 'a),
+        subs: &'a Substitution<RcType>,
+        refinement: bool,
+    ) -> State<'a> {
         State {
             env,
             reduced_aliases: Vec::new(),
             subs,
             record_context: None,
             in_alias: false,
+            refinement,
         }
     }
 
@@ -273,7 +283,16 @@ impl Substitutable for RcType<Symbol> {
     where
         F: types::Walker<'a, Self>,
     {
-        types::walk_type_(self, f)
+        match &**self {
+            Type::Function(ArgType::Constructor, arg, ret) => match &**ret {
+                Type::Function(ArgType::Constructor, ..) => {
+                    f.walk(arg);
+                    f.walk(arg);
+                }
+                _ => f.walk(arg),
+            },
+            _ => types::walk_type_(self, f),
+        }
     }
 
     fn instantiate(&self, mut subs: &Substitution<Self>) -> Self {
@@ -1363,14 +1382,26 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 self.try_match_res(l, &r)
             }
 
-            (_, &Type::Variable(ref r)) => {
+            (_, &Type::Variable(_)) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(r, l)?;
                 Ok(None)
             }
-            (&Type::Variable(ref l), _) => {
+            (&Type::Variable(_), _) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (&Type::Skolem(_), _) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (_, &Type::Skolem(_)) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(r, l)?;
                 Ok(None)
             }
 

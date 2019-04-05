@@ -84,12 +84,13 @@ impl<T> TypecheckEnv for T where T: PrimitiveEnv + MetadataEnv {}
 mod tests {
     use super::*;
 
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::{cell::RefCell, rc::Rc};
 
-    use crate::base::kind::{ArcKind, KindEnv};
-    use crate::base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-    use crate::base::types::{Alias, TypeEnv};
+    use crate::base::{
+        kind::{ArcKind, KindEnv},
+        symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+        types::{Alias, ModTypeRef, TypeEnv},
+    };
 
     pub struct MockEnv;
 
@@ -101,7 +102,7 @@ mod tests {
 
     impl TypeEnv for MockEnv {
         type Type = RcType;
-        fn find_type(&self, _id: &SymbolRef) -> Option<&RcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<ModTypeRef> {
             None
         }
         fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, RcType>> {

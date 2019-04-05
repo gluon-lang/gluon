@@ -19,7 +19,7 @@ test_check! {
     let any x = any x
     let same : a -> a -> () = any ()
 
-    type Test a = forall r . (| Test .. r)
+    type Test a r = | Test .. r
 
     same (convert_variant! (convert_effect! test Test)) Test
     "#,
@@ -58,8 +58,8 @@ test_check! {
 test_check! {
     different_variant_with_different_name_succeeds,
     r#"
-    type Test a = forall r . (| Test Int .. r)
-    type Test2 a = forall r . (| Test2 .. r)
+    type Test r a = | Test Int .. r
+    type Test2 r a = | Test2 .. r
 
     let f x : [| test : Test, test2 : Test2 | r |] Int -> () =
         let _ = convert_variant! x
@@ -72,7 +72,7 @@ test_check! {
 test_check_err! {
     same_variant_with_different_arg_errors,
     r#"
-    type Test b a = forall r . (| Test b .. r)
+    type Test b r a = | Test b .. r
 
     let f x : [| test : Test Int, test2 : Test String | r |] Int -> () =
         let _ = convert_variant! x
@@ -85,8 +85,8 @@ test_check_err! {
 test_check_err! {
     different_variant_with_same_name_errors,
     r#"
-    type Test a = forall r . (| Test Int .. r)
-    type Test2 a = forall r . (| Test .. r)
+    type Test r a = | Test Int .. r
+    type Test2 r a = | Test .. r
 
     let f x : [| test : Test, test2 : Test2 | r |] Int -> () =
         let _ = convert_variant! x
@@ -99,9 +99,9 @@ test_check_err! {
 test_check_err! {
     wrong_type_after_conversion1,
     r#"
-    type Test b a = forall r . (| Test b .. r)
+    type Test b r a = | Test b .. r
 
-    let f x : [| test : Test Int | r |] Int -> Test String Int =
+    let f x : [| test : Test Int | r |] Int -> Test String r Int =
         convert_variant! x
     ()
     "#,
@@ -111,9 +111,9 @@ test_check_err! {
 test_check_err! {
     wrong_type_after_conversion2,
     r#"
-    type Test a = forall r . (| Test a .. r)
+    type Test r a = | Test a .. r
 
-    let f x : [| test : Test | r |] Int -> Test String =
+    let f x : [| test : Test | r |] Int -> Test r String =
         convert_variant! x
     ()
     "#,
@@ -123,9 +123,9 @@ test_check_err! {
 test_check_err! {
     effects_remains_in_lift,
     r#"
-    type Lift m a = forall r . (| Lift (m a) .. r)
+    type Lift m r a = | Lift (m a) .. r
 
-    type Test a = forall r . (| Test a .. r)
+    type Test r a = | Test a .. r
 
     let any x = any x
 
@@ -141,9 +141,10 @@ test_check! {
     alt_effect_generalization_bug,
     r#"
 type Eff r a =
-    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+    | Pure : a -> Eff r a
+    | Impure : forall x . r x -> (x -> Eff r a) -> Eff r a
 
-type Alt a = forall r . (| Empty .. r)
+type Alt r a = | Empty .. r
 
 type Option a = | None | Some a
 
@@ -156,6 +157,121 @@ let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] 
 let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | r |] (Option a) =
     let fail _ = wrap None
     run_alt_inner Some fail eff_1 eff_2
+()
+    "#,
+    "()"
+}
+
+test_check! {
+    inject_open_variant,
+    r#"
+type OpenVariant r a = .. r
+let inject_rest x : forall e . OpenVariant r a -> [| | r |] a = convert_effect! x
+()
+    "#,
+    "()"
+}
+
+test_check! {
+    state_effect_get_only,
+    r#"
+rec
+type Arr r a b = a -> Eff r b
+
+type Eff r a =
+    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+in
+
+let any x = any x
+
+type State s r a = | Get : State s r s .. r 
+
+let extract_state x : forall s . [| state : State s | r |] a -> State s r a = convert_variant! x
+
+let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
+    let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
+        match ve with
+        | Impure e f ->
+            match extract_state e with
+            | Get ->
+                loop state (f state)
+            | rest -> any ()
+    loop s eff
+
+()
+    "#,
+    "()"
+}
+
+test_check! {
+    state_effect_get_put,
+    r#"
+rec
+type Arr r a b = a -> Eff r b
+
+type Eff r a =
+    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+in
+
+let any x = any x
+
+type State s r a =
+    | Get : State s r s
+    | Put : s -> State s r ()
+    .. r
+
+let extract_state x : forall s . [| state : State s | r |] a -> State s r a = convert_variant! x
+
+let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
+    let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
+        match ve with
+        | Impure e f ->
+            match extract_state e with 
+            | Get ->
+                loop state (f state)
+            | Put state ->
+                loop state (f ())
+            | rest -> any ()
+    loop s eff
+
+()
+    "#,
+    "()"
+}
+
+test_check! {
+    st_effect_bug,
+    r#"
+let any x = any x
+
+rec
+type Arr r a b = a -> Eff r b
+
+type Eff r a =
+    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+in
+
+type STRef s a = { __ref : a }
+type State s r a =
+    | New : forall b . b -> State s r (STRef s b)
+    | Write : forall b . b -> STRef s b -> State s r ()
+    .. r
+
+let extract_state x : forall s . [| st : State s | r |] a -> State s r a = convert_variant! x
+
+let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a =
+    let loop ve : forall s . Eff [| st : State s | r |] a -> _ =
+        match ve with
+        | Impure e f ->
+            match extract_state e with 
+            | New a ->
+                let r : STRef _ _ = { __ref = a }
+                loop (f r)
+            | Write a r ->
+                loop (f ())
+            | rest -> any ()
+    loop eff
+
 ()
     "#,
     "()"

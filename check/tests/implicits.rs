@@ -213,7 +213,7 @@ f (Test ())
     let result = support::typecheck(text);
 
     let test = support::alias_variant("Test", &[], &[("Test", &[Type::unit()])]);
-    assert_req!(result, Ok(test));
+    assert_eq!(result, Ok(test));
 }
 
 test_check! {
@@ -994,6 +994,27 @@ let transformer : Transformer (StateT s) =
     let wrap_monad : [Monad m] -> m a -> StateT s m a = any ()
 
     { wrap_monad }
+
+()
+"#,
+"()"
+}
+
+test_check! {
+match_inference,
+r#"
+let any x = any x
+let assert x : Bool -> () = ()
+type Result e t = | Err e | Ok t
+type Channel t = { x : t }
+let recv x : Channel t -> Result e t = any ()
+#[infix(left, 4)]
+let (==) :  a -> a -> Bool = any ()
+
+let f receiver : Channel Int -> _ =
+    match recv receiver with
+    | Ok x -> assert (x == 1)
+    | Err _ -> assert False
 
 ()
 "#,
