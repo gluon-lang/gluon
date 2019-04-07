@@ -268,7 +268,7 @@ pub fn record(
 #[derive(Serialize, Debug)]
 pub struct TemplateModule<'a> {
     pub name: &'a str,
-    pub github_source: Option<&'a str>,
+    pub src_url: Option<&'a str>,
     pub comment: &'a str,
     pub record: &'a Record,
     pub sub_modules: Vec<&'a Module>,
@@ -587,10 +587,23 @@ where
     P: ?Sized + AsRef<Path>,
     Q: ?Sized + AsRef<Path>,
 {
-    generate_for_path_(thread, path.as_ref(), out_path.as_ref())
+    generate(
+        &Options {
+            input: path.as_ref().to_owned(),
+            output: out_path.as_ref().to_owned(),
+            src_url: None,
+        },
+        thread,
+    )
 }
 
-pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
+pub fn generate(options: &Options, thread: &Thread) -> Result<()> {
+    let Options {
+        input: path,
+        output: out_path,
+        src_url,
+    } = options;
+
     let mut collector = DocCollector {
         directories: BTreeMap::new(),
         modules: BTreeSet::new(),
@@ -600,14 +613,6 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         out_path,
     };
 
-    let mut github_source = None;
-    {
-        let root_glu = path.with_extension("glu");
-        if root_glu.exists() {
-            let module = collector.module_for(&root_glu)?;
-            github_source = module.github_source;
-        }
-    }
     for entry in walkdir::WalkDir::new(path) {
         collector.try_add_path(entry?)?;
     }
@@ -657,7 +662,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 &mut doc_file,
                 &TemplateModule {
                     name: &module.name,
-                    github_source: github_source.as_ref().map(|s| &s[..]),
+                    src_url: src_url.as_ref().map(|s| &s[..]),
                     comment: &module.comment,
                     record: &module.record,
                     sub_modules: directories
@@ -682,6 +687,22 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     Ok(())
 }
 
+pub struct Options {
+    pub src_url: Option<String>,
+    pub input: PathBuf,
+    pub output: PathBuf,
+}
+
+impl From<&'_ Opt> for Options {
+    fn from(opt: &Opt) -> Self {
+        Options {
+            src_url: opt.src_url.clone(),
+            input: opt.input.clone().into(),
+            output: opt.output.clone().into(),
+        }
+    }
+}
+
 const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 #[derive(StructOpt)]
 #[structopt(
@@ -695,6 +716,9 @@ pub struct Opt {
     #[structopt(long = "jobs")]
     #[structopt(help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
+    #[structopt(long = "src-url")]
+    #[structopt(help = "Where the source can be found")]
+    pub src_url: Option<String>,
     #[structopt(help = "Documents the file or directory")]
     pub input: String,
     #[structopt(help = "Outputs the documentation to this directory")]

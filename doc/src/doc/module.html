@@ -29,9 +29,9 @@
         <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
             <div class="row pb-3 mb-4 border-bottom">
                 <h1 class="col-md-10">{{name}}</h1>
-                {{#if @root.github_source}}
+                {{#if @root.src_url}}
                 <div class="col-md-2">
-                    <a class="float-right" href="{{@root.github_source}}/tree/master/{{symbol_to_path name}}.glu">[src]</a>
+                    <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path name}}.glu">[src]</a>
                 </div>
                 {{/if}}
             </div>
@@ -68,10 +68,10 @@
                         </h4>
                     </div>
 
-                    {{#if @root.github_source}}
+                    {{#if @root.src_url}}
                     {{#if definition_line}}
                     <div class="col-md-2">
-                        <a class="float-right" href="{{@root.github_source}}/tree/master/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
+                        <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
                     </div>
                     {{/if}}
                     {{/if}}
@@ -96,10 +96,10 @@
                         </h4>
                     </div>
 
-                    {{#if @root.github_source}}
+                    {{#if @root.src_url}}
                     {{#if definition_line}}
                     <div class="col-md-2">
-                        <a class="float-right" href="{{@root.github_source}}/tree/master/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
+                        <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
                     </div>
                     {{/if}}
                     {{/if}}

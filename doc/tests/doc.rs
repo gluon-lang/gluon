@@ -19,7 +19,13 @@ fn doc_check(module: &str, expected: doc::Record) {
         .unwrap();
     let (meta, _) = metadata(&*vm.get_env(), &expr);
 
-    let out = doc::record("basic", &typ, &meta);
+    let out = doc::record(
+        "basic",
+        &typ,
+        &Default::default(),
+        &<() as gluon::base::source::Source>::new(""),
+        &meta,
+    );
     assert_eq!(out, expected,);
 }
 
@@ -42,6 +48,7 @@ let test x = x
                 }],
                 typ: handlebars::html_escape("forall a . a -> a"),
                 comment: "This is the test function".to_string(),
+                definition_line: None,
             }],
         },
     );
