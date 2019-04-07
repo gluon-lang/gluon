@@ -895,6 +895,7 @@ impl<'a> Typecheck<'a> {
                     // TODO Make this more general so it can error when not matching on all the
                     // variants
                     {
+                        *unaliased_scrutinee_type = self.subs.zonk(&unaliased_scrutinee_type);
                         let replaced = match (&alt.pattern.value, &**unaliased_scrutinee_type) {
                             (Pattern::Constructor(id, _), Type::Variant(row)) => {
                                 let mut variant_iter = row.row_iter();
