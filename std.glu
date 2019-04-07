@@ -1,0 +1,5 @@
+//! The gluon standard library
+
+#[github("https://github.com/gluon-lang/gluon")]
+let std = {}
+std
