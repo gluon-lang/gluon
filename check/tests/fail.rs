@@ -772,3 +772,20 @@ let f x : a -> () =
 
     assert_err!(result, KindError(..));
 }
+
+test_check_err! {
+    issue_703_type_mismatch_in_recursive_function,
+    r#"
+type List a = | Nil | Cons a (List a)
+
+let reverse xs =
+    match xs with
+    | Nil -> Nil
+    | l -> l
+
+match reverse (Cons 1 Nil) with
+| Cons x _ -> x
+| Nil -> ""
+"#,
+Unification(..)
+}
