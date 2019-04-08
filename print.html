@@ -1,0 +1,1405 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Gluon Documentation</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Gluon is a static, type inferred and embeddable language written in Rust">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body class="light">
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">var path_to_root = "";</script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { } 
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            document.body.className = theme;
+            document.querySelector('html').className = theme + ' js';
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <ol class="chapter"><li><a href="getting-started.html"><strong aria-hidden="true">1.</strong> Getting started</a></li><li><ol class="section"><li><a href="dissecting-hello-world.html"><strong aria-hidden="true">1.1.</strong> Dissecting Hello World</a></li><li><a href="using-the-repl.html"><strong aria-hidden="true">1.2.</strong> Using the REPL</a></li><li><a href="anatomy-of-a-gluon-program.html"><strong aria-hidden="true">1.3.</strong> Anatomy of a gluon program</a></li><li><a href="extending-the-guessing-game-with-effects.html"><strong aria-hidden="true">1.4.</strong> Extending the guessing game with extensible effects</a></li></ol></li><li><a href="syntax-and-semantics.html"><strong aria-hidden="true">2.</strong> Syntax and semantics</a></li><li><a href="metadata.html"><strong aria-hidden="true">3.</strong> Metadata</a></li><li><a href="modules.html"><strong aria-hidden="true">4.</strong> Modules</a></li><li><a href="embedding-api.html"><strong aria-hidden="true">5.</strong> Embedding API</a></li><li><ol class="section"><li><a href="marshalling-types.html"><strong aria-hidden="true">5.1.</strong> Marshalling types</a></li></ol></li><li><a href="standard-types-and-functions.html"><strong aria-hidden="true">6.</strong> Standard types and functions</a></li></ol>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar" class="menu-bar">
+                    <div id="menu-bar-sticky-container">
+                        <div class="left-buttons">
+                            <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                                <i class="fa fa-bars"></i>
+                            </button>
+                            <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                                <i class="fa fa-paint-brush"></i>
+                            </button>
+                            <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                                <li role="none"><button role="menuitem" class="theme" id="light">Light <span class="default">(default)</span></button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                            </ul>
+                            
+                            <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                                <i class="fa fa-search"></i>
+                            </button>
+                            
+                        </div>
+
+                        <h1 class="menu-title">Gluon Documentation</h1> 
+
+                        <div class="right-buttons">
+                            <a href="print.html" title="Print this book" aria-label="Print this book">
+                                <i id="print-button" class="fa fa-print"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <a class="header" href="#getting-started" id="getting-started"><h1>Getting started</h1></a>
+<p>To get started with gluon we must first have a way to compile and run Gluon programs. The fastest way to get that is to download one of the pre-built binaries for Linux, Windows, OSX or FreeBSD from https://github.com/gluon-lang/gluon/releases. Alternatively, if you have a Rust compiler and Cargo installed you may install it with <code>cargo install gluon_repl</code>.</p>
+<p>Once installed you can verify that it works by saving the following program into a file named <code>hello_world.glu</code> and then compile and run it with <code>gluon hello_world.glu</code>.</p>
+<pre><code class="language-gluon">let io = import! std.io
+io.println &quot;Hello world!&quot;
+</code></pre>
+<p>If everything works the program should have printed <code>Hello world!</code> to your terminal.</p>
+<a class="header" href="#dissecting-hello-world" id="dissecting-hello-world"><h1>Dissecting Hello World</h1></a>
+<pre><code class="language-gluon">let io = import! std.io
+io.println &quot;Hello world!&quot;
+</code></pre>
+<p>There are a number of things going on in the hello world example so lets break them down one step at a time.</p>
+<pre><code class="language-gluon">let
+</code></pre>
+<p>Gluon uses the keyword <code>let</code> to bind values for later use.</p>
+<pre><code class="language-gluon">import! std.io
+</code></pre>
+<p><code>import!</code> is a builtin macro which loads the contents of another module. In the example we use it to get access to the standard library's <code>io</code> module. Since it appeared on the right side of <code>let io =</code> we thus bound the <code>std.io</code> module to the <code>io</code> binding.</p>
+<pre><code>io.println
+</code></pre>
+<p>Here we access the <code>println</code> function from the <code>io</code> module we bound earlier which is a function that lets us write strings to stdout.</p>
+<pre><code class="language-gluon">&quot;Hello world!&quot;
+</code></pre>
+<p>Finally we create a string literal which gets passed to <code>println</code> to get printed.</p>
+<a class="header" href="#using-the-repl" id="using-the-repl"><h1>Using the REPL</h1></a>
+<p>Though it is possible to continue running any programs by saving it to a file and running it with <code>gluon my_script.glu</code> there is an easier way to go about it when you want to experiment quickly with small programs. By running <code>gluon -i</code>, gluon starts in &quot;interactive&quot; mode, giving you a REPL where you may evaluate expressions and inspect their results. Try evaluating some simple arithmetic expressions to see that it works.</p>
+<pre><code>&gt; 1 + 2
+3
+&gt; 100 * 3 + 4
+304
+&gt; 3.14 * 10.0
+31.400000000000002
+</code></pre>
+<p>Evaluating only a single expression can get quite unwieldy so if we want to break something up into multiple steps we can use <code>let</code> to give a name to an expression.</p>
+<pre><code>&gt; let pi_2 = 3.14 * 2.0
+6.28
+&gt; pi_2 * 3.0
+18.84
+</code></pre>
+<p>These are the basic parts of the REPL and if you want to you can try writing hello world again by using the features above.</p>
+<p>If you still have the <code>hello_world.glu</code> file around there is another way to run it from inside the REPL by using the special <code>:script</code> (<code>:s</code>) command.</p>
+<pre><code>&gt; :s hello_world.glu
+Hello World!
+</code></pre>
+<p>There are a few other of these special commands as well and you can find them all with <code>:help</code> (<code>:h</code>).</p>
+<pre><code>&gt; :type 1
+Int
+&gt; :info std.io.println
+std.io.println: String -&gt; IO ()
+&gt; :kind std.option.Option
+Type -&gt; Type
+</code></pre>
+<p>Finally you may quit the REPL using the <code>:quit</code> (<code>:q</code>) command or using <code>&lt;CTRL-D&gt;</code>.</p>
+<a class="header" href="#anatomy-of-a-gluon-program" id="anatomy-of-a-gluon-program"><h1>Anatomy of a gluon program</h1></a>
+<p>Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is to low or to high. If the player guesses correctly the program will congratulate the player and exit.</p>
+<p>As a base we can take the hello world example.</p>
+<pre><code class="language-f# rust">let io = import! std.io
+
+io.println &quot;Hello world!&quot;
+</code></pre>
+<p>The first thing we will need is a way to get a number from the user. For this we will use the <code>std.io.read_line : IO String</code> action. To test that it works we will simply write the line back to the user.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+
+do line = io.read_line
+io.println line
+</code></pre>
+<p>There are two new concepts in play here, <a href="./syntax-and-semantics.html#implicit-arguments">implicit arguments</a> and <a href="./syntax-and-semantics.html#do-expressions">do expressions</a>.</p>
+<p><code>do expressions</code> are similar to <code>let expressions</code> in that they let us us bind the result of an expression to a name which we can use later. Where they differ is that, rather binding the result of evaluating the expression itself, they expect the right hand side to be a monadic action such as <code>IO</code> and the value bound is the result of evaluating the action, which in this case is the <code>String</code> that that were input.</p>
+<p>(As was alluded to in the previous paragraph <code>IO</code> is a <code>Monad</code>, a rather complex concept which I won't go into here as it is enough for our purposes to only consider the &quot;IO monad&quot; as something that describes how <code>IO</code> actions are run in sequence.)</p>
+<p><code>do expressions</code> don't just magically work with <code>IO</code> actions which is where <code>implicit arguments</code> come in, it lets us use the compiler to to implicitly insert certain function arguments by looking at the inferred types. This can be thought as a way to get something similar to <code>traits</code> in Rust but with a bit extra flexibility by requiring a bit of explicitness to let the compiler know what it can use as an implicit argument. Which is why we needed to add the <code>{ ? }</code> record pattern match, the <code>?</code> lets the compiler know that it should choose from the fields of the record when looking for an implicit argument.  In this case the compiler sees that we use <code>IO</code> in the <code>do expression</code> and implicitly inserts an implicit <a href="https://gluon-lang.org/doc/nightly/std/io.html#value.monad"><code>Monad IO</code></a> value found in <code>std.io</code>, letting the <code>do expression</code> know how to sequence these two actions.</p>
+<p>Next we will need to generate a number for the player to guess. For this we will use the <a href="https://gluon-lang.org/doc/nightly/std/random.html"><code>std.random</code></a> module and specifically the <a href="https://gluon-lang.org/doc/nightly/std/random.html#value.thread_rng"><code>thread_rng.gen_int_range</code></a> <code>IO</code> action. So we will need to run it using <code>do</code> again. Lets also output the number so that to see how it works, since <code>io.println</code> takes a <code>String</code> we will need to convert the number before outputting it which we can do with [<code>show</code>][].</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+
+do target_number = random.thread_rng.gen_int_range 1 101
+
+do line = io.read_line
+io.println (show target_number)
+</code></pre>
+<p>The program should now output a random number between 1 and 100 on every run! We aren't checking if that number matches the input from the user yet however so lets do that next.</p>
+<p>To check that the input is actually a number and retrieve retrieve it as such we can use the <a href="https://gluon-lang.org/doc/nightly/std/int.html#value.parse"><code>std.int.parse</code></a> function. We also need to trim whitespace from the line we read as it contains a trailing newline.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+do line = io.read_line
+match int.parse (string.trim line) with
+| Err _ -&gt;
+    io.println &quot;That is not a number!&quot;
+| Ok guess -&gt;
+    if guess == target_number then
+        io.println &quot;Correct!&quot;
+    else
+        io.println &quot;Wrong!&quot;
+</code></pre>
+<p>If you try and run the program now it should only let you input numbers and give you a chance at the correct number. As it is you only got the one chance now though so lets make it possible to try again if the guess is wrong!</p>
+<p>To implement repetition we will need to write a function, specifically a recursive function. As long as the guess is wrong we just say that the guess was wrong and then repeat the process by having the function call itself, if the guess was correct then we exit the program.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        if guess == target_number then
+            io.println &quot;Correct!&quot;
+        else
+            do _ = io.println &quot;Wrong!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is to high or to low.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        match compare guess target_number with
+        | EQ -&gt; io.println &quot;Correct!&quot;
+        | LT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>And there we have it, the final program! There are ways to improve this but lets leave that for the next chapter.</p>
+<a class="header" href="#extending-the-guessing-game-with-effects" id="extending-the-guessing-game-with-effects"><h1>Extending the guessing game with effects</h1></a>
+<p>In the previous chapter we implemented a simple guessing game. In this chapter we will extend the final program with to keep track of how many guesses the player has done and finally report it at the end.</p>
+<p>First, this was the final program from the previous chapter.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        match compare guess target_number with
+        | EQ -&gt; io.println &quot;Correct!&quot;
+        | LT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>To keep track of how many guesses the player has done we need to keep some state as we go through each guess.
+There are a few ways of doing this but the one we will look at here is using gluon's extensible effect system.
+This can be found under the <a href="https://gluon-lang.org/doc/nightly/std/effect.html"><code>std.effect</code></a> module.</p>
+<p>Extensible effects are a way to represent side effects in a composable way.
+In other words, it is possible to use multiple different effects easily, something which can otherwise be fairly difficult with the monadic representation of side effects that gluon employs.</p>
+<a class="header" href="#rewriting-io-into-eff" id="rewriting-io-into-eff"><h2>Rewriting IO into Eff</h2></a>
+<p>Before we get into adding more effects though we first need to replace the <code>IO</code> monad with the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> monad used to represent effects.
+Normally it is not possible to use a <code>Monad</code> directly when using effects and instead an entirely new &quot;effect handler&quot; needs to be written for the effect.
+However, <code>Eff</code> allows the use of ONE <code>Monad</code> instance among the various effects in an effect row with the <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#type.Lift"><code>Lift</code></a> effect.</p>
+<p>Lets see how we need to modify the code the guessing game to use <code>Eff</code> instead of <code>IO</code>, without adding any functionality.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+
+let start _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            match compare guess target_number with
+            | EQ -&gt; lift &lt;| io.println &quot;Correct!&quot;
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| start ()
+</code></pre>
+<p>There is quite a bit going down here so lets break it down.</p>
+<pre><code class="language-f# ignore">let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+</code></pre>
+<p>Here we import a few new things. The first just imports the useful <a href="https://gluon-lang.org/doc/nightly/std/function.html#value.%3C%7C"><code>&lt;|</code></a> operator, it doesn't really do any thing on its own and just serves as a way to let us avoid parentheses in a few places. Essentially <code>f &lt;| a 123 &quot;a&quot;</code> is the same as <code>f (a 123 &quot;a&quot;)</code>.</p>
+<p>Next we import the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> type and its implicit instances so we can use <code>do</code> with it.</p>
+<p>Finally we import <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#type.Lift"><code>Lift</code></a> and some functions to help us work with it. The <code>lift</code> function lets us &quot;lift&quot; a monadic action into the <code>Eff</code> monad. <code>run_lift</code> does the opposite, it takes the monadic action out of the <code>Eff</code> monad and lets us evaluate it.</p>
+<pre><code class="language-f# ignore">let start _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+</code></pre>
+<p>Here we define our entrypoint and we can see the first use of the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> type and a new bit of syntax which describes an &quot;effect row&quot;.</p>
+<p>Effect rows are described in a similar manner to records, except they use <code>[|</code> and <code>|]</code> to delimit instead of <code>{</code> and <code>}</code>.
+Rather than describing what fields a record holds they instead describe the effects used in this function.
+In the same way as records, effect rows also has an optional <code>| r</code> part which is what makes this &quot;extensible&quot; (see <a href="./syntax-and-semantics.html#polymorphic-records">polymorphic records</a> in the reference).
+If we defined the row without the <code>| r</code> part then we would get an error when trying to use the effect in a place that allows more effects.</p>
+<pre><code class="language-f# ignore">let eff_closed : Eff [| eff_1 : Eff1 |] () = ...
+
+let eff_open : Eff [| eff_1 : Eff1 | r |] () = ...
+
+let eff : Eff [| eff_1 : Eff1, eff_2 : Eff2 | r |] () =
+    // Error, type mismatch `[| eff_1 : Eff1 |]` does not contain `eff_2 : Eff2`
+    do _ = eff_closed
+    // Ok, because the action is polymorphic/extensible
+    do _ = eff_open
+    // etc
+</code></pre>
+<p>Essentially the type variable says that the effect &quot;may have more effects then the ones specified&quot; which lets us only specify the effects that each individual function needs while still being able to use them transparently in a program that uses additional effects.</p>
+<p>In this place we only use the <code>lift : Lift IO</code> effect but we will see how we can use this to specify multiple effects in a little bit.</p>
+<pre><code class="language-f# ignore">    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+</code></pre>
+<p>Here we actually start running an action. Since <code>io.println</code> returns an <code>IO ()</code> action and we need an <code>Eff [| lift : Lift IO | r |] ()</code> action we use <code>lift</code> to convert into the correct type. Otherwise the code is exactly the same as before!</p>
+<p>(The need for <code>lift</code> is likely to be removed in the future.)</p>
+<p>The lines that follow are all the same as before, only they may have received the <code>lift</code> treatment as well. Except for the last line.</p>
+<pre><code class="language-f# ignore">run_lift &lt;| start ()
+</code></pre>
+<p>Here we use <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#value.run_lift"><code>run_lift</code></a> to go back from <code>Eff [| lift : Lift IO | r |] ()</code> into <code>IO ()</code> which the gluon interpreter can execute.</p>
+<a class="header" href="#adding-the-state-effect" id="adding-the-state-effect"><h2>Adding the State effect</h2></a>
+<p>Now that we have the program written with <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> we can use this to easily add some state to track how many guesses the player has done!</p>
+<p>We do this using the <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#type.State"><code>State</code></a> effect which lets us hold a value in the <code>Eff</code> monad which we can read and write to.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, ? } = import! std.effect.state
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            match compare guess target_number with
+            | EQ -&gt; lift &lt;| io.println &quot;Correct!&quot;
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+<p>There are only two new things here, first we add <code>state : State Int</code> to the effect row to indicate that we want to use a state consisting of a single integer.</p>
+<p>The second addition is to add <code>eval_state 0</code> before the <code>run_lift</code> call. This initializes the state with <code>0</code> and then evaluates the effect.</p>
+<p>Notably we haven't actually used the state in any way except initializing it so lets actually use it. To work with the state we have the basic <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.get"><code>get</code></a>, <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.put"><code>put</code></a> and <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.modify"><code>modify</code></a> actions.'</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, modify, get, ? } = import! std.effect.state
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            // Increment the guess counter by one
+            do _ = modify ((+) 1)
+            match compare guess target_number with
+            | EQ -&gt;
+                // Retrieve the guess so we can output it
+                do guesses = get
+                lift &lt;| io.println (&quot;Correct! You got it in &quot; ++ show guesses ++ &quot; guesses!&quot;)
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+<p>We only needed to add two things here, first we add one on every guess using <code>modify</code> then we use <code>get</code> to retrieve the final amount when the player succeeded.</p>
+<p>And that is all we had to do to add the guess tracking. The strength of extensible effects is precisely that there is very little work needed to add additional side effects to the program, despite the program as a whole still being entirely pure!</p>
+<p>Just to show the strength of effects one last time we add the <a href="https://gluon-lang.org/doc/nightly/std/effect/error.html#type.Error"><code>Error</code></a> effect to move the error handling outside of the main logic.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result, map_err } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, modify, get, ? } = import! std.effect.state
+let { Error, ok_or_throw, run_error, catch, ? } = import! std.effect.error
+
+
+type GuessError =
+    | NotANumber
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int, error : Error GuessError | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int, error : Error GuessError | r |] () =
+        do line = lift &lt;| io.read_line
+        do guess =
+            ok_or_throw 
+                &lt;| map_err (\_ -&gt; NotANumber)
+                &lt;| int.parse
+                &lt;| string.trim line
+        do _ = modify ((+) 1)
+        match compare guess target_number with
+        | EQ -&gt;
+            do guesses = get
+            lift &lt;| io.println (&quot;Correct! You got it in &quot; ++ show guesses ++ &quot; guesses!&quot;)
+        | LT -&gt;
+            do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+    // Start the first guess
+    catch (guess_number ()) &lt;| \err -&gt;
+        match err with
+        | NotANumber -&gt; 
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+
+run_lift &lt;| run_error &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+<a class="header" href="#syntax-and-semantics" id="syntax-and-semantics"><h1>Syntax and semantics</h1></a>
+<p>Gluon is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
+The syntax may thus look strange if you are coming from C-like languages but don't be discouraged!
+There is actually very little syntax to learn.</p>
+<p>If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, Gluon takes the expression syntax from F# and OCaml and uses the type syntax of Haskell.</p>
+<a class="header" href="#identifiers-and-literals" id="identifiers-and-literals"><h3>Identifiers and Literals</h3></a>
+<p>The simplest syntactical elements in Gluon are identifiers and literals and none of them should be especially surprising if you are experienced in programming.</p>
+<p>Identifiers are a sequence of alphanumeric characters including underscore (&quot;_&quot;) which are required to start with either a letter or an underscore. Literals come in four different forms - integer, float, string and character literals.</p>
+<pre><code class="language-f#">// An identifier
+abc123_
+
+// An integer literal
+
+42
+// A float literal
+3.14
+
+// A string literal
+&quot;Hello world&quot;
+
+// A raw string literal
+r&quot;Can contain newlines
+world&quot;
+r#&quot;With # as delimiters raw strings can also contain quotes without escaping `&quot;` &quot;#
+r###&quot; &quot;## &quot;###
+
+// A character literal
+'e'
+</code></pre>
+<a class="header" href="#comments" id="comments"><h3>Comments</h3></a>
+<p>Comments should be immediately familiar if you are accustomed to C-like languages.</p>
+<p><code>//</code> starts a line comment which is ended by a newline</p>
+<p><code>/*</code> starts a block comment which is ended by <code>*/</code></p>
+<a class="header" href="#functions" id="functions"><h3>Functions</h3></a>
+<pre><code class="language-f#">f x &quot;argument&quot; 3
+</code></pre>
+<p>Being a functional language, functions are everywhere. Because of this, calling functions have an intentionally minimalistic syntax where there is no need to enclose arguments as a parenthesized list of arguments. Instead, arguments are separated by whitespace.</p>
+<p>Another way of calling a function is through infix notation since gluon implements all operators as just functions.</p>
+<pre><code class="language-f# rust">1 + 2 // Calls the + function on 1 and 2
+</code></pre>
+<pre><code class="language-f# rust">(+) 1 2 // Parenthesizing an operator makes it possible to use in a normal function call
+</code></pre>
+<p>It is important to note that function application binds harder than any binary operator.</p>
+<pre><code class="language-f# rust">(+) 0 1 - (+) 2 3 // Equivalent to (0 + 1) - (2 + 3)
+</code></pre>
+<a class="header" href="#variable-bindings" id="variable-bindings"><h3>Variable bindings</h3></a>
+<p>Any language more complex than Hello world is bound to require variable bindings which serve to bind some value to a name
+allowing it to be used later.</p>
+<pre><code class="language-f# rust">let x = 1 + 2 in x // Returns 3
+</code></pre>
+<p>You may rightly be wondering about the <code>in x</code> part. gluon takes a strong stance against statements in an effort to keep things consistent. Thus only writing <code>let x = 1 + 2</code> will be met with a syntax error about a missing <code>in</code> keyword which is what defines the actual value returned from the <code>let</code> expression.</p>
+<p>Let bindings also allow functions to be defined which is done by listing the arguments between the bound identifier and <code>=</code></p>
+<pre><code class="language-f# rust">// Defines the `id` function which takes a single argument and returns it.
+let id x = x in id 1 // Returns 1
+</code></pre>
+<p>Mutually recursive values can be defined using <code>rec ... in</code> to enclose the <code>let</code> bindings.</p>
+<pre><code class="language-f#">rec
+let f x = g x
+let g x = f x
+in f 1 // Never returns
+</code></pre>
+<p>This is not limited to functions but works with any value that is capable of recursion (records, variants and functions).</p>
+<pre><code class="language-f#">/// An infinite list of `1`
+rec let ones = Cons 1 ones
+in
+
+/// A recursive set of records
+rec
+let value1 =
+    let f x = value2.f x + 1
+    { f }
+let value2 =
+    let f x = value1.f x + 2
+    { f }
+in ()
+</code></pre>
+<a class="header" href="#if-expressions" id="if-expressions"><h3>If expressions</h3></a>
+<p>The simplest control flow expression is the <code>if</code> expression. It evaluates a boolean expression, taking the first branch if the boolean evaluates to <code>True</code>, and taking the second if it evaluates to <code>False</code></p>
+<pre><code class="language-f# rust">if True then 1 else 0
+</code></pre>
+<a class="header" href="#record-expressions" id="record-expressions"><h3>Record expressions</h3></a>
+<p>To create more complex data types, Gluon has first class records. Records can be used to couple data that is logically grouped into a single type.</p>
+<pre><code class="language-f# rust">{ pi = 3.14, add1 = (+) 1.0 }
+</code></pre>
+<p>To access the fields of a record, <code>.</code> is used.</p>
+<pre><code class="language-f# rust">let record = { pi = 3.14, add1 = (+) 1.0 }
+in record.pi // Returns 3.14
+</code></pre>
+<p>Field assignments can be omitted if there is a variable in scope with the same name as the field.</p>
+<pre><code class="language-f# rust">let id x = x
+in { id }
+</code></pre>
+<p>The <code>..</code> operator can be used at the end of a record expression to take all fields of one record and fill the constructed record. Explicitly defined fields that also exist in the base record will be in the same order as they are in the base record while all other fields will be prepended in the order that they are written.</p>
+<pre><code class="language-f# rust">let base_record = { x = 1, y = 2, name = &quot;gluon&quot; }
+in
+// Results in a record with type
+// { field : Bool, x : Int, y : Int, name : String }
+{
+    field = True,
+    ..
+    base_record
+}
+</code></pre>
+<a class="header" href="#array-expressions" id="array-expressions"><h3>Array expressions</h3></a>
+<p>Arrays can be constructed with array literals.</p>
+<pre><code class="language-f# rust">// Results in an `Array Int`
+[1, 2, 3, 4]
+</code></pre>
+<p>Since Gluon is statically typed all values must be of the same type. This allows the Gluon interpreter to avoid tagging each value individually which makes types such as <code>Array Byte</code> be convertible into Rust's <code>&amp;[u8]</code> type without any allocations.</p>
+<pre><code class="language-f#">// ERROR:
+// Types do not match:
+//        Expected: Int
+//        Found: String
+[1, &quot;&quot;]
+</code></pre>
+<p>Functions to operate on arrays can be found on the <code>array</code> module.</p>
+<pre><code class="language-f#">array.len [1, 2, 3]
+</code></pre>
+<a class="header" href="#variants" id="variants"><h3>Variants</h3></a>
+<p>While records are great for grouping related data together, there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before they can be used.</p>
+<pre><code class="language-f# rust">type MyOption a = | Some a | None
+Some 1
+</code></pre>
+<a class="header" href="#match-expressions" id="match-expressions"><h3>Match expressions</h3></a>
+<p>To allow variants to be unpacked so their contents can be retrieved, Gluon has the <code>match</code> expression.</p>
+<pre><code class="language-f# rust">match None with
+| Some x -&gt; x
+| None -&gt; 0
+</code></pre>
+<p>Here, we write out a pattern for each of the variant's constructors and the value we pass in (<code>None</code> in this case) is matched to each of these patterns. When a matching pattern is found, the expression on the right of <code>-&gt;</code> is evaluated with each of the constructor's arguments bound to variables.</p>
+<p><code>match</code> expressions can also be used to unpack records.</p>
+<pre><code class="language-f# rust">match { x = 1.0, pi = 3.14 } with
+| { x = y, pi } -&gt; y + pi
+
+// Patterns can be nested as well
+match { x = Some (Some 123) } with
+| { x = Some None } -&gt; 0
+| { x = Some (Some x) } -&gt; x
+| { x = None } -&gt; -1
+</code></pre>
+<p><code>let</code> bindings can also match and unpack on data but only with irrefutable patterns. In other words, only with patterns which cannot fail.</p>
+<pre><code class="language-f# ignore">// Matching on records will always succeed since they are the only variant
+let { x = y, pi } = { x = 1.0, pi = 3.14 }
+in y + pi
+
+// These will be rejected however as `let` can only handle one variant (`Some` in this example)
+let Some x = None
+let Some y = Some 123
+x + y
+</code></pre>
+<a class="header" href="#tuple-expressions" id="tuple-expressions"><h3>Tuple expressions</h3></a>
+<p>Gluon also have tuple expressions for when you don't have sensible names for your fields.</p>
+<pre><code class="language-f# rust">(1, &quot;&quot;, 3.14) // (Int, String, 3.14)
+</code></pre>
+<p>Similarily to records they can be unpacked with <code>match</code> and <code>let</code>.</p>
+<pre><code class="language-f#">match (1, None) with
+| (x, Some y) -&gt; x + y
+| (x, None) -&gt; x
+
+let (a, b) = (1.0, 2.14)
+a + b
+</code></pre>
+<p>Infact, tuples are only syntax sugar over records with fields named after numbers (<code>_0</code>, <code>_1</code>, ...) which makes the above equivalent to the following code.</p>
+<pre><code class="language-f#">match { _0 = 1, _1 = None } with
+| { _0 = x, _1 = Some y } -&gt; x + y
+| { _0 = x, _1 = None } -&gt; x
+
+let { _0 = a, _1 = b } = { _0 = 1.0, _1 = 2.14 }
+a + b
+</code></pre>
+<p>While that example is obviously less readable the tuple syntax, the important thing to note is that tuples equivalency with records allows one to access the fields of a tuple directly without unpacking.</p>
+<pre><code class="language-f# rust">(0, 3.14)._1 // 3.14
+</code></pre>
+<a class="header" href="#lambda-expressions" id="lambda-expressions"><h3>Lambda expressions</h3></a>
+<p>While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.</p>
+<pre><code class="language-f# rust">// \(&lt;identifier)* -&gt; &lt;expr&gt;
+\x y -&gt; x + y - 10
+// Equivalent to
+let f x y = x + y - 10 in f
+</code></pre>
+<a class="header" href="#type-expressions" id="type-expressions"><h3>Type expressions</h3></a>
+<p>Gluon allows new types to be defined through the <code>type</code> expression which, just like <code>let</code>, requires <code>in &lt;expression&gt;</code> to be written at the end to ensure it returns a value.</p>
+<pre><code class="language-f# rust">// type &lt;identifier&gt; &lt;identifier&gt;* = &lt;type&gt; in &lt;expression&gt;
+type MyOption a = | None | Some a
+let divide x y : Int -&gt; Int -&gt; MyOption Int =
+    if (x / y) * y == x then
+        Some (x / y)
+    else
+        None
+in divide 10 4
+</code></pre>
+<p>An important difference from many languages however is that <code>type</code> only defines aliases. This means that all types in the example below are actually equivalent to each other.</p>
+<pre><code class="language-f# rust">type Type1 = { x: Int }
+type Type2 = Type1
+type Type3 = { x: Int }
+let r1 : Type1 = { x = 0 }
+let r2 : Type2 = r1
+let r3 : Type3 = r2
+in r1
+</code></pre>
+<p>Mutually recursive types can be defined by writing a <code>rec</code> block.</p>
+<pre><code class="language-f# rust">rec
+type SExpr_ = | Atom String | Cons SExpr SExpr
+type SExpr = { location: Int, expr: SExpr_ }
+in Atom &quot;name&quot;
+</code></pre>
+<a class="header" href="#do-expressions" id="do-expressions"><h3>Do expressions</h3></a>
+<p><code>do</code> expressions are syntax sugar over the commonly used <code>Monad</code> type which is used to encapsulate side-effects. By using <code>do</code> instead of <code>&gt;&gt;=</code> or <code>flat_map</code> we can write our code in a sequential manner instead of the closures necessary for sugar free versions. Note <code>do</code> still requires a <code>flat_map</code> binding to be in scope with the correct type or else you will get an error during typechecking.</p>
+<pre><code class="language-f#">Some 1 &gt;&gt;= (\x -&gt; Some (x + 2))
+// or
+flat_map (\x -&gt; Some (x + 2)) (Some 1)
+
+// are equivalent to
+
+do x = Some 1
+Some (x + 2)
+
+// The binding can also be a (irrefutable) pattern
+do { y } = Some { y = &quot;&quot; }
+Some y
+</code></pre>
+<a class="header" href="#seq-expressions" id="seq-expressions"><h3>Seq expressions</h3></a>
+<p><code>seq</code> expressions work just like <code>do</code> expressions, only they do not have a binding.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+seq io.print &quot;Hello&quot;
+seq io.print &quot; &quot;
+io.println &quot;world!&quot;
+</code></pre>
+<a class="header" href="#indentation" id="indentation"><h3>Indentation</h3></a>
+<p>If you have been following along this far, you may be think that the syntax so far is pretty limiting. In particular, you wouldn't be wrong in thinking that the <code>let</code> and <code>type</code> syntax are clunky due to their need to be closed by the <code>in</code> keyword. Luckily, Gluon offers a more convenient way of writing bindings by relying on indentation.</p>
+<p>When a token starts on the same column as an unclosed <code>let</code> or <code>type</code> expression, the lexer implicitly inserts an <code>in</code> token which closes the declaration part and makes the following expression into the body.</p>
+<pre><code class="language-f# rust">let add1 x = x + 1
+add1 11 // `in` will be inserted automatically since `add1 11` starts on the same line as the opening `let`
+</code></pre>
+<p>If a token starts on the same column as an earlier expression, but there is not an unclosed <code>type</code> or <code>let</code> expression, Gluon treats the code as a block expression, meaning each expression is run sequentially, returning the value of the last expression.</p>
+<pre><code class="language-f#">do_something1 ()
+do_something2 () // `do_something1 ()` is run, then `do_something_2`. The result of `type ...` is the result of the expression
+type PrivateType = | Private Int
+let x = Private (do_something3 ())
+do_something3 ()
+match x with
+| Private y -&gt; do_something4 x
+</code></pre>
+<p>Indented blocks can be used to limit the scope of some variables.</p>
+<pre><code class="language-f# rust">let module =
+    let id x = x
+    type MyInt = Int
+    { MyInt, id, pi = 3.14 }
+
+module.id module.pi
+</code></pre>
+<p>Which is equivalent to:</p>
+<pre><code class="language-f# rust">let module =
+    let id x = x
+    in
+    type MyInt = Int
+    in { MyInt, id, pi = 3.14 }
+in
+module.id module.pi
+</code></pre>
+<a class="header" href="#typesystem" id="typesystem"><h2>Typesystem</h2></a>
+<p>In gluon, identifiers starting with an uppercase letter is a type whereas identifiers starting with a lowercase letter are type variables.</p>
+<a class="header" href="#function-types" id="function-types"><h3>Function types</h3></a>
+<pre><code>&lt;type&gt; -&gt; &lt;type&gt;
+</code></pre>
+<p>Function types are written using the <code>(-&gt;)</code> operator, which is right associative. This means that the function type <code>Int -&gt; (Int -&gt; Int)</code> (A function taking one argument of Int and returning a function of <code>Int -&gt; Int</code>) can be written as <code>Int -&gt; Int -&gt; Int</code>.</p>
+<a class="header" href="#record-type" id="record-type"><h3>Record type</h3></a>
+<pre><code>type_identifier := [A-Z][A-Za-z_0-9]*
+variable_identifier := [a-z][A-Za-z_0-9]*
+
+field := &lt;type_identifier&gt; &lt;variable_identifier&gt;* = &lt;type&gt;
+       | &lt;type_identifier&gt;
+       | &lt;variable_identifier&gt; : &lt;type&gt;
+
+record_type := { (field,)* }
+
+// Example
+{
+    Float,
+    BinaryOp = Float -&gt; Float -&gt; Float,
+    pi : Float,
+    sin : Float -&gt; Float
+}
+</code></pre>
+<p>Records are Gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similar to a struct in Rust or C as the order of the fields are significant, <code>{ x : Int, y : String } != { y : String, x : Int }</code>. Furthermore, records are immutable, meaning fields cannot be added nor removed and the values within cannot be modified.</p>
+<p>In addition to storing values, records also have a secondary function of storing types which is Gluon's way of exporting types. If you have used modules in an ML language, this may look rather familiar. Looks can be deceiving however as 'type fields' must match exactly in gluon which means there is no subtyping relationship between records (<code>{ Test = { x : Int } }</code> is not a subtype of <code>{ Test = Float }</code>). This may change in the future.</p>
+<pre><code class="language-f#">{ Test = { x : Int } }
+</code></pre>
+<a class="header" href="#polymorphic-records" id="polymorphic-records"><h4>Polymorphic records</h4></a>
+<p>Records in gluon can also be polymorphic, that is, just like a function can be polymorphic over it's arguments or return type records can be polymorphic over the fields they contain (see also <a href="./syntax-and-semantics.html#row-type">Row type</a>.</p>
+<pre><code class="language-f#">// `f` only requires that the record holds an `x` and `y` field
+let f record : { x : Int, y : Int | r } -&gt; Int = record.x + record.y
+
+let z = f { x = 1, y = 2 }
+f { x = 1, y = 2, other = &quot;abc&quot; } // The record we pass can hold more fields than the type specifies
+</code></pre>
+<a class="header" href="#enumeration-type" id="enumeration-type"><h3>Enumeration type</h3></a>
+<pre><code>( | &lt;identifier&gt; (&lt;type&gt;)* )*
+
+| Err e | Ok t
+</code></pre>
+<p>Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of Gluon's standard <code>Result</code> type. It represents either the value having been successfully computed (<code>Ok t</code>) or that an error occurred (<code>Err e</code>).</p>
+<a class="header" href="#alias-type" id="alias-type"><h3>Alias type</h3></a>
+<pre><code>&lt;identifier&gt; (&lt;type&gt;)*
+Int
+Float
+Option Int
+Ref String
+</code></pre>
+<p>The last kind of type which Gluon has is the alias type. An alias type explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the <code>Int</code>, <code>String</code> and <code>Ref</code> types. If the underlying type is abstract, then the type is only considered equivalent to itself (ie if you define an abstract type of <code>MyInt</code> which happens to have the same representation as <code>Int</code> the typechecker will consider these two types as being distinct).</p>
+<a class="header" href="#higher-kinded-types" id="higher-kinded-types"><h3>Higher-kinded types</h3></a>
+<p>Higher-kinded types are a fairly abstract concept in Gluon and you may create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have, as they can be used to create very powerful abstractions.</p>
+<p>Just as all values such as <code>0 : Int</code>, <code>&quot;Hello World!&quot; : String</code> and <code>Some 4.0 : Option Float</code> each have a type, these types themselves have their own 'type' or the 'kind' as it is called. For the types of concrete values the <code>Kind</code> is always <code>Type</code> so for the earlier examples <code>Int : Type</code>, <code>String : Type</code> and <code>Option Float : Type</code>. That is not very useful on its own but it becomes more interesting when we consider the kind of <code>Option : Type -&gt; Type</code>. <code>Type -&gt; Type</code> looks rather like the type of a function such as <code>show_int : Int -&gt; String</code> but, instead of taking a value, it takes a type and produces a new type. In effect, this lets us abstract over types instead of just over values. This abstraction facility can be seen in the <code>Functor : (Type -&gt; Type) -&gt; Type</code> type which takes a type with kind <code>Type -&gt; Type</code> as argument which is exactly the kind of <code>Option</code> (or <code>List</code>, <code>Result a</code>).</p>
+<a class="header" href="#row-type" id="row-type"><h3>Row type</h3></a>
+<p>A <code>Row</code> is defined as a set of <code>(identifier, Type)</code> pairs and are used to describe the contents of records, variants and effects. A <code>Row</code> type has it's own special <code>Row</code> kind (instead of the normal <code>Type</code>) and has special treatment during typechecking if it is marked as extensible. If two extensible rows are unified (checking if they are equivalent) then they do not need to exactly match, but if one of the rows has more fields than the other (or vice-versa) then the other record is simply constrained to also have those fields.</p>
+<pre><code class="language-f#">// Unifying
+{ x : Int | r } &lt;=&gt;  { y : String | s }
+// Results in
+{ x : Int, y : String | t }
+// The same goes for effects and variants
+</code></pre>
+<p>Rows are currently a bit of an implementation detail and are thus only indirectly exposed to users through records, variants and effects. (In the future direct manipulation and definitions of rows may be added).</p>
+<a class="header" href="#universal-quantification" id="universal-quantification"><h3>Universal quantification</h3></a>
+<p><em>First draft</em></p>
+<p>Universal quantification is what Gluon's &quot;generic types&quot; are called. Consider the identity function in Rust.</p>
+<pre><code class="language-rust ignore">fn id&lt;T&gt;(x: T) -&gt; T {
+    x
+}
+</code></pre>
+<p>In Gluon the same function would be written in the following way if it were fully annotated.</p>
+<pre><code class="language-f#">let id x : forall a . a -&gt; a = x
+</code></pre>
+<pre><code class="language-f#">// Types can of course be omitted in which the same type as above will be inferred
+let id x = x
+// Unbound type variables (`a` in this example) are allowed, in which case a `forall` will be
+// inserted at the at the &quot;top&quot; of the type (same place as the type above)
+let id x : a -&gt; a = x
+</code></pre>
+<p>So in simple case, <code>forall</code> is no different from declaring type parameters to a function in Rust. But <code>forall</code> also serves more advanced use cases and is at the center when it comes to making Gluon's records work as modules.</p>
+<pre><code class="language-f#">let module =
+    let id x = x
+
+    { id }
+
+module.id 0
+module.id &quot;&quot;
+</code></pre>
+<p>If we were to emulate the above code in Rust we would probably end up with something like this code.</p>
+<pre><code class="language-rust ignore">struct Module&lt;T&gt; {
+    id : Box&lt;Fn(T) -&gt; T&gt;,
+}
+
+let module = Module {
+    id: Box::new(|x| x),
+};
+(module.id)(0);
+(module.id)(&quot;&quot;);
+</code></pre>
+<p>Alas, this does not work in Rust since <code>module</code> will be inferred to the type <code>Module&lt;i32&gt;</code> which makes the second call to <code>id</code> a type error. In gluon it works as the type of <code>module</code> is actually <code>{ id : forall a . a -&gt; a }</code> and not <code>forall a . { id : a -&gt; a }</code> which is the closest analogue to the Rust example.</p>
+<p>Intuitively, we can say that since gluon lets <code>forall</code> be specified inside types we can avoid specializing the type (in this case <code>forall a . a -&gt; a</code>) which lets us specialize <code>module.id</code> once for each call to <code>id</code> instead of specializing the entire module at once.</p>
+<p>While all of this looks quite complex, it should for the most part not matter when writing code and common idioms will just work as expected!</p>
+<a class="header" href="#implicit-arguments" id="implicit-arguments"><h3>Implicit arguments</h3></a>
+<p>Sometimes, there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation. If you have written any amount of Gluon code so far, you are likely to have already encountered this with numeric operators such as <code>(+)</code> or comparison operators such as <code>(==)</code>. If you inspect the types of these functions you will find that the first argument of these functions look a little bit different from normal functions.</p>
+<pre><code class="language-gluon">(==): : forall a . [std.prelude.Eq a] -&gt; a -&gt; a -&gt; std.types.Bool
+(+): forall a . [std.prelude.Num a] -&gt; a -&gt; a -&gt; a
+</code></pre>
+<p>This different looking argument is an implicit argument which means that you do not need to pass a value for this argument, instead, the compiler will try to find a value with a type that matches the type signature. So if you were to call <code>1 == 2</code> the compiler will see that the type variable <code>a</code> has been unified to <code>Int</code>. Then when the implicit argument is resolved it will look for a value with the type <code>Eq Int</code>.</p>
+<p>Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the <code>#[implicit]</code> attribute. When marking a <code>let</code> binding as <code>#[implicit]</code> and this binding is in scope it will be considered as a candidate for all implicit arguments. The <code>#[implicit]</code> attribute can also be set on a <code>type</code> binding in which case it applied to all <code>let</code> bindings which has the type declared by the <code>type</code> binding.</p>
+<pre><code class="language-f# rust">#[implicit]
+type Test = | Test ()
+let f y: [a] -&gt; a -&gt; a = y
+let i = Test ()
+// `i` gets selected as the implicit argument since `#[implicit]` is marked on the type and `i : Test`
+()
+</code></pre>
+<p>Since importing each individual binding used as an implicit argument quickly becomes tedious there is a short-hand to bring all implicit bindings from a record into scope.</p>
+<pre><code class="language-f# ignore">let { eq, ord } = import! std.int
+1 == 1 &amp;&amp; 1 &lt; 2
+</code></pre>
+<pre><code class="language-f# ignore">// Also brings in `show`, `num` ...
+let { ? } = import! std.int
+1 == 1 &amp;&amp; 1 &lt; 2
+</code></pre>
+<p>For standard types such as <code>Int</code>, <code>Float</code>, <code>String</code>, <code>Bool</code> and <code>Option</code> this gets injected through the implicit prelude that is inserted before all code which lets <code>==</code>, <code>&lt;</code> etc to work out of the box.</p>
+<a class="header" href="#passing-implicit-arguments-explicitly" id="passing-implicit-arguments-explicitly"><h4>Passing implicit arguments explicitly</h4></a>
+<p>If you only use implicit functions as explained above then it might just seem like a different name for traits (Rust) or type classes (Haskell). While it is true that the main reason for implicit arguments is to emulate traits/type classes implicit arguments is more powerful than those approaches as it is also possible to override the implicit resolution and instead give the argument explicitly by prefixing the argument with <code>?</code>.</p>
+<pre><code class="language-f# rust">let list @ { List } = import! std.list
+// Make a custom equality function which returns true regardless of the elements of the list
+#[infix(left, 4)]
+let (===) = (list.eq ?{ (==) = \x y -&gt; True }).(==)
+Cons 1 (Cons 2 Nil) === Cons 3 (Cons 4 Nil)
+</code></pre>
+<p>The inverse also works when defining a function with implicit arguments. By prefixing an argument by <code>?</code> an implicit arguments will be given a name inside the function (if <code>?</code> is not given in a function definition the argument will only be available for implicit resolution).</p>
+<pre><code class="language-f# rust">let eq ?a : [Eq a] -&gt; Eq (Option a) = {
+    (==) = \l r -&gt;
+        match (l, r) with
+        | (Some l_val, Some r_val) -&gt; a.(==) l_val r_val
+        | (None, None) -&gt; True
+        | _ -&gt; False,
+}
+()
+</code></pre>
+<a class="header" href="#importing-modules" id="importing-modules"><h2>Importing modules</h2></a>
+<p>As is often the case, it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this, we can use the <code>import!</code> macro which takes a single string literal as argument and loads and compiles that file at compile time before the importing module is compiled.</p>
+<p>For example, say that we need the <code>assert</code> function from the <code>test</code> module which can be found at <code>std/test.glu</code>. We might write something like this:</p>
+<pre><code class="language-f# rust">let { assert } = import! std.test
+assert (1 == 1)
+</code></pre>
+<a class="header" href="#writing-modules" id="writing-modules"><h2>Writing modules</h2></a>
+<p>Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting too big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in gluon entails creating a file containing an expression which is then loaded and evaluated using <code>import!</code>. <code>import!</code> is then just the value of the evaluated expression.</p>
+<pre><code class="language-f#">// module.glu
+type Named a = { name: String, value: a }
+let twice f x = f (f x)
+{ twice, Named }
+
+//main.glu
+let { twice, Named }  = import! &quot;module.glu&quot;
+let addTwice = twice (\x -&gt; x + 1)
+let namedFloat : Named Float = { name = &quot;pi&quot;, value = 3.14 }
+addTwice 10
+</code></pre>
+<p>Though modules are most commonly a record, this does not have to be the case. If you wanted, you could write a module returning any other value as well.</p>
+<pre><code class="language-f#">// pi.glu
+3.14
+
+//main.glu
+let pi  = import! &quot;pi.glu&quot;
+2 * pi * 10
+</code></pre>
+<a class="header" href="#metadata" id="metadata"><h1>Metadata</h1></a>
+<p>Sometimes we need a way to associate some extra information to a specific named binding and have it be visible whenever we refer to that name. The most common reason for this is documentation comments. When we write some documentation for a binding we would like this documentation to be visible whenever someone uses that binding.</p>
+<p>For this reason gluon runs a &quot;metadata&quot; pass on all code in which &quot;metadata&quot; (such as documentation comments) gets statically propagated throughout the code.</p>
+<pre><code class="language-f#">/// Adds one to the argument `x`
+let add1 x = x + 1
+
+/// Adds two to the argument `x`
+let add2 x = x + 2
+
+add1 // Looking up the metadata of this variable yields the documentation of `add1`
+
+// It can't be statically determined which branch the `if` takes (since constant folding do not
+// take place). Thus `addN` do not get any metadata from either `add1` or `add2`
+let addN = if True then add1 else add2
+addN
+</code></pre>
+<a class="header" href="#attributes" id="attributes"><h2>Attributes</h2></a>
+<p>In addtion to documentation comments gluon also has a special notion of attributes that get propagated in the same manner. These are specified using the following syntax.</p>
+<pre><code>Attribute : #[ AttributeContents ]
+
+AttributeContents :
+      #[ IDENTIFIER ]
+    | #[ IDENTIFIER ( TOKENS* ) ]
+</code></pre>
+<a class="header" href="#infix" id="infix"><h3>#[infix(..)]</h3></a>
+<pre><code class="language-f#">#[infix(&lt;left|right&gt;, &lt;NON-NEGATIVE INTEGER&gt;)]
+</code></pre>
+<p>The <code>#[infix]</code> attribute is used to specified the fixity and precedence of infix operators. This lets us specify that multiplication binds tighter that addition.</p>
+<pre><code class="language-f#">#[infix(left, 6)]
+let (+) ?num : [Num a] -&gt; a -&gt; a -&gt; a = num.(+)
+#[infix(left, 7)]
+let (*) ?num : [Num a] -&gt; a -&gt; a -&gt; a = num.(*)
+</code></pre>
+<a class="header" href="#implicit" id="implicit"><h3>#[implicit]</h3></a>
+<pre><code class="language-f#">#[implicit]
+</code></pre>
+<p>The <code>#[implicit]</code> attribute is used to mark value bindings or type bindings as usable for implicit resolution. If specified on a value binding then only that specific binding can be used on implicit resolution. If specified on a type binding then all bindings that has that type can be used in implicit resolution.</p>
+<pre><code>// Can be used as an implicit argument
+#[implicit]
+let binding : MyType = ..
+
+#[implicit]
+type Eq a = { (==) : a -&gt; a -&gt; Bool }
+
+// Can be used as an implicit argument
+let eq_Int : Eq Int = ..
+</code></pre>
+<a class="header" href="#derive" id="derive"><h3>#[derive(..)]</h3></a>
+<pre><code class="language-f#">#[derive(IDENTIFIER)]
+</code></pre>
+<p>The <code>#[derive(..)]</code> attribute can be used on <code>type</code> bindings to generate implementations for some traits. Currently only <code>Eq</code> and <code>Show</code> can be derived and only non-recursive and self-recursive types are supported (mutually recursive types do not work for the moment).</p>
+<pre><code class="language-f# rust">#[derive(Eq, Show)]
+type Tree a = | Tip a | Branch (Tree a) (Tree a)
+
+let tree = Branch (Tip 1) (Branch (Tip 2) (Tip 3))
+
+show tree
+tree == Tip 1
+</code></pre>
+<a class="header" href="#dochidden" id="dochidden"><h3>#[doc(hidden)]</h3></a>
+<pre><code class="language-f#">#[doc(hidden)]
+</code></pre>
+<p>The <code>#[doc(hidden)]</code> attribute hides the binding, omitting it from generated documentation.</p>
+<a class="header" href="#modules" id="modules"><h1>Modules</h1></a>
+<a class="header" href="#importing-modules-1" id="importing-modules-1"><h2>Importing modules</h2></a>
+<p>As is often the case, it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this, we can use the <code>import!</code> macro which takes a single string literal as argument and loads and compiles that file at compile time before the importing module is compiled.</p>
+<p>For example, say that we need the <code>assert</code> function from the <code>test</code> module which can be found at <code>std/test.glu</code>. We might write something like this:</p>
+<pre><code class="language-f# rust">let { assert } = import! std.test
+assert (1 == 1)
+</code></pre>
+<a class="header" href="#writing-modules-1" id="writing-modules-1"><h2>Writing modules</h2></a>
+<p>Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting too big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in gluon entails creating a file containing an expression which is then loaded and evaluated using <code>import!</code>. <code>import!</code> is then just the value of the evaluated expression.</p>
+<pre><code class="language-f#">// module.glu
+type Named a = { name: String, value: a }
+let twice f x = f (f x)
+{ twice, Named }
+
+//main.glu
+let { twice, Named }  = import! &quot;module.glu&quot;
+let addTwice = twice (\x -&gt; x + 1)
+let namedFloat : Named Float = { name = &quot;pi&quot;, value = 3.14 }
+addTwice 10
+</code></pre>
+<p>Though modules are most commonly a record, this does not have to be the case. If you wanted, you could write a module returning any other value as well.</p>
+<pre><code class="language-f#">// pi.glu
+3.14
+
+//main.glu
+let pi  = import! &quot;pi.glu&quot;
+2 * pi * 10
+</code></pre>
+<a class="header" href="#embedding-api" id="embedding-api"><h1>Embedding API</h1></a>
+<p>The API with which the host language interacts with Gluon is very important part of the library. While the complete API can be found in the <a href="https://docs.rs/gluon/*/gluon/index.html">Rustdoc</a>, this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.</p>
+<a class="header" href="#creating-a-virtual-machine" id="creating-a-virtual-machine"><h3>Creating a virtual machine</h3></a>
+<p>Before you are able to do anything with the library, you will need to create a virtual machine. The virtual machine is responsible for running Gluon programs and can be created with the <a href="https://docs.rs/gluon/*/gluon/fn.new_vm.html">new_vm</a> function.</p>
+<a class="header" href="#compiling-and-running-gluon-code" id="compiling-and-running-gluon-code"><h3>Compiling and running gluon code</h3></a>
+<p>Once in possession of a <a href="https://docs.rs/gluon/*/gluon/struct.RootedThread.html">RootedThread</a>, you can compile and execute code using the <a href="https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_expr">run_expr</a> method on the [Compiler][] builder type.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+let (result, _) = Compiler::new()
+    .run_expr::&lt;i32&gt;(&amp;vm, &quot;example&quot;, &quot;1 + 2&quot;)
+    .ok();
+assert_eq!(result, Some(3));
+</code></pre>
+<p>Notably, if we were to execute a script with side effects the code above will actually not run the side effects. To make gluon run side effects we need to set the <a href="https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_io">run_io</a> flag on [Compiler][].</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+
+let script = r#&quot;
+let io = import! std.io
+io.print &quot;123&quot;
+&quot;#;
+// Returns an action which prints `123` when evaluated
+Compiler::new()
+    .run_expr::&lt;IO&lt;()&gt;&gt;(&amp;vm, &quot;example&quot;, script)
+    .unwrap();
+// Prints `123` to stdout
+Compiler::new()
+    .run_io(true)
+    .run_expr::&lt;IO&lt;()&gt;&gt;(&amp;vm, &quot;example&quot;, script)
+    .unwrap();
+</code></pre>
+<p>Often, it is either inconvenient or inefficient to compile and run code directly from source code. To write the above example in a more efficient way, we could instead load the <code>(+)</code> function and call it directly.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+// Ensure that the prelude module is loaded before trying to access something from it
+Compiler::new()
+    .run_expr::&lt;OpaqueValue&lt;&amp;Thread, Hole&gt;&gt;(&amp;vm, &quot;example&quot;, r#&quot; import! std.prelude &quot;#)
+    .unwrap();
+let mut add: FunctionRef&lt;fn (i32, i32) -&gt; i32&gt; = vm.get_global(&quot;std.prelude.num_Int.(+)&quot;)
+    .unwrap();
+let result = add.call(1, 2);
+assert_eq!(result, Ok(3));
+</code></pre>
+<a class="header" href="#calling-rust-functions-from-gluon" id="calling-rust-functions-from-gluon"><h3>Calling Rust functions from gluon</h3></a>
+<p>Gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running Gluon code.</p>
+<pre><code class="language-rust ignore">fn factorial(x: i32) -&gt; i32 {
+    if x &lt;= 1 {
+        1
+    } else {
+        x * factorial(x - 1)
+    }
+}
+
+fn load_factorial(vm: &amp;Thread) -&gt; vm::Result&lt;vm::ExternModule&gt; {
+    vm::ExternModule::new(vm, primitive!(1, factorial))
+}
+
+let vm = new_vm();
+
+// Introduce a module that can be loaded with `import! factorial`
+add_extern_module(&amp;vm, &quot;factorial&quot;, load_factorial);
+
+let expr = r#&quot;
+    let factorial = import! factorial
+    factorial 5
+&quot;#;
+
+let (result, _) = Compiler::new()
+    .run_expr::&lt;i32&gt;(&amp;vm, &quot;factorial&quot;, expr)
+    .unwrap();
+
+assert_eq!(result, 120);
+</code></pre>
+<p><a href="https://docs.rs/gluon/*/gluon/import/fn.add_extern_module.html">add_extern_module</a> can do more than just exposing simple functions. For instance, the <a href="https://github.com/gluon-lang/gluon/blob/master/vm/src/primitives.rs">primitives</a> module export large parts of Rust's <a href="http://doc.rust-lang.org/std/primitive.str.html">string</a> and <a href="http://doc.rust-lang.org/std/primitive.f64.html">float</a> modules directly as records in Gluon under the <code>str</code> and <code>float</code> modules respectively.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+let (result, _) = Compiler::new()
+    .run_expr::&lt;String&gt;(&amp;vm, &quot;example&quot;, &quot; let string  = import! \&quot;std/string.glu\&quot; in string.trim \&quot;  Hello world  \t\&quot; &quot;)
+    .unwrap();
+assert_eq!(result, &quot;Hello world&quot;);
+</code></pre>
+<a class="header" href="#marshalling-types" id="marshalling-types"><h1>Marshalling types</h1></a>
+<p>An important part of embedding Gluon is translating non-primitive types from Gluon types to
+Rust types and vice versa, allowing you to seamlessly implement rich APIs with complex types.
+This translation is called <em>marshalling</em>.</p>
+<a class="header" href="#required-traits" id="required-traits"><h2>Required traits</h2></a>
+<p>Gluon provides several traits for safely marshalling types to and from Gluon code:</p>
+<ul>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.VmType.html">VmType</a> provides a mapping between Rust and Gluon types. It specifies the Gluon type
+the implementing Rust type represents. All types that want to cross the Gluon/Rust boundary
+must implement this trait.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Getable.html">Getable</a>: Types that implement <code>Getable</code> can be marshalled from Gluon to Rust. This
+means you can use these types anywhere you are receiving values from Gluon, for example
+as parameters for a function implemented on the Rust side or as return type of a Gluon
+function you want to call from Rust.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Pushable.html">Pushable</a> is the counterpart to <code>Getable</code>. It allows implementing types to be marshalled
+to Gluon. Values of these types can returned from embedded Rust functions and be used as
+parameters to Gluon functions.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Userdata.html">Userdata</a> allows a Rust type to be marshalled as completely opaque type. The Gluon code
+will be able to receive and pass values of this type, but cannot inspect it at all. This is
+useful for passing handle-like values, that will be mostly used by the Rust code. <code>Pushable</code> is automatically implemented for all types that implement <code>Userdata</code>. <code>Getable</code> is automatically implemented for <code>&amp;T where T: Userdata</code> when used as argument to a Rust function, for places <code>OpaqueValue</code> can be used as a smart pointer around a <code>Userdata</code> value or the <code>UserdataValue</code> extractor can be used to clone the value.</p>
+</li>
+</ul>
+<p>Gluon already provides implementations for the primitive and common standard library types.</p>
+<a class="header" href="#implementing-the-marshalling-traits-for-your-types" id="implementing-the-marshalling-traits-for-your-types"><h2>Implementing the marshalling traits for your types</h2></a>
+<p>You can implement all of the above traits by hand, but for most cases you can also use the
+derive macros in <a href="https://docs.rs/gluon_codegen/0.7.1/gluon_codegen/">gluon_codegen</a>.</p>
+<p>You will also have to register the correct Gluon type. If you are marshalling <code>Userdata</code>, you
+can use <code>Thread::register_type</code>, otherwise you will need to provide the complete type definition
+in Gluon. When using the <code>serialization</code> feature, you can automatically generate the source
+code using the <code>api::typ::make_source</code> function.</p>
+<a class="header" href="#using-derive-macros" id="using-derive-macros"><h3>Using derive macros</h3></a>
+<p>Add the <code>gluon_codegen</code> crate to your <code>Cargo.toml</code> and import it:</p>
+<pre><code class="language-rust ignore">#[macro_use]
+extern crate gluon_codegen;
+</code></pre>
+<p><code>VmType</code>, <code>Getable</code> and <code>Pushable</code> can be derived for types that consist only of types that
+already implement the respective traits. In the case of <code>VmType</code> you also have to specify
+the Gluon type the Rust type maps to, using the <code>#[gluon(vm_type = &quot;&lt;gluon_type&gt;&quot;)]</code> attribute.</p>
+<p><code>Userdata</code> can be derived for any type as long as it is <code>Debug + Send + Sync</code> and has a <code>'static</code>
+lifetime.</p>
+<a class="header" href="#implementing-by-hand" id="implementing-by-hand"><h3>Implementing by hand</h3></a>
+<p>The following examples will all assume a simple struct <code>User&lt;T&gt;</code>, which is defined in a different
+crate (You can find the full code in the <a href="https://github.com/gluon-lang/gluon/blob/master/examples/marshalling.rs">marshalling example</a>). To implement the marshalling traits,
+we have to create a wrapper and implement the traits for it.</p>
+<pre><code class="language-rust ignore">// defined by a different crate
+struct User&lt;T&gt; {
+    name: String,
+    age: u32,
+    data: T,
+}
+</code></pre>
+<a class="header" href="#vmtype" id="vmtype"><h4>VmType</h4></a>
+<p><code>VmType</code> requires you to specify the Rust type that maps to the correct Gluon type. You can
+simply assign <code>Self</code>. The heart of the trait is the <code>make_type</code> function. To get the correct
+Gluon type, you will have to look it up from the vm, using the fully qualified type name:</p>
+<pre><code class="language-rust ignore">let ty = vm.find_type_info(&quot;examples.wrapper.User&quot;)
+    .expect(&quot;Could not find type&quot;)
+    .into_type();
+</code></pre>
+<p>If you have a non generic type, this is all you need. In our case, we will have to apply the
+generic type parameters first:</p>
+<pre><code class="language-rust ignore">let mut vec = AppVec::new();
+vec.push(T::make_type(vm));
+Type::app(ty, vec)
+</code></pre>
+<p>You simply push all parameters to the <code>AppVec</code> in the order of their declaration, and then
+use <code>Type::app</code> to construct the complete type.</p>
+<a class="header" href="#getable" id="getable"><h4>Getable</h4></a>
+<p><code>Getable</code> only has one function you need to implement, <code>from_value</code>. It supplies a reference
+to the vm and the raw data, from which you have to construct your type. Since we are implementing
+<code>Getable</code> for a complex type, we are only interested in the <code>ValueRef::Data</code> variant.</p>
+<pre><code class="language-rust ignore">let data = match data.as_ref() {
+    ValueRef::Data(data) =&gt; data,
+    _ =&gt; panic!(&quot;Value is not a complex type&quot;),
+};
+</code></pre>
+<p>From <code>data</code> we can now extract the individual fields, using <code>lookup_field</code> for named fields or
+<code>get_variant</code> for unnamed fields (like in tuple structs or variants).</p>
+<pre><code class="language-rust ignore">// once we have the field's value, we construct the correct type
+// using its Getable implementation
+let name = String::from_value(vm, data.lookup_field(vm, &quot;name&quot;).unwrap();
+</code></pre>
+<p>In this example we used a struct, but if we wanted to construct an enum, we need to find out
+what variant we are dealing with first, using the <code>tag</code> method:</p>
+<pre><code class="language-rust ignore">match data.tag() {
+    0 =&gt; // build first variant
+    1 =&gt; // build second variant
+    // ...
+}
+</code></pre>
+<a class="header" href="#pushable" id="pushable"><h4>Pushable</h4></a>
+<p>To implement <code>Pushable</code>, we need to interact with Gluon's stack directly. The goal is to create
+a <code>Value</code> that represents our Rust value, and push it on the stack. In order to do that, we need to
+push the fields of our type first:</p>
+<pre><code class="language-rust ignore">self.inner.name.push(vm, ctx)?
+self.inner.age.push(vm, ctx)?;
+self.inner.data.push(vm, ctx)?;
+</code></pre>
+<p>The <code>ActiveThread</code> we get passed has a <code>Context</code> that allows pushing values, but we can do even better and
+use the <code>record!</code> macro:</p>
+<pre><code class="language-rust ignore">(record!{
+    name =&gt; self.inner.name,
+    age =&gt; self.inner.age,
+    data =&gt; self.inner.data,
+}).push(ctx)
+</code></pre>
+<p>If we were pushing an enum, we would have to use <code>Context::push_new_data</code> and manually specify the tag
+of the pushed variant as well as its number of fields (zero if it's a variant with no attached data).</p>
+<pre><code class="language-rust ignore">let val = match an_enum {
+    Enum::VariantOne =&gt; ctx.context().push_new_data(vm, 0, num_fields_in_variant_one),
+    Enum::VariantTwo =&gt; ctx.context().push_new_data(vm, 1, num_fields_in_variant_two),
+}?;
+</code></pre>
+<a class="header" href="#userdata" id="userdata"><h4>Userdata</h4></a>
+<p>Implementing <code>Userdata</code> is straight forward: there are no required methods, so we can simply
+use the default implementation. However, <code>Userdata</code> also requires the type to implement
+<code>VmType</code> and <code>Traverseable</code>. We can use the minimal <code>VmType</code> implementation, it already
+provides the correct <code>make_type</code> function for us:</p>
+<pre><code class="language-rust ignore">impl&lt;T&gt; VmType for GluonUser&lt;T&gt;
+where
+    T: 'static + Debug + Sync + Send
+{
+    type Type = Self;
+}
+</code></pre>
+<p>In our case, the <code>Traverseable</code> implementation can also be left empty. Only if a type contains
+types that are managed by Gluon's GC, it is necessary to implement the <code>traverse</code> method
+in order to call <code>traverse</code> on those types. This way the GC can find all the value it manages.</p>
+<pre><code class="language-rust ignore">// empty impl for 'normal' types
+impl&lt;T&gt; Traverseable for GluonUser&lt;T&gt; {}
+
+// for a type that contains a Traversable type, we need to call
+// its traverse method
+impl Traverseable for ContainsGcPtr {
+    fn traverse(&amp;self, gc: &amp;mut Gc) {
+        self.gc_ptr.traverse(gc);
+    }
+}
+</code></pre>
+<a class="header" href="#passing-values-to-and-from-gluon" id="passing-values-to-and-from-gluon"><h2>Passing values to and from Gluon</h2></a>
+<p>Once your type implements the <a href="#required-traits">required traits</a>, you can simply use it in
+any function you want to expose to Gluon.</p>
+<p>If you want to receive or return types with generic type parameters that are instantiated on
+the Gluon side, you can use the <a href="https://docs.rs/gluon_vm/*/gluon_vm/api/struct.Opaque.html">Opaque</a> type together with the marker types in the
+<a href="https://docs.rs/gluon_vm/*/gluon_vm/api/generic/index.html">generic</a> module:</p>
+<pre><code class="language-rust ignore">// we define Either with type parameters, just like in Gluon
+#[derive(Getable, Pushable, VmType)]
+#[gluon(vm_type = &quot;examples.either.Either&quot;)]
+enum Either&lt;L, R&gt; {
+    Left(L),
+    Right(R),
+}
+
+// the function takes an Either instantiated with the `Opaque` struct,
+// which will handle the generic Gluon values for us
+use gluon::vm::api::OpaqueValue;
+// The `generic` sub-module provides marker types which mimic generic parameters
+use gluon::vm::api::generic::{L, R};
+
+fn flip(
+    either: Either&lt;OpaqueValue&lt;RootedThread, L&gt;, OpaqueValue&lt;RootedThread, R&gt;&gt;,
+) -&gt; Either&lt;OpaqueValue&lt;RootedThread, R&gt;, OpaqueValue&lt;RootedThread, L&gt;&gt; {
+    match either {
+        Either::Left(val) =&gt; Either::Right(val),
+        Either::Right(val) =&gt; Either::Left(val),
+    }
+}
+</code></pre>
+<p>Now we can pass <code>Either</code> to our Rust function:</p>
+<pre><code class="language-f# ignore">// Either is defined as:
+// type Either l r = | Left l | Right r
+let either: forall r . Either String r = Left &quot;hello rust!&quot;
+
+// we can pass the generic Either to the Rust function without an issue
+do _ =
+    match flip either with
+    | Left _ -&gt; error &quot;unreachable!&quot;
+    | Right val -&gt; io.println (&quot;Right is: &quot; &lt;&gt; val)
+
+// using an Int instead also works
+let either: forall r . Either Int r = Left 42
+
+match flip either with
+| Left _ -&gt; error &quot;also unreachable!&quot;
+| Right 42 -&gt; io.println &quot;this is the right answer&quot;
+| Right _ -&gt; error &quot;wrong answer!&quot;
+</code></pre>
+<a class="header" href="#standard-types-and-functions" id="standard-types-and-functions"><h1>Standard types and functions</h1></a>
+<p>The API documentation for the standard library can be found <a href="http://gluon-lang.org/doc/nightly/std/index.html">here</a>. Some of the modules
+are only available if Gluon is compiled with the required features:</p>
+<ul>
+<li><code>std.regex</code> requires the <code>regex</code> feature (enabled by default)</li>
+<li><code>std.random</code> requires the <code>rand</code> feature (enabled by default)</li>
+<li>All <code>std.json.*</code> modules require the <code>serialization</code> feature</li>
+</ul>
+<p>TODO</p>
+<a class="header" href="#prelude" id="prelude"><h3>Prelude</h3></a>
+<p>When compiling an expression, the compiler automatically inserts a small prelude before the expression itself, which gives automatic access to basic operators such as <code>+</code>, <code>-</code>, etc as well as types such as <code>Option</code> and <code>Result</code>.</p>
+<a class="header" href="#threads-and-channels" id="threads-and-channels"><h3>Threads and channels</h3></a>
+<p>Gluon has support for cooperative threading and communication between them through the <code>Thread</code> and <code>Sender</code>/<code>Receiver</code> types.</p>
+<p>TODO</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+        
+        <script type="text/javascript">
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+        
+        
+
+    </body>
+</html>

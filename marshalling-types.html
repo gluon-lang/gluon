@@ -1,0 +1,393 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Marshalling types - Gluon Documentation</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Gluon is a static, type inferred and embeddable language written in Rust">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body class="light">
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">var path_to_root = "";</script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { } 
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            document.body.className = theme;
+            document.querySelector('html').className = theme + ' js';
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <ol class="chapter"><li><a href="getting-started.html"><strong aria-hidden="true">1.</strong> Getting started</a></li><li><ol class="section"><li><a href="dissecting-hello-world.html"><strong aria-hidden="true">1.1.</strong> Dissecting Hello World</a></li><li><a href="using-the-repl.html"><strong aria-hidden="true">1.2.</strong> Using the REPL</a></li><li><a href="anatomy-of-a-gluon-program.html"><strong aria-hidden="true">1.3.</strong> Anatomy of a gluon program</a></li><li><a href="extending-the-guessing-game-with-effects.html"><strong aria-hidden="true">1.4.</strong> Extending the guessing game with extensible effects</a></li></ol></li><li><a href="syntax-and-semantics.html"><strong aria-hidden="true">2.</strong> Syntax and semantics</a></li><li><a href="metadata.html"><strong aria-hidden="true">3.</strong> Metadata</a></li><li><a href="modules.html"><strong aria-hidden="true">4.</strong> Modules</a></li><li><a href="embedding-api.html"><strong aria-hidden="true">5.</strong> Embedding API</a></li><li><ol class="section"><li><a href="marshalling-types.html" class="active"><strong aria-hidden="true">5.1.</strong> Marshalling types</a></li></ol></li><li><a href="standard-types-and-functions.html"><strong aria-hidden="true">6.</strong> Standard types and functions</a></li></ol>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar" class="menu-bar">
+                    <div id="menu-bar-sticky-container">
+                        <div class="left-buttons">
+                            <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                                <i class="fa fa-bars"></i>
+                            </button>
+                            <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                                <i class="fa fa-paint-brush"></i>
+                            </button>
+                            <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                                <li role="none"><button role="menuitem" class="theme" id="light">Light <span class="default">(default)</span></button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                            </ul>
+                            
+                            <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                                <i class="fa fa-search"></i>
+                            </button>
+                            
+                        </div>
+
+                        <h1 class="menu-title">Gluon Documentation</h1> 
+
+                        <div class="right-buttons">
+                            <a href="print.html" title="Print this book" aria-label="Print this book">
+                                <i id="print-button" class="fa fa-print"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <a class="header" href="#marshalling-types" id="marshalling-types"><h1>Marshalling types</h1></a>
+<p>An important part of embedding Gluon is translating non-primitive types from Gluon types to
+Rust types and vice versa, allowing you to seamlessly implement rich APIs with complex types.
+This translation is called <em>marshalling</em>.</p>
+<a class="header" href="#required-traits" id="required-traits"><h2>Required traits</h2></a>
+<p>Gluon provides several traits for safely marshalling types to and from Gluon code:</p>
+<ul>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.VmType.html">VmType</a> provides a mapping between Rust and Gluon types. It specifies the Gluon type
+the implementing Rust type represents. All types that want to cross the Gluon/Rust boundary
+must implement this trait.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Getable.html">Getable</a>: Types that implement <code>Getable</code> can be marshalled from Gluon to Rust. This
+means you can use these types anywhere you are receiving values from Gluon, for example
+as parameters for a function implemented on the Rust side or as return type of a Gluon
+function you want to call from Rust.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Pushable.html">Pushable</a> is the counterpart to <code>Getable</code>. It allows implementing types to be marshalled
+to Gluon. Values of these types can returned from embedded Rust functions and be used as
+parameters to Gluon functions.</p>
+</li>
+<li>
+<p><a href="https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Userdata.html">Userdata</a> allows a Rust type to be marshalled as completely opaque type. The Gluon code
+will be able to receive and pass values of this type, but cannot inspect it at all. This is
+useful for passing handle-like values, that will be mostly used by the Rust code. <code>Pushable</code> is automatically implemented for all types that implement <code>Userdata</code>. <code>Getable</code> is automatically implemented for <code>&amp;T where T: Userdata</code> when used as argument to a Rust function, for places <code>OpaqueValue</code> can be used as a smart pointer around a <code>Userdata</code> value or the <code>UserdataValue</code> extractor can be used to clone the value.</p>
+</li>
+</ul>
+<p>Gluon already provides implementations for the primitive and common standard library types.</p>
+<a class="header" href="#implementing-the-marshalling-traits-for-your-types" id="implementing-the-marshalling-traits-for-your-types"><h2>Implementing the marshalling traits for your types</h2></a>
+<p>You can implement all of the above traits by hand, but for most cases you can also use the
+derive macros in <a href="https://docs.rs/gluon_codegen/0.7.1/gluon_codegen/">gluon_codegen</a>.</p>
+<p>You will also have to register the correct Gluon type. If you are marshalling <code>Userdata</code>, you
+can use <code>Thread::register_type</code>, otherwise you will need to provide the complete type definition
+in Gluon. When using the <code>serialization</code> feature, you can automatically generate the source
+code using the <code>api::typ::make_source</code> function.</p>
+<a class="header" href="#using-derive-macros" id="using-derive-macros"><h3>Using derive macros</h3></a>
+<p>Add the <code>gluon_codegen</code> crate to your <code>Cargo.toml</code> and import it:</p>
+<pre><code class="language-rust ignore">#[macro_use]
+extern crate gluon_codegen;
+</code></pre>
+<p><code>VmType</code>, <code>Getable</code> and <code>Pushable</code> can be derived for types that consist only of types that
+already implement the respective traits. In the case of <code>VmType</code> you also have to specify
+the Gluon type the Rust type maps to, using the <code>#[gluon(vm_type = &quot;&lt;gluon_type&gt;&quot;)]</code> attribute.</p>
+<p><code>Userdata</code> can be derived for any type as long as it is <code>Debug + Send + Sync</code> and has a <code>'static</code>
+lifetime.</p>
+<a class="header" href="#implementing-by-hand" id="implementing-by-hand"><h3>Implementing by hand</h3></a>
+<p>The following examples will all assume a simple struct <code>User&lt;T&gt;</code>, which is defined in a different
+crate (You can find the full code in the <a href="https://github.com/gluon-lang/gluon/blob/master/examples/marshalling.rs">marshalling example</a>). To implement the marshalling traits,
+we have to create a wrapper and implement the traits for it.</p>
+<pre><code class="language-rust ignore">// defined by a different crate
+struct User&lt;T&gt; {
+    name: String,
+    age: u32,
+    data: T,
+}
+</code></pre>
+<a class="header" href="#vmtype" id="vmtype"><h4>VmType</h4></a>
+<p><code>VmType</code> requires you to specify the Rust type that maps to the correct Gluon type. You can
+simply assign <code>Self</code>. The heart of the trait is the <code>make_type</code> function. To get the correct
+Gluon type, you will have to look it up from the vm, using the fully qualified type name:</p>
+<pre><code class="language-rust ignore">let ty = vm.find_type_info(&quot;examples.wrapper.User&quot;)
+    .expect(&quot;Could not find type&quot;)
+    .into_type();
+</code></pre>
+<p>If you have a non generic type, this is all you need. In our case, we will have to apply the
+generic type parameters first:</p>
+<pre><code class="language-rust ignore">let mut vec = AppVec::new();
+vec.push(T::make_type(vm));
+Type::app(ty, vec)
+</code></pre>
+<p>You simply push all parameters to the <code>AppVec</code> in the order of their declaration, and then
+use <code>Type::app</code> to construct the complete type.</p>
+<a class="header" href="#getable" id="getable"><h4>Getable</h4></a>
+<p><code>Getable</code> only has one function you need to implement, <code>from_value</code>. It supplies a reference
+to the vm and the raw data, from which you have to construct your type. Since we are implementing
+<code>Getable</code> for a complex type, we are only interested in the <code>ValueRef::Data</code> variant.</p>
+<pre><code class="language-rust ignore">let data = match data.as_ref() {
+    ValueRef::Data(data) =&gt; data,
+    _ =&gt; panic!(&quot;Value is not a complex type&quot;),
+};
+</code></pre>
+<p>From <code>data</code> we can now extract the individual fields, using <code>lookup_field</code> for named fields or
+<code>get_variant</code> for unnamed fields (like in tuple structs or variants).</p>
+<pre><code class="language-rust ignore">// once we have the field's value, we construct the correct type
+// using its Getable implementation
+let name = String::from_value(vm, data.lookup_field(vm, &quot;name&quot;).unwrap();
+</code></pre>
+<p>In this example we used a struct, but if we wanted to construct an enum, we need to find out
+what variant we are dealing with first, using the <code>tag</code> method:</p>
+<pre><code class="language-rust ignore">match data.tag() {
+    0 =&gt; // build first variant
+    1 =&gt; // build second variant
+    // ...
+}
+</code></pre>
+<a class="header" href="#pushable" id="pushable"><h4>Pushable</h4></a>
+<p>To implement <code>Pushable</code>, we need to interact with Gluon's stack directly. The goal is to create
+a <code>Value</code> that represents our Rust value, and push it on the stack. In order to do that, we need to
+push the fields of our type first:</p>
+<pre><code class="language-rust ignore">self.inner.name.push(vm, ctx)?
+self.inner.age.push(vm, ctx)?;
+self.inner.data.push(vm, ctx)?;
+</code></pre>
+<p>The <code>ActiveThread</code> we get passed has a <code>Context</code> that allows pushing values, but we can do even better and
+use the <code>record!</code> macro:</p>
+<pre><code class="language-rust ignore">(record!{
+    name =&gt; self.inner.name,
+    age =&gt; self.inner.age,
+    data =&gt; self.inner.data,
+}).push(ctx)
+</code></pre>
+<p>If we were pushing an enum, we would have to use <code>Context::push_new_data</code> and manually specify the tag
+of the pushed variant as well as its number of fields (zero if it's a variant with no attached data).</p>
+<pre><code class="language-rust ignore">let val = match an_enum {
+    Enum::VariantOne =&gt; ctx.context().push_new_data(vm, 0, num_fields_in_variant_one),
+    Enum::VariantTwo =&gt; ctx.context().push_new_data(vm, 1, num_fields_in_variant_two),
+}?;
+</code></pre>
+<a class="header" href="#userdata" id="userdata"><h4>Userdata</h4></a>
+<p>Implementing <code>Userdata</code> is straight forward: there are no required methods, so we can simply
+use the default implementation. However, <code>Userdata</code> also requires the type to implement
+<code>VmType</code> and <code>Traverseable</code>. We can use the minimal <code>VmType</code> implementation, it already
+provides the correct <code>make_type</code> function for us:</p>
+<pre><code class="language-rust ignore">impl&lt;T&gt; VmType for GluonUser&lt;T&gt;
+where
+    T: 'static + Debug + Sync + Send
+{
+    type Type = Self;
+}
+</code></pre>
+<p>In our case, the <code>Traverseable</code> implementation can also be left empty. Only if a type contains
+types that are managed by Gluon's GC, it is necessary to implement the <code>traverse</code> method
+in order to call <code>traverse</code> on those types. This way the GC can find all the value it manages.</p>
+<pre><code class="language-rust ignore">// empty impl for 'normal' types
+impl&lt;T&gt; Traverseable for GluonUser&lt;T&gt; {}
+
+// for a type that contains a Traversable type, we need to call
+// its traverse method
+impl Traverseable for ContainsGcPtr {
+    fn traverse(&amp;self, gc: &amp;mut Gc) {
+        self.gc_ptr.traverse(gc);
+    }
+}
+</code></pre>
+<a class="header" href="#passing-values-to-and-from-gluon" id="passing-values-to-and-from-gluon"><h2>Passing values to and from Gluon</h2></a>
+<p>Once your type implements the <a href="#required-traits">required traits</a>, you can simply use it in
+any function you want to expose to Gluon.</p>
+<p>If you want to receive or return types with generic type parameters that are instantiated on
+the Gluon side, you can use the <a href="https://docs.rs/gluon_vm/*/gluon_vm/api/struct.Opaque.html">Opaque</a> type together with the marker types in the
+<a href="https://docs.rs/gluon_vm/*/gluon_vm/api/generic/index.html">generic</a> module:</p>
+<pre><code class="language-rust ignore">// we define Either with type parameters, just like in Gluon
+#[derive(Getable, Pushable, VmType)]
+#[gluon(vm_type = &quot;examples.either.Either&quot;)]
+enum Either&lt;L, R&gt; {
+    Left(L),
+    Right(R),
+}
+
+// the function takes an Either instantiated with the `Opaque` struct,
+// which will handle the generic Gluon values for us
+use gluon::vm::api::OpaqueValue;
+// The `generic` sub-module provides marker types which mimic generic parameters
+use gluon::vm::api::generic::{L, R};
+
+fn flip(
+    either: Either&lt;OpaqueValue&lt;RootedThread, L&gt;, OpaqueValue&lt;RootedThread, R&gt;&gt;,
+) -&gt; Either&lt;OpaqueValue&lt;RootedThread, R&gt;, OpaqueValue&lt;RootedThread, L&gt;&gt; {
+    match either {
+        Either::Left(val) =&gt; Either::Right(val),
+        Either::Right(val) =&gt; Either::Left(val),
+    }
+}
+</code></pre>
+<p>Now we can pass <code>Either</code> to our Rust function:</p>
+<pre><code class="language-f# ignore">// Either is defined as:
+// type Either l r = | Left l | Right r
+let either: forall r . Either String r = Left &quot;hello rust!&quot;
+
+// we can pass the generic Either to the Rust function without an issue
+do _ =
+    match flip either with
+    | Left _ -&gt; error &quot;unreachable!&quot;
+    | Right val -&gt; io.println (&quot;Right is: &quot; &lt;&gt; val)
+
+// using an Int instead also works
+let either: forall r . Either Int r = Left 42
+
+match flip either with
+| Left _ -&gt; error &quot;also unreachable!&quot;
+| Right 42 -&gt; io.println &quot;this is the right answer&quot;
+| Right _ -&gt; error &quot;wrong answer!&quot;
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="embedding-api.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="standard-types-and-functions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a href="embedding-api.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a href="standard-types-and-functions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>

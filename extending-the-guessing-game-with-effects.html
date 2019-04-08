@@ -1,0 +1,450 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Extending the guessing game with extensible effects - Gluon Documentation</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Gluon is a static, type inferred and embeddable language written in Rust">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body class="light">
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">var path_to_root = "";</script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { } 
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            document.body.className = theme;
+            document.querySelector('html').className = theme + ' js';
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <ol class="chapter"><li><a href="getting-started.html"><strong aria-hidden="true">1.</strong> Getting started</a></li><li><ol class="section"><li><a href="dissecting-hello-world.html"><strong aria-hidden="true">1.1.</strong> Dissecting Hello World</a></li><li><a href="using-the-repl.html"><strong aria-hidden="true">1.2.</strong> Using the REPL</a></li><li><a href="anatomy-of-a-gluon-program.html"><strong aria-hidden="true">1.3.</strong> Anatomy of a gluon program</a></li><li><a href="extending-the-guessing-game-with-effects.html" class="active"><strong aria-hidden="true">1.4.</strong> Extending the guessing game with extensible effects</a></li></ol></li><li><a href="syntax-and-semantics.html"><strong aria-hidden="true">2.</strong> Syntax and semantics</a></li><li><a href="metadata.html"><strong aria-hidden="true">3.</strong> Metadata</a></li><li><a href="modules.html"><strong aria-hidden="true">4.</strong> Modules</a></li><li><a href="embedding-api.html"><strong aria-hidden="true">5.</strong> Embedding API</a></li><li><ol class="section"><li><a href="marshalling-types.html"><strong aria-hidden="true">5.1.</strong> Marshalling types</a></li></ol></li><li><a href="standard-types-and-functions.html"><strong aria-hidden="true">6.</strong> Standard types and functions</a></li></ol>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar" class="menu-bar">
+                    <div id="menu-bar-sticky-container">
+                        <div class="left-buttons">
+                            <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                                <i class="fa fa-bars"></i>
+                            </button>
+                            <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                                <i class="fa fa-paint-brush"></i>
+                            </button>
+                            <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                                <li role="none"><button role="menuitem" class="theme" id="light">Light <span class="default">(default)</span></button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                            </ul>
+                            
+                            <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                                <i class="fa fa-search"></i>
+                            </button>
+                            
+                        </div>
+
+                        <h1 class="menu-title">Gluon Documentation</h1> 
+
+                        <div class="right-buttons">
+                            <a href="print.html" title="Print this book" aria-label="Print this book">
+                                <i id="print-button" class="fa fa-print"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <a class="header" href="#extending-the-guessing-game-with-effects" id="extending-the-guessing-game-with-effects"><h1>Extending the guessing game with effects</h1></a>
+<p>In the previous chapter we implemented a simple guessing game. In this chapter we will extend the final program with to keep track of how many guesses the player has done and finally report it at the end.</p>
+<p>First, this was the final program from the previous chapter.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        match compare guess target_number with
+        | EQ -&gt; io.println &quot;Correct!&quot;
+        | LT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>To keep track of how many guesses the player has done we need to keep some state as we go through each guess.
+There are a few ways of doing this but the one we will look at here is using gluon's extensible effect system.
+This can be found under the <a href="https://gluon-lang.org/doc/nightly/std/effect.html"><code>std.effect</code></a> module.</p>
+<p>Extensible effects are a way to represent side effects in a composable way.
+In other words, it is possible to use multiple different effects easily, something which can otherwise be fairly difficult with the monadic representation of side effects that gluon employs.</p>
+<a class="header" href="#rewriting-io-into-eff" id="rewriting-io-into-eff"><h2>Rewriting IO into Eff</h2></a>
+<p>Before we get into adding more effects though we first need to replace the <code>IO</code> monad with the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> monad used to represent effects.
+Normally it is not possible to use a <code>Monad</code> directly when using effects and instead an entirely new &quot;effect handler&quot; needs to be written for the effect.
+However, <code>Eff</code> allows the use of ONE <code>Monad</code> instance among the various effects in an effect row with the <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#type.Lift"><code>Lift</code></a> effect.</p>
+<p>Lets see how we need to modify the code the guessing game to use <code>Eff</code> instead of <code>IO</code>, without adding any functionality.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+
+let start _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            match compare guess target_number with
+            | EQ -&gt; lift &lt;| io.println &quot;Correct!&quot;
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| start ()
+</code></pre>
+<p>There is quite a bit going down here so lets break it down.</p>
+<pre><code class="language-f# ignore">let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+</code></pre>
+<p>Here we import a few new things. The first just imports the useful <a href="https://gluon-lang.org/doc/nightly/std/function.html#value.%3C%7C"><code>&lt;|</code></a> operator, it doesn't really do any thing on its own and just serves as a way to let us avoid parentheses in a few places. Essentially <code>f &lt;| a 123 &quot;a&quot;</code> is the same as <code>f (a 123 &quot;a&quot;)</code>.</p>
+<p>Next we import the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> type and its implicit instances so we can use <code>do</code> with it.</p>
+<p>Finally we import <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#type.Lift"><code>Lift</code></a> and some functions to help us work with it. The <code>lift</code> function lets us &quot;lift&quot; a monadic action into the <code>Eff</code> monad. <code>run_lift</code> does the opposite, it takes the monadic action out of the <code>Eff</code> monad and lets us evaluate it.</p>
+<pre><code class="language-f# ignore">let start _ : () -&gt; Eff [| lift : Lift IO | r |] () =
+</code></pre>
+<p>Here we define our entrypoint and we can see the first use of the <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> type and a new bit of syntax which describes an &quot;effect row&quot;.</p>
+<p>Effect rows are described in a similar manner to records, except they use <code>[|</code> and <code>|]</code> to delimit instead of <code>{</code> and <code>}</code>.
+Rather than describing what fields a record holds they instead describe the effects used in this function.
+In the same way as records, effect rows also has an optional <code>| r</code> part which is what makes this &quot;extensible&quot; (see <a href="./syntax-and-semantics.html#polymorphic-records">polymorphic records</a> in the reference).
+If we defined the row without the <code>| r</code> part then we would get an error when trying to use the effect in a place that allows more effects.</p>
+<pre><code class="language-f# ignore">let eff_closed : Eff [| eff_1 : Eff1 |] () = ...
+
+let eff_open : Eff [| eff_1 : Eff1 | r |] () = ...
+
+let eff : Eff [| eff_1 : Eff1, eff_2 : Eff2 | r |] () =
+    // Error, type mismatch `[| eff_1 : Eff1 |]` does not contain `eff_2 : Eff2`
+    do _ = eff_closed
+    // Ok, because the action is polymorphic/extensible
+    do _ = eff_open
+    // etc
+</code></pre>
+<p>Essentially the type variable says that the effect &quot;may have more effects then the ones specified&quot; which lets us only specify the effects that each individual function needs while still being able to use them transparently in a program that uses additional effects.</p>
+<p>In this place we only use the <code>lift : Lift IO</code> effect but we will see how we can use this to specify multiple effects in a little bit.</p>
+<pre><code class="language-f# ignore">    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+</code></pre>
+<p>Here we actually start running an action. Since <code>io.println</code> returns an <code>IO ()</code> action and we need an <code>Eff [| lift : Lift IO | r |] ()</code> action we use <code>lift</code> to convert into the correct type. Otherwise the code is exactly the same as before!</p>
+<p>(The need for <code>lift</code> is likely to be removed in the future.)</p>
+<p>The lines that follow are all the same as before, only they may have received the <code>lift</code> treatment as well. Except for the last line.</p>
+<pre><code class="language-f# ignore">run_lift &lt;| start ()
+</code></pre>
+<p>Here we use <a href="https://gluon-lang.org/doc/nightly/std/effect/lift.html#value.run_lift"><code>run_lift</code></a> to go back from <code>Eff [| lift : Lift IO | r |] ()</code> into <code>IO ()</code> which the gluon interpreter can execute.</p>
+<a class="header" href="#adding-the-state-effect" id="adding-the-state-effect"><h2>Adding the State effect</h2></a>
+<p>Now that we have the program written with <a href="https://gluon-lang.org/doc/nightly/std/effect.html#value.Eff"><code>Eff</code></a> we can use this to easily add some state to track how many guesses the player has done!</p>
+<p>We do this using the <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#type.State"><code>State</code></a> effect which lets us hold a value in the <code>Eff</code> monad which we can read and write to.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, ? } = import! std.effect.state
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            match compare guess target_number with
+            | EQ -&gt; lift &lt;| io.println &quot;Correct!&quot;
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+<p>There are only two new things here, first we add <code>state : State Int</code> to the effect row to indicate that we want to use a state consisting of a single integer.</p>
+<p>The second addition is to add <code>eval_state 0</code> before the <code>run_lift</code> call. This initializes the state with <code>0</code> and then evaluates the effect.</p>
+<p>Notably we haven't actually used the state in any way except initializing it so lets actually use it. To work with the state we have the basic <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.get"><code>get</code></a>, <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.put"><code>put</code></a> and <a href="https://gluon-lang.org/doc/nightly/std/effect/state.html#value.modify"><code>modify</code></a> actions.'</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, modify, get, ? } = import! std.effect.state
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int | r |] () =
+        do line = lift &lt;| io.read_line
+        match int.parse (string.trim line) with
+        | Err _ -&gt;
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+        | Ok guess -&gt;
+            // Increment the guess counter by one
+            do _ = modify ((+) 1)
+            match compare guess target_number with
+            | EQ -&gt;
+                // Retrieve the guess so we can output it
+                do guesses = get
+                lift &lt;| io.println (&quot;Correct! You got it in &quot; ++ show guesses ++ &quot; guesses!&quot;)
+            | LT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+                guess_number ()
+            | GT -&gt;
+                do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+                guess_number ()
+
+    // Start the first guess
+    guess_number ()
+
+run_lift &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+<p>We only needed to add two things here, first we add one on every guess using <code>modify</code> then we use <code>get</code> to retrieve the final amount when the player succeeded.</p>
+<p>And that is all we had to do to add the guess tracking. The strength of extensible effects is precisely that there is very little work needed to add additional side effects to the program, despite the program as a whole still being entirely pure!</p>
+<p>Just to show the strength of effects one last time we add the <a href="https://gluon-lang.org/doc/nightly/std/effect/error.html#type.Error"><code>Error</code></a> effect to move the error handling outside of the main logic.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result, map_err } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+let { (&lt;|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Lift, run_lift, lift, ? } = import! std.effect.lift
+let { State, eval_state, modify, get, ? } = import! std.effect.state
+let { Error, ok_or_throw, run_error, catch, ? } = import! std.effect.error
+
+
+type GuessError =
+    | NotANumber
+
+let start _ : () -&gt; Eff [| lift : Lift IO, state : State Int, error : Error GuessError | r |] () =
+    do _ = lift &lt;| io.println &quot;Guess a number between 1 and 100!&quot;
+    do target_number = lift &lt;| random.thread_rng.gen_int_range 1 101
+
+    let guess_number _ : () -&gt; Eff [| lift : Lift IO, state : State Int, error : Error GuessError | r |] () =
+        do line = lift &lt;| io.read_line
+        do guess =
+            ok_or_throw 
+                &lt;| map_err (\_ -&gt; NotANumber)
+                &lt;| int.parse
+                &lt;| string.trim line
+        do _ = modify ((+) 1)
+        match compare guess target_number with
+        | EQ -&gt;
+            do guesses = get
+            lift &lt;| io.println (&quot;Correct! You got it in &quot; ++ show guesses ++ &quot; guesses!&quot;)
+        | LT -&gt;
+            do _ = lift &lt;| io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = lift &lt;| io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+    // Start the first guess
+    catch (guess_number ()) &lt;| \err -&gt;
+        match err with
+        | NotANumber -&gt; 
+            do _ = lift &lt;| io.println &quot;That is not a number!&quot;
+            guess_number ()
+
+run_lift &lt;| run_error &lt;| eval_state 0 &lt;| start ()
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="anatomy-of-a-gluon-program.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="syntax-and-semantics.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a href="anatomy-of-a-gluon-program.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a href="syntax-and-semantics.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>

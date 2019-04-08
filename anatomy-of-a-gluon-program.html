@@ -1,0 +1,304 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Anatomy of a gluon program - Gluon Documentation</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Gluon is a static, type inferred and embeddable language written in Rust">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body class="light">
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">var path_to_root = "";</script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { } 
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            document.body.className = theme;
+            document.querySelector('html').className = theme + ' js';
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <ol class="chapter"><li><a href="getting-started.html"><strong aria-hidden="true">1.</strong> Getting started</a></li><li><ol class="section"><li><a href="dissecting-hello-world.html"><strong aria-hidden="true">1.1.</strong> Dissecting Hello World</a></li><li><a href="using-the-repl.html"><strong aria-hidden="true">1.2.</strong> Using the REPL</a></li><li><a href="anatomy-of-a-gluon-program.html" class="active"><strong aria-hidden="true">1.3.</strong> Anatomy of a gluon program</a></li><li><a href="extending-the-guessing-game-with-effects.html"><strong aria-hidden="true">1.4.</strong> Extending the guessing game with extensible effects</a></li></ol></li><li><a href="syntax-and-semantics.html"><strong aria-hidden="true">2.</strong> Syntax and semantics</a></li><li><a href="metadata.html"><strong aria-hidden="true">3.</strong> Metadata</a></li><li><a href="modules.html"><strong aria-hidden="true">4.</strong> Modules</a></li><li><a href="embedding-api.html"><strong aria-hidden="true">5.</strong> Embedding API</a></li><li><ol class="section"><li><a href="marshalling-types.html"><strong aria-hidden="true">5.1.</strong> Marshalling types</a></li></ol></li><li><a href="standard-types-and-functions.html"><strong aria-hidden="true">6.</strong> Standard types and functions</a></li></ol>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar" class="menu-bar">
+                    <div id="menu-bar-sticky-container">
+                        <div class="left-buttons">
+                            <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                                <i class="fa fa-bars"></i>
+                            </button>
+                            <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                                <i class="fa fa-paint-brush"></i>
+                            </button>
+                            <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                                <li role="none"><button role="menuitem" class="theme" id="light">Light <span class="default">(default)</span></button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                            </ul>
+                            
+                            <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                                <i class="fa fa-search"></i>
+                            </button>
+                            
+                        </div>
+
+                        <h1 class="menu-title">Gluon Documentation</h1> 
+
+                        <div class="right-buttons">
+                            <a href="print.html" title="Print this book" aria-label="Print this book">
+                                <i id="print-button" class="fa fa-print"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <a class="header" href="#anatomy-of-a-gluon-program" id="anatomy-of-a-gluon-program"><h1>Anatomy of a gluon program</h1></a>
+<p>Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is to low or to high. If the player guesses correctly the program will congratulate the player and exit.</p>
+<p>As a base we can take the hello world example.</p>
+<pre><code class="language-f# rust">let io = import! std.io
+
+io.println &quot;Hello world!&quot;
+</code></pre>
+<p>The first thing we will need is a way to get a number from the user. For this we will use the <code>std.io.read_line : IO String</code> action. To test that it works we will simply write the line back to the user.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+
+do line = io.read_line
+io.println line
+</code></pre>
+<p>There are two new concepts in play here, <a href="./syntax-and-semantics.html#implicit-arguments">implicit arguments</a> and <a href="./syntax-and-semantics.html#do-expressions">do expressions</a>.</p>
+<p><code>do expressions</code> are similar to <code>let expressions</code> in that they let us us bind the result of an expression to a name which we can use later. Where they differ is that, rather binding the result of evaluating the expression itself, they expect the right hand side to be a monadic action such as <code>IO</code> and the value bound is the result of evaluating the action, which in this case is the <code>String</code> that that were input.</p>
+<p>(As was alluded to in the previous paragraph <code>IO</code> is a <code>Monad</code>, a rather complex concept which I won't go into here as it is enough for our purposes to only consider the &quot;IO monad&quot; as something that describes how <code>IO</code> actions are run in sequence.)</p>
+<p><code>do expressions</code> don't just magically work with <code>IO</code> actions which is where <code>implicit arguments</code> come in, it lets us use the compiler to to implicitly insert certain function arguments by looking at the inferred types. This can be thought as a way to get something similar to <code>traits</code> in Rust but with a bit extra flexibility by requiring a bit of explicitness to let the compiler know what it can use as an implicit argument. Which is why we needed to add the <code>{ ? }</code> record pattern match, the <code>?</code> lets the compiler know that it should choose from the fields of the record when looking for an implicit argument.  In this case the compiler sees that we use <code>IO</code> in the <code>do expression</code> and implicitly inserts an implicit <a href="https://gluon-lang.org/doc/nightly/std/io.html#value.monad"><code>Monad IO</code></a> value found in <code>std.io</code>, letting the <code>do expression</code> know how to sequence these two actions.</p>
+<p>Next we will need to generate a number for the player to guess. For this we will use the <a href="https://gluon-lang.org/doc/nightly/std/random.html"><code>std.random</code></a> module and specifically the <a href="https://gluon-lang.org/doc/nightly/std/random.html#value.thread_rng"><code>thread_rng.gen_int_range</code></a> <code>IO</code> action. So we will need to run it using <code>do</code> again. Lets also output the number so that to see how it works, since <code>io.println</code> takes a <code>String</code> we will need to convert the number before outputting it which we can do with [<code>show</code>][].</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+
+do target_number = random.thread_rng.gen_int_range 1 101
+
+do line = io.read_line
+io.println (show target_number)
+</code></pre>
+<p>The program should now output a random number between 1 and 100 on every run! We aren't checking if that number matches the input from the user yet however so lets do that next.</p>
+<p>To check that the input is actually a number and retrieve retrieve it as such we can use the <a href="https://gluon-lang.org/doc/nightly/std/int.html#value.parse"><code>std.int.parse</code></a> function. We also need to trim whitespace from the line we read as it contains a trailing newline.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+do line = io.read_line
+match int.parse (string.trim line) with
+| Err _ -&gt;
+    io.println &quot;That is not a number!&quot;
+| Ok guess -&gt;
+    if guess == target_number then
+        io.println &quot;Correct!&quot;
+    else
+        io.println &quot;Wrong!&quot;
+</code></pre>
+<p>If you try and run the program now it should only let you input numbers and give you a chance at the correct number. As it is you only got the one chance now though so lets make it possible to try again if the guess is wrong!</p>
+<p>To implement repetition we will need to write a function, specifically a recursive function. As long as the guess is wrong we just say that the guess was wrong and then repeat the process by having the function call itself, if the guess was correct then we exit the program.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        if guess == target_number then
+            io.println &quot;Correct!&quot;
+        else
+            do _ = io.println &quot;Wrong!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is to high or to low.</p>
+<pre><code class="language-f# rust">let io @ { ? } = import! std.io
+let random = import! std.random
+let int = import! std.int
+let string = import! std.string
+let { Result } = import! std.result
+let { Ordering, compare } = import! std.cmp
+
+do _ = io.println &quot;Guess a number between 1 and 100!&quot;
+do target_number = random.thread_rng.gen_int_range 1 101
+
+let guess_number _ : () -&gt; IO () =
+    do line = io.read_line
+    match int.parse (string.trim line) with
+    | Err _ -&gt;
+        do _ = io.println &quot;That is not a number!&quot;
+        guess_number ()
+    | Ok guess -&gt;
+        match compare guess target_number with
+        | EQ -&gt; io.println &quot;Correct!&quot;
+        | LT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too low!&quot;
+            guess_number ()
+        | GT -&gt;
+            do _ = io.println &quot;Wrong! Your guess is too high!&quot;
+            guess_number ()
+
+// Start the first guess
+guess_number ()
+</code></pre>
+<p>And there we have it, the final program! There are ways to improve this but lets leave that for the next chapter.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="using-the-repl.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="extending-the-guessing-game-with-effects.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a href="using-the-repl.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a href="extending-the-guessing-game-with-effects.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>

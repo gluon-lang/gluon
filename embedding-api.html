@@ -1,0 +1,276 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Embedding API - Gluon Documentation</title>
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="Gluon is a static, type inferred and embeddable language written in Rust">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" rel="stylesheet" type="text/css">
+        <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro:500" rel="stylesheet" type="text/css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body class="light">
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">var path_to_root = "";</script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { } 
+            if (theme === null || theme === undefined) { theme = 'light'; }
+            document.body.className = theme;
+            document.querySelector('html').className = theme + ' js';
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <ol class="chapter"><li><a href="getting-started.html"><strong aria-hidden="true">1.</strong> Getting started</a></li><li><ol class="section"><li><a href="dissecting-hello-world.html"><strong aria-hidden="true">1.1.</strong> Dissecting Hello World</a></li><li><a href="using-the-repl.html"><strong aria-hidden="true">1.2.</strong> Using the REPL</a></li><li><a href="anatomy-of-a-gluon-program.html"><strong aria-hidden="true">1.3.</strong> Anatomy of a gluon program</a></li><li><a href="extending-the-guessing-game-with-effects.html"><strong aria-hidden="true">1.4.</strong> Extending the guessing game with extensible effects</a></li></ol></li><li><a href="syntax-and-semantics.html"><strong aria-hidden="true">2.</strong> Syntax and semantics</a></li><li><a href="metadata.html"><strong aria-hidden="true">3.</strong> Metadata</a></li><li><a href="modules.html"><strong aria-hidden="true">4.</strong> Modules</a></li><li><a href="embedding-api.html" class="active"><strong aria-hidden="true">5.</strong> Embedding API</a></li><li><ol class="section"><li><a href="marshalling-types.html"><strong aria-hidden="true">5.1.</strong> Marshalling types</a></li></ol></li><li><a href="standard-types-and-functions.html"><strong aria-hidden="true">6.</strong> Standard types and functions</a></li></ol>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar" class="menu-bar">
+                    <div id="menu-bar-sticky-container">
+                        <div class="left-buttons">
+                            <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                                <i class="fa fa-bars"></i>
+                            </button>
+                            <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                                <i class="fa fa-paint-brush"></i>
+                            </button>
+                            <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                                <li role="none"><button role="menuitem" class="theme" id="light">Light <span class="default">(default)</span></button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                                <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                            </ul>
+                            
+                            <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                                <i class="fa fa-search"></i>
+                            </button>
+                            
+                        </div>
+
+                        <h1 class="menu-title">Gluon Documentation</h1> 
+
+                        <div class="right-buttons">
+                            <a href="print.html" title="Print this book" aria-label="Print this book">
+                                <i id="print-button" class="fa fa-print"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <a class="header" href="#embedding-api" id="embedding-api"><h1>Embedding API</h1></a>
+<p>The API with which the host language interacts with Gluon is very important part of the library. While the complete API can be found in the <a href="https://docs.rs/gluon/*/gluon/index.html">Rustdoc</a>, this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.</p>
+<a class="header" href="#creating-a-virtual-machine" id="creating-a-virtual-machine"><h3>Creating a virtual machine</h3></a>
+<p>Before you are able to do anything with the library, you will need to create a virtual machine. The virtual machine is responsible for running Gluon programs and can be created with the <a href="https://docs.rs/gluon/*/gluon/fn.new_vm.html">new_vm</a> function.</p>
+<a class="header" href="#compiling-and-running-gluon-code" id="compiling-and-running-gluon-code"><h3>Compiling and running gluon code</h3></a>
+<p>Once in possession of a <a href="https://docs.rs/gluon/*/gluon/struct.RootedThread.html">RootedThread</a>, you can compile and execute code using the <a href="https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_expr">run_expr</a> method on the [Compiler][] builder type.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+let (result, _) = Compiler::new()
+    .run_expr::&lt;i32&gt;(&amp;vm, &quot;example&quot;, &quot;1 + 2&quot;)
+    .ok();
+assert_eq!(result, Some(3));
+</code></pre>
+<p>Notably, if we were to execute a script with side effects the code above will actually not run the side effects. To make gluon run side effects we need to set the <a href="https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_io">run_io</a> flag on [Compiler][].</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+
+let script = r#&quot;
+let io = import! std.io
+io.print &quot;123&quot;
+&quot;#;
+// Returns an action which prints `123` when evaluated
+Compiler::new()
+    .run_expr::&lt;IO&lt;()&gt;&gt;(&amp;vm, &quot;example&quot;, script)
+    .unwrap();
+// Prints `123` to stdout
+Compiler::new()
+    .run_io(true)
+    .run_expr::&lt;IO&lt;()&gt;&gt;(&amp;vm, &quot;example&quot;, script)
+    .unwrap();
+</code></pre>
+<p>Often, it is either inconvenient or inefficient to compile and run code directly from source code. To write the above example in a more efficient way, we could instead load the <code>(+)</code> function and call it directly.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+// Ensure that the prelude module is loaded before trying to access something from it
+Compiler::new()
+    .run_expr::&lt;OpaqueValue&lt;&amp;Thread, Hole&gt;&gt;(&amp;vm, &quot;example&quot;, r#&quot; import! std.prelude &quot;#)
+    .unwrap();
+let mut add: FunctionRef&lt;fn (i32, i32) -&gt; i32&gt; = vm.get_global(&quot;std.prelude.num_Int.(+)&quot;)
+    .unwrap();
+let result = add.call(1, 2);
+assert_eq!(result, Ok(3));
+</code></pre>
+<a class="header" href="#calling-rust-functions-from-gluon" id="calling-rust-functions-from-gluon"><h3>Calling Rust functions from gluon</h3></a>
+<p>Gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running Gluon code.</p>
+<pre><code class="language-rust ignore">fn factorial(x: i32) -&gt; i32 {
+    if x &lt;= 1 {
+        1
+    } else {
+        x * factorial(x - 1)
+    }
+}
+
+fn load_factorial(vm: &amp;Thread) -&gt; vm::Result&lt;vm::ExternModule&gt; {
+    vm::ExternModule::new(vm, primitive!(1, factorial))
+}
+
+let vm = new_vm();
+
+// Introduce a module that can be loaded with `import! factorial`
+add_extern_module(&amp;vm, &quot;factorial&quot;, load_factorial);
+
+let expr = r#&quot;
+    let factorial = import! factorial
+    factorial 5
+&quot;#;
+
+let (result, _) = Compiler::new()
+    .run_expr::&lt;i32&gt;(&amp;vm, &quot;factorial&quot;, expr)
+    .unwrap();
+
+assert_eq!(result, 120);
+</code></pre>
+<p><a href="https://docs.rs/gluon/*/gluon/import/fn.add_extern_module.html">add_extern_module</a> can do more than just exposing simple functions. For instance, the <a href="https://github.com/gluon-lang/gluon/blob/master/vm/src/primitives.rs">primitives</a> module export large parts of Rust's <a href="http://doc.rust-lang.org/std/primitive.str.html">string</a> and <a href="http://doc.rust-lang.org/std/primitive.f64.html">float</a> modules directly as records in Gluon under the <code>str</code> and <code>float</code> modules respectively.</p>
+<pre><code class="language-rust ignore">let vm = new_vm();
+let (result, _) = Compiler::new()
+    .run_expr::&lt;String&gt;(&amp;vm, &quot;example&quot;, &quot; let string  = import! \&quot;std/string.glu\&quot; in string.trim \&quot;  Hello world  \t\&quot; &quot;)
+    .unwrap();
+assert_eq!(result, &quot;Hello world&quot;);
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="modules.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="marshalling-types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a href="modules.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a href="marshalling-types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>
