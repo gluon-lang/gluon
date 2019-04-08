@@ -14,8 +14,8 @@ use crate::base::{
     metadata::{Metadata, MetadataEnv},
     symbol::{Name, Symbol, SymbolRef},
     types::{
-        Alias, AliasData, AppVec, ArcType, Generic, ModType, ModTypeRef, NullInterner,
-        PrimitiveEnv, Type, TypeCache, TypeEnv, TypeExt,
+        Alias, AliasData, AppVec, ArcType, Generic, NullInterner, PrimitiveEnv, Type, TypeCache,
+        TypeEnv, TypeExt,
     },
     DebugLevel,
 };
@@ -229,7 +229,7 @@ impl KindEnv for VmEnv {
 impl TypeEnv for VmEnv {
     type Type = ArcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.globals
             .get(id.definition_name())
             .map(|g| &g.typ)
@@ -247,7 +247,6 @@ impl TypeEnv for VmEnv {
                     .next()
                     .map(|ctor| ctor)
             })
-            .map(ModType::rigid)
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {

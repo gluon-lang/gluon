@@ -2,7 +2,7 @@ use crate::base::{
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindEnv},
     symbol::{Symbol, SymbolRef},
-    types::{Alias, ArcType, ModType, ModTypeRef, Type, TypeEnv, TypeExt},
+    types::{Alias, ArcType, Type, TypeEnv, TypeExt},
 };
 
 pub use self::Instruction::*;
@@ -207,7 +207,7 @@ impl KindEnv for TypeInfos {
 impl TypeEnv for TypeInfos {
     type Type = ArcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
+    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         let id = id.definition_name();
         self.id_to_type
             .iter()
@@ -217,7 +217,6 @@ impl TypeEnv for TypeInfos {
             })
             .next()
             .map(|field| &field.typ)
-            .map(ModType::rigid)
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
