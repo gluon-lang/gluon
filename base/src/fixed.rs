@@ -25,6 +25,10 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
+unsafe fn forget_lifetime_mut<'a, 'b, T: ?Sized>(x: &'a mut T) -> &'b mut T {
+    ::std::mem::transmute(x)
+}
+
 // A mapping between K and V where once a value has been inserted it cannot be changed
 // Through this and the fact the all values are stored as pointers it is possible to safely
 // insert new values without invalidating pointers retrieved from it
@@ -102,6 +106,15 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     {
         let values = &mut self.values;
         self.map.get_mut().get(k).map(move |&key| &mut values[key])
+    }
+
+    pub fn remove<Q>(&mut self, key: &Q)
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+    {
+        self.map.get_mut().remove(key);
+        // TODO Actually remove it from values as well
     }
 }
 
@@ -203,6 +216,16 @@ impl<V> FixedVecMap<V> {
     pub fn drain<'a>(&'a mut self) -> impl Iterator<Item = V> + 'a {
         self.map.get_mut().clear();
         self.values.drain()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &V)> {
+        self.map
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k, *v))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(move |(k, v)| (k, &self.values[v]))
     }
 }
 
@@ -335,6 +358,14 @@ impl<T> Buffer<T> {
         values.values.iter().map(|vec| vec.len()).sum::<usize>()
     }
 
+    fn last_key(&self) -> (u32, u32) {
+        let values = self.values.borrow();
+        (
+            values.current as u32,
+            values.current().unwrap().len() as u32 - 1,
+        )
+    }
+
     fn push(&self, value: T) -> (u32, u32) {
         let mut values = self.values.borrow_mut();
         let cap = match values.current().map(|vec| (vec.len(), vec.capacity())) {
@@ -378,6 +409,11 @@ impl<T> Buffer<T> {
                 left = 0;
             }
         }
+    }
+
+    fn swap(&mut self, l: (u32, u32), r: (u32, u32)) {
+        assert!(l != r);
+        unsafe { mem::swap(forget_lifetime_mut(&mut self[l]), &mut self[r]) }
     }
 
     fn drain<'a>(&'a mut self) -> impl Iterator<Item = T> + 'a {
