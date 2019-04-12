@@ -2025,13 +2025,20 @@ impl<'a> Typecheck<'a> {
             }
 
             debug!("End generalize recursive");
-
-            // Update the implicit bindings with the generalized types we just created
-            let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
-
-            let stack = &self.environment.stack;
-            bindings.update(|name| Some(stack.get(name).unwrap().typ.concrete.clone()));
         }
+        // Update the implicit bindings with the generalized types we just created
+        let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
+        let stack = &self.environment.stack;
+        bindings.update(|name| {
+            Some(
+                stack
+                    .get(name)
+                    .unwrap_or_else(|| ice!("Implicit binding `{}` could not be updated", name))
+                    .typ
+                    .concrete
+                    .clone(),
+            )
+        });
 
         debug!("Typecheck `in`");
         self.environment.type_variables.exit_scope();

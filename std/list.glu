@@ -97,7 +97,6 @@ let many ?alt x : [Alternative f] -> f a -> f (List a) =
     let many_v _ =
         some_v () <|> wrap Nil
     let some_v _ =
-        let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
     in
     many_v ()
@@ -108,7 +107,6 @@ let some ?alt x : [Alternative f] -> f a -> f (List a) =
     let many_v _ =
         some_v () <|> wrap Nil
     let some_v _ =
-        let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
     in
     some_v ()
