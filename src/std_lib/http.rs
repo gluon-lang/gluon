@@ -406,7 +406,7 @@ macro_rules! uri_binds {
 
 mod std {
     pub(crate) mod http {
-        pub(crate) use crate::http as prim;
+        pub(crate) use crate::std_lib::http as prim;
     }
 }
 

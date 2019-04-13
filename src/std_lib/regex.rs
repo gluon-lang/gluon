@@ -67,7 +67,7 @@ fn error_to_string(err: &Error) -> &str {
 
 mod std {
     pub mod regex {
-        pub use crate::regex_bind as prim;
+        pub use crate::std_lib::regex as prim;
     }
 }
 

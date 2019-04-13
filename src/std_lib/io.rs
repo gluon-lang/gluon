@@ -20,9 +20,7 @@ use crate::vm::thread::{RootedThread, Thread, ThreadInternal};
 use crate::vm::types::*;
 use crate::vm::{self, ExternModule, Result};
 
-use crate::compiler_pipeline::*;
-
-use super::{Compiler, Error};
+use crate::{compiler_pipeline::*, Compiler, Error};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -334,7 +332,7 @@ fn load_script(
 
 mod std {
     pub mod io {
-        pub use crate::io as prim;
+        pub use crate::std_lib::io as prim;
     }
 }
 
