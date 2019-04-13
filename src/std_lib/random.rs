@@ -54,7 +54,7 @@ fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
 
 mod std {
     pub mod random {
-        pub use crate::rand_bind as prim;
+        pub use crate::std_lib::random as prim;
     }
 }
 

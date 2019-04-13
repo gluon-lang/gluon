@@ -38,16 +38,9 @@ extern crate gluon_codegen;
 pub extern crate gluon_vm as vm;
 
 pub mod compiler_pipeline;
-#[cfg(feature = "http")]
-pub mod http;
 #[macro_use]
 pub mod import;
-pub mod io;
-pub mod process;
-#[cfg(all(feature = "random", not(target_arch = "wasm32")))]
-pub mod rand_bind;
-#[cfg(feature = "regex")]
-pub mod regex_bind;
+pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
 
@@ -801,8 +794,8 @@ impl VmBuilder {
         add_extern_module(&vm, "std.channel.prim", crate::vm::channel::load_channel);
         add_extern_module(&vm, "std.thread.prim", crate::vm::channel::load_thread);
         add_extern_module(&vm, "std.debug.prim", crate::vm::debug::load);
-        add_extern_module(&vm, "std.io.prim", crate::io::load);
-        add_extern_module(&vm, "std.process.prim", crate::process::load);
+        add_extern_module(&vm, "std.io.prim", crate::std_lib::io::load);
+        add_extern_module(&vm, "std.process.prim", crate::std_lib::process::load);
 
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
@@ -813,25 +806,25 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "regex")],
             available_if = "gluon is compiled with the 'regex' feature",
-            args(&vm, "std.regex.prim", crate::regex_bind::load)
+            args(&vm, "std.regex.prim", crate::std_lib::regex::load)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
-            args(&vm, "std.http.prim_types", crate::http::load_types)
+            args(&vm, "std.http.prim_types", crate::std_lib::http::load_types)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
-            args(&vm, "std.http.prim", crate::http::load)
+            args(&vm, "std.http.prim", crate::std_lib::http::load)
         );
 
         add_extern_module_if!(
             #[cfg(all(feature = "random", not(target_arch = "wasm32")))],
             available_if = "gluon is compiled with the 'random' feature and is not targeting WASM",
-            args(&vm, "std.random.prim", crate::rand_bind::load)
+            args(&vm, "std.random.prim", crate::std_lib::random::load)
         );
 
         vm

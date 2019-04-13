@@ -32,7 +32,7 @@ fn execute(create: CreateProcess) -> IO<Option<i32>> {
 
 mod std {
     pub mod process {
-        pub use crate::process as prim;
+        pub use crate::std_lib::process as prim;
     }
 }
 
