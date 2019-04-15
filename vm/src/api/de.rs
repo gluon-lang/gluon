@@ -175,6 +175,8 @@ where
     T: VmType,
     T: DeserializeOwned,
 {
+    impl_getable_simple!();
+
     fn from_value(thread: &'vm Thread, value: Variants<'value>) -> Self {
         let typ = T::make_type(thread);
         match from_value(thread, value, &typ).map(De) {

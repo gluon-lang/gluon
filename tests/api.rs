@@ -7,17 +7,22 @@ extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use futures::future::lazy;
-use futures::{Future, IntoFuture};
+use futures::{future::lazy, Future, IntoFuture};
 
-use gluon::base::types::{Alias, ArcType, Type};
-use gluon::import::{add_extern_module, Import};
-use gluon::vm::api::de::De;
-use gluon::vm::api::{FunctionRef, FutureResult, OpaqueValue, RuntimeResult, Userdata, VmType, IO};
-use gluon::vm::thread::{RootedThread, Thread, Traverseable};
-use gluon::vm::types::VmInt;
-use gluon::vm::{Error, ExternModule};
-use gluon::Compiler;
+use gluon::{
+    base::types::{Alias, ArcType, Type},
+    import::{add_extern_module, Import},
+    vm::{
+        api::{
+            de::De, scoped::Ref, FunctionRef, FutureResult, OpaqueValue, OwnedFunction,
+            RuntimeResult, Userdata, VmType, IO,
+        },
+        thread::{RootedThread, Thread, Traverseable},
+        types::VmInt,
+        Error, ExternModule,
+    },
+    Compiler,
+};
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new().load_script(vm, filename, input)
@@ -32,6 +37,14 @@ fn make_vm() -> RootedThread {
         .expect("Import macro")
         .add_path("..");
     vm
+}
+
+#[derive(Debug)]
+struct Test(VmInt);
+impl Userdata for Test {}
+impl Traverseable for Test {}
+impl VmType for Test {
+    type Type = Test;
 }
 
 #[test]
@@ -59,14 +72,6 @@ fn call_function() {
 #[test]
 fn root_data() {
     let _ = ::env_logger::try_init();
-
-    #[derive(Debug)]
-    struct Test(VmInt);
-    impl Userdata for Test {}
-    impl Traverseable for Test {}
-    impl VmType for Test {
-        type Type = Test;
-    }
 
     let expr = r#"
         let test = import! test
@@ -404,4 +409,77 @@ fn runtime_result_vm_type_forwarding() {
         .run_io(true)
         .run_expr::<IO<()>>(&vm, "test", text)
         .unwrap_or_else(|err| panic!("{}", err));
+}
+
+#[test]
+fn scoped_reference_basic() {
+    let _ = ::env_logger::try_init();
+
+    fn function(r: &Test, i: VmInt) -> VmInt {
+        r.0 + i
+    }
+
+    let expr = r#"
+        let function = import! function
+        \x -> function x 1
+    "#;
+
+    let vm = make_vm();
+    vm.register_type::<Test>("Test", &[])
+        .unwrap_or_else(|_| panic!("Could not add type"));
+    add_extern_module(&vm, "function", |thread| {
+        ExternModule::new(thread, primitive!(2, function))
+    });
+
+    let (mut result, _) = Compiler::new()
+        .run_expr::<OwnedFunction<fn(_) -> VmInt>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    assert_eq!(
+        result
+            .call(&mut Ref::new(&Test(2)))
+            .unwrap_or_else(|err| panic!("{}", err)),
+        3
+    );
+}
+
+#[test]
+fn scoped_reference_out_of_scope() {
+    let _ = ::env_logger::try_init();
+
+    fn recursive<'a, 'b>(
+        f: OwnedFunction<fn(OpaqueValue<RootedThread, Test>) -> OpaqueValue<RootedThread, Test>>,
+    ) -> OpaqueValue<RootedThread, Test> {
+        let mut f: OwnedFunction<fn(_) -> OpaqueValue<RootedThread, Test>> = f.cast().unwrap();
+        f.call(&mut Ref::new(&Test(1))).unwrap()
+    }
+
+    fn function(r: &Test, i: VmInt) -> VmInt {
+        r.0 + i
+    }
+
+    let expr = r#"
+        let { recursive, function } = import! module
+        function (recursive (\t -> t)) 1
+    "#;
+
+    let vm = make_vm();
+    vm.register_type::<Test>("Test", &[])
+        .unwrap_or_else(|_| panic!("Could not add type"));
+    add_extern_module(&vm, "module", |thread| {
+        ExternModule::new(
+            thread,
+            record! {
+                recursive => primitive!(1, recursive),
+                function => primitive!(2, function)
+            },
+        )
+    });
+
+    let result = Compiler::new().run_expr::<VmInt>(&vm, "<top>", expr);
+    match result {
+        Err(gluon::Error::VM(Error::Panic(ref m, _))) if m == "Scoped pointer is invalidated" => (),
+        Err(err) => panic!("Wrong error: {:#?}", err),
+        Ok(_) => panic!("Unexpected success"),
+    }
 }

@@ -14,9 +14,9 @@ use crate::vm;
 use crate::{Result, Variants};
 
 #[cfg(feature = "serde")]
-use std::result::Result as StdResult;
-#[cfg(feature = "serde")]
 use crate::thread::RootedThread;
+#[cfg(feature = "serde")]
+use std::result::Result as StdResult;
 
 #[cfg(feature = "serde")]
 use crate::serde::de::{Deserialize, Deserializer};
@@ -356,6 +356,8 @@ impl<'vm, 'value, V> Getable<'vm, 'value> for Opaque<Variants<'value>, V>
 where
     V: ?Sized,
 {
+    impl_getable_simple!();
+
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         Opaque::from_value(value)
     }
@@ -366,6 +368,8 @@ where
     V: ?Sized,
     T: VmRoot<'vm>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         OpaqueValue::from_value(vm.root_value(value))
     }

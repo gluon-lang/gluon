@@ -81,6 +81,8 @@ impl<'vm> Pushable<'vm> for Headers {
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for Headers {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         Headers(
             Collect::from_value(vm, value)

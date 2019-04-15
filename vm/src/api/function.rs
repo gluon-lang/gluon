@@ -245,6 +245,8 @@ where
 }
 
 impl<'vm, 'value, F> Getable<'vm, 'value> for Function<&'vm Thread, F> {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Function<&'vm Thread, F> {
         Function {
             value: vm.root_value(value),
@@ -254,6 +256,8 @@ impl<'vm, 'value, F> Getable<'vm, 'value> for Function<&'vm Thread, F> {
 }
 
 impl<'vm, 'value, F> Getable<'vm, 'value> for Function<RootedThread, F> {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         Function {
             value: vm.root_value(value),
@@ -322,17 +326,25 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
         let mut i = 0;
         let lock;
         let r = unsafe {
-            let ($($args,)*) = {
-                let stack = StackFrame::<ExternState>::current(context.stack());
-                $(let $args = {
-                    let x = $args::from_value(vm, Variants::with_root(stack[i].clone(), vm));
-                    i += 1;
-                    x
-                });*;
-// Lock the frame to ensure that any references to the stack stay rooted
-                lock = stack.into_lock();
-                ($($args,)*)
-            };
+
+            let stack = StackFrame::<ExternState>::current(context.stack());
+            $(
+                let variants = Variants::with_root(stack[i].clone(), vm);
+                let proxy = match $args::to_proxy(vm, variants) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        drop(stack);
+                        err.to_string().push(&mut context).unwrap();
+                        return Status::Error;
+                    }
+                };
+                // The proxy will live as along as the 'value lifetime we just created
+                let $args = $args::from_proxy(vm, &*(&proxy as *const _));
+                i += 1;
+            )*
+            // Lock the frame to ensure that any references to the stack stay rooted
+            lock = stack.into_lock();
+
             drop(context);
             let r = (*self)($($args),*);
             context = vm.current_context();
@@ -498,6 +510,27 @@ make_vm_function!(A, B, C, D);
 make_vm_function!(A, B, C, D, E);
 make_vm_function!(A, B, C, D, E, F);
 make_vm_function!(A, B, C, D, E, F, G);
+
+impl<T, F> Function<T, F>
+where
+    T: Deref<Target = Thread>,
+    F: VmType,
+{
+    pub fn cast<F2>(self) -> Result<Function<T, F2>>
+    where
+        F2: VmType,
+    {
+        let vm = self.value.vm();
+        if F::make_type(vm) == F2::make_type(vm) {
+            Ok(Function {
+                value: self.value,
+                _marker: PhantomData,
+            })
+        } else {
+            Err(Error::Message("Function cast is not compatible".into()))
+        }
+    }
+}
 
 pub struct TypedBytecode<T> {
     id: Symbol,
