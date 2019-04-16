@@ -41,15 +41,13 @@ let monad : [Monad m] -> Monad (StateT s m) =
 
     { applicative, flat_map }
 
-// FIXME implicit parameter troubles
 let transformer : Transformer (StateT s) =
     let wrap_monad ma : [Monad m] -> m a -> StateT s m a = \state ->
         ma >>= \value -> wrap {value, state}
 
     { /* monad, */ wrap_monad }
 
-// needs [transformer (StateT s)] parameter?
-let alternative ?_ ?alt : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
+let alternative : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
     let stor sra srb = or << sra <*> srb
     let stempty = transformer.wrap_monad empty
 
@@ -76,4 +74,20 @@ let eval_state_t f state : [Functor m] -> StateT s m a -> s -> m a =
 let exec_state_t f state : [Functor m] -> StateT s m a -> s -> m s =
     map (\x -> x.state) (run_state_t f state)
 
-{ StateT, applicative, functor, monad, put, get, modify, run_state_t, eval_state_t, exec_state_t }
+{
+    StateT,
+
+    applicative,
+    functor,
+    monad,
+    transformer,
+    alternative,
+
+    put,
+    get,
+    gets,
+    modify,
+    run_state_t,
+    eval_state_t,
+    exec_state_t
+}
