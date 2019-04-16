@@ -6,18 +6,21 @@ extern crate gluon_codegen;
 
 use std::io::{self, BufRead};
 
-use gluon::vm::api::{FunctionRef, OpaqueValue};
-use gluon::{new_vm, Compiler, RootedThread};
+use gluon::{
+    new_vm,
+    vm::api::{FunctionRef, OpaqueValue},
+    Compiler, RootedThread,
+};
 
 #[derive(VmType)]
 #[gluon(vm_type = "examples.lisp.lisp.Expr")]
-struct Expr;
-type OpaqueExpr = OpaqueValue<RootedThread, Expr>;
+struct ExprMarker;
+type Expr = OpaqueValue<RootedThread, ExprMarker>;
 
 #[derive(VmType)]
 #[gluon(vm_type = "examples.lisp.lisp.LispState")]
-struct LispState;
-type OpaqueLispState = OpaqueValue<RootedThread, LispState>;
+struct LispStateMarker;
+type LispState = OpaqueValue<RootedThread, LispStateMarker>;
 
 fn main() {
     if let Err(err) = main_() {
@@ -31,14 +34,13 @@ fn main_() -> gluon::Result<()> {
     let thread = new_vm();
     Compiler::new().load_file(&thread, "examples/lisp/lisp.glu")?;
 
-    let mut eval: FunctionRef<
-        fn(String, OpaqueLispState) -> Result<(OpaqueExpr, OpaqueLispState), String>,
-    > = thread.get_global("examples.lisp.lisp.eval_env_string")?;
+    let mut eval: FunctionRef<fn(String, LispState) -> Result<(Expr, LispState), String>> =
+        thread.get_global("examples.lisp.lisp.eval_env_string")?;
 
-    let mut show: FunctionRef<fn(OpaqueExpr) -> String> =
+    let mut show: FunctionRef<fn(Expr) -> String> =
         thread.get_global("examples.lisp.lisp.show.show")?;
 
-    let mut env: OpaqueLispState = thread.get_global("examples.lisp.lisp.default_env")?;
+    let mut env: LispState = thread.get_global("examples.lisp.lisp.default_env")?;
 
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -54,4 +56,32 @@ fn main_() -> gluon::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use gluon::Error;
+
+    fn eval_lisp(expr: &str) -> Result<String, Error> {
+        let thread = new_vm();
+        Compiler::new().load_file(&thread, "examples/lisp/lisp.glu")?;
+
+        let mut eval: FunctionRef<fn(String, LispState) -> Result<(Expr, LispState), String>> =
+            thread.get_global("examples.lisp.lisp.eval_env_string")?;
+
+        let mut show: FunctionRef<fn(Expr) -> String> =
+            thread.get_global("examples.lisp.lisp.show.show")?;
+
+        let env: LispState = thread.get_global("examples.lisp.lisp.default_env")?;
+
+        let (msg, _) = eval.call(expr.to_string(), env.clone())??;
+        Ok(show.call(msg.clone())?)
+    }
+
+    #[test]
+    fn basic() {
+        assert_eq!(eval_lisp("(+ 1 2 3)").unwrap(), "6");
+    }
 }

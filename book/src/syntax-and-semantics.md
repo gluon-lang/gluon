@@ -439,7 +439,7 @@ f { x = 1, y = 2, other = "abc" } // The record we pass can hold more fields tha
 
 [Row type]:./syntax-and-semantics.html#row-type
 
-### Enumeration type
+### Variant type
 
 ```
 ( | <identifier> (<type>)* )*
@@ -448,6 +448,45 @@ f { x = 1, y = 2, other = "abc" } // The record we pass can hold more fields tha
 ```
 
 Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of Gluon's standard `Result` type. It represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
+
+#### Generalized algebraic data type
+
+Variants also have an alternate syntax which allows [Generalized Algebraic Data Type][GADT] (GADT) to be specified.
+
+```
+type <identifier> (<identifier>)* = ( | <identifier> :  (<type>)* )*
+
+type Result e t =
+    | Err : e -> Result e t
+    | Ok : t -> Result e t
+```
+
+This encodes the same type as the variant in the previous (with the restriction that the variant must be specified as the top of the type definition).
+While this simple example doesn't do anything that a normal variant could not define it is possible to encode much more information about what a variant contains through such as the canonical expression example.
+
+```f#,rust
+type Expr a =
+    | Int : Int -> Expr Int
+    | Bool : Bool -> Expr Bool
+    | Add : Expr Int -> Expr Int -> Expr Int
+    | If : Expr Bool -> Expr a -> Expr a -> Expr a
+
+let eval e : Expr a -> a =
+    match e with
+    | Int x -> x
+    | Bool x -> x
+    | Add l r -> eval l + eval r
+    | If p t f -> if eval p then eval t else eval f
+
+let int : Int = eval (If (Bool True) (Add (Int 1) (Int 2)) (Int 0))
+let bool : Bool = eval (Bool True)
+()
+```
+
+Through specifying a more specific type in the return type of a GADT variant we enforce that the variant can only contain that specific type
+in the argument. We can then exploit it when matching to refine the argument.
+
+[GADT]:https://en.wikipedia.org/wiki/Generalized_algebraic_data_type
 
 ### Alias type
 

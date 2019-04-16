@@ -21,7 +21,6 @@ let { flat_map, (>>=) } = import! std.monad
 let { foldl } = import! std.foldable
 
 let { (<>) } = import! std.prelude
-let (++) = (<>)
 
 rec
 type ReplEffect r a = [| reader : Reader Repl, state : State Settings, lift : Lift IO | r |] a
@@ -139,7 +138,7 @@ let commands : Commands =
             alias = "p",
             info = "Sets the prompt",
             action = \prompt ->
-                do _ = modify (\settings ->
+                seq modify (\settings ->
                         // TODO Should be able infer this before the `..` splatting
                         let settings : Settings = settings
                         { prompt,
@@ -150,9 +149,9 @@ let commands : Commands =
         {
             name = "color",
             alias = "c",
-            info = "Sets wheter to use color in the repl: auto, always, always-ansi, never",
+            info = "Sets whether to use color in the repl: auto, always, always-ansi, never",
             action = \color ->
-                do _ =
+                seq
                     match repl_prim.parse_color color with
                     | Ok color ->
                         modify (\settings ->
