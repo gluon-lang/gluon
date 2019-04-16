@@ -373,9 +373,9 @@ fn listen(
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
 // separate function which is called before loading `http_types`
 pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
-    vm.register_type::<Body>("Body", &[])?;
-    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
-    vm.register_type::<Uri>("Uri", &[])?;
+    vm.register_type::<Body>("std.http.types.Body", &[])?;
+    vm.register_type::<ResponseBody>("std.http.types.ResponseBody", &[])?;
+    vm.register_type::<Uri>("std.http.types.Uri", &[])?;
 
     ExternModule::new(
         vm,
@@ -384,12 +384,12 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
             type Body => Body,
             type ResponseBody => ResponseBody,
             type Uri => Uri,
-            type Method => String,
-            type StatusCode => u16,
-            type Request => Request,
-            type Response => Response,
-            type Headers => Headers,
-            type HttpState => HttpState
+            type std::http::Method => String,
+            type std::http::StatusCode => u16,
+            type std::http::Request => Request,
+            type std::http::Response => Response,
+            type std::http::Headers => Headers,
+            type std::http::HttpState => HttpState
         },
     )
 }
@@ -406,7 +406,7 @@ macro_rules! uri_binds {
 
 mod std {
     pub(crate) mod http {
-        pub(crate) use crate::http as prim;
+        pub(crate) use crate::std_lib::http as prim;
     }
 }
 

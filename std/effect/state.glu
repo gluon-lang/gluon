@@ -3,11 +3,14 @@ let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
 
-type State s a = forall r . (| Get | Put s .. r)
+type State s r a =
+    | Get : State s r s
+    | Put : s -> State s r ()
+    .. r
 
-let extract_state x : forall s . [| state : State s | r |] a -> State s a = convert_variant! x
+let extract_state x : forall s . [| state : State s | r |] a -> State s r a = convert_variant! x
 
-let send_state f : State s a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
+let send_state f : State s r a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
 
 let get : forall s . Eff [| state : State s | r |] s =
     send_state Get
@@ -23,7 +26,7 @@ let modify f : (s -> s) -> Eff [| state : State s | r |] () =
     put (f s)
 
 let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
-    let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { state : _, value : a } =
+    let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
         match ve with
         | Pure value -> wrap { state, value }
         | Impure e f ->
@@ -31,7 +34,7 @@ let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| 
             | Get ->
                 loop state (f state)
             | Put state ->
-                loop state (f state)
+                loop state (f ())
             | rest ->
                 Impure (inject_rest rest) (loop state << f)
     loop s eff

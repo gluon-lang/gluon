@@ -1,3 +1,24 @@
+<a name="v0.11.2"></a>
+### v0.11.2 (2019-03-26)
+
+
+#### Features
+
+* **doc:**  Don't display the full path to types in the documentation ([a669faaa](https://github.com/gluon-lang/gluon/commit/a669faaadadd388e23d36393204820d73316cbf5))
+
+#### Bug Fixes
+
+*   Ignore mdbook for osx builds ([7755967a](https://github.com/gluon-lang/gluon/commit/7755967ad5e3defb5a1d1b1c10ce920ec030556d))
+* **check:**  The alias reduction stack must be cleared between unifying function arguments ([170072a4](https://github.com/gluon-lang/gluon/commit/170072a4734d4ec27c97c307aae7dc5b7d181dcc))
+* **doc:**
+  *  Correct all the remaining links in docs ([494675fe](https://github.com/gluon-lang/gluon/commit/494675fe3dbfc229c795ed3b076ce0c87c7297a1))
+  *  Point breadcrumb links correctly ([2a9cca72](https://github.com/gluon-lang/gluon/commit/2a9cca7282a74bd13851a25f88f2b04d398f2dbe))
+  *  Point Rust defined types to their doc location ([b170f2f3](https://github.com/gluon-lang/gluon/commit/b170f2f3a2bd9b8a33ca4eb7620ea0e7f2a26784))
+  *  Don't generate dead links in the documentation ([04131b71](https://github.com/gluon-lang/gluon/commit/04131b71176bc824cee956aa431ab84063d98861))
+  *  Point sibling module links correctly ([3bbf4a99](https://github.com/gluon-lang/gluon/commit/3bbf4a9927ef2060707bf8345cf028f6a03df658))
+
+
+
 <a name="v0.11.1"></a>
 ### v0.11.1 (2019-02-13)
 

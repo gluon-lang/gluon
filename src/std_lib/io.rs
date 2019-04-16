@@ -20,9 +20,7 @@ use crate::vm::thread::{RootedThread, Thread, ThreadInternal};
 use crate::vm::types::*;
 use crate::vm::{self, ExternModule, Result};
 
-use crate::compiler_pipeline::*;
-
-use super::{Compiler, Error};
+use crate::{compiler_pipeline::*, Compiler, Error};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -334,12 +332,12 @@ fn load_script(
 
 mod std {
     pub mod io {
-        pub use crate::io as prim;
+        pub use crate::std_lib::io as prim;
     }
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    vm.register_type::<GluonFile>("File", &[])?;
+    vm.register_type::<GluonFile>("std.io.File", &[])?;
 
     // flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
@@ -363,6 +361,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         record! {
             type File => GluonFile,
             type OpenOptions => OpenOptions,
+            type IO a => IO<A>,
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
             open_file_with => primitive!(2, std::io::prim::open_file_with),

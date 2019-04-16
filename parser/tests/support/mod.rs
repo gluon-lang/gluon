@@ -396,7 +396,7 @@ pub fn variant<Id>(arg: &str, types: &[AstType<Id>]) -> Field<Id, AstType<Id>>
 where
     Id: Clone + AsRef<str> + for<'a> From<&'a str>,
 {
-    Field::ctor(&mut MockEnv::new(), arg.into(), types.iter().cloned())
+    Field::ctor(arg.into(), types.iter().cloned())
 }
 
 pub fn alias_variant<Id>(s: &str, params: &[&str], args: &[(&str, &[AstType<Id>])]) -> AstType<Id>

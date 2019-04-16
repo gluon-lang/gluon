@@ -1,9 +1,12 @@
-use crate::base::ast::{
-    Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding,
+use crate::base::{
+    ast::{
+        Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+        ValueBinding,
+    },
+    pos,
+    symbol::{Symbol, Symbols},
+    types::{ctor_args, remove_forall, row_iter, Type},
 };
-use crate::base::pos;
-use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::{remove_forall, row_iter, Type};
 
 use crate::macros::Error;
 
@@ -63,15 +66,15 @@ pub fn generate(
 
             let alts = row_iter(variants)
                 .map(|variant| {
-                    let l_pattern_args: Vec<_> = row_iter(&variant.typ)
+                    let l_pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .map(|field| {
                             (
-                                is_self_type(&bind.alias.value.name, &field.typ),
+                                is_self_type(&bind.alias.value.name, field),
                                 TypedIdent::new(Symbol::from("arg_l")),
                             )
                         })
                         .collect();
-                    let r_pattern_args: Vec<_> = row_iter(&variant.typ)
+                    let r_pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .map(|_| TypedIdent::new(Symbol::from("arg_r")))
                         .collect();
 

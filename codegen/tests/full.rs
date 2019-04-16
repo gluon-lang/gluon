@@ -60,7 +60,7 @@ fn normal_struct() {
 }
 
 #[derive(Debug, PartialEq, VmType, Pushable, Getable)]
-struct Newtype(Struct);
+struct Newtype(pub Struct);
 
 fn load_newtype_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {

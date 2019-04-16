@@ -104,6 +104,31 @@ macro_rules! stringify_inner {
 
 #[doc(hidden)]
 #[macro_export(local_inner_macros)]
+macro_rules! record_field_inner_struct {
+    ($name:ident) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Default)]
+        pub struct $name;
+    };
+    ($name:ident $($rest: ident)+) => { record_field_inner_struct!{$($rest)+} };
+}
+
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
+macro_rules! record_mod {
+    ($name:ident) => { _field :: $name };
+    ($name:ident $($rest: ident)+) => { record_mod!{$($rest)+ } };
+}
+
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
+macro_rules! last_ident {
+    ($name:ident) => { $name };
+    ($name:ident $($rest: ident)+) => { last_ident!{$($rest)+ } };
+}
+
+#[doc(hidden)]
+#[macro_export(local_inner_macros)]
 macro_rules! field_decl_inner {
     () => {
     };
@@ -124,13 +149,11 @@ macro_rules! field_decl_inner {
         }
     };
 
-    (type $field: ident $($args: ident)*) => {
-        #[allow(non_camel_case_types)]
-        #[derive(Default)]
-        pub struct $field;
-        impl $crate::api::record::Field for $field {
+    (type $field: ident $( :: $suffix: ident)* $($args: ident)*) => {
+        record_field_inner_struct!{ $field $($suffix)* }
+        impl $crate::api::record::Field for last_ident!($field $($suffix)*) {
             fn name() -> &'static str {
-                stringify_inner!($field)
+                stringify_inner!($field $( :: $suffix)* )
             }
             fn args() -> &'static [&'static str] {
                 &[$(stringify_inner!($args)),*]
@@ -148,8 +171,8 @@ macro_rules! field_decl_inner {
         field_decl_inner!{ ($alias $field) }
         field_decl_inner!{$($rest)*}
     };
-    (type $alias: ident $($arg: ident)*, $($rest: tt)*) => {
-        field_decl_inner!{ type $alias $($arg)* }
+    (type $alias: ident $( :: $suffix: ident)* $($arg: ident)*, $($rest: tt)*) => {
+        field_decl_inner!{ type $alias $( :: $suffix )* $($arg)* }
         field_decl_inner!{$($rest)*}
     }
 }
@@ -187,9 +210,9 @@ macro_rules! field_decl_record {
             [$($acc)* ($alias $field),]
         }
     };
-    ([ $($acc: tt)* ] type $alias: ident $($arg: ident)* => $ignore: ty) => {
+    ([ $($acc: tt)* ] type $alias: ident $( :: $suffix: ident)* $($arg: ident)* => $ignore: ty) => {
         field_decl_record!{
-            [$($acc)* type $alias $($arg)*,]
+            [$($acc)* type $alias $( :: $suffix)* $($arg)*,]
         }
     };
 
@@ -205,9 +228,9 @@ macro_rules! field_decl_record {
             $($rest)*
         }
     };
-    ([ $($acc: tt)* ] type $field: ident $($arg: ident)* => $ignore: ty, $($rest: tt)*) => {
+    ([ $($acc: tt)* ] type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $ignore: ty, $($rest: tt)*) => {
         field_decl_record!{
-            [$($acc)* type $field $($arg)*,]
+            [$($acc)* type $field $( :: $suffix)* $($arg)*,]
             $($rest)*
         }
     }
@@ -223,7 +246,7 @@ macro_rules! record_no_decl_inner {
     ( ($field: ident $ignore: expr) => $value: expr) => {
         record_no_decl_inner!($field => $value)
     };
-    ( type $field: ident $($arg: ident)* => $value: ty) => {
+    ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty) => {
         record_no_decl_inner!()
     };
 
@@ -236,7 +259,7 @@ macro_rules! record_no_decl_inner {
     ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner!($field => $value, $($rest)*)
     };
-    ( type $field: ident $($arg: ident)* => $value: ty, $($rest: tt)*) => {
+    ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty, $($rest: tt)*) => {
         record_no_decl_inner!($($rest)*)
     };
 }
@@ -251,8 +274,8 @@ macro_rules! record_no_decl_inner_types {
     ( ($field: ident $ignore: expr) => $value: expr) => {
         record_no_decl_inner_types!($field => $value)
     };
-    ( type $field: ident $($arg: ident)* => $value: ty) => {
-        $crate::frunk_core::hlist::h_cons((_field::$field, ::std::marker::PhantomData::<$value>), record_no_decl_inner_types!())
+    ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty) => {
+        $crate::frunk_core::hlist::h_cons((record_mod!($field $($suffix)*), ::std::marker::PhantomData::<$value>), record_no_decl_inner_types!())
     };
 
     ($field: ident => $value: expr, $($rest: tt)*) => {
@@ -261,9 +284,9 @@ macro_rules! record_no_decl_inner_types {
     ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner_types!($field => $value, $($rest)*)
     };
-    ( type $field: ident $($arg: ident)* => $value: ty, $($rest: tt)*) => {
+    ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty, $($rest: tt)*) => {
         $crate::frunk_core::hlist::h_cons(
-            (_field::$field, ::std::marker::PhantomData::<$value>),
+            (record_mod!($field $($suffix)*), ::std::marker::PhantomData::<$value>),
             record_no_decl_inner_types!($($rest)*)
         )
     };
@@ -322,8 +345,8 @@ macro_rules! record_type_inner {
         $crate::frunk_core::hlist::HCons<(_field::$field, $value),
                                 record_type_inner!( $($field_tail => $value_tail),*)>
     };
-    (type $field: ident $($arg: ident)* => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
-        $crate::frunk_core::hlist::HCons<(_field::$field, $value),
+    (type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
+        $crate::frunk_core::hlist::HCons<(_field:: last_ident!($field $($suffix)*), $value),
                                 record_type_inner!( $($field_tail => $value_tail),*)>
     }
 }

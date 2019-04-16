@@ -602,8 +602,8 @@ pub struct Metadata(fs::Metadata);
 pub struct DirEntry(fs::DirEntry);
 
 pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
-    vm.register_type::<Metadata>("Metadata", &[])?;
-    vm.register_type::<DirEntry>("DirEntry", &[])?;
+    vm.register_type::<Metadata>("std.fs.Metadata", &[])?;
+    vm.register_type::<DirEntry>("std.fs.DirEntry", &[])?;
 
     ExternModule::new(
         vm,

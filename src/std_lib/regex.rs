@@ -67,15 +67,15 @@ fn error_to_string(err: &Error) -> &str {
 
 mod std {
     pub mod regex {
-        pub use crate::regex_bind as prim;
+        pub use crate::std_lib::regex as prim;
     }
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     use self::std;
 
-    vm.register_type::<Regex>("Regex", &[])?;
-    vm.register_type::<Error>("Error", &[])?;
+    vm.register_type::<Regex>("std.regex.Regex", &[])?;
+    vm.register_type::<Error>("std.regex.Error", &[])?;
 
     ExternModule::new(
         vm,

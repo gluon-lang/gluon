@@ -45,7 +45,9 @@ use pretty::{Arena, DocAllocator};
 use gluon::{
     base::{
         filename_to_module,
+        fnv::FnvMap,
         metadata::Metadata,
+        source::Source,
         symbol::{Name, Symbol},
         types::{ArcType, ArgType, Type, TypeExt},
     },
@@ -60,6 +62,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub struct Module {
     pub name: String,
     pub comment: String,
+    pub github_source: Option<String>,
     pub record: Record,
 }
 
@@ -82,6 +85,7 @@ pub struct Field {
     #[serde(rename = "type")]
     pub typ: String,
     pub comment: String,
+    pub definition_line: Option<u32>,
 }
 
 struct SymbolLinkRenderer {
@@ -131,6 +135,7 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
     let mut doc = typ
         .display(80)
         .annotate_symbol(&annotate_symbol)
+        .symbol_text(&|s: &Symbol| s.declared_name())
         .pretty(&arena);
     match **typ {
         Type::Record(_) => (),
@@ -156,29 +161,62 @@ fn hidden(meta: &Metadata, field: &str) -> bool {
     })
 }
 
-pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
+pub fn record(
+    current_module: &str,
+    typ: &ArcType,
+    symbols: &FnvMap<&Symbol, completion::SpCompletionSymbol>,
+    source: &Source,
+    meta: &Metadata,
+) -> Record {
+    let line_number = |meta: &Metadata| -> Option<u32> {
+        meta.definition
+            .as_ref()
+            .and_then(|definition| symbols.get(definition))
+            .and_then(|completion_symbol| {
+                source.line_number_at_byte(completion_symbol.span.start())
+            })
+            .map(|l| l.number().0)
+    };
+
     Record {
         types: typ
             .type_field_iter()
             .filter(|field| !hidden(meta, field.name.as_ref()))
-            .map(|field| Field {
-                name: field.name.definition_name().to_string(),
-                args: field
-                    .typ
-                    .params()
-                    .iter()
-                    .map(|gen| Argument {
-                        implicit: false,
-                        name: gen.id.to_string(),
-                    })
-                    .collect(),
-                typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),
-                comment: meta
-                    .module
-                    .get(AsRef::<str>::as_ref(&field.name))
-                    .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
-                    .unwrap_or("")
-                    .to_string(),
+            .map(|field| {
+                let comment;
+                let definition_line;
+
+                match meta.module.get(AsRef::<str>::as_ref(&field.name)) {
+                    Some(meta) => {
+                        comment = meta
+                            .comment
+                            .as_ref()
+                            .map(|s| &s.content[..])
+                            .unwrap_or("")
+                            .to_string();
+                        definition_line = None; // FIXME line_number(meta);
+                    }
+                    None => {
+                        comment = "".to_string();
+                        definition_line = None;
+                    }
+                }
+
+                Field {
+                    name: field.name.definition_name().to_string(),
+                    args: field
+                        .typ
+                        .params()
+                        .iter()
+                        .map(|gen| Argument {
+                            implicit: false,
+                            name: gen.id.to_string(),
+                        })
+                        .collect(),
+                    typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),
+                    comment,
+                    definition_line,
+                }
             })
             .collect(),
 
@@ -186,26 +224,41 @@ pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
             .row_iter()
             .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| {
-                let meta_opt = meta.module.get(AsRef::<str>::as_ref(&field.name));
+                let args;
+                let comment;
+                let definition_line;
+
+                match meta.module.get(AsRef::<str>::as_ref(&field.name)) {
+                    Some(meta) => {
+                        args = meta
+                            .args
+                            .iter()
+                            .map(|arg| Argument {
+                                implicit: arg.arg_type == ArgType::Implicit,
+                                name: arg.name.definition_name().to_string(),
+                            })
+                            .collect();
+                        comment = meta
+                            .comment
+                            .as_ref()
+                            .map(|s| &s.content[..])
+                            .unwrap_or("")
+                            .to_string();
+                        definition_line = line_number(meta);
+                    }
+                    _ => {
+                        args = Vec::new();
+                        comment = "".to_string();
+                        definition_line = None;
+                    }
+                }
+
                 Field {
                     name: field.name.definition_name().to_string(),
-                    args: meta_opt
-                        .map(|meta| {
-                            meta.args
-                                .iter()
-                                .map(|arg| Argument {
-                                    implicit: arg.arg_type == ArgType::Implicit,
-                                    name: arg.name.definition_name().to_string(),
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default(),
+                    args,
                     typ: print_type(current_module, &field.typ),
-
-                    comment: meta_opt
-                        .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
-                        .unwrap_or("")
-                        .to_string(),
+                    comment,
+                    definition_line,
                 }
             })
             .collect(),
@@ -215,6 +268,7 @@ pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
 #[derive(Serialize, Debug)]
 pub struct TemplateModule<'a> {
     pub name: &'a str,
+    pub src_url: Option<&'a str>,
     pub comment: &'a str,
     pub record: &'a Record,
     pub sub_modules: Vec<&'a Module>,
@@ -254,6 +308,21 @@ fn handlebars() -> Result<Handlebars> {
 
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
+    reg.register_helper(
+        "symbol_to_path",
+        Box::new(
+            move |h: &Helper,
+                  _: &Handlebars,
+                  _context: &Context,
+                  _rc: &mut RenderContext,
+                  out: &mut Output| {
+                let param = String::deserialize(h.param(0).unwrap().value())?;
+                out.write(&param.replace(".", "/"))?;
+                Ok(())
+            },
+        ),
+    );
+
     fn module_link_helper(
         h: &Helper,
         _: &Handlebars,
@@ -268,6 +337,27 @@ fn handlebars() -> Result<Handlebars> {
         Ok(())
     }
     reg.register_helper("module_link", Box::new(module_link_helper));
+
+    fn sibling_link_helper(
+        h: &Helper,
+        _: &Handlebars,
+        context: &Context,
+        _rc: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
+        let parent_breadcrumb = current_module.rsplit('.').nth(1);
+
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        match parent_breadcrumb {
+            Some(parent_breadcrumb) => {
+                out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
+            }
+            None => out.write(&format!("{}.html", param))?,
+        }
+        Ok(())
+    }
+    reg.register_helper("sibling_link", Box::new(sibling_link_helper));
 
     fn breadcrumbs(
         h: &Helper,
@@ -291,11 +381,11 @@ fn handlebars() -> Result<Handlebars> {
                     let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
+                    let part = handlebars::html_escape(&part);
                     format!(
-                        r##"<a href="{}{}.html">{}</a>"##,
-                        path,
-                        current_module.split('.').rev().nth(1).unwrap_or(""),
-                        handlebars::html_escape(&part)
+                        r##"<a href="{path}{part}.html">{part}</a>"##,
+                        path = path,
+                        part = part,
                     )
                 },
             ))?;
@@ -395,51 +485,73 @@ where
     Ok(())
 }
 
-pub fn generate_for_path<P, Q>(thread: &Thread, path: &P, out_path: &Q) -> Result<()>
-where
-    P: ?Sized + AsRef<Path>,
-    Q: ?Sized + AsRef<Path>,
-{
-    generate_for_path_(thread, path.as_ref(), out_path.as_ref())
+struct DocCollector<'a> {
+    directories: BTreeMap<String, BTreeMap<String, Module>>,
+    modules: BTreeSet<String>,
+    content: String,
+    parent: Option<&'a Path>,
+    out_path: &'a Path,
+    thread: &'a Thread,
 }
 
-pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
-    let mut directories = BTreeMap::<_, BTreeMap<_, Module>>::new();
-    let mut modules = BTreeSet::new();
-    let mut content = String::new();
-
-    for entry in walkdir::WalkDir::new(path) {
-        let entry = entry?;
+impl DocCollector<'_> {
+    fn try_add_path(&mut self, entry: walkdir::DirEntry) -> Result<()> {
         if !entry.file_type().is_file()
             || entry.path().extension().and_then(|ext| ext.to_str()) != Some("glu")
         {
-            continue;
+            return Ok(());
         }
-        debug!("Indexing module: {}", entry.path().display());
 
-        let mut input = File::open(&*entry.path()).with_context(|err| {
-            format!(
-                "Unable to open gluon file `{}`: {}",
-                entry.path().display(),
-                err
-            )
+        let module = self.module_for(entry.path())?;
+
+        let DocCollector {
+            directories,
+            modules,
+            ..
+        } = self;
+
+        modules.insert(module.name.clone());
+        let name = Name::new(&module.name);
+        directories
+            .entry(name.module().as_str().to_owned())
+            .or_default()
+            .insert(name.name().as_str().to_owned(), module);
+
+        Ok(())
+    }
+
+    fn module_for(&mut self, path: &Path) -> Result<Module> {
+        let DocCollector {
+            content,
+            parent,
+            out_path,
+            thread,
+            ..
+        } = self;
+
+        debug!("Indexing module: {}", path.display());
+
+        let mut input = File::open(&*path).with_context(|err| {
+            format!("Unable to open gluon file `{}`: {}", path.display(), err)
         })?;
-        content.clear();
-        input.read_to_string(&mut content)?;
 
+        content.clear();
+        input.read_to_string(content)?;
+
+        let module_path = parent
+            .and_then(|parent| path.strip_prefix(parent).ok())
+            .unwrap_or(path);
         let name = filename_to_module(
-            entry
-                .path()
+            module_path
                 .to_str()
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
-        let (expr, typ) = Compiler::new()
-            .full_metadata(true)
-            .typecheck_str(thread, &name, &content, None)?;
+        let mut compiler = Compiler::new().full_metadata(true);
+        let (expr, typ) = compiler.typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
-        create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
+        create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
         let comment = content
             .lines()
@@ -450,19 +562,64 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             .format("\n")
             .to_string();
 
-        let module = Module {
-            record: record(&name, &typ, &meta),
-            name,
-            comment,
-        };
+        let source = compiler
+            .get_filemap(&name)
+            .expect("SourceMap not inserted by compilation");
 
-        modules.insert(module.name.clone());
-        let name = Name::new(&module.name);
-        directories
-            .entry(name.module().as_str().to_owned())
-            .or_default()
-            .insert(name.name().as_str().to_owned(), module);
+        let symbols = completion::all_symbols(source.span(), &expr)
+            .into_iter()
+            .map(|s| (s.value.name, s))
+            .collect::<FnvMap<_, _>>();
+
+        Ok(Module {
+            record: record(&name, &typ, &symbols, &*source, &meta),
+            name,
+            github_source: meta
+                .get_attribute("github")
+                .map(|s| s.trim_matches('"').to_string()),
+            comment,
+        })
     }
+}
+
+pub fn generate_for_path<P, Q>(thread: &Thread, path: &P, out_path: &Q) -> Result<()>
+where
+    P: ?Sized + AsRef<Path>,
+    Q: ?Sized + AsRef<Path>,
+{
+    generate(
+        &Options {
+            input: path.as_ref().to_owned(),
+            output: out_path.as_ref().to_owned(),
+            src_url: None,
+        },
+        thread,
+    )
+}
+
+pub fn generate(options: &Options, thread: &Thread) -> Result<()> {
+    let Options {
+        input: path,
+        output: out_path,
+        src_url,
+    } = options;
+
+    let mut collector = DocCollector {
+        directories: BTreeMap::new(),
+        modules: BTreeSet::new(),
+        parent: path.parent(),
+        content: String::new(),
+        thread,
+        out_path,
+    };
+
+    for entry in walkdir::WalkDir::new(path) {
+        collector.try_add_path(entry?)?;
+    }
+
+    let DocCollector {
+        mut directories, ..
+    } = collector;
 
     let directory_modules = directories.keys().cloned().collect::<BTreeSet<_>>();
     for module_name in directory_modules {
@@ -477,6 +634,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 Module {
                     name: module_name.into(),
                     comment: "".into(),
+                    github_source: None,
                     record: Record::default(),
                 }
             });
@@ -504,6 +662,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 &mut doc_file,
                 &TemplateModule {
                     name: &module.name,
+                    src_url: src_url.as_ref().map(|s| &s[..]),
                     comment: &module.comment,
                     record: &module.record,
                     sub_modules: directories
@@ -528,6 +687,22 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     Ok(())
 }
 
+pub struct Options {
+    pub src_url: Option<String>,
+    pub input: PathBuf,
+    pub output: PathBuf,
+}
+
+impl From<&'_ Opt> for Options {
+    fn from(opt: &Opt) -> Self {
+        Options {
+            src_url: opt.src_url.clone(),
+            input: opt.input.clone().into(),
+            output: opt.output.clone().into(),
+        }
+    }
+}
+
 const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 #[derive(StructOpt)]
 #[structopt(
@@ -541,6 +716,9 @@ pub struct Opt {
     #[structopt(long = "jobs")]
     #[structopt(help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
+    #[structopt(long = "src-url")]
+    #[structopt(help = "Where the source can be found")]
+    pub src_url: Option<String>,
     #[structopt(help = "Documents the file or directory")]
     pub input: String,
     #[structopt(help = "Outputs the documentation to this directory")]

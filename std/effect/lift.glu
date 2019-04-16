@@ -5,11 +5,11 @@ let { wrap } = import! std.applicative
 let { Monad, flat_map } = import! std.monad
 let { (<<) } = import! std.function
 
-type Lift m a = forall r . (| Lift (m a) .. r)
+type Lift m r a = | Lift (m a) .. r
 
-let send_lift f : Lift m a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! f) Pure
+let send_lift f : Lift m r a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! lift f) Pure
 
-let extract_state x : forall m . [| lift : Lift m | r |] a -> Lift m a = convert_variant! x
+let extract_state x : forall m . [| lift : Lift m | r |] a -> Lift m r a = convert_variant! x
 
 let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
 

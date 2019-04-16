@@ -54,14 +54,14 @@ fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
 
 mod std {
     pub mod random {
-        pub use crate::rand_bind as prim;
+        pub use crate::std_lib::random as prim;
     }
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     use self::std;
 
-    vm.register_type::<XorShiftRng>("XorShiftRng", &[])?;
+    vm.register_type::<XorShiftRng>("std.random.XorShiftRng", &[])?;
 
     ExternModule::new(
         vm,

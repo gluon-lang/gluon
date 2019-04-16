@@ -1177,7 +1177,7 @@ fn call_send_reader() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
-type Reader e v = | Reader (e -> v)
+type Reader e r v = | Reader (e -> v) .. r
 type VE w r = | Value w | Effect (r (VE w r))
 
 type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
@@ -1186,7 +1186,7 @@ let any x = any x
 
 let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = any ()
 
-let inj_reader : forall e v . Reader e v -> [| io : Reader e | r |] v = any ()
+let inj_reader : forall e v . Reader e r v -> [| io : Reader e | r |] v = any ()
 let ask : forall e . Eff [| io : Reader e | r |] e = send (\x -> inj_reader (Reader x))
 
 ()
@@ -1223,7 +1223,7 @@ let flat_map f m : (a -> FEFree r b) -> FEFree r a -> FEFree r b =
 }
 
 #[test]
-fn trim_matched_variants() {
+fn trim_matched_variants_basic() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
@@ -1306,9 +1306,9 @@ type Result e t = | Err e | Ok t
 type Eff r a =
     forall x . (| Pure a | Impure (r x) (x -> Eff r a))
 
-type State s a = forall r . (| Get | Put s .. r)
+type State s r a = | Get | Put s .. r
 
-type Error e a = forall r . (| Error e .. r)
+type Error e r a = | Error e .. r
 
 type LispEffect r a = [| error : Error String, state : State () | r |] a
 
@@ -1494,10 +1494,31 @@ type Eff r a =
     forall x . (| Pure a | Impure (r x) (x -> Eff r a))
 
 type STRef s a = { }
-type State s a = forall b r . (| New b | Read (STRef s a) | Write b (STRef s b) .. r)
+type State s r a = forall b . (| New b | Read (STRef s a) | Write b (STRef s b) .. r)
 
-let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert_variant! x
+let extract_state x : forall s . [| st : State s | r |] a -> State s r a = convert_variant! x
 1
 "#,
 "Int"
+}
+
+test_check! { stream_skolem_escape,
+r"
+type Option a =
+    | Some a
+
+rec
+type Stream_ a =
+    | Value a
+type Stream a = () -> Stream_ a
+in
+
+let from f : Option b -> Stream b =
+    let go = \_ ->
+        match f with
+        | Some x -> Value x
+    go
+()
+",
+"()"
 }

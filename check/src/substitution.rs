@@ -149,13 +149,13 @@ pub trait Substitutable: Sized {
     }
 }
 
-pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
+pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: u32) -> bool
 where
     T: Substitutable,
 {
     struct Occurs<'a, T: Substitutable + 'a> {
         occurs: bool,
-        var: &'a T::Variable,
+        var: u32,
         subs: &'a Substitution<T>,
     }
     impl<'a, 't, T> Walker<'t, T> for Occurs<'a, T>
@@ -173,7 +173,7 @@ where
                     typ.traverse(self);
                     return;
                 }
-                self.subs.update_level(self.var.get_id(), other.get_id());
+                self.subs.update_level(self.var, other.get_id());
             }
             typ.traverse(self);
         }
@@ -181,8 +181,8 @@ where
 
     let mut occurs = Occurs {
         occurs: false,
-        var: var,
-        subs: subs,
+        var,
+        subs,
     };
     occurs.walk(typ);
     occurs.occurs
@@ -294,6 +294,10 @@ where
         self.types.insert(var as usize, t.into());
     }
 
+    pub fn reset(&mut self, var: u32) {
+        self.types.remove(var as usize);
+    }
+
     /// Assumes that no variables unified with anything (but variables < level may exist)
     pub fn clear_from(&mut self, level: u32) {
         self.union = RefCell::new(QuickFindUf::new(0));
@@ -334,6 +338,7 @@ where
     {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel {
+            level: var_id,
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
@@ -348,8 +353,8 @@ where
     /// just returns the type itself. Note that the returned type may contain terms which also need
     /// to have `real` called on them.
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
-        match typ.get_var() {
-            Some(var) => match self.find_type_for_var(var.get_id()) {
+        match typ.get_id() {
+            Some(id) => match self.find_type_for_var(id) {
                 Some(t) => t,
                 None => typ,
             },
@@ -402,8 +407,8 @@ where
     where
         T: Clone,
     {
-        match typ.get_var() {
-            Some(id) => self.find_type_for_var(id.get_id()).cloned(),
+        match typ.get_id() {
+            Some(id) => self.find_type_for_var(id).cloned(),
             None => None,
         }
     }
@@ -424,43 +429,40 @@ impl<T: Substitutable + Clone> Substitution<T> {
 
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union(&self, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
+    pub fn union(&self, variable: &T, typ: &T) -> Result<Option<T>, Error<T>>
     where
         T::Variable: Clone,
         T: fmt::Display,
     {
+        assert!(variable.get_id().is_some(), "Expected a variable");
+        let id = variable.get_id().unwrap();
+
         let resolved_type = typ.on_union();
         let typ = resolved_type.unwrap_or(typ);
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
-        if typ
-            .get_var()
-            .map_or(false, |other| other.get_id() == id.get_id())
-        {
+        if typ.get_var().map_or(false, |other| other.get_id() == id) {
             return Ok(None);
         }
         if occurs(typ, self, id) {
-            return Err(Error::Occurs(
-                T::from_variable(self, id.clone()),
-                typ.clone(),
-            ));
+            return Err(Error::Occurs(variable.clone(), typ.clone()));
         }
         {
-            let id_type = self.find_type_for_var(id.get_id());
+            let id_type = self.find_type_for_var(id);
             let other_type = self.real(typ);
             if id_type.map_or(false, |x| x == other_type)
-                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+                || other_type.get_var().map(|y| y.get_id()) == Some(id)
             {
                 return Ok(None);
             }
         }
         {
             let typ = resolved_type.unwrap_or(typ);
-            match typ.get_var().map(|id| id.get_id()) {
-                Some(other_id) => {
+            match typ.get_var().map(|v| v.get_id()) {
+                Some(other_id) if variable.get_var().is_some() => {
                     self.union
                         .borrow_mut()
-                        .union(id.get_id() as usize, other_id as usize);
+                        .union(id as usize, other_id as usize);
                     self.update_level(id.get_id(), other_id);
                     self.update_level(other_id, id.get_id());
                 }
@@ -468,7 +470,6 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                     if let Some(other_id) = typ.get_id() {
                         self.update_level(id.get_id(), other_id);
                     }
-
                     self.insert(id.get_id(), typ.clone());
                 }
             }
@@ -494,8 +495,8 @@ impl Substitution<RcType> {
     pub fn zonk(&self, typ: &RcType) -> RcType {
         types::walk_move_type(
             typ.clone(),
-            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_var() {
-                Some(var) => match self.find_type_for_var(var.get_id()) {
+            &mut FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| match typ.get_id() {
+                Some(id) => match self.find_type_for_var(id) {
                     Some(t) => Some(self.zonk(t)),
                     None => None,
                 },

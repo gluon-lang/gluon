@@ -379,8 +379,8 @@ mod std {
 }
 
 pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
-    let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
-    let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
+    let _ = vm.register_type::<Sender<A>>("std.channel.Sender", &["a"]);
+    let _ = vm.register_type::<Receiver<A>>("std.channel.Receiver", &["a"]);
 
     ExternModule::new(
         vm,

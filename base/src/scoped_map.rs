@@ -262,6 +262,13 @@ pub enum Entry<'a, K, V> {
 }
 
 impl<'a, K, V> Entry<'a, K, V> {
+    pub fn or_insert(self, default: V) -> &'a mut V
+    where
+        K: Clone,
+    {
+        self.or_insert_with(|| default)
+    }
+
     pub fn or_insert_with(self, default: impl FnOnce() -> V) -> &'a mut V
     where
         K: Clone,

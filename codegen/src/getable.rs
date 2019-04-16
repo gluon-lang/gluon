@@ -85,12 +85,13 @@ where
     // Treat newtype structs as just their inner type
     let (first, second) = (fields.next(), fields.next());
     match (&first, &second) {
-        (Some(field_ty), None) => {
+        (Some(field), None) => {
+            let field_ty = &field.ty;
             return quote! {
                 #ident (
                 <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, variants)
                 )
-            }
+            };
         }
         _ => (),
     }

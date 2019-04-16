@@ -20,14 +20,21 @@
             <ul class="nav flex-column">
                 {{#each sibling_modules}}
                 <li class="nav-item">
-                    <a class="nav-link active" href="{{module_link this}}">{{this}}</a>
+                    <a class="nav-link active" href="{{sibling_link this}}">{{this}}</a>
                 </li> 
                 {{/each}}
             </ul>
         </nav>
 
         <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
-            <h1 class="pb-3 mb-4 border-bottom">{{name}}</h1>
+            <div class="row pb-3 mb-4 border-bottom">
+                <h1 class="col-md-10">{{name}}</h1>
+                {{#if @root.src_url}}
+                <div class="col-md-2">
+                    <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path name}}.glu">[src]</a>
+                </div>
+                {{/if}}
+            </div>
 
             {{#if sub_modules}}
             <h2>Modules</h2>
@@ -53,10 +60,22 @@
             <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Types" href="#Types">Types</a></h2>
             {{#each record.types}}
 
-                <h4>
-                    <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
-                    </pre>
-                </h4>
+                <div class="row">
+                    <div class="col-md-10">
+                        <h4>
+                            <pre>type <a id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
+                            </pre>
+                        </h4>
+                    </div>
+
+                    {{#if @root.src_url}}
+                    {{#if definition_line}}
+                    <div class="col-md-2">
+                        <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
+                    </div>
+                    {{/if}}
+                    {{/if}}
+                </div>
                 <div class="docblock">{{markdown comment}}</div>
 
             {{/each}}
@@ -66,13 +85,25 @@
             <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Values" href="#Values">Values</a></h2>
             {{#each record.values}}
 
-                <h4>
-                <pre>let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
-                    {{~#each args~}}
-                        {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
-                    {{~/each}} : {{{type~}}}
-                </pre>
-                </h4>
+                <div class="row">
+                    <div class="col-md-10">
+                        <h4>
+                        <pre>let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
+                            {{~#each args~}}
+                                {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
+                            {{~/each}} : {{{type~}}}
+                        </pre>
+                        </h4>
+                    </div>
+
+                    {{#if @root.src_url}}
+                    {{#if definition_line}}
+                    <div class="col-md-2">
+                        <a class="float-right" href="{{@root.src_url}}/{{symbol_to_path @root.name}}.glu#L{{definition_line}}">[src]</a>
+                    </div>
+                    {{/if}}
+                    {{/if}}
+                </div>
                 <div class="docblock">{{markdown comment}}</div>
 
             {{/each}}

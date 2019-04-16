@@ -3,11 +3,13 @@ let { Result } = import! std.result
 let { (<<) } = import! std.function
 let { wrap } = import! std.applicative
 
-type Error e a = forall r . (| Error e .. r)
+type Error e r a =
+    | Error : e -> Error e r a
+    .. r
 
-let send_error f : Error e a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
+let send_error f : Error e r a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
 
-let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = convert_variant! x
+let extract_error x : forall e . [| error : Error e | r |] a -> Error e r a = convert_variant! x
 
 let throw e : e -> Eff [| error : Error e | r |] a = send_error (Error e)
 
@@ -17,7 +19,7 @@ let ok_or_throw r : Result e t -> Eff [| error : Error e | r |] t =
     | Err e -> throw e
 
 let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
-    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| | r |] (Result _ a) =
+    let loop ve : Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
         match ve with
         | Pure v -> wrap (Ok v)
         | Impure e f ->
@@ -29,7 +31,7 @@ let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] 
     loop eff
 
 let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff [| error : Error e | r |] a) -> Eff [| error : Error e | r |] a =
-    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| error : Error _ | r |] a =
+    let loop ve : Eff [| error : Error e | r |] a -> Eff [| error : Error e | r |] a =
         match ve with
         | Pure v -> wrap v
         | Impure e f ->

@@ -10,12 +10,15 @@ let { Functor, map } = import! std.functor
 let { Applicative, wrap } = import! std.applicative
 let { Monad } = import! std.monad
 
-type Eff r a =
-    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
-
+rec
 type Arr r a b = a -> Eff r b
 
-let compose f g : (Arr r a b) -> (Arr r b c) -> (Arr r a c) = \a ->
+type Eff r a =
+    | Pure a
+    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+in
+
+let compose f g : Arr r a b -> Arr r b c -> Arr r a c = \a ->
     match f a with
     | Pure b -> g b
     | Impure r h -> Impure r (compose h g)
@@ -41,9 +44,9 @@ let monad : Monad (Eff r) = {
     flat_map = flat_map_eff,
 }
 
-type OpenVariant a = forall r. (.. r)
+type OpenVariant r a = .. r
 #[doc(hidden)]
-let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
+let inject_rest x : forall e . OpenVariant r a -> [| | r |] a = convert_effect! x
 
 let run_pure eff : Eff [| |] a -> a =
     match eff with
