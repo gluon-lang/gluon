@@ -6,7 +6,7 @@ use std::{
     iter,
     marker::PhantomData,
     mem,
-    ops::{self, Deref, DerefMut},
+    ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
