@@ -211,7 +211,7 @@ fn gen_impl(
                     Ok(value)
                 }
 
-                fn from_proxy(vm: &'__vm _gluon_thread::Thread, proxy: &'__value Self::Proxy) -> Self {
+                fn from_proxy(vm: &'__vm _gluon_thread::Thread, proxy: &'__value mut Self::Proxy) -> Self {
                     Self::from_value(vm, *proxy)
                 }
 

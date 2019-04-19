@@ -49,7 +49,8 @@ fn eprintln(s: &str) -> IO<()> {
     IO::Value(())
 }
 
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "std.io.File")]
 #[gluon(crate_name = "::vm")]
 struct GluonFile(Mutex<Option<File>>);
 

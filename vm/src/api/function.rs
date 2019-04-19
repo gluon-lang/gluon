@@ -330,7 +330,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
             let stack = StackFrame::<ExternState>::current(context.stack());
             $(
                 let variants = Variants::with_root(stack[i].clone(), vm);
-                let proxy = match $args::to_proxy(vm, variants) {
+                let mut proxy = match $args::to_proxy(vm, variants) {
                     Ok(x) => x,
                     Err(err) => {
                         drop(stack);
@@ -339,7 +339,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
                     }
                 };
                 // The proxy will live as along as the 'value lifetime we just created
-                let $args = $args::from_proxy(vm, &*(&proxy as *const _));
+                let $args = $args::from_proxy(vm, &mut *(&mut proxy as *mut _));
                 i += 1;
             )*
             // Lock the frame to ensure that any references to the stack stay rooted

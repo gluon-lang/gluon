@@ -10,7 +10,8 @@ use crate::vm::thread::Thread;
 use crate::vm::types::VmInt;
 use crate::vm::{self, ExternModule};
 
-#[derive(Clone, Debug, Userdata)]
+#[derive(Clone, Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.random.XorShiftRng")]
 #[gluon(crate_name = "::vm")]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 

@@ -2846,7 +2846,7 @@ impl<'a> Typecheck<'a> {
             Some((found_arg_type, arg, ret))
                 if function_arg_type == Some(found_arg_type) || function_arg_type == None =>
             {
-                return (found_arg_type, arg.clone(), ret.clone())
+                return (found_arg_type, arg.clone(), ret.clone());
             }
             _ => (),
         }

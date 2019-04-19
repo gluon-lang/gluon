@@ -59,7 +59,7 @@ macro_rules! impl_getable_simple {
             Ok(value)
         }
         #[inline(always)]
-        fn from_proxy(vm: &'vm Thread, proxy: &'value Self::Proxy) -> Self {
+        fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
             <Self as Getable<'vm, 'value>>::from_value(vm, *proxy)
         }
     };
@@ -549,11 +549,11 @@ where
 
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm, 'value>: Sized {
-    type Proxy;
+    type Proxy: 'value;
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self;
 
     fn to_proxy(vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy>;
-    fn from_proxy(vm: &'vm Thread, proxy: &'value Self::Proxy) -> Self;
+    fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self;
 }
 
 pub fn convert<'vm, T, U>(thread: &'vm Thread, t: T) -> Result<U>
@@ -674,7 +674,13 @@ where
             ValueRef::Userdata(data) => data.downcast_ref::<T>().map_or_else(
                 || {
                     Ok(RefProxy::Lock(
-                        data.downcast_ref::<scoped::Scoped<T>>().unwrap().read()?,
+                        data.downcast_ref::<scoped::Scoped<T, &'static ()>>()
+                            .map(|s| s.read())
+                            .or_else(|| {
+                                data.downcast_ref::<scoped::Scoped<T, &'static mut ()>>()
+                                    .map(|s| s.read())
+                            })
+                            .unwrap()?,
                     ))
                 },
                 |x| Ok(RefProxy::Ref(x)),
@@ -682,7 +688,7 @@ where
             _ => ice!("ValueRef is not an Userdata"),
         }
     }
-    fn from_proxy(_vm: &'vm Thread, proxy: &'value Self::Proxy) -> Self {
+    fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
         match proxy {
             RefProxy::Lock(v) => &*v,
             RefProxy::Ref(v) => v,
@@ -694,6 +700,37 @@ where
             ValueRef::Userdata(data) => data.downcast_ref::<T>().unwrap(),
             _ => ice!("ValueRef is not an Userdata"),
         }
+    }
+}
+
+impl<'vm, T: ?Sized + VmType> VmType for &'vm mut T {
+    type Type = T::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for &'value mut T
+where
+    T: vm::Userdata,
+{
+    type Proxy = scoped::WriteGuard<'value, T>;
+
+    fn to_proxy(_vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy> {
+        match value.as_ref() {
+            ValueRef::Userdata(data) => Ok(data
+                .downcast_ref::<scoped::Scoped<T, &'static mut ()>>()
+                .unwrap()
+                .write()?),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
+    }
+    fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+        proxy
+    }
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm Thread, _value: Variants<'value>) -> Self {
+        panic!("Mutable references can only be created via proxies")
     }
 }
 
@@ -750,7 +787,17 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for WithVM<'vm, T>
 where
     T: Getable<'vm, 'value>,
 {
-    impl_getable_simple!();
+    type Proxy = T::Proxy;
+
+    fn to_proxy(vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy> {
+        T::to_proxy(vm, value)
+    }
+    fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+        WithVM {
+            vm,
+            value: T::from_proxy(vm, proxy),
+        }
+    }
 
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> WithVM<'vm, T> {
         let t = T::from_value(vm, value);

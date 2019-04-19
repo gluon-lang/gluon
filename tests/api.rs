@@ -14,7 +14,7 @@ use gluon::{
     import::{add_extern_module, Import},
     vm::{
         api::{
-            de::De, scoped::Ref, FunctionRef, FutureResult, OpaqueValue, OwnedFunction,
+            de::De, scoped::{Ref, RefMut}, FunctionRef, FutureResult, OpaqueValue, OwnedFunction,
             RuntimeResult, Userdata, VmType, IO,
         },
         thread::{RootedThread, Thread, Traverseable},
@@ -483,3 +483,47 @@ fn scoped_reference_out_of_scope() {
         Ok(_) => panic!("Unexpected success"),
     }
 }
+
+#[test]
+fn scoped_mutable_reference() {
+    let _ = ::env_logger::try_init();
+
+    fn write(r: &mut Test, i: VmInt) -> IO<()> {
+        r.0 = i;
+        IO::Value(())
+    }
+
+    fn read(r: &mut Test) -> IO<VmInt> {
+        IO::Value(r.0)
+    }
+
+    let expr = r#"
+        let { read, write } = import! function
+        let { ? } = import! std.io
+        \t i ->
+            seq write t (i + 10)
+            read t
+    "#;
+
+    let vm = make_vm();
+    vm.register_type::<Test>("Test", &[])
+        .unwrap_or_else(|_| panic!("Could not add type"));
+    add_extern_module(&vm, "function", |thread| {
+        ExternModule::new(thread, record! {
+            write => primitive!(2, write),
+            read => primitive!(1, read)
+        })
+    });
+
+    let (mut result, _) = Compiler::new()
+        .run_expr::<OwnedFunction<fn(_, _) -> IO<VmInt>>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    assert_eq!(
+        result
+            .call(&mut RefMut::new(&mut Test(2)), 3)
+            .unwrap_or_else(|err| panic!("{}", err)),
+        IO::Value(13)
+    );
+}
+

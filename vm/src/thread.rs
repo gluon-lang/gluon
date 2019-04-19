@@ -1484,9 +1484,7 @@ impl<'b> OwnedContext<'b> {
 
             maybe_context = match state {
                 State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Extern(ref ext) if ext.is_locked() => {
-                    return Ok(Async::Ready(Some(context)))
-                }
+                State::Extern(ref ext) if ext.is_locked() => return Ok(Async::Ready(Some(context))),
 
                 State::Extern(mut ext) => {
                     // We are currently in the poll call of this extern function.
@@ -1760,7 +1758,7 @@ impl<'b> ExecuteContext<'b> {
                             return Err(Error::Panic(
                                 format!("ICE: Stack push out of bounds in {}", function.name),
                                 Some(self.stack.stack.stacktrace(0)),
-                            ))
+                            ));
                         }
                     };
                     self.stack.push(v);
