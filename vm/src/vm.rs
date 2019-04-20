@@ -592,6 +592,16 @@ impl GlobalVmState {
         }
     }
 
+    pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
+        let mut env = self.env.write().unwrap();
+        let type_infos = &mut env.type_infos;
+        let t = alias.clone().into_type();
+        type_infos
+            .id_to_type
+            .insert(alias.name.definition_name().into(), alias);
+        t
+    }
+
     pub fn get_macros(&self) -> &MacroEnv {
         &self.macros
     }

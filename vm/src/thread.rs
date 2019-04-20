@@ -701,6 +701,10 @@ impl Thread {
         self.global_env().register_type_as(name, alias, id)
     }
 
+    pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
+        self.global_env().cache_alias(alias)
+    }
+
     /// Locks and retrieves the global environment of the vm
     pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
         self.global_env().get_env()
@@ -1484,7 +1488,9 @@ impl<'b> OwnedContext<'b> {
 
             maybe_context = match state {
                 State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Extern(ref ext) if ext.is_locked() => return Ok(Async::Ready(Some(context))),
+                State::Extern(ref ext) if ext.is_locked() => {
+                    return Ok(Async::Ready(Some(context)))
+                }
 
                 State::Extern(mut ext) => {
                     // We are currently in the poll call of this extern function.
