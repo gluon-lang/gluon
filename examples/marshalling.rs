@@ -334,7 +334,8 @@ fn marshal_wrapper() -> Result<()> {
     Ok(())
 }
 
-#[derive(Userdata, Debug, Clone)]
+#[derive(Userdata, Debug, Clone, VmType)]
+#[gluon(vm_type = "WindowHandle")]
 struct WindowHandle {
     id: Arc<u64>,
     metadata: Arc<str>,

@@ -360,9 +360,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            type File => GluonFile,
+            type std::io::File => GluonFile,
             type OpenOptions => OpenOptions,
-            type IO a => IO<A>,
+            type std::io::IO a => IO<A>,
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
             open_file_with => primitive!(2, std::io::prim::open_file_with),

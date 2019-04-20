@@ -2,9 +2,9 @@ let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
-let { ref, (<-), load } = import! std.reference
+let { Reference, ref, (<-), load } = import! std.reference
 
-type STRef s a = { __ref : Ref a }
+type STRef s a = { __ref : Reference a }
 type State s r a =
     | New : forall b . b -> State s r (STRef s b)
     | Read : STRef s a -> State s r a

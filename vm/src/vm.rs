@@ -286,14 +286,20 @@ where
 impl VmEnv {
     pub fn find_type_info(&self, name: &str) -> Result<Cow<Alias<Symbol, ArcType>>> {
         let name = Name::new(name);
-        let module_str = name.module().as_str();
-        if module_str == "" {
-            return match self.type_infos.id_to_type.get(name.as_str()) {
-                Some(alias) => Ok(Cow::Borrowed(alias)),
-                None => Err(Error::UndefinedBinding(name.as_str().into())),
-            };
+
+        if let Some(alias) = self.type_infos.id_to_type.get(name.as_str()) {
+            return Ok(Cow::Borrowed(alias));
         }
-        let (_, typ) = self.get_binding(name.module().as_str())?;
+
+        let (_, typ) = self
+            .get_binding(name.module().as_str())
+            .map_err(|mut err| {
+                if let Error::UndefinedBinding(module) = &mut err {
+                    module.clear();
+                    module.push_str(name.as_str());
+                }
+                err
+            })?;
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
             let field_name = name.name();
             typ.type_field_iter()
@@ -571,8 +577,8 @@ impl GlobalVmState {
     ) -> Result<ArcType> {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
-        if type_infos.id_to_type.contains_key(name.declared_name()) {
-            Err(Error::TypeAlreadyExists(name.declared_name().into()))
+        if type_infos.id_to_type.contains_key(name.definition_name()) {
+            Err(Error::TypeAlreadyExists(name.definition_name().into()))
         } else {
             self.typeids
                 .write()
@@ -581,7 +587,7 @@ impl GlobalVmState {
             let t = alias.clone().into_type();
             type_infos
                 .id_to_type
-                .insert(name.declared_name().into(), alias);
+                .insert(name.definition_name().into(), alias);
             Ok(t)
         }
     }

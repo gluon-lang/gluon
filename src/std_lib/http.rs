@@ -100,7 +100,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.Body")]
 #[gluon(crate_name = "::vm")]
 // Representation of a http body that is in the prograss of being read
 pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
@@ -127,13 +128,14 @@ fn read_chunk(
 }
 
 // A http body that is being written
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.ResponseBody")]
 #[gluon(crate_name = "::vm")]
 pub struct ResponseBody(Arc<Mutex<Option<hyper::body::Sender>>>);
 
 impl fmt::Debug for ResponseBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "hyper::Response")
+        write!(f, "ResponseBody")
     }
 }
 
@@ -176,7 +178,8 @@ fn write_response(
     })
 }
 
-#[derive(Debug, Userdata)]
+#[derive(Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.Uri")]
 #[gluon(crate_name = "::vm")]
 struct Uri(http::Uri);
 
@@ -383,9 +386,9 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
         vm,
         record! {
             // Define the types so that they can be used from gluon
-            type Body => Body,
-            type ResponseBody => ResponseBody,
-            type Uri => Uri,
+            type std::http::types::Body => Body,
+            type std::http::types::ResponseBody => ResponseBody,
+            type std::http::types::Uri => Uri,
             type std::http::Method => String,
             type std::http::StatusCode => u16,
             type std::http::Request => Request,

@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Definitions which gets implicit re-export in every file.
 
+let { IO } = import! std.io.prim
 let { Option } = import! std.types
 let { Functor } = import! std.functor
 let { Applicative, (*>), wrap } = import! std.applicative
@@ -20,6 +21,8 @@ let { error } = import! std.prim
 let { flat_map } = import! std.monad
 
 {
+    IO,
+
     Ordering,
 
     Semigroup,

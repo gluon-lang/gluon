@@ -1,7 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functions and types for working with `Read`ers.
 
-let { wrap, flat_map, default_buf_len } = import! std.io.prim
+let { IO, wrap, flat_map, default_buf_len } = import! std.io.prim
 let { Option, Bool } = import! std.types
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (>), (<=), (>=), min } = import! std.cmp
@@ -9,7 +9,7 @@ let { assert } = import! std.assert
 let { not } = import! std.bool
 let { ? } = import! std.int
 let { Result } = import! std.result
-let { ref, load, (<-) } = import! std.reference
+let { Reference, ref, load, (<-) } = import! std.reference
 let array = import! std.array
 let string = import! std.string
 
@@ -65,7 +65,7 @@ let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte)))
 /// If you are reading all data at once, buffering is not necessary. 
 type Buffered r = {
     reader : r,
-    buf : Ref (Array Byte),
+    buf : Reference (Array Byte),
     capacity : Int,
 }
 

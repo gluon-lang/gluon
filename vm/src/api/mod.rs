@@ -895,6 +895,29 @@ impl<'vm, 'value> Getable<'vm, 'value> for f64 {
         }
     }
 }
+
+impl VmType for f32 {
+    type Type = Self;
+}
+impl<'vm> Pushable<'vm> for f32 {
+    #[inline]
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Float(self as f64));
+        Ok(())
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for f32 {
+    impl_getable_simple!();
+
+    #[inline]
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::Float(f) => f as f32,
+            _ => ice!("ValueRef is not a Float"),
+        }
+    }
+}
+
 impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
@@ -1509,7 +1532,7 @@ where
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
-        let alias = env.find_type_info("IO").unwrap().into_owned();
+        let alias = env.find_type_info("std.io.IO").unwrap().into_owned();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
     fn extra_args() -> VmIndex {

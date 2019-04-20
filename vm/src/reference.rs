@@ -1,14 +1,17 @@
 use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
-use crate::api::generic::A;
-use crate::api::{Generic, RuntimeResult, Unrooted, Userdata, VmType, WithVM};
-use crate::base::types::{ArcType, Type};
-use crate::gc::{Gc, GcPtr, Move, Traverseable};
-use crate::thread::ThreadInternal;
-use crate::value::{Cloner, Value};
-use crate::vm::Thread;
-use crate::{ExternModule, Result};
+use crate::{
+    api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
+    gc::{Gc, GcPtr, Move, Traverseable},
+    thread::ThreadInternal,
+    value::{Cloner, Value},
+    vm::Thread,
+    ExternModule, Result,
+};
 
+#[derive(VmType)]
+#[gluon(gluon_vm)]
+#[gluon(vm_type = "std.reference.Reference")]
 pub struct Reference<T> {
     value: Mutex<Value>,
     thread: GcPtr<Thread>,
@@ -40,21 +43,6 @@ impl<T> fmt::Debug for Reference<T> {
 impl<T> Traverseable for Reference<T> {
     fn traverse(&self, gc: &mut Gc) {
         self.value.lock().unwrap().traverse(gc)
-    }
-}
-
-impl<T> VmType for Reference<T>
-where
-    T: VmType,
-    T::Type: Sized,
-{
-    type Type = Reference<T::Type>;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        let env = vm.global_env().get_env();
-        let symbol = env.find_type_info("Ref").unwrap().name.clone();
-        let ctor = Type::ident(symbol);
-        Type::app(ctor, collect![T::make_type(vm)])
     }
 }
 
@@ -91,7 +79,7 @@ mod std {
 pub fn load(vm: &Thread) -> Result<ExternModule> {
     use self::std;
 
-    let _ = vm.register_type::<Reference<A>>("std.reference.Ref", &["a"]);
+    let _ = vm.register_type::<Reference<A>>("std.reference.Reference", &["a"]);
     ExternModule::new(
         vm,
         record! {
