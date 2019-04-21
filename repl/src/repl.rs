@@ -190,14 +190,16 @@ macro_rules! impl_userdata {
     };
 }
 
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "Editor")]
 struct Editor {
     editor: Mutex<rustyline::Editor<Completer>>,
 }
 
 impl_userdata! { Editor }
 
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "CpuPool")]
 struct CpuPool(self::futures_cpupool::CpuPool);
 
 impl_userdata! { CpuPool }

@@ -153,6 +153,8 @@ impl<'vm> crate::api::Pushable<'vm> for JsonValue {
 }
 
 impl<'vm, 'value> crate::api::Getable<'vm, 'value> for JsonValue {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         JsonValue(crate::api::Getable::from_value(vm, value))
     }
@@ -223,7 +225,8 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             where
                 E: de::Error,
             {
-                let value = crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                let value =
+                    crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
                 Ok(self.marshal(Value::String(value)))
             }
 
@@ -232,7 +235,8 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             where
                 E: de::Error,
             {
-                let value = crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                let value =
+                    crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
                 Ok(self.marshal(Value::String(value)))
             }
 

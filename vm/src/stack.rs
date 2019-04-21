@@ -486,7 +486,7 @@ where
 {
     fn drop(&mut self) {
         // Move the cached frame back to storage
-        self.store_frame()
+        self.store_frame();
     }
 }
 

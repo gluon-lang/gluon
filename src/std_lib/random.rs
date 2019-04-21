@@ -5,12 +5,16 @@ extern crate rand_xorshift;
 
 use self::rand::{Rng, SeedableRng};
 
-use crate::vm::api::{RuntimeResult, IO};
-use crate::vm::thread::Thread;
-use crate::vm::types::VmInt;
-use crate::vm::{self, ExternModule};
+use crate::vm::{
+    self,
+    api::{RuntimeResult, IO},
+    thread::Thread,
+    types::VmInt,
+    ExternModule,
+};
 
-#[derive(Clone, Debug, Userdata)]
+#[derive(Clone, Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.random.XorShiftRng")]
 #[gluon(crate_name = "::vm")]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 
@@ -66,7 +70,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            type XorShiftRng => XorShiftRng,
+            type std::random::XorShiftRng => XorShiftRng,
             next_int => primitive!(1, std::random::prim::next_int),
             next_float => primitive!(1, std::random::prim::next_float),
             gen_int_range => primitive!(2, std::random::prim::gen_int_range),

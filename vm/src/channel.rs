@@ -95,7 +95,7 @@ where
         let symbol = vm
             .global_env()
             .get_env()
-            .find_type_info("Sender")
+            .find_type_info("std.channel.Sender")
             .unwrap()
             .name
             .clone();
@@ -112,7 +112,7 @@ where
         let symbol = vm
             .global_env()
             .get_env()
-            .find_type_info("Receiver")
+            .find_type_info("std.channel.Receiver")
             .unwrap()
             .name
             .clone();

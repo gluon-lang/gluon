@@ -232,6 +232,8 @@ where
     T: Default,
     U: GetableFieldList<'vm, 'value>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Data(ref data) => {

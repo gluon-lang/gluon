@@ -4,9 +4,9 @@
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
-let { flat_map, wrap, default_buf_len, throw } = import! std.io.prim
+let { IO, flat_map, wrap, default_buf_len, throw } = import! std.io.prim
 let { Disposable, dispose, is_disposed } = import! std.disposable
-let { (<-), load, ref } = import! std.reference
+let { Reference, (<-), load, ref } = import! std.reference
 let { ? } = import! std.int
 let { assert } = import! std.assert
 let { (>=), (>), (==) } = import! std.cmp
@@ -68,7 +68,7 @@ let flush ?write : [Write a] -> a -> IO () = write.flush
 /// If you are writing all data at once, buffering is not necessary.
 type Buffered w = {
     writer : w,
-    buf : Ref (Array Byte),
+    buf : Reference (Array Byte),
     capacity : Int,
 }
 

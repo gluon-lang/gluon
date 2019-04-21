@@ -593,11 +593,13 @@ pub enum Component<'a> {
     Normal(&'a OsStr),
 }
 
-#[derive(Userdata, Debug)]
+#[derive(Userdata, Debug, VmType)]
+#[gluon(vm_type = "std.fs.Metadata")]
 #[gluon(gluon_vm)]
 pub struct Metadata(fs::Metadata);
 
-#[derive(Userdata, Debug)]
+#[derive(Userdata, Debug, VmType)]
+#[gluon(vm_type = "std.fs.DirEntry")]
 #[gluon(gluon_vm)]
 pub struct DirEntry(fs::DirEntry);
 

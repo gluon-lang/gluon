@@ -1,4 +1,4 @@
-let { Body, ResponseBody, StatusCode, Method, Request, Response, Headers, HttpState } = import! std.http.prim_types
+let { Body, ResponseBody, StatusCode, Method, Request, Response, Headers, HttpState, Uri } = import! std.http.prim_types
 
 let { Eff } = import! std.effect
 let { Error } = import! std.effect.error
@@ -19,6 +19,8 @@ type HttpEffect r a = [| alt : Alt, state : State HttpState, lift : Lift IO | r 
     StatusCode,
     Headers,
     Response,
+    ResponseBody,
     HttpEffect,
     HttpState,
+    Uri,
 }
