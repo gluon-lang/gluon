@@ -471,6 +471,7 @@ impl GlobalVmState {
             add_type(self, "()", unit, TypeId::of::<()>());
             add_builtin_type::<VmInt>(self, BuiltinType::Int);
             add_builtin_type::<u8>(self, BuiltinType::Byte);
+            add_builtin_type::<f32>(self, BuiltinType::Float);
             add_builtin_type::<f64>(self, BuiltinType::Float);
             add_builtin_type::<::std::string::String>(self, BuiltinType::String);
             add_builtin_type::<char>(self, BuiltinType::Char)
