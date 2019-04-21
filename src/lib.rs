@@ -718,7 +718,7 @@ pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
 let { IO, Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
-let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
+let { (+), (-), (*), (/), negate, (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
 
 let __implicit_bool @ { ? } = import! std.bool
 
