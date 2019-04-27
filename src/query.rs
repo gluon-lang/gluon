@@ -5,7 +5,6 @@ use std::{
 };
 
 use futures::Future;
-use salsa::Database;
 
 use {
     base::{
@@ -26,7 +25,6 @@ use {
         macros,
         thread::{RootedThread, RootedValue, Thread},
         vm::VmEnv,
-        Variants,
     },
 };
 
@@ -380,8 +378,9 @@ impl TypeEnv for DatabaseSnapshot {
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        DatabaseSnapshot::find_type_info(self, id.definition_name())
-            .map_err(|err| panic!("{}", err))
+        self.thread()
+            .get_env()
+            .find_type_info(id.definition_name())
             .ok()
     }
 }
@@ -396,13 +395,10 @@ impl PrimitiveEnv for DatabaseSnapshot {
 
 impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        if id.is_global() {
-            self.global(id.definition_name().into())
-                .ok()
-                .map(|g| g.metadata.clone())
-        } else {
-            None
-        }
+        self.thread()
+            .get_env()
+            .get_metadata(id.definition_name())
+            .ok()
     }
 }
 
@@ -505,6 +501,7 @@ impl DatabaseSnapshot {
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
+        eprintln!("META {}", name_str);
         self.get_metadata_(name_str)
             .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
     }

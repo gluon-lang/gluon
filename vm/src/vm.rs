@@ -234,23 +234,25 @@ pub trait VmEnv: CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv {
     fn get_global(&self, name: &str) -> Option<Global>;
 }
 
-pub struct VmEnvInstance<'a>(Box<VmEnv>, RwLockReadGuard<'a, Globals>);
+pub struct VmEnvInstance<'a>(
+    // FIXME Use the database stored here for lookups
+    Box<VmEnv>,
+    RwLockReadGuard<'a, Globals>,
+);
 
 impl<'a> CompilerEnv for VmEnvInstance<'a> {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
-        self.0.find_var(id).or_else(|| {
-            self.1
-                .globals
-                .get(id.definition_name())
-                .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
-                .or_else(|| self.1.type_infos.find_var(id))
-        })
+        self.1
+            .globals
+            .get(id.definition_name())
+            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+            .or_else(|| self.1.type_infos.find_var(id))
     }
 }
 
 impl<'a> KindEnv for VmEnvInstance<'a> {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
-        self.0.find_kind(id)
+        self.1.type_infos.find_kind(id)
     }
 }
 
@@ -258,18 +260,14 @@ impl<'a> TypeEnv for VmEnvInstance<'a> {
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
-        self.0.find_type(id).or_else(|| {
-            self.1
-                .globals
-                .get(id.definition_name())
-                .map(|g| g.typ.clone())
-        })
+        self.1
+            .globals
+            .get(id.definition_name())
+            .map(|g| g.typ.clone())
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        self.0
-            .find_type_info(id)
-            .or_else(|| self.1.type_infos.find_type_info(id))
+        self.1.type_infos.find_type_info(id)
     }
 }
 
@@ -281,20 +279,16 @@ impl<'a> PrimitiveEnv for VmEnvInstance<'a> {
 
 impl<'a> MetadataEnv for VmEnvInstance<'a> {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        self.0.get_metadata(id).or_else(|| {
-            self.1
-                .globals
-                .get(id.definition_name())
-                .map(|g| g.metadata.clone())
-        })
+        self.1
+            .globals
+            .get(id.definition_name())
+            .map(|g| g.metadata.clone())
     }
 }
 
 impl<'a> VmEnv for VmEnvInstance<'a> {
     fn get_global(&self, name: &str) -> Option<Global> {
-        self.0
-            .get_global(name)
-            .or_else(|| self.1.globals.get(name).cloned())
+        self.1.globals.get(name).cloned()
     }
 }
 

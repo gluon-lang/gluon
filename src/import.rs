@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
-use futures::{future, Future};
+use futures::future;
 use itertools::Itertools;
 use salsa::ParallelDatabase;
 
@@ -33,8 +33,7 @@ use crate::vm::{
 };
 
 use crate::{
-    compiler_pipeline::*,
-    query::{Compilation, CompilationBase, CompilerDatabase},
+    query::{Compilation, CompilerDatabase},
     IoError, ModuleCompiler,
 };
 
@@ -443,9 +442,10 @@ where
                     format!("@{}", filename_to_module(filename))
                 }
                 _ => {
-                    return Err(
-                        Error::String("Expected a string literal or path to import".into()).into(),
-                    );
+                    return Err(Error::String(
+                        "Expected a string literal or path to import".into(),
+                    )
+                    .into());
                 }
             };
             Ok(modulename)
