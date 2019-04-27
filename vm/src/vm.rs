@@ -273,22 +273,20 @@ impl<'a> TypeEnv for VmEnvInstance<'a> {
 
 impl<'a> PrimitiveEnv for VmEnvInstance<'a> {
     fn get_bool(&self) -> ArcType {
-        self.0.get_bool()
+        self.find_type_info("std.types.Bool")
+            .expect("std.types.Bool")
+            .into_type()
     }
 }
 
 impl<'a> MetadataEnv for VmEnvInstance<'a> {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        self.1
-            .globals
-            .get(id.definition_name())
-            .map(|g| g.metadata.clone())
+        self.get_metadata_(id.definition_name())
     }
 }
 
 impl<'a> VmEnv for VmEnvInstance<'a> {
     fn get_global(&self, name: &str) -> Option<Global> {
-        eprintln!("{}", name);
         self.1.globals.get(name).cloned()
     }
 }
