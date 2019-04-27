@@ -897,7 +897,7 @@ where
                     vm.set_global(
                         value.id.clone(),
                         value.typ,
-                        (*value.metadata).clone(),
+                        value.metadata.clone(),
                         value.value.get_value(),
                     )?;
                     info!("Loaded module `{}` filename", filename);
@@ -995,7 +995,7 @@ where
         use crate::vm::serialization::DeSeed;
 
         let Global {
-            mut metadata,
+            metadata,
             typ,
             value,
             id: _,
@@ -1003,12 +1003,7 @@ where
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
         let id = compiler.symbols.symbol(format!("@{}", name));
-        try_future!(vm.set_global(
-            id,
-            typ,
-            mem::replace(Arc::make_mut(&mut metadata), Default::default()),
-            value,
-        ));
+        try_future!(vm.set_global(id, typ, metadata.clone(), value,));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))
     }

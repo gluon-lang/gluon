@@ -23,7 +23,7 @@ use {
         compiler::{CompilerEnv, Variable},
         internal::Value,
         macros,
-        thread::{RootedThread, RootedValue, Thread},
+        thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
     },
 };
@@ -345,6 +345,14 @@ fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
         (),
     )
     .wait()?;
+
+    vm.set_global(
+        execute_value.id.clone(),
+        execute_value.typ.clone(),
+        execute_value.metadata.clone(),
+        execute_value.value.get_value(),
+    )
+    .unwrap();
 
     Ok(DatabaseGlobal {
         id: execute_value.id,

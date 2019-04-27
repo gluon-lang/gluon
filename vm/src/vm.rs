@@ -288,6 +288,7 @@ impl<'a> MetadataEnv for VmEnvInstance<'a> {
 
 impl<'a> VmEnv for VmEnvInstance<'a> {
     fn get_global(&self, name: &str) -> Option<Global> {
+        eprintln!("{}", name);
         self.1.globals.get(name).cloned()
     }
 }
@@ -510,7 +511,7 @@ impl GlobalVmState {
         &self,
         id: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: Value,
     ) -> Result<()> {
         assert!(value.generation().is_root());
@@ -523,7 +524,7 @@ impl GlobalVmState {
         let global = Global {
             id: id.clone(),
             typ,
-            metadata: Arc::new(metadata),
+            metadata,
             value,
         };
         globals.insert(StdString::from(id.definition_name()), global);
@@ -536,7 +537,7 @@ impl GlobalVmState {
         self.set_global(
             Symbol::from(format!("@{}", id)),
             typ,
-            metadata,
+            Arc::new(metadata),
             Value::int(0),
         )
     }

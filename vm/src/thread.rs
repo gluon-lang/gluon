@@ -611,7 +611,7 @@ impl Thread {
             self.set_global(
                 Symbol::from(format!("@{}", name)),
                 T::make_forall_type(self),
-                Metadata::default(),
+                Default::default(),
                 value,
             )
         }
@@ -912,7 +912,7 @@ where
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: Value,
     ) -> Result<()>;
 
@@ -1017,7 +1017,7 @@ impl ThreadInternal for Thread {
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: Value,
     ) -> Result<()> {
         let value = crate::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())

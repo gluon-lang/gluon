@@ -942,7 +942,7 @@ fn deep_clone_partial_application() {
     vm.set_global(
         Symbol::from("@test"),
         Type::hole(),
-        Metadata::default(),
+        Default::default(),
         unsafe { result.unwrap().0.get_value() },
     )
     .unwrap();
