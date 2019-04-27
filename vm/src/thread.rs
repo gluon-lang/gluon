@@ -1258,9 +1258,6 @@ impl Context {
         .map(ValueRepr::Data)
         .map(Value::from)
     }
-    pub fn slide(&mut self, fields: VmIndex) {
-        self.stack.slide(fields);
-    }
 
     pub fn push_new_data(
         &mut self,
@@ -1282,6 +1279,7 @@ impl Context {
             .map(ValueRepr::Data)
             .map(Value::from)?
         };
+        self.stack.pop_many(fields as u32);
         self.stack.push(value);
         Ok(self.stack.last().unwrap())
     }
@@ -1304,6 +1302,7 @@ impl Context {
                 },
             )?)
         };
+        self.stack.pop_many(fields as u32);
         self.stack.push(value);
         Ok(self.stack.last().unwrap())
     }
