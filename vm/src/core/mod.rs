@@ -40,7 +40,7 @@ mod pretty;
 
 use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem};
 
-use {itertools::Itertools, smallvec::SmallVec};
+use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec};
 
 use self::{
     optimize::{walk_expr_alloc, SameLifetime, Visitor},
@@ -48,7 +48,7 @@ use self::{
 };
 
 use crate::base::{
-    ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent},
+    ast::{self, SpannedExpr, SpannedPattern, Typed, TypedIdent},
     fnv::{FnvMap, FnvSet},
     pos::{spanned, BytePos, Span, Spanned},
     resolve::remove_aliases_cow,
@@ -83,12 +83,21 @@ pub struct LetBinding<'a> {
     pub span_start: BytePos,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Literal {
+    Byte(u8),
+    Int(i64),
+    Float(NotNan<f64>),
+    String(Box<str>),
+    Char(char),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
     Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
     Ident(TypedIdent<Symbol>),
-    Literal(ast::Literal),
+    Literal(Literal),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -103,10 +112,10 @@ pub type CExpr<'a> = &'a Expr<'a>;
 pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
     Ident(TypedIdent<Symbol>, Span<BytePos>),
-    Call(&'a Expr<'a>, &'a [Expr<'a>]),
+    Call(CExpr<'a>, &'a [Expr<'a>]),
     Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos),
-    Let(LetBinding<'a>, &'a Expr<'a>),
-    Match(&'a Expr<'a>, &'a [Alternative<'a>]),
+    Let(&'a LetBinding<'a>, CExpr<'a>),
+    Match(CExpr<'a>, &'a [Alternative<'a>]),
 }
 
 #[cfg(feature = "test")]
@@ -145,6 +154,32 @@ impl<'a> fmt::Display for Expr<'a> {
     }
 }
 
+impl Literal {
+    fn from_ast(literal: &ast::Literal) -> Self {
+        match literal {
+            ast::Literal::Byte(x) => Literal::Byte(*x),
+            ast::Literal::Int(x) => Literal::Int(*x),
+            ast::Literal::Float(x) => Literal::Float(*x),
+            ast::Literal::String(x) => Literal::String(Box::from(&x[..])),
+            ast::Literal::Char(x) => Literal::Char(*x),
+        }
+    }
+}
+
+impl Typed for Literal {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, _: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        Ok(match *self {
+            Literal::Int(_) => Type::int(),
+            Literal::Float(_) => Type::float(),
+            Literal::Byte(_) => Type::byte(),
+            Literal::String(_) => Type::string(),
+            Literal::Char(_) => Type::char(),
+        })
+    }
+}
+
 #[derive(Default)]
 #[must_use]
 struct Binder<'a> {
@@ -170,18 +205,21 @@ impl<'a> Binder<'a> {
         ident_expr
     }
 
-    fn into_expr(self, arena: &'a Arena<Expr<'a>>, expr: Expr<'a>) -> Expr<'a> {
-        self.bindings
-            .into_iter()
-            .rev()
-            .fold(expr, |expr, bind| Expr::Let(bind, arena.alloc(expr)))
+    fn into_expr(self, allocator: &'a Allocator<'a>, expr: Expr<'a>) -> Expr<'a> {
+        self.bindings.into_iter().rev().fold(expr, |expr, bind| {
+            Expr::Let(
+                allocator.let_binding_arena.alloc(bind),
+                allocator.arena.alloc(expr),
+            )
+        })
     }
 
-    fn into_expr_ref(self, arena: &'a Arena<Expr<'a>>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
-        self.bindings
-            .into_iter()
-            .rev()
-            .fold(expr, |expr, bind| arena.alloc(Expr::Let(bind, expr)))
+    fn into_expr_ref(self, allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
+        self.bindings.into_iter().rev().fold(expr, |expr, bind| {
+            allocator
+                .arena
+                .alloc(Expr::Let(allocator.let_binding_arena.alloc(bind), expr))
+        })
     }
 }
 
@@ -247,6 +285,7 @@ pub use self::internal::CoreExpr;
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
     pub alternative_arena: Arena<Alternative<'a>>,
+    pub let_binding_arena: Arena<LetBinding<'a>>,
 }
 
 impl<'a> Allocator<'a> {
@@ -254,6 +293,7 @@ impl<'a> Allocator<'a> {
         Allocator {
             arena: Arena::new(),
             alternative_arena: Arena::new(),
+            let_binding_arena: Arena::new(),
         }
     }
 }
@@ -423,11 +463,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                 let result = self.translate(last);
                 prefix.iter().rev().fold(result, |result, expr| {
                     Expr::Let(
-                        LetBinding {
+                        self.allocator.let_binding_arena.alloc(LetBinding {
                             name: self.dummy_symbol.clone(),
                             expr: Named::Expr(self.translate_alloc(expr)),
                             span_start: expr.span.start(),
-                        },
+                        }),
                         arena.alloc(result),
                     )
                 })
@@ -500,7 +540,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 self.translate_let(binds, self.translate(tail), expr.span.start())
             }
 
-            ast::Expr::Literal(ref literal) => Expr::Const(literal.clone(), expr.span),
+            ast::Expr::Literal(ref literal) => Expr::Const(Literal::from_ast(literal), expr.span),
 
             ast::Expr::Match(ref expr, ref alts) => {
                 let expr = self.translate_alloc(expr);
@@ -613,7 +653,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     arena.alloc_extend(args),
                     expr.span.start(),
                 );
-                binder.into_expr(arena, record_constructor)
+                binder.into_expr(&self.allocator, record_constructor)
             }
 
             ast::Expr::Tuple { ref elems, .. } => {
@@ -689,7 +729,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
                 let f = self.translate_alloc(flat_map_id);
                 binder.into_expr(
-                    arena,
+                    &self.allocator,
                     Expr::Call(
                         f,
                         arena.alloc_extend(Some(lambda).into_iter().chain(Some(bound_ident))),
@@ -759,12 +799,12 @@ impl<'a, 'e> Translator<'a, 'e> {
                 })
                 .collect();
             Expr::Let(
-                LetBinding {
+                self.allocator.let_binding_arena.alloc(LetBinding {
                     // TODO
                     name: self.dummy_symbol.clone(),
                     expr: Named::Recursive(closures),
                     span_start: span_start,
-                },
+                }),
                 arena.alloc(tail),
             )
         } else {
@@ -794,11 +834,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     }])
                 };
                 Expr::Let(
-                    LetBinding {
+                    self.allocator.let_binding_arena.alloc(LetBinding {
                         name: name,
                         expr: named,
                         span_start: bind.expr.span.start(),
-                    },
+                    }),
                     arena.alloc(tail),
                 )
             })
@@ -900,7 +940,7 @@ impl<'a, 'e> Translator<'a, 'e> {
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
         Expr::Let(
-            LetBinding {
+            self.allocator.let_binding_arena.alloc(LetBinding {
                 name: name.clone(),
                 expr: Named::Recursive(vec![Closure {
                     pos,
@@ -909,7 +949,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     expr: body,
                 }]),
                 span_start: span.start(),
-            },
+            }),
             arena.alloc(Expr::Ident(name, span)),
         )
     }
@@ -1302,7 +1342,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             .into_iter()
             .map(|key| {
                 let equations = &groups[key];
-                let pattern = Pattern::Literal(key.clone());
+                let pattern = Pattern::Literal(Literal::from_ast(key));
 
                 let new_equations = equations
                     .iter()
@@ -1374,11 +1414,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .arena
                     .alloc(Expr::Ident(name.clone(), expr.span()));
                 Expr::Let(
-                    LetBinding {
+                    self.0.allocator.let_binding_arena.alloc(LetBinding {
                         name: name,
                         expr: Named::Expr(expr),
                         span_start: expr.span().start(),
-                    },
+                    }),
                     self.translate(default, &[id_expr], equations),
                 )
             }
@@ -1480,8 +1520,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             equations.iter().format(",\n"),
             expr
         );
-        let arena = &self.0.allocator.arena;
-        binder.into_expr_ref(arena, expr)
+        let allocator = &self.0.allocator;
+        binder.into_expr_ref(allocator, expr)
     }
 
     fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
@@ -2207,5 +2247,11 @@ mod tests {
             end
         "#;
         check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn expr_size() {
+        let s = std::mem::size_of::<Expr>();
+        assert!(s <= 40, "{} is to large for expressions", s);
     }
 }
