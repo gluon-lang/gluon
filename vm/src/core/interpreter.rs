@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::base::{
-    ast::{Literal, TypedIdent},
+    ast::TypedIdent,
     fnv::FnvSet,
     kind::{ArcKind, KindEnv},
     merge::merge_iter,
@@ -14,7 +14,7 @@ use crate::{
     core::{
         self,
         optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor},
-        Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern,
+        Allocator, CExpr, Closure, Expr, LetBinding, Literal, Named, Pattern,
     },
     types::*,
     Error, Result,
@@ -443,7 +443,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         };
                         if variable_in_value {
                             value = Some(Reduced::Local(&*self.allocator.arena.alloc(Expr::Let(
-                                bind,
+                                self.allocator.let_binding_arena.alloc(bind),
                                 value.map_or(expr, |value| value.into_local(allocator)),
                             ))));
                         }
@@ -524,7 +524,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 if let Some(expr) = new_named {
                     self.bindings.push(LetBinding {
                         expr,
-                        ..let_binding.clone()
+                        ..(*let_binding).clone()
                     });
                 }
                 return Ok(TailCall::Tail(body));

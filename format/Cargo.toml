@@ -15,7 +15,7 @@ documentation = "https://docs.rs/gluon"
 log = "0.4"
 pretty = "0.5"
 itertools = "0.8"
-codespan = "0.2"
+codespan = "0.3"
 
 gluon_base = { path = "../base", version = "0.11.2" } # GLUON
 
