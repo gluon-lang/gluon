@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use futures::Future;
+use {futures::Future, salsa::Database};
 
 use {
     base::{
@@ -108,6 +108,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .and_modify(|v| *v += 1)
             .or_default();
     }
+
     fn report_errors(&self, error: &mut Iterator<Item = Error>) {
         self.state().errors.extend(error);
     }
@@ -169,13 +170,13 @@ impl CompilerDatabase {
     }
 
     pub(crate) fn collect_garbage(&self) {
-        // let strategy = salsa::SweepStrategy::default()
-        //     .discard_values()
-        //     .sweep_all_revisions();
+        let strategy = salsa::SweepStrategy::default()
+            .discard_values()
+            .sweep_all_revisions();
 
-        // self.query(ModuleTextQuery).sweep(strategy);
-        // self.query(TypecheckedModuleQuery).sweep(strategy);
-        // self.query(CompiledModuleQuery).sweep(strategy);
+        self.query(ModuleTextQuery).sweep(strategy);
+        self.query(TypecheckedModuleQuery).sweep(strategy);
+        self.query(CompiledModuleQuery).sweep(strategy);
     }
 }
 
@@ -239,7 +240,6 @@ pub(crate) trait Compilation: CompilationBase {
 
     fn globals(&self) -> Arc<FnvMap<String, DatabaseGlobal>>;
 
-    #[salsa::volatile]
     fn global(&self, name: String) -> Result<DatabaseGlobal>;
 }
 

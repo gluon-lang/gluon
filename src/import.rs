@@ -87,7 +87,7 @@ impl Importer for DefaultImporter {
     fn import(
         &self,
         compiler: &mut ModuleCompiler,
-        vm: &Thread,
+        _vm: &Thread,
         modulename: &str,
     ) -> Result<(), (Option<ArcType>, crate::Error)> {
         compiler

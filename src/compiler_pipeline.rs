@@ -886,11 +886,9 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        let run_io = compiler.compiler.run_io;
         let filename = filename.to_string();
 
         let vm1 = vm.clone();
-        let vm2 = vm.clone();
         Box::new(
             self.run_expr(compiler, vm1, &filename, expr_str, ())
                 .and_then(move |value| {
