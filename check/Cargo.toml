@@ -22,8 +22,8 @@ rpds = "0.5"
 stable_deref_trait = "1"
 quick-error = "1"
 
-codespan = "0.2"
-codespan-reporting = "0.2"
+codespan = "0.3"
+codespan-reporting = "0.3"
 
 strsim = "0.8.0"
 

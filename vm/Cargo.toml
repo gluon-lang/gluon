@@ -15,7 +15,7 @@ build = "build.rs"
 
 [dependencies]
 bitflags = "1.0.0"
-codespan = "0.2"
+codespan = "0.3"
 collect-mac = "0.1.0"
 frunk_core = "0.2"
 futures = "0.1.0"
