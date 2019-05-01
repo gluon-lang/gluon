@@ -458,7 +458,7 @@ where
 
         info!("import! {}", modulename);
 
-        let compiler = try_future!(macros
+        let db = try_future!(macros
             .user_data
             .downcast_ref::<CompilerDatabase>()
             .ok_or_else(|| MacroError::new(Error::String(
@@ -466,8 +466,7 @@ where
             ))));
 
         Box::new(future::result(
-            compiler
-                .import(modulename)
+            db.import(modulename)
                 .map_err(|err| MacroError::message(err.to_string()))
                 .and_then(|result| result.map_err(MacroError::new))
                 .map(|expr| pos::spanned(args[0].span, expr)),

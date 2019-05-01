@@ -63,8 +63,6 @@ mod std {
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
-    use self::std;
-
     vm.register_type::<XorShiftRng>("std.random.XorShiftRng", &[])?;
 
     ExternModule::new(

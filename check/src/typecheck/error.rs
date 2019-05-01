@@ -92,7 +92,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
-        use pretty::{Arena, DocAllocator};
+        use pretty::DocAllocator;
         match &*self {
             UndefinedVariable(name) => write!(f, "Undefined variable `{}`", name),
             NotAFunction(typ) => write!(f, "`{}` is not a function", typ),

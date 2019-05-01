@@ -359,8 +359,6 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
 
     let wrap = vec![Pop(1)];
 
-    use self::std;
-
     // IO functions
     ExternModule::new(
         vm,
