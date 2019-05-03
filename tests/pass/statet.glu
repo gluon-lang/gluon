@@ -1,8 +1,7 @@
-
 let { (<|) } = import! std.function
 let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
 let { StateT, put, get, gets, modify, run_state_t, eval_state_t, exec_state_t, ? } = import! std.statet
-let { Applicative, wrap, (*>) } = import! std.applicative
+let { wrap, (*>) } = import! std.applicative
 let { Monad, (>>=) } = import! std.monad
 let { Option, unwrap, ? } = import! std.option
 let { (++), ? } = import! std.string
@@ -43,14 +42,4 @@ group "statet" [
         test "put get run_state_t" <| \_ -> (assert_eq (run_state_t (put "hello" *> get) "") <| Some {value = "hello", state = "hello"}),
         test "gets eval_state_t" <| \_ -> (assert_eq (eval_state_t (gets <| (::) 1) (2 :: 3 :: Nil)) <| Some (1 :: 2 :: 3 :: Nil)),
     ],
-    // TODO
-    // should this be moved to std.transformer?
-    // group "StateT s m has effects of monad m" [
-    //     test "Option", <| \_ -> (assert_eq 
-    //     test "List", <| \_ -> (assert_eq 
-    //     test "State String", <| \_ -> (assert_eq 
-    //     test "Writer", <| \_ -> (assert_eq 
-    //     test "Reader", <| \_ -> (assert_eq 
-    //     test "Result Int", <| \_ -> (assert_eq 
-    // ],
 ]

@@ -5,6 +5,7 @@ let { (<<) } = import! std.function
 let { Functor, map } = import! std.functor
 let { lazy, force } = import! std.lazy
 let { Monad, flat_map } = import! std.monad
+let { Transformer } = import! std.transformer
 
 type LazyT m a = Lazy (m a)
 
@@ -24,13 +25,20 @@ let monad : [Monad m] -> Monad (LazyT m) =
 
     { applicative, flat_map = ltflat_map }
 
+let transformer : Transformer LazyT =
+    let wrap_monad ma : [Monad m] -> m a -> LazyT m a = lazy (\_ -> ma)
+
+    { /* monad, */ wrap_monad }
+
+let force_t : LazyT m a -> m a = force
+
 {
     LazyT,
 
-    lazy,
-    force,
+    force_t,
 
     functor,
     applicative,
     monad,
+    transformer
 }
