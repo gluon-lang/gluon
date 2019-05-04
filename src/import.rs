@@ -468,7 +468,6 @@ where
         Box::new(future::result(
             db.import(modulename)
                 .map_err(|err| MacroError::message(err.to_string()))
-                .and_then(|result| result.map_err(MacroError::new))
                 .map(|expr| pos::spanned(args[0].span, expr)),
         ))
     }

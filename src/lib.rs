@@ -747,13 +747,15 @@ impl Compiler {
 
         fn skip_implicit_prelude(
             span: Span<BytePos>,
-            l: &SpannedExpr<Symbol>,
+            mut l: &SpannedExpr<Symbol>,
         ) -> &SpannedExpr<Symbol> {
-            match l.value {
-                ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                    skip_implicit_prelude(span, e)
+            loop {
+                match l.value {
+                    ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
+                        l = e;
+                    }
+                    _ => break l,
                 }
-                _ => l,
             }
         }
 

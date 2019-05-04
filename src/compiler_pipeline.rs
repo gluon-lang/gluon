@@ -878,7 +878,7 @@ where
     fn load_script<T>(
         self,
         compiler: &mut ModuleCompiler,
-        vm: T,
+        _vm: T,
         filename: &str,
         expr_str: &str,
         _: (),
@@ -888,20 +888,14 @@ where
     {
         let filename = filename.to_string();
 
-        let vm1 = vm.clone();
-        Box::new(
-            self.run_expr(compiler, vm1, &filename, expr_str, ())
-                .and_then(move |value| {
-                    vm.set_global(
-                        value.id.clone(),
-                        value.typ,
-                        value.metadata.clone(),
-                        value.value.get_value(),
-                    )?;
-                    info!("Loaded module `{}` filename", filename);
-                    Ok(())
-                }),
-        )
+        compiler
+            .state()
+            .inline_modules
+            .insert(filename.clone(), expr_str.into());
+
+        Box::new(future::result(
+            compiler.database.import(filename.into()).map(|_| ()),
+        ))
     }
 }
 

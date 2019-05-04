@@ -57,7 +57,7 @@ fn type_of_expr(args: WithVM<&str>) -> IO<Result<String, String>> {
     IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
         Ok((expr, _)) => {
             let env = vm.get_env();
-            Ok(format!("{}", expr.env_type_of(&*env)))
+            Ok(format!("{}", expr.env_type_of(&env)))
         }
         Err(msg) => Err(format!("{}", msg)),
     })
@@ -105,11 +105,11 @@ fn find_info(args: WithVM<&str>) -> IO<Result<String, String>> {
             }
         }
     }
-    let maybe_comment = env
-        .get_metadata(args)
-        .ok()
-        .and_then(|metadata| metadata.comment.as_ref());
-    if let Some(comment) = maybe_comment {
+    let maybe_metadata = env.get_metadata(args).ok();
+    if let Some(comment) = maybe_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.comment.as_ref())
+    {
         for line in comment.content.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
         }
@@ -157,7 +157,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
         .get_filemap(&name)
         .ok_or_else(|| VMError::from("FileMap is missing for completion".to_string()))?;
     let suggestions = completion::suggest(
-        &*thread.get_env(),
+        &thread.get_env(),
         file_map.span(),
         &expr,
         BytePos::from(pos as u32),
@@ -221,7 +221,9 @@ macro_rules! define_vmtype {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
                 let typ = concat!("rustyline_types.", stringify!($name));
-                (*vm.global_env().get_env().find_type_info(typ).unwrap())
+                vm.get_env()
+                    .find_type_info(typ)
+                    .unwrap()
                     .clone()
                     .into_type()
             }
@@ -365,11 +367,11 @@ fn eval_line_(
             .map_err(|x| (compiler, x))
             .map(move |ExecuteValue { value, typ, .. }| {
                 let vm = value.vm();
-                let env = vm.global_env().get_env();
+                let env = vm.get_env();
                 let debug_level = vm.global_env().get_debug_level();
                 println!(
                     "{}",
-                    ValuePrinter::new(&*env, &typ, value.get_variant(), &debug_level)
+                    ValuePrinter::new(&env, &typ, value.get_variant(), &debug_level)
                         .width(80)
                         .max_level(5)
                 );
@@ -404,8 +406,9 @@ fn set_globals(
         }
         Pattern::Record { ref fields, .. } => {
             let resolved_type = {
-                let env = vm.global_env();
-                resolve::remove_aliases_cow(&*env.get_env(), &mut env.type_cache(), typ)
+                let mut type_cache = vm.global_env().type_cache();
+                let env = vm.get_env();
+                resolve::remove_aliases_cow(&env, &mut type_cache, typ)
             };
 
             for pattern_field in fields.iter() {

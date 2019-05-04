@@ -33,6 +33,7 @@ use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Compiler, Error, Res
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
+    pub(crate) inline_modules: FnvMap<String, String>,
     pub(crate) index_map: FnvMap<String, BytePos>,
     pub(crate) errors: Errors<Error>,
     pub(crate) module_states: FnvMap<String, usize>,
@@ -224,23 +225,55 @@ pub(crate) trait Compilation: CompilationBase {
 
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
+    #[salsa::cycle(recover_cycle_typecheck)]
     fn typechecked_module(
         &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
+    #[salsa::cycle(recover_cycle)]
     fn compiled_module(
         &self,
         module: String,
     ) -> StdResult<CompileValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
-    #[salsa::cycle]
+    #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
     fn globals(&self) -> Arc<FnvMap<String, DatabaseGlobal>>;
 
+    #[salsa::cycle(recover_cycle)]
     fn global(&self, name: String) -> Result<DatabaseGlobal>;
+}
+
+fn recover_cycle_typecheck<T>(
+    db: &impl Compilation,
+    cycle: &[String],
+    module: &String,
+    _: &Option<ArcType>,
+) -> StdResult<T, Error> {
+    recover_cycle(db, cycle, module)
+}
+fn recover_cycle<T>(
+    _db: &impl Compilation,
+    cycle: &[String],
+    module: &String,
+) -> StdResult<T, Error> {
+    Err(macros::Error::new(crate::import::Error::CyclicDependency(
+        module.to_string(),
+        cycle
+            .iter()
+            .filter(|k| k.contains("import"))
+            .map(|k| {
+                k.trim_matches(|c: char| c != '"')
+                    .trim_matches('"')
+                    .trim_start_matches('@')
+                    .to_string()
+            })
+            .collect(),
+    ))
+    .into())
 }
 
 fn module_state(db: &impl Compilation, module: String) -> usize {
@@ -251,14 +284,19 @@ fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'stat
     // We just need to depend on updates to the state, we don't care what it is
     db.module_state(module.clone());
 
-    let mut filename = module.replace(".", "/");
-    filename.push_str(".glu");
+    let contents = if let Some(contents) = db.compiler().state().inline_modules.get(&module) {
+        Arc::new(contents.to_string().into()) // FIXME Avoid copying
+    } else {
+        let mut filename = module.replace(".", "/");
+        filename.push_str(".glu");
 
-    let contents = Arc::new(
-        crate::get_import(db.thread())
-            .get_module_source(&module, &filename)
-            .map_err(macros::Error::new)?,
-    );
+        Arc::new(
+            crate::get_import(db.thread())
+                .get_module_source(&module, &filename)
+                .map_err(macros::Error::new)?,
+        )
+    };
+
     db.new_module(module, &contents);
     Ok(contents)
 }

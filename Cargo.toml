@@ -37,7 +37,7 @@ itertools = "0.8"
 futures = "0.1.11"
 codespan = "0.2"
 codespan-reporting = "0.2"
-salsa = { version = "0.10", path = "../salsa" }
+salsa = { version = "0.12", path = "../salsa" }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4.0", optional = true }

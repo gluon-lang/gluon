@@ -342,7 +342,8 @@ impl<'a> VmEnvInstance<'a> {
         Some((remaining_fields, global))
     }
 
-    pub(crate) fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
+    #[doc(hidden)]
+    pub fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
