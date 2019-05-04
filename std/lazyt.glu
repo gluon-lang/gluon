@@ -3,7 +3,7 @@
 let { Applicative, apply, wrap } = import! std.applicative
 let { (<<) } = import! std.function
 let { Functor, map } = import! std.functor
-let { lazy, force } = import! std.lazy
+let { Lazy, lazy, force } = import! std.lazy
 let { Monad, flat_map } = import! std.monad
 let { Transformer } = import! std.transformer
 
