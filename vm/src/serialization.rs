@@ -158,8 +158,6 @@ pub mod gc {
         where
             S: Serializer,
         {
-            use crate::serde::ser::Seeded;
-
             serializer.collect_seq(self.iter().map(|value| Seeded::new(seed, value)))
         }
     }

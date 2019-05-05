@@ -394,7 +394,6 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
 
 fn find_gluon_root() -> PathBuf {
     use std::env;
-    use std::fs;
     let mut dir = env::current_dir().unwrap();
     while fs::metadata(dir.join("std")).is_err() {
         dir = dir.parent().unwrap().into();

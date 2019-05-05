@@ -1029,8 +1029,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         variables: &[&'a Expr<'a>],
         equations: &[Equation<'a, 'p>],
     ) -> &'a Expr<'a> {
-        use std::borrow::Cow;
-
         let new_alt = {
             // Inspect the first pattern of each equation
             // (the rest of the equations are checked recursively)
@@ -1855,7 +1853,7 @@ mod tests {
 
         let vm = RootedThread::new();
         let env = vm.get_env();
-        let translator = Translator::new(&*env);
+        let translator = Translator::new(&env);
 
         let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate_expr(&expr);

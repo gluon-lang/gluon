@@ -17,7 +17,7 @@ fn doc_check(module: &str, expected: doc::Record) {
     let (expr, typ) = Compiler::new()
         .typecheck_str(&vm, "basic", module, None)
         .unwrap();
-    let (meta, _) = metadata(&*vm.get_env(), &expr);
+    let (meta, _) = metadata(&vm.get_env(), &expr);
 
     let out = doc::record(
         "basic",
