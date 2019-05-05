@@ -220,7 +220,7 @@ You can try gluon in your browser at http://gluon-lang.org/try/. ([Github](https
 
 ### Install
 
-Gluon can be installed simply by using one of the prebuild executeables that the team releases at [Github](https://github.com/gluon-lang/gluon/releases) and you can use Cargo in order to install the REPL:
+Gluon can be installed by using one of the prebuilt executables at [Github](https://github.com/gluon-lang/gluon/releases) or you can use Cargo in order to install the `gluon_repl` crate:
 
 ```
 cargo install gluon_repl
