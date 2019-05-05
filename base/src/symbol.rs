@@ -457,6 +457,9 @@ impl Symbols {
     }
 
     fn make_symbol(&mut self, name: NameBuf) -> Symbol {
+        if name.as_pretty_str().contains("Value") {
+            name.to_string();
+        }
         // `name` is fixed in memory and the key lives as long as `s` this is safe
         let key = unsafe { &*(&*name as *const Name) };
         let s = Symbol(Arc::new(name));

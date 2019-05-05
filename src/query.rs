@@ -224,6 +224,7 @@ pub(crate) trait Compilation: CompilationBase {
     fn module_state(&self, module: String) -> usize;
 
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
+    fn module_text_inner(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
     fn typechecked_module(
@@ -281,6 +282,16 @@ fn module_state(db: &impl Compilation, module: String) -> usize {
 }
 
 fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
+    let contents = db.module_text_inner(module.clone())?;
+    // By using an inner query we only update our own revision if the source actually changed
+    db.new_module(module, &contents);
+    Ok(contents)
+}
+
+fn module_text_inner(
+    db: &impl Compilation,
+    module: String,
+) -> StdResult<Arc<Cow<'static, str>>, Error> {
     // We just need to depend on updates to the state, we don't care what it is
     db.module_state(module.clone());
 
@@ -297,7 +308,6 @@ fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'stat
         )
     };
 
-    db.new_module(module, &contents);
     Ok(contents)
 }
 
