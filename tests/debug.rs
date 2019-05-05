@@ -46,6 +46,7 @@ fn function_hook() {
     }
     Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
         .unwrap();
 
@@ -64,6 +65,7 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
     }
     let mut execute = Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr_async::<i32>(&thread, "test", source)
         .map(|_| ());
     let mut result = Ok(Async::NotReady);
@@ -143,6 +145,7 @@ fn line_hook_after_call() {
     "#;
     let mut execute = Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr_async::<i32>(&thread, "test", expr)
         .map(|_| ());
     let mut result = Ok(Async::NotReady);
@@ -188,6 +191,7 @@ fn implicit_prelude_lines_not_counted() {
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let mut execute = Compiler::new()
+        .optimize(false)
         .run_expr_async::<i32>(&thread, "test", "1")
         .map(|_| ());
     let mut result = Ok(Async::NotReady);
@@ -244,6 +248,7 @@ fn read_variables() {
     "#;
     Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
@@ -316,6 +321,7 @@ fn argument_types() {
     "#;
     Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();
 
@@ -377,6 +383,7 @@ fn source_name() {
     "#;
     Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();
 
@@ -412,6 +419,7 @@ fn upvars() {
     "#;
     Compiler::new_lock()
         .implicit_prelude(false)
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", expr)
         .unwrap();
 
@@ -459,6 +467,7 @@ fn implicit_prelude_variable_names() {
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     Compiler::new()
+        .optimize(false)
         .run_expr::<i32>(&thread, "test", "\n1")
         .unwrap();
     let f = functions.lock().unwrap();

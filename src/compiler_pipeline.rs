@@ -716,7 +716,11 @@ where
 
                 debug!("Translation returned: {}", expr);
 
-                core::optimize::optimize(&translator.allocator, &*env, expr)
+                if settings.optimize {
+                    core::optimize::optimize(&translator.allocator, &env, expr)
+                } else {
+                    expr
+                }
             };
 
             let source = compiler

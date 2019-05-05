@@ -289,6 +289,7 @@ struct Settings {
     emit_debug_info: bool,
     full_metadata: bool,
     use_standard_lib: bool,
+    optimize: bool,
 }
 
 impl Default for Settings {
@@ -298,6 +299,7 @@ impl Default for Settings {
             emit_debug_info: true,
             full_metadata: false,
             use_standard_lib: true,
+            optimize: true,
         }
     }
 }
@@ -375,6 +377,12 @@ impl import::CompilerLock {
         /// Sets whether internal standard library is searched for requested modules
         /// (default: true)
         use_standard_lib set_use_standard_lib: bool
+    }
+
+    runtime_option! {
+        /// Whether the bytecode should be optimized
+        /// (default: true)
+        optimize set_optimize: bool
     }
 }
 
