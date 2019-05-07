@@ -18,7 +18,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Thread safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
-[easy_embed]:http://gluon-lang.org/book/embedding-api.html
+[easy_embed]:https://gluon-lang.org/doc/crates_io/book/embedding-api.html
 [parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
@@ -218,6 +218,14 @@ guess_loop ()
 
 You can try gluon in your browser at http://gluon-lang.org/try/. ([Github](https://github.com/gluon-lang/try_gluon))
 
+### Install
+
+Gluon can be installed by using one of the prebuilt executables at [Github](https://github.com/gluon-lang/gluon/releases) or you can use Cargo in order to install the `gluon_repl` crate:
+
+```
+cargo install gluon_repl
+```
+
 ### REPL
 
 Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
@@ -295,7 +303,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.10.1"
+gluon = "0.11.2"
 ```
 
 ### Other languages

@@ -810,7 +810,7 @@ fn completion_with_prelude() {
 let prelude  = import! std.prelude
 let { Option } = import! std.option
 let { Num } = prelude
-let { lazy } = import! std.lazy
+let { Lazy, lazy } = import! std.lazy
 
 rec
 type Stream_ a =
@@ -1059,7 +1059,7 @@ let category : Category (->) = {
 
 test_expr! { load_io_skolem_bug,
 r"
-let io_prim = import! std.io.prim
+let io_prim @ { IO } = import! std.io.prim
 
 type Monad (m : Type -> Type) = {
     flat_map : forall a b . (a -> m b) -> m a -> m b
@@ -1091,4 +1091,25 @@ let { Bool } = import! std.types
 True
 ",
 true
+}
+
+test_expr! {
+recursive_eff_arr,
+r#"
+rec
+type Eff (r : Type -> Type) a =
+    | Pure a
+    | Impure : forall x . Arr r x a -> Eff r a 
+
+type Arr r a b = a -> Eff r b
+in
+
+type Writer r a = .. r
+
+let tell : Eff [| writer : Writer | r |] () =
+    Impure Pure
+
+()
+"#,
+()
 }

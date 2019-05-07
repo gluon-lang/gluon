@@ -6,15 +6,17 @@ use futures::{
     Future,
 };
 
-use crate::api::generic::A;
-use crate::api::{FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM};
-use crate::base::types;
-use crate::base::types::{ArcType, Type};
-use crate::gc::{Gc, GcPtr, Move, Traverseable};
-use crate::thread::{RootedThread, ThreadInternal};
-use crate::value::{Cloner, Value};
-use crate::vm::Thread;
-use crate::{Error, ExternModule, Result, Variants};
+use crate::{
+    api::{
+        generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
+    },
+    base::types::{self, ArcType},
+    gc::{Gc, GcPtr, Move, Traverseable},
+    thread::{RootedThread, ThreadInternal},
+    value::{Cloner, Value},
+    vm::Thread,
+    Error, ExternModule, Result, Variants,
+};
 
 pub struct Lazy<T> {
     value: Mutex<Lazy_>,
@@ -79,9 +81,12 @@ where
 
     fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
-        let symbol = env.find_type_info("Lazy").unwrap().name.clone();
-        let ctor = Type::ident(symbol);
-        types::Type::app(ctor, collect![T::make_type(vm)])
+        let alias = env
+            .find_type_info("std.lazy.Lazy")
+            .unwrap()
+            .into_owned()
+            .into_type();
+        types::Type::app(alias, collect![T::make_type(vm)])
     }
 }
 
@@ -194,6 +199,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            type std::lazy::Lazy a => Lazy<A>,
             lazy => primitive!(1, std::lazy::lazy),
             force => primitive!(1, async fn std::lazy::force)
         },

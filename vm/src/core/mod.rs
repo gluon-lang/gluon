@@ -40,22 +40,27 @@ mod pretty;
 
 use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem};
 
-use itertools::Itertools;
+use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec};
 
 use self::{
     optimize::{walk_expr_alloc, SameLifetime, Visitor},
-    smallvec::SmallVec,
     typed_arena::Arena,
 };
 
 use crate::base::{
-    ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent},
+    ast::{self, SpannedExpr, SpannedPattern, Typed, TypedIdent},
     fnv::{FnvMap, FnvSet},
     pos::{spanned, BytePos, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{arg_iter, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
 };
+
+macro_rules! iterator {
+    ($($expr : expr),* $(,)?) => {
+        [$(Some($expr)),*].iter_mut().map(|e| e.take().unwrap())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
@@ -78,15 +83,24 @@ pub struct LetBinding<'a> {
     pub span_start: BytePos,
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum Literal {
+    Byte(u8),
+    Int(i64),
+    Float(NotNan<f64>),
+    String(Box<str>),
+    Char(char),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
     Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
     Ident(TypedIdent<Symbol>),
-    Literal(ast::Literal),
+    Literal(Literal),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Alternative<'a> {
     pub pattern: Pattern,
     pub expr: &'a Expr<'a>,
@@ -98,10 +112,10 @@ pub type CExpr<'a> = &'a Expr<'a>;
 pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
     Ident(TypedIdent<Symbol>, Span<BytePos>),
-    Call(&'a Expr<'a>, &'a [Expr<'a>]),
+    Call(CExpr<'a>, &'a [Expr<'a>]),
     Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos),
-    Let(LetBinding<'a>, &'a Expr<'a>),
-    Match(&'a Expr<'a>, &'a [Alternative<'a>]),
+    Let(&'a LetBinding<'a>, CExpr<'a>),
+    Match(CExpr<'a>, &'a [Alternative<'a>]),
 }
 
 #[cfg(feature = "test")]
@@ -140,6 +154,58 @@ impl<'a> fmt::Display for Expr<'a> {
     }
 }
 
+impl Default for &'static Expr<'static> {
+    fn default() -> Self {
+        static X: Expr<'static> =
+            Expr::Const(Literal::Int(0), Span::new_unchecked(BytePos(0), BytePos(0)));
+        &X
+    }
+}
+
+impl<'a> Default for Expr<'a> {
+    fn default() -> Self {
+        Expr::Const(Literal::default(), Span::default())
+    }
+}
+
+impl Default for Pattern {
+    fn default() -> Self {
+        Pattern::Literal(Literal::default())
+    }
+}
+
+impl Literal {
+    fn from_ast(literal: &ast::Literal) -> Self {
+        match literal {
+            ast::Literal::Byte(x) => Literal::Byte(*x),
+            ast::Literal::Int(x) => Literal::Int(*x),
+            ast::Literal::Float(x) => Literal::Float(*x),
+            ast::Literal::String(x) => Literal::String(Box::from(&x[..])),
+            ast::Literal::Char(x) => Literal::Char(*x),
+        }
+    }
+}
+
+impl Default for Literal {
+    fn default() -> Self {
+        Literal::Int(0)
+    }
+}
+
+impl Typed for Literal {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, _: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        Ok(match *self {
+            Literal::Int(_) => Type::int(),
+            Literal::Float(_) => Type::float(),
+            Literal::Byte(_) => Type::byte(),
+            Literal::String(_) => Type::string(),
+            Literal::Char(_) => Type::char(),
+        })
+    }
+}
+
 #[derive(Default)]
 #[must_use]
 struct Binder<'a> {
@@ -165,18 +231,21 @@ impl<'a> Binder<'a> {
         ident_expr
     }
 
-    fn into_expr(self, arena: &'a Arena<Expr<'a>>, expr: Expr<'a>) -> Expr<'a> {
-        self.bindings
-            .into_iter()
-            .rev()
-            .fold(expr, |expr, bind| Expr::Let(bind, arena.alloc(expr)))
+    fn into_expr(self, allocator: &'a Allocator<'a>, expr: Expr<'a>) -> Expr<'a> {
+        self.bindings.into_iter().rev().fold(expr, |expr, bind| {
+            Expr::Let(
+                allocator.let_binding_arena.alloc(bind),
+                allocator.arena.alloc(expr),
+            )
+        })
     }
 
-    fn into_expr_ref(self, arena: &'a Arena<Expr<'a>>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
-        self.bindings
-            .into_iter()
-            .rev()
-            .fold(expr, |expr, bind| arena.alloc(Expr::Let(bind, expr)))
+    fn into_expr_ref(self, allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
+        self.bindings.into_iter().rev().fold(expr, |expr, bind| {
+            allocator
+                .arena
+                .alloc(Expr::Let(allocator.let_binding_arena.alloc(bind), expr))
+        })
     }
 }
 
@@ -242,6 +311,7 @@ pub use self::internal::CoreExpr;
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
     pub alternative_arena: Arena<Alternative<'a>>,
+    pub let_binding_arena: Arena<LetBinding<'a>>,
 }
 
 impl<'a> Allocator<'a> {
@@ -249,6 +319,64 @@ impl<'a> Allocator<'a> {
         Allocator {
             arena: Arena::new(),
             alternative_arena: Arena::new(),
+            let_binding_arena: Arena::new(),
+        }
+    }
+}
+
+pub(crate) trait ArenaExt<T> {
+    fn alloc_fixed<'a, I>(&'a self, iter: I) -> &'a mut [T]
+    where
+        I: IntoIterator<Item = T>,
+        T: Default;
+}
+
+impl<T> ArenaExt<T> for Arena<T> {
+    fn alloc_fixed<'a, I>(&'a self, iter: I) -> &'a mut [T]
+    where
+        I: IntoIterator<Item = T>,
+        T: Default,
+    {
+        use std::ptr;
+
+        let iter = iter.into_iter();
+
+        unsafe {
+            struct FillRemainingOnDrop<U: Default> {
+                ptr: *mut U,
+                end: *mut U,
+            }
+
+            impl<U: Default> Drop for FillRemainingOnDrop<U> {
+                fn drop(&mut self) {
+                    unsafe {
+                        while self.ptr != self.end {
+                            ptr::write(self.ptr, U::default());
+                            self.ptr = self.ptr.add(1);
+                        }
+                    }
+                }
+            }
+            let (len, max) = iter.size_hint();
+            assert!(Some(len) == max);
+
+            let elems = self.alloc_uninitialized(len);
+
+            {
+                let elems = elems as *mut T;
+                let mut fill = FillRemainingOnDrop {
+                    ptr: elems as *mut T,
+                    end: elems.add(len) as *mut T,
+                };
+
+                for elem in iter {
+                    assert!(fill.ptr != fill.end);
+                    ptr::write(fill.ptr, elem);
+                    fill.ptr = fill.ptr.add(1);
+                }
+            }
+
+            &mut *elems
         }
     }
 }
@@ -385,35 +513,30 @@ impl<'a, 'e> Translator<'a, 'e> {
                 func: ref function,
                 ref args,
             } => {
-                let new_args: SmallVec<[_; 16]> = implicit_args
+                let all_args = implicit_args
                     .iter()
                     .chain(args)
-                    .map(|arg| self.translate(arg))
-                    .collect();
+                    .map(|arg| self.translate(arg));
                 match function.value {
                     ast::Expr::Ident(ref id) if is_constructor(&id.name) => {
                         let typ = expr.env_type_of(&self.env);
-                        self.new_data_constructor(typ, id, new_args, expr.span)
+                        self.new_data_constructor(typ, id, all_args, expr.span)
                     }
-                    _ => Expr::Call(
-                        self.translate_alloc(function),
-                        arena.alloc_extend(new_args.into_iter()),
-                    ),
+                    _ => {
+                        let new_args = &*arena.alloc_fixed(all_args);
+                        Expr::Call(self.translate_alloc(function), new_args)
+                    }
                 }
             }
 
             ast::Expr::Array(ref array) => {
-                let exprs: SmallVec<[_; 16]> = array
-                    .exprs
-                    .iter()
-                    .map(|expr| self.translate(expr))
-                    .collect();
+                let exprs = arena.alloc_fixed(array.exprs.iter().map(|expr| self.translate(expr)));
                 Expr::Data(
                     TypedIdent {
                         name: self.dummy_symbol.name.clone(),
                         typ: array.typ.clone(),
                     },
-                    arena.alloc_extend(exprs.into_iter()),
+                    exprs,
                     expr.span.start(),
                 )
             }
@@ -423,11 +546,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                 let result = self.translate(last);
                 prefix.iter().rev().fold(result, |result, expr| {
                     Expr::Let(
-                        LetBinding {
+                        self.allocator.let_binding_arena.alloc(LetBinding {
                             name: self.dummy_symbol.clone(),
                             expr: Named::Expr(self.translate_alloc(expr)),
                             span_start: expr.span.start(),
-                        },
+                        }),
                         arena.alloc(result),
                     )
                 })
@@ -435,7 +558,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
             ast::Expr::Ident(ref id) => {
                 if is_constructor(&id.name) {
-                    self.new_data_constructor(id.typ.clone(), id, SmallVec::new(), expr.span)
+                    self.new_data_constructor(id.typ.clone(), id, &mut None.into_iter(), expr.span)
                 } else {
                     let name = self
                         .ident_replacements
@@ -455,7 +578,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             }
 
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                let alts: SmallVec<[_; 2]> = collect![
+                let alts = self.allocator.alternative_arena.alloc_fixed(iterator!(
                     Alternative {
                         pattern: Pattern::Constructor(self.bool_constructor(true), vec![]),
                         expr: self.translate_alloc(if_true),
@@ -464,13 +587,8 @@ impl<'a, 'e> Translator<'a, 'e> {
                         pattern: Pattern::Constructor(self.bool_constructor(false), vec![]),
                         expr: self.translate_alloc(if_false),
                     },
-                ];
-                Expr::Match(
-                    self.translate_alloc(pred),
-                    self.allocator
-                        .alternative_arena
-                        .alloc_extend(alts.into_iter()),
-                )
+                ));
+                Expr::Match(self.translate_alloc(pred), alts)
             }
 
             ast::Expr::Infix {
@@ -479,17 +597,14 @@ impl<'a, 'e> Translator<'a, 'e> {
                 ref rhs,
                 ref implicit_args,
             } => {
-                let args: SmallVec<[_; 2]> = implicit_args
-                    .iter()
-                    .chain(Some(&**lhs))
-                    .chain(Some(&**rhs))
-                    .map(|e| self.translate(e))
-                    .collect();
+                let args = arena.alloc_fixed(
+                    implicit_args
+                        .iter()
+                        .chain(iterator!(&**lhs, &**rhs))
+                        .map(|e| self.translate(e)),
+                );
 
-                Expr::Call(
-                    arena.alloc(Expr::Ident(op.value.clone(), op.span)),
-                    arena.alloc_extend(args.into_iter()),
-                )
+                Expr::Call(arena.alloc(Expr::Ident(op.value.clone(), op.span)), args)
             }
 
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
@@ -508,7 +623,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 self.translate_let(binds, self.translate(tail), expr.span.start())
             }
 
-            ast::Expr::Literal(ref literal) => Expr::Const(literal.clone(), expr.span),
+            ast::Expr::Literal(ref literal) => Expr::Const(Literal::from_ast(literal), expr.span),
 
             ast::Expr::Match(ref expr, ref alts) => {
                 let expr = self.translate_alloc(expr);
@@ -618,24 +733,23 @@ impl<'a, 'e> Translator<'a, 'e> {
                         name: self.dummy_symbol.name.clone(),
                         typ: typ.clone(),
                     },
-                    arena.alloc_extend(args),
+                    arena.alloc_fixed(args),
                     expr.span.start(),
                 );
-                binder.into_expr(arena, record_constructor)
+                binder.into_expr(&self.allocator, record_constructor)
             }
 
             ast::Expr::Tuple { ref elems, .. } => {
                 if elems.len() == 1 {
                     self.translate(&elems[0])
                 } else {
-                    let args: SmallVec<[_; 16]> =
-                        elems.iter().map(|expr| self.translate(expr)).collect();
+                    let args = arena.alloc_fixed(elems.iter().map(|expr| self.translate(expr)));
                     Expr::Data(
                         TypedIdent {
                             name: self.dummy_symbol.name.clone(),
                             typ: expr.env_type_of(&self.env),
                         },
-                        arena.alloc_extend(args.into_iter()),
+                        args,
                         expr.span.start(),
                     )
                 }
@@ -698,10 +812,10 @@ impl<'a, 'e> Translator<'a, 'e> {
 
                 let f = self.translate_alloc(flat_map_id);
                 binder.into_expr(
-                    arena,
+                    &self.allocator,
                     Expr::Call(
                         f,
-                        arena.alloc_extend(Some(lambda).into_iter().chain(Some(bound_ident))),
+                        arena.alloc_fixed(Some(lambda).into_iter().chain(Some(bound_ident))),
                     ),
                 )
             }
@@ -742,7 +856,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         };
         Expr::Match(
             projected_expr,
-            self.allocator.alternative_arena.alloc_extend(once(alt)),
+            self.allocator.alternative_arena.alloc_fixed(once(alt)),
         )
     }
 
@@ -768,12 +882,12 @@ impl<'a, 'e> Translator<'a, 'e> {
                 })
                 .collect();
             Expr::Let(
-                LetBinding {
+                self.allocator.let_binding_arena.alloc(LetBinding {
                     // TODO
                     name: self.dummy_symbol.clone(),
                     expr: Named::Recursive(closures),
                     span_start: span_start,
-                },
+                }),
                 arena.alloc(tail),
             )
         } else {
@@ -803,11 +917,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     }])
                 };
                 Expr::Let(
-                    LetBinding {
+                    self.allocator.let_binding_arena.alloc(LetBinding {
                         name: name,
                         expr: named,
                         span_start: bind.expr.span.start(),
-                    },
+                    }),
                     arena.alloc(tail),
                 )
             })
@@ -837,7 +951,17 @@ impl<'a, 'e> Translator<'a, 'e> {
         &'a self,
         expr_type: ArcType,
         id: &TypedIdent<Symbol>,
-        mut new_args: SmallVec<[Expr<'a>; 16]>,
+        new_args: impl IntoIterator<Item = Expr<'a>>,
+        span: Span<BytePos>,
+    ) -> Expr<'a> {
+        self.new_data_constructor_(expr_type, id, &mut new_args.into_iter(), span)
+    }
+
+    fn new_data_constructor_(
+        &'a self,
+        expr_type: ArcType,
+        id: &TypedIdent<Symbol>,
+        new_args: &mut Iterator<Item = Expr<'a>>,
         span: Span<BytePos>,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
@@ -848,6 +972,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         // has no effect and `typ` itself will be used
         let data_type;
         {
+            let typ = remove_aliases_cow(&self.env, &mut NullInterner, typ.remove_forall());
             let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args
                 .by_ref()
@@ -859,7 +984,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .collect();
             data_type = args.typ.clone();
         }
-        new_args.extend(
+        let new_args = new_args.chain(
             unapplied_args
                 .iter()
                 .map(|arg| Expr::Ident(arg.clone(), span)),
@@ -869,7 +994,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 name: id.name.clone(),
                 typ: data_type,
             },
-            arena.alloc_extend(new_args.into_iter()),
+            arena.alloc_fixed(new_args),
             span.start(),
         );
         if unapplied_args.is_empty() {
@@ -898,7 +1023,7 @@ impl<'a, 'e> Translator<'a, 'e> {
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
         Expr::Let(
-            LetBinding {
+            self.allocator.let_binding_arena.alloc(LetBinding {
                 name: name.clone(),
                 expr: Named::Recursive(vec![Closure {
                     pos,
@@ -907,7 +1032,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     expr: body,
                 }]),
                 span_start: span.start(),
-            },
+            }),
             arena.alloc(Expr::Ident(name, span)),
         )
     }
@@ -918,7 +1043,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             TypedIdent::new(Symbol::from("@error")),
             Span::default(),
         ));
-        let args = arena.alloc_extend(
+        let args = arena.alloc_fixed(
             Some(Expr::Const(Literal::String(msg.into()), Span::default())).into_iter(),
         );
         Expr::Call(error, args)
@@ -1130,7 +1255,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             self.0
                 .allocator
                 .alternative_arena
-                .alloc_extend(Some(new_alt).into_iter()),
+                .alloc_fixed(Some(new_alt).into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1224,7 +1349,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             self.0
                 .allocator
                 .alternative_arena
-                .alloc_extend(new_alts.into_iter()),
+                .alloc_fixed(new_alts.into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1262,7 +1387,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             self.0
                 .allocator
                 .alternative_arena
-                .alloc_extend(Some(alt).into_iter()),
+                .alloc_fixed(Some(alt).into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1300,7 +1425,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             .into_iter()
             .map(|key| {
                 let equations = &groups[key];
-                let pattern = Pattern::Literal(key.clone());
+                let pattern = Pattern::Literal(Literal::from_ast(key));
 
                 let new_equations = equations
                     .iter()
@@ -1328,7 +1453,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             self.0
                 .allocator
                 .alternative_arena
-                .alloc_extend(new_alts.into_iter()),
+                .alloc_fixed(new_alts.into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1372,11 +1497,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .arena
                     .alloc(Expr::Ident(name.clone(), expr.span()));
                 Expr::Let(
-                    LetBinding {
+                    self.0.allocator.let_binding_arena.alloc(LetBinding {
                         name: name,
                         expr: Named::Expr(expr),
                         span_start: expr.span().start(),
-                    },
+                    }),
                     self.translate(default, &[id_expr], equations),
                 )
             }
@@ -1478,8 +1603,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             equations.iter().format(",\n"),
             expr
         );
-        let arena = &self.0.allocator.arena;
-        binder.into_expr_ref(arena, expr)
+        let allocator = &self.0.allocator;
+        binder.into_expr_ref(allocator, expr)
     }
 
     fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
@@ -2205,5 +2330,11 @@ mod tests {
             end
         "#;
         check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn expr_size() {
+        let s = std::mem::size_of::<Expr>();
+        assert!(s <= 40, "{} is to large for expressions", s);
     }
 }

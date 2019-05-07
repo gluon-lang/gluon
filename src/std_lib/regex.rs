@@ -6,11 +6,13 @@ use crate::real_std::error::Error as StdError;
 
 use crate::vm::{self, api::Collect, thread::Thread, ExternModule};
 
-#[derive(Debug, Userdata)]
+#[derive(Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.regex.Regex")]
 #[gluon(crate_name = "vm")]
 struct Regex(regex::Regex);
 
-#[derive(Debug, Userdata)]
+#[derive(Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.regex.Error")]
 #[gluon(crate_name = "vm")]
 struct Error(regex::Error);
 
@@ -67,15 +69,15 @@ fn error_to_string(err: &Error) -> &str {
 
 mod std {
     pub mod regex {
-        pub use crate::regex_bind as prim;
+        pub use crate::std_lib::regex as prim;
     }
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     use self::std;
 
-    vm.register_type::<Regex>("Regex", &[])?;
-    vm.register_type::<Error>("Error", &[])?;
+    vm.register_type::<Regex>("std.regex.Regex", &[])?;
+    vm.register_type::<Error>("std.regex.Error", &[])?;
 
     ExternModule::new(
         vm,

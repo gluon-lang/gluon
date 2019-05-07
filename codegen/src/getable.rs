@@ -85,12 +85,13 @@ where
     // Treat newtype structs as just their inner type
     let (first, second) = (fields.next(), fields.next());
     match (&first, &second) {
-        (Some(field_ty), None) => {
+        (Some(field), None) => {
+            let field_ty = &field.ty;
             return quote! {
                 #ident (
                 <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, variants)
                 )
-            }
+            };
         }
         _ => (),
     }
@@ -178,16 +179,19 @@ fn gen_impl(
             use #ident::api as _gluon_api;
             use #ident::thread as _gluon_thread;
             use #ident::Variants as _GluonVariants;
+            use #ident::Result as _GluonResult;
         },
         attr::CrateName::GluonVm => quote! {
-            use api as _gluon_api;
-            use thread as _gluon_thread;
-            use Variants as _GluonVariants;
+            use crate::api as _gluon_api;
+            use crate::thread as _gluon_thread;
+            use crate::Variants as _GluonVariants;
+            use crate::Result as _GluonResult;
         },
         attr::CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;
             use gluon::vm::thread as _gluon_thread;
             use gluon::vm::Variants as _GluonVariants;
+            use gluon::vm::Result as _GluonResult;
         },
     };
 
@@ -201,6 +205,16 @@ fn gen_impl(
             impl #impl_generics _gluon_api::Getable<'__vm, '__value> for #ident #ty_generics
             #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
             {
+                type Proxy = _GluonVariants<'__value>;
+
+                fn to_proxy(vm: &'__vm _gluon_thread::Thread, value: _GluonVariants<'__value>) -> _GluonResult<Self::Proxy> {
+                    Ok(value)
+                }
+
+                fn from_proxy(vm: &'__vm _gluon_thread::Thread, proxy: &'__value mut Self::Proxy) -> Self {
+                    Self::from_value(vm, *proxy)
+                }
+
                 fn from_value(vm: &'__vm _gluon_thread::Thread, variants: _GluonVariants<'__value>) -> Self {
                     #push_impl
                 }

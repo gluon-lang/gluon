@@ -1,7 +1,9 @@
-use crate::base::fnv::FnvMap;
-use crate::base::kind::{ArcKind, Kind, KindEnv};
-use crate::base::symbol::{Symbol, SymbolRef};
-use crate::base::types::{Alias, ArcType, Type, TypeEnv, TypeExt};
+use crate::base::{
+    fnv::FnvMap,
+    kind::{ArcKind, Kind, KindEnv},
+    symbol::{Symbol, SymbolRef},
+    types::{Alias, ArcType, Type, TypeEnv, TypeExt},
+};
 
 pub use self::Instruction::*;
 

@@ -213,7 +213,7 @@ f (Test ())
     let result = support::typecheck(text);
 
     let test = support::alias_variant("Test", &[], &[("Test", &[Type::unit()])]);
-    assert_req!(result, Ok(test));
+    assert_eq!(result, Ok(test));
 }
 
 test_check! {
@@ -873,6 +873,31 @@ f 1
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
+#[test]
+fn allow_sub_classed_duplicate() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+#[implicit]
+type Base a = { x : a }
+#[implicit]
+type Derived a = { base : Base a, y : a }
+#[implicit]
+type Derived2 a = { derived : Derived a, z : a }
+
+let { ? } = 
+    let base : Base Int = { x = 0 }
+    let derived : Derived Int = { base, y = 1 }
+    let derived2 : Derived2 Int = { derived, z = 2 }
+    { base, derived, derived2 }
+
+let f ?b x : [Base a] -> a -> a = b.x
+f 1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 test_check_err! {
 break_infinite_implicit_resolve_early,
     r#"
@@ -969,6 +994,121 @@ let eq_Test a : a -> () = ()
 let show_Test : Show (Test a) =
     rec let show_ x : Test a -> () = ()
     { show = show_ }
+
+()
+"#,
+"()"
+}
+
+test_check! {
+field_with_implicit_parameter,
+r#"
+#[implicit]
+type Monad m = { wrap : a -> m a }
+
+type StateT s m a = s -> m { value : a, state : s }
+
+let any x = any x
+
+#[implicit]
+type Transformer t = {
+    wrap_monad : forall a m . [Monad m] -> m a -> t m a
+}
+
+let transformer : Transformer (StateT s) =
+    let wrap_monad : [Monad m] -> m a -> StateT s m a = any ()
+
+    { wrap_monad }
+
+()
+"#,
+"()"
+}
+
+test_check! {
+unable_to_resolve_double_nested_instance,
+r#"
+#[implicit]
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+#[implicit]
+type Applicative f = {
+    functor : Functor f,
+}
+#[implicit]
+type Monad m = { functor : Applicative m }
+
+let any x = any x
+
+let eval_state_t f : [Functor m] -> m a -> () = ()
+
+let associativity mx : [Monad m] -> m a -> () =
+    eval_state_t mx
+
+()
+"#,
+"()"
+}
+
+test_check! {
+match_inference,
+r#"
+let any x = any x
+let assert x : Bool -> () = ()
+type Result e t = | Err e | Ok t
+type Channel t = { x : t }
+let recv x : Channel t -> Result e t = any ()
+#[infix(left, 4)]
+let (==) :  a -> a -> Bool = any ()
+
+let f receiver : Channel Int -> _ =
+    match recv receiver with
+    | Ok x -> assert (x == 1)
+    | Err _ -> assert False
+
+()
+"#,
+"()"
+}
+
+test_check! {
+ord_array_implicit_resolution,
+r#"
+
+#[implicit]
+type Eq a = { (==) : a -> a -> Bool }
+
+#[implicit]
+type Ord a = { eq : Eq a, compare : a -> a -> () }
+
+let eq ?eq : [Eq a] -> Eq (Array a) =
+    { (==) = \x y -> False }
+
+let ord ?ord : [Ord a] -> Ord (Array a) =
+    let array_cmp l r = array_cmp l r
+    { eq, compare = \_ _ -> () }
+
+()
+"#,
+"()"
+}
+
+test_check! {
+ord_array_implicit_resolution2,
+r#"
+
+#[implicit]
+type Eq a = { (==) : a -> a -> Bool }
+
+#[implicit]
+type Ord a = { eq : Eq a, compare : a -> a -> () }
+
+let eq ?eq : [Eq a] -> Eq (Array a) =
+    { (==) = \x y -> False }
+
+let ord ?ord : [Ord a] -> Ord (Array a) =
+    { eq, compare = \_ _ -> () }
 
 ()
 "#,

@@ -4,7 +4,7 @@ extern crate gluon;
 
 mod init;
 
-use gluon::vm::api::VmType;
+use gluon::{base::types::Type, vm::api::VmType};
 use init::new_vm;
 
 #[derive(VmType)]
@@ -45,14 +45,35 @@ fn enum_() {
 
 #[derive(VmType)]
 #[allow(unused)]
+struct NewtypeInner(Struct);
+
+#[test]
+fn newtype_inner() {
+    let vm = new_vm();
+
+    assert_eq!(
+        NewtypeInner::make_type(&vm).to_string(),
+        Struct::make_type(&vm).to_string(),
+    );
+}
+
+#[derive(VmType)]
+#[gluon(newtype)]
+#[allow(unused)]
 struct Newtype(Struct);
 
 #[test]
 fn newtype() {
     let vm = new_vm();
 
-    assert_eq!(
-        Newtype::make_type(&vm).to_string(),
-        Struct::make_type(&vm).to_string(),
-    );
+    match &*Newtype::make_type(&vm) {
+        Type::Alias(alias) => {
+            assert_eq!(alias.name.declared_name(), "Newtype");
+            assert_eq!(
+                alias.unresolved_type().to_string(),
+                Struct::make_type(&vm).to_string()
+            );
+        }
+        _ => panic!(),
+    }
 }

@@ -110,14 +110,14 @@ impl<'a> Visitor<'a, 'a> for RecognizeUnnecessaryAllocation<'a> {
                 })
                 .unwrap_or_else(|| Symbol::from("dummy"));
             let new_expr = Expr::Let(
-                LetBinding {
+                self_.allocator.let_binding_arena.alloc(LetBinding {
                     name: TypedIdent {
                         name: pattern_field.clone(),
                         typ: field.typ.clone(),
                     },
                     expr: Named::Expr(expr),
                     span_start: pos::BytePos::default(),
-                },
+                }),
                 next_expr,
             );
             &*self_.allocator().arena.alloc(new_expr)
@@ -279,7 +279,7 @@ where
     }
 }
 
-fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &LetBinding<'b>) -> Option<LetBinding<'a>>
+fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &LetBinding<'b>) -> Option<&'a LetBinding<'a>>
 where
     V: ?Sized + Visitor<'a, 'b>,
 {
@@ -305,10 +305,15 @@ where
         .map(Named::Recursive),
         Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
     };
-    new_named.map(|named| LetBinding {
-        name: bind.name.clone(),
-        expr: named,
-        span_start: bind.span_start,
+    new_named.map(|named| {
+        &*allocator
+            .expect("Allocator")
+            .let_binding_arena
+            .alloc(LetBinding {
+                name: bind.name.clone(),
+                expr: named,
+                span_start: bind.span_start,
+            })
     })
 }
 

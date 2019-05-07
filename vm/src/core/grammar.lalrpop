@@ -1,10 +1,10 @@
 use crate::base::{
-    ast::{Literal, TypedIdent},
+    ast::{TypedIdent},
     pos::{BytePos, Span},
     symbol::{Symbol, Symbols},
     types::{Field, Type}};
 
-use crate::core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
+use crate::core::{Allocator, Alternative, Closure, Expr, LetBinding, Literal, Named, Pattern};
 
 grammar<'env, 'a>(symbols: &'env mut Symbols, allocator: &'a Allocator<'a>);
 
@@ -27,7 +27,7 @@ Field: (Symbol, Option<Symbol>) = {
 
 Literal: Literal = {
     <r"[0-9]+"> => Literal::Int(<>.parse().unwrap()),
-    <r#""[^"]*""#> => Literal::String(<>[1..<>.len() - 1].to_string()),
+    <r#""[^"]*""#> => Literal::String(Box::from(&<>[1..<>.len() - 1])),
 };
 
 Pattern: Pattern = {
@@ -122,7 +122,7 @@ pub Expr: Expr<'a> = {
         }
     },
     <bind: LetBinding> "in" <expr: AllocExpr> => {
-        Expr::Let(bind, expr)
+        Expr::Let(allocator.let_binding_arena.alloc(bind), expr)
     },
     "match" <expr: AllocExpr> "with" <alts: Alternative+> "end" =>
         Expr::Match(expr, allocator.alternative_arena.alloc_extend(alts.into_iter())),

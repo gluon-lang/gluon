@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.10.1" # GLUON
+version = "0.11.2" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -22,8 +22,8 @@ collect-mac = "0.1.0"
 anymap = "0.12.0"
 itertools = "0.8"
 ordered-float = "1"
-codespan = "0.2"
-codespan-reporting = "0.2"
+codespan = "0.3"
+codespan-reporting = "0.3"
 either = "1"
 stable_deref_trait = "1"
 vec_map = "0.8"

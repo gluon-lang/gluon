@@ -2,7 +2,7 @@
 //! Bindings for rust-lang/regex
 
 let { Match, eq_Match, show_Match } = import! std.regex.types
-let regex_prim = import! std.regex.prim
+let regex_prim @ { Regex, Error  } = import! std.regex.prim
 
 {
     Match,

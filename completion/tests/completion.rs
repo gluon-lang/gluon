@@ -8,12 +8,13 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::Argument;
-use crate::base::kind::{ArcKind, Kind};
-use crate::base::metadata::Metadata;
-use crate::base::metadata::{Comment, CommentType};
-use crate::base::pos::{BytePos, Span};
-use crate::base::types::{ArcType, Field, Type};
+use crate::base::{
+    ast::Argument,
+    kind::{ArcKind, Kind},
+    metadata::{Comment, CommentType, Metadata},
+    pos::{BytePos, Span},
+    types::{ArcType, Field, Type},
+};
 
 use either::Either;
 
@@ -59,6 +60,13 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
 fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
     let pos = loc(s, line, column);
     find_span_type(s, pos).map(|t| t.1.right().expect("Type"))
+}
+
+fn symbol(s: &str, pos: BytePos) -> Result<String, ()> {
+    let (expr, result) = support::typecheck_expr(s);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    completion::symbol(expr.span, &expr, pos).map(|s| s.declared_name().to_string())
 }
 
 fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
@@ -545,7 +553,8 @@ let { x, y } = { x = 1, y = 2 }
 
     let symbols = completion::all_symbols(expr.span, &expr);
 
-    assert_eq!(symbols.len(), 4);
+    assert_eq!(symbols.len(), 3);
+    assert_eq!(symbols[1].value.children.len(), 1);
 }
 
 #[test]
@@ -607,4 +616,18 @@ let f x : Int -> Int = x
     let expected = Ok(Kind::typ());
 
     assert_eq!(result, expected);
+}
+
+#[test]
+fn type_symbol() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = | Test a
+let x : Test Int = Test 1
+1.0
+"#;
+    let result = symbol(text, loc(text, 2, 10));
+
+    assert_eq!(result, Ok("Test".into()));
 }

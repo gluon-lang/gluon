@@ -33,11 +33,12 @@ use std::{
 
 use futures::{Async, Future};
 
-pub use self::function::*;
-pub use self::opaque::{Opaque, OpaqueRef, OpaqueValue};
-pub use self::record::Record;
-pub use crate::thread::ActiveThread;
-pub use crate::value::Userdata;
+pub use self::{
+    function::*,
+    opaque::{Opaque, OpaqueRef, OpaqueValue},
+    record::Record,
+};
+pub use crate::{thread::ActiveThread, value::Userdata};
 
 macro_rules! count {
     () => { 0 };
@@ -45,11 +46,31 @@ macro_rules! count {
     ($_e: ident, $($rest: ident),*) => { 1 + count!($($rest),*) }
 }
 
+/// Implements the proxy methods, letting only `from_value` be specified
+#[macro_export]
+macro_rules! impl_getable_simple {
+    () => {
+        type Proxy = $crate::Variants<'value>;
+        #[inline(always)]
+        fn to_proxy(
+            _vm: &'vm Thread,
+            value: $crate::Variants<'value>,
+        ) -> $crate::Result<Self::Proxy> {
+            Ok(value)
+        }
+        #[inline(always)]
+        fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+            <Self as Getable<'vm, 'value>>::from_value(vm, *proxy)
+        }
+    };
+}
+
 #[macro_use]
 pub mod mac;
 pub mod function;
 mod opaque;
 pub mod record;
+pub mod scoped;
 
 #[cfg(feature = "serde")]
 pub mod de;
@@ -515,9 +536,24 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     }
 }
 
+impl<T> Userdata for std::sync::RwLock<T> where T: Userdata {}
+
+impl<T> Traverseable for std::sync::RwLock<T>
+where
+    T: Traverseable,
+{
+    fn traverse(&self, gc: &mut Gc) {
+        self.read().unwrap().traverse(gc);
+    }
+}
+
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm, 'value>: Sized {
+    type Proxy: 'value;
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self;
+
+    fn to_proxy(vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy>;
+    fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self;
 }
 
 pub fn convert<'vm, T, U>(thread: &'vm Thread, t: T) -> Result<U>
@@ -552,6 +588,8 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for ValueRef<'value> {
+    impl_getable_simple!();
+
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         value.as_ref()
     }
@@ -597,6 +635,8 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
 where
     T: vm::Userdata + Clone,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         UserdataValue(<&'value T as Getable<'vm, 'value>>::from_value(vm, value).clone())
     }
@@ -618,10 +658,42 @@ impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
     }
 }
 
+pub enum RefProxy<'value, T> {
+    Lock(scoped::ReadGuard<'value, T>),
+    Ref(&'value T),
+}
+
 impl<'vm, 'value, T> Getable<'vm, 'value> for &'value T
 where
     T: vm::Userdata,
 {
+    type Proxy = RefProxy<'value, T>;
+
+    fn to_proxy(_vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy> {
+        match value.as_ref() {
+            ValueRef::Userdata(data) => data.downcast_ref::<T>().map_or_else(
+                || {
+                    Ok(RefProxy::Lock(
+                        data.downcast_ref::<scoped::Scoped<T, &'static ()>>()
+                            .map(|s| s.read())
+                            .or_else(|| {
+                                data.downcast_ref::<scoped::Scoped<T, &'static mut ()>>()
+                                    .map(|s| s.read())
+                            })
+                            .unwrap()?,
+                    ))
+                },
+                |x| Ok(RefProxy::Ref(x)),
+            ),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
+    }
+    fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+        match proxy {
+            RefProxy::Lock(v) => &*v,
+            RefProxy::Ref(v) => v,
+        }
+    }
     // Only allow the unsafe version to be used
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
@@ -631,7 +703,40 @@ where
     }
 }
 
+impl<'vm, T: ?Sized + VmType> VmType for &'vm mut T {
+    type Type = T::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for &'value mut T
+where
+    T: vm::Userdata,
+{
+    type Proxy = scoped::WriteGuard<'value, T>;
+
+    fn to_proxy(_vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy> {
+        match value.as_ref() {
+            ValueRef::Userdata(data) => Ok(data
+                .downcast_ref::<scoped::Scoped<T, &'static mut ()>>()
+                .unwrap()
+                .write()?),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
+    }
+    fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+        proxy
+    }
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm Thread, _value: Variants<'value>) -> Self {
+        panic!("Mutable references can only be created via proxies")
+    }
+}
+
 impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
+    impl_getable_simple!();
+
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::String(ref s) => s,
@@ -641,6 +746,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for &'value Path {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         Path::new(<&'value str>::from_value(vm, value))
     }
@@ -680,6 +787,18 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for WithVM<'vm, T>
 where
     T: Getable<'vm, 'value>,
 {
+    type Proxy = T::Proxy;
+
+    fn to_proxy(vm: &'vm Thread, value: Variants<'value>) -> Result<Self::Proxy> {
+        T::to_proxy(vm, value)
+    }
+    fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
+        WithVM {
+            vm,
+            value: T::from_proxy(vm, proxy),
+        }
+    }
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> WithVM<'vm, T> {
         let t = T::from_value(vm, value);
         WithVM { vm, value: t }
@@ -696,6 +815,8 @@ impl<'vm> Pushable<'vm> for () {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for () {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, _: Variants) -> () {
         ()
     }
@@ -712,6 +833,8 @@ impl<'vm> Pushable<'vm> for u8 {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for u8 {
+    impl_getable_simple!();
+
     #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> u8 {
         match value.as_ref() {
@@ -735,6 +858,8 @@ macro_rules! int_impls {
             }
         }
         impl<'vm, 'value> Getable<'vm, 'value> for $id {
+            impl_getable_simple!();
+
             #[inline]
             fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
                 match value.as_ref() {
@@ -760,6 +885,8 @@ impl<'vm> Pushable<'vm> for f64 {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for f64 {
+    impl_getable_simple!();
+
     #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> f64 {
         match value.as_ref() {
@@ -768,6 +895,29 @@ impl<'vm, 'value> Getable<'vm, 'value> for f64 {
         }
     }
 }
+
+impl VmType for f32 {
+    type Type = Self;
+}
+impl<'vm> Pushable<'vm> for f32 {
+    #[inline]
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Float(self as f64));
+        Ok(())
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for f32 {
+    impl_getable_simple!();
+
+    #[inline]
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::Float(f) => f as f32,
+            _ => ice!("ValueRef is not a Float"),
+        }
+    }
+}
+
 impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
@@ -787,6 +937,8 @@ impl<'vm> Pushable<'vm> for bool {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for bool {
+    impl_getable_simple!();
+
     #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> bool {
         match value.as_ref() {
@@ -819,6 +971,8 @@ impl<'vm> Pushable<'vm> for Ordering {
 }
 impl<'vm, 'value> Getable<'vm, 'value> for Ordering {
     #[inline]
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Ordering {
         let tag = match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
@@ -856,6 +1010,8 @@ impl<'vm, 's> Pushable<'vm> for &'s str {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for String {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> String {
         match value.as_ref() {
             ValueRef::String(i) => String::from(&i[..]),
@@ -880,6 +1036,8 @@ impl<'vm> Pushable<'vm> for char {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for char {
+    impl_getable_simple!();
+
     #[inline]
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> char {
         match value.as_ref() {
@@ -917,6 +1075,8 @@ impl<'vm, 's> Pushable<'vm> for &'s Path {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for PathBuf {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::String(i) => PathBuf::from(&i[..]),
@@ -952,6 +1112,8 @@ impl<'vm, 's> Pushable<'vm> for &'s OsStr {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for OsString {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::String(i) => OsString::from(&i[..]),
@@ -995,6 +1157,8 @@ where
     }
 }
 impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
+    impl_getable_simple!();
+
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Array(ptr) => ptr.as_slice().unwrap(),
@@ -1040,6 +1204,8 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for Vec<T>
 where
     T: Getable<'vm, 'value>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Vec<T> {
         Collect::<GetableIter<T>>::from_value(vm, value).collect()
     }
@@ -1053,6 +1219,8 @@ impl<'s, T: VmType> VmType for *const T {
 }
 
 impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for *const T {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> *const T {
         match value.as_ref() {
             ValueRef::Userdata(data) => {
@@ -1072,6 +1240,8 @@ impl<'s, T: VmType> VmType for Box<T> {
 }
 
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Box<T> {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Box<T> {
         Box::new(T::from_value(vm, value))
     }
@@ -1125,6 +1295,8 @@ where
     K: Getable<'vm, 'value> + Ord,
     V: Getable<'vm, 'value>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         fn build_map<'vm2, 'value2, K2, V2>(
             map: &mut BTreeMap<K2, V2>,
@@ -1191,6 +1363,8 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     }
 }
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Option<T> {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Option<T> {
         match value.as_ref() {
             ValueRef::Data(data) => {
@@ -1252,6 +1426,8 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 impl<'vm, 'value, T: Getable<'vm, 'value>, E: Getable<'vm, 'value>> Getable<'vm, 'value>
     for StdResult<T, E>
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> StdResult<T, E> {
         match value.as_ref() {
             ValueRef::Data(data) => match data.tag() {
@@ -1356,7 +1532,7 @@ where
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
         let env = vm.global_env().get_env();
-        let alias = env.find_type_info("IO").unwrap().into_owned();
+        let alias = env.find_type_info("std.io.IO").unwrap().into_owned();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
     fn extra_args() -> VmIndex {
@@ -1365,6 +1541,8 @@ where
 }
 
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for IO<T> {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> IO<T> {
         IO::Value(T::from_value(vm, value))
     }
@@ -1409,6 +1587,8 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for RootedValue<T>
 where
     T: Deref<Target = Thread> + VmRoot<'vm>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         vm.root_value(value)
     }
@@ -1495,6 +1675,8 @@ macro_rules! define_tuple {
 
         #[allow(non_snake_case)]
         impl<'vm, 'value, $($id: Getable<'vm, 'value>),+> Getable<'vm, 'value> for ($($id),+) {
+            impl_getable_simple!();
+
             #[allow(unused_assignments)]
             fn from_value(vm: &'vm Thread, value: Variants<'value>) -> ($($id),+) {
                 match value.as_ref() {
@@ -1684,6 +1866,8 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for Collect<GetableIter<'vm, 'value, T
 where
     T: Getable<'vm, 'value>,
 {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Array(data) => Collect::new(GetableIter {

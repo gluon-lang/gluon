@@ -95,7 +95,7 @@ where
         let symbol = vm
             .global_env()
             .get_env()
-            .find_type_info("Sender")
+            .find_type_info("std.channel.Sender")
             .unwrap()
             .name
             .clone();
@@ -112,7 +112,7 @@ where
         let symbol = vm
             .global_env()
             .get_env()
-            .find_type_info("Receiver")
+            .find_type_info("std.channel.Receiver")
             .unwrap()
             .name
             .clone();
@@ -379,8 +379,8 @@ mod std {
 }
 
 pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
-    let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
-    let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
+    let _ = vm.register_type::<Sender<A>>("std.channel.Sender", &["a"]);
+    let _ = vm.register_type::<Receiver<A>>("std.channel.Receiver", &["a"]);
 
     ExternModule::new(
         vm,

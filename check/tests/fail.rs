@@ -264,7 +264,7 @@ y
 ";
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Other(SelfRecursiveAlias(..)));
+    assert_multi_unify_err!(result, [Other(SelfRecursiveAlias(..))]);
 }
 
 #[test]
@@ -293,7 +293,7 @@ let make m =
 make 2
 "#;
     let result = support::typecheck(text);
-    assert!(result.is_err(), "{}", result.unwrap());
+    assert_err!(result, Message(..), Message(..));
 }
 
 #[test]
@@ -401,8 +401,10 @@ Types do not match:
     Expected: Int -> a
     Found: ()
 - <test>:2:4
+  |
 2 | () 1
   |    ^
+  |
 - Attempted to call a non-function value
 "#
     );
@@ -429,8 +431,10 @@ Row labels do not match.
     Expected: A
     Found: B
 - <test>:5:11
+  |
 5 | eq (A 0) (B 0.0)
   |           ^^^^^
+  |
 "#
     );
 }
@@ -454,8 +458,10 @@ Found: { x : Int }
 1 errors were found during unification:
 The type `()` lacks the following fields: x
 - <test>:4:7
+  |
 4 | f { } { x = 1 }
   |       ^^^^^^^^^
+  |
 "#
     );
 }
@@ -482,8 +488,10 @@ f (Test (Test 1))
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"error: Implicit parameter with type `test.Eq Int` could not be resolved.
 - <test>:11:3
+   |
 11 | f (Test (Test 1))
    |   ^^^^^^^^^^^^^^^
+   |
 - Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
 - Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
 "#,
@@ -704,8 +712,10 @@ Types do not match:
     Expected: Int -> Float -> a
     Found: String
 - <test>:3:7
+  |
 3 | id "" 1 1.0
   |       ^^^^^
+  |
 - Attempted to call function with 3 arguments but its type only has 1
 "#
     );
@@ -738,8 +748,10 @@ Types do not match:
     Expected: Int -> Int -> a
     Found: test.Eff [| | r |] Int
 - <test>:10:3
+   |
 10 | f x 1
    |   ^
+   |
 "#
     );
 }
@@ -771,4 +783,21 @@ let f x : a -> () =
     let result = support::typecheck(text);
 
     assert_err!(result, KindError(..));
+}
+
+test_check_err! {
+    issue_703_type_mismatch_in_recursive_function,
+    r#"
+type List a = | Nil | Cons a (List a)
+
+let reverse xs =
+    match xs with
+    | Nil -> Nil
+    | l -> l
+
+match reverse (Cons 1 Nil) with
+| Cons x _ -> x
+| Nil -> ""
+"#,
+Unification(..)
 }

@@ -2,21 +2,24 @@
 
 extern crate codespan;
 
-use crate::base::ast::SpannedExpr;
-use crate::base::error::InFile;
-use crate::base::kind::{ArcKind, Kind, KindEnv};
-use crate::base::metadata::{Metadata, MetadataEnv};
-use crate::base::pos::BytePos;
-use crate::base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use crate::base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
+use crate::base::{
+    ast::SpannedExpr,
+    error::InFile,
+    kind::{ArcKind, Kind, KindEnv},
+    metadata::{Metadata, MetadataEnv},
+    pos::BytePos,
+    symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+    types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+};
 
-use crate::check::typecheck::{self, Typecheck};
-use crate::check::{metadata, rename};
+use crate::check::{
+    metadata, rename,
+    typecheck::{self, Typecheck},
+};
+
 use crate::parser::{parse_partial_expr, reparse_infix, ParseErrors};
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
     codespan::FileMap::new("test".into(), src.to_string())

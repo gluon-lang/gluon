@@ -1,0 +1,45 @@
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
+let { StateT, put, get, gets, modify, run_state_t, eval_state_t, exec_state_t, ? } = import! std.statet
+let { wrap, (*>) } = import! std.applicative
+let { Monad, (>>=) } = import! std.monad
+let { Option, unwrap, ? } = import! std.option
+let { (++), ? } = import! std.string
+let list @ { List, ? } = import! std.list
+let { Transformer, wrap_monad } = import! std.transformer
+
+#[infix(right,7)]
+let (::) x xs = Cons x xs
+
+let left_identity x f : [Eq a] -> [Show a] -> a -> (a -> StateT _ Option a) -> _ = \_ ->
+    let mx : StateT _ Option _ = wrap x
+    let s = ()
+    assert_eq (eval_state_t (mx >>= f) s) (eval_state_t (f x) s)
+
+let right_identity x : [Eq a] -> [Show a] -> a -> _ = \_ ->
+    let mx : StateT _ Option _ = wrap x
+    let s = ()
+    assert_eq (eval_state_t (mx >>= wrap) s) (eval_state_t mx s)
+
+let associativity ?mo mx f g : [Monad m] -> [Show (m a)] -> [Eq (m a)] -> m a -> _ -> _ -> _ = \_ ->
+    let mx : StateT _ m _ = wrap_monad mx
+    let s = ()
+    assert_eq (eval_state_t ((mx >>= f) >>= g) s) (eval_state_t (mx >>= (\x -> f x >>= g)) s)
+
+group "statet" [
+    // should this be moved to std.monad?
+    group "StateT s m is monadic" [
+        test "left identity" <| left_identity 324 (\x -> wrap <| x + 89),
+        test "right identity" <| right_identity "hello",
+        test "associativity" <| associativity (Some 5) (\x -> wrap (x+5)) (\x -> wrap (x*2)),
+    ],
+    group "StateT s m has state effects" [
+        test "modify exec_state_t" <| \_ -> (assert_eq (exec_state_t (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) <| Some 8),
+        test "modify eval_state_t" <| \_ -> (assert_eq (eval_state_t (modify (\x -> x + 2) *> get) 0) <| Some 2),
+        test "put get eval_state_t" <| \_ -> (assert_eq (eval_state_t (put "hello" *> get) "") <| Some "hello"),
+        #[derive(Eq, Show)]
+        type StateOut s a = { value : a, state : s }
+        test "put get run_state_t" <| \_ -> (assert_eq (run_state_t (put "hello" *> get) "") <| Some {value = "hello", state = "hello"}),
+        test "gets eval_state_t" <| \_ -> (assert_eq (eval_state_t (gets <| (::) 1) (2 :: 3 :: Nil)) <| Some (1 :: 2 :: 3 :: Nil)),
+    ],
+]

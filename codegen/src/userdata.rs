@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
-use syn::{self, Data, DeriveInput, GenericParam, Generics};
+use syn::{self, Data, DeriveInput, Generics};
 
 use attr::{Container, CrateName};
 
@@ -48,12 +48,6 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
         },
     };
 
-    let associated_type_generics = generics.params.iter().map(|param| match param {
-        GenericParam::Type(ty) => quote!( #ty :: Type ),
-        GenericParam::Lifetime(_) => quote!( 'static ),
-        GenericParam::Const(c) => quote!( #c ),
-    });
-
     let dummy_const = Ident::new(&format!("_IMPL_USERDATA_FOR_{}", ident), Span::call_site());
 
     quote! {
@@ -71,16 +65,6 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
             #[automatically_derived]
             #[allow(unused_attributes, unused_variables)]
             impl #impl_generics _gluon_gc::Traverseable for #ident #ty_generics {}
-
-            #[automatically_derived]
-            #[allow(unused_attributes, unused_variables)]
-            impl #impl_generics _gluon_api::VmType for #ident #ty_generics
-            #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
-            {
-                type Type = #ident<
-                        #(#associated_type_generics),*
-                    >;
-            }
         };
     }
 }

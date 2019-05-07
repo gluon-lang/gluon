@@ -35,7 +35,7 @@ test //
     );
     let expected = Some(SignatureHelp {
         name: "test".to_string(),
-        typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
+        typ: Type::function(vec![typ("Int"), typ("String")], typ("Int")),
         index: Some(0),
     });
 
@@ -56,7 +56,7 @@ test 123//
     );
     let expected = Some(SignatureHelp {
         name: "test".to_string(),
-        typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
+        typ: Type::function(vec![typ("Int"), typ("String")], typ("Int")),
         index: None,
     });
 
@@ -77,7 +77,7 @@ test 123 //
     );
     let expected = Some(SignatureHelp {
         name: "test".to_string(),
-        typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
+        typ: Type::function(vec![typ("Int"), typ("String")], typ("Int")),
         index: Some(1),
     });
 

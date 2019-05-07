@@ -9,7 +9,7 @@ let { Option } = import! std.option
 let { Monoid } = import! std.monoid
 let { Semigroup, (<>) } = import! std.semigroup
 let { Foldable } = import! std.foldable
-let { lazy, force } = import! std.lazy
+let { Lazy, lazy, force } = import! std.lazy
 
 rec
 type Stream_ a =

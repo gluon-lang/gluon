@@ -5,7 +5,7 @@ use std::{cell::RefCell, fmt, marker::PhantomData, result::Result as StdResult};
 use crate::base::{
     resolve,
     symbol::Symbol,
-    types::{row_iter, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
+    types::{ctor_args, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
 };
 
 use crate::api::{Getable, ValueRef, VmType};
@@ -175,6 +175,8 @@ where
     T: VmType,
     T: DeserializeOwned,
 {
+    impl_getable_simple!();
+
     fn from_value(thread: &'vm Thread, value: Variants<'value>) -> Self {
         let typ = T::make_type(thread);
         match from_value(thread, value, &typ).map(De) {
@@ -567,7 +569,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                     Some(field) => {
                         let iter = (0..data.len())
                             .map(|i| data.get_variant(i).unwrap())
-                            .zip(row_iter(&field.typ).map(|field| &field.typ));
+                            .zip(ctor_args(&field.typ));
                         visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
                     }
                     None => self.deserialize_any(visitor),
@@ -831,12 +833,9 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                         input: data.get_variant(0).ok_or_else(|| {
                             VmError::Message("Expected variant to have a value argument".into())
                         })?,
-                        typ: &row_iter(&field.typ)
-                            .next()
-                            .ok_or_else(|| {
-                                VmError::Message("Expected variant to have a type argument".into())
-                            })?
-                            .typ,
+                        typ: ctor_args(&field.typ).next().ok_or_else(|| {
+                            VmError::Message("Expected variant to have a type argument".into())
+                        })?,
                         ..self.de.clone()
                     }),
                     None => seed.deserialize(self.de),

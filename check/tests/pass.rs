@@ -991,7 +991,7 @@ test_check! {
     higher_ranked_variant_function,
     r#"
 type TestCase =
-    | Test (r -> r)
+    | Test (forall r . r -> r)
 Test
     "#,
     "(forall r . r -> r) -> test.TestCase"
@@ -1001,7 +1001,7 @@ test_check! {
     higher_ranked_variant_function_dont_leak_to_siblings,
     r#"
 type TestCase =
-    | Test (r -> r)
+    | Test (forall r . r -> r)
     | Group String
 Group
     "#,
@@ -1032,4 +1032,70 @@ let x : Test2 String = (1, "")
 x
     "#,
     "test.Test2 String"
+}
+
+test_check! {
+    alias_reduction_stack_must_be_cleared_between_function_arguments,
+    r#"
+type StateT s m a = s -> m { value : a, state : s }
+
+#[implicit]
+type Alternative f = {
+    or : forall a . f a -> f a -> f a,
+}
+
+let any x = any x
+
+#[infix(left, 4)]
+let (<*>) : f (a -> b) -> f a -> f b = any ()
+
+#[infix(right, 9)]
+let (<<) : (b -> c) -> (a -> b) -> a -> c = any ()
+
+let alternative ?alt : [Alternative m] -> Alternative (StateT s m) = 
+    let or sra srb = alt.or << sra <*> srb
+    { or }
+
+()
+    "#,
+    "()"
+}
+
+test_check! {
+match_a_function,
+r#"
+type Test a = | Test a
+
+let f x a : Test (a -> a) -> a -> a =
+    match x with
+    | Test y -> y a
+()
+"#,
+"()"
+}
+
+test_check! {
+match_recursive,
+r#"
+#[implicit]
+type Eq a = { (==) : a -> a -> Bool }
+
+#[infix(left, 4)]
+let (==) ?eq : [Eq a] -> a -> a -> Bool = eq.(==)
+
+type Recursive a =
+    | End a
+    | Rec a (Recursive a)
+
+rec let eq_Recursive : [Eq a] -> Eq (Recursive a) =
+    rec let eq l r : Recursive a -> Recursive a -> _ =
+        match (l, r) with
+        | (End l, End r) -> l == r
+        | (Rec l arg_l, Rec r arg_r) -> l == r && eq arg_l arg_r
+        | _ -> False
+    { (==) = eq }
+
+()
+"#,
+"()"
 }

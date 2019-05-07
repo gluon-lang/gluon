@@ -1,3 +1,90 @@
+<a name="v0.11.2"></a>
+### v0.11.2 (2019-03-26)
+
+
+#### Features
+
+* **doc:**  Don't display the full path to types in the documentation ([a669faaa](https://github.com/gluon-lang/gluon/commit/a669faaadadd388e23d36393204820d73316cbf5))
+
+#### Bug Fixes
+
+*   Ignore mdbook for osx builds ([7755967a](https://github.com/gluon-lang/gluon/commit/7755967ad5e3defb5a1d1b1c10ce920ec030556d))
+* **check:**  The alias reduction stack must be cleared between unifying function arguments ([170072a4](https://github.com/gluon-lang/gluon/commit/170072a4734d4ec27c97c307aae7dc5b7d181dcc))
+* **doc:**
+  *  Correct all the remaining links in docs ([494675fe](https://github.com/gluon-lang/gluon/commit/494675fe3dbfc229c795ed3b076ce0c87c7297a1))
+  *  Point breadcrumb links correctly ([2a9cca72](https://github.com/gluon-lang/gluon/commit/2a9cca7282a74bd13851a25f88f2b04d398f2dbe))
+  *  Point Rust defined types to their doc location ([b170f2f3](https://github.com/gluon-lang/gluon/commit/b170f2f3a2bd9b8a33ca4eb7620ea0e7f2a26784))
+  *  Don't generate dead links in the documentation ([04131b71](https://github.com/gluon-lang/gluon/commit/04131b71176bc824cee956aa431ab84063d98861))
+  *  Point sibling module links correctly ([3bbf4a99](https://github.com/gluon-lang/gluon/commit/3bbf4a9927ef2060707bf8345cf028f6a03df658))
+
+
+
+<a name="v0.11.1"></a>
+### v0.11.1 (2019-02-13)
+
+
+#### Bug Fixes
+
+*   Don't build release artifacts with full debug info ([fe935835](https://github.com/gluon-lang/gluon/commit/fe9358358a30d06103e6ca51d0af41a1bdff7c60))
+* **check:**  Subsume implicit functions with forall correctly ([6de5c256](https://github.com/gluon-lang/gluon/commit/6de5c256ecfa0a82ddea0f50d13e5441aefb722c))
+
+
+
+<a name="v0.11.0"></a>
+## v0.11.0 (2019-02-11)
+
+
+#### Performance
+
+*   Re-use the value buffers used in fixed structures ([40ca7bfd](https://github.com/gluon-lang/gluon/commit/40ca7bfd251aedb3391d5929a56b2d82a6e5fd66))
+*   Avoid recursing when zonking a type without variables ([4a482c76](https://github.com/gluon-lang/gluon/commit/4a482c767994ecf966f87eda7d8809f8185d81b4))
+*   Avoid recursing in gather_foralls ([6a38f437](https://github.com/gluon-lang/gluon/commit/6a38f4371de46c7c5f6ea7364d8f610b227129a0))
+*   Optimized definition_name for the non-`:` case ([1713a442](https://github.com/gluon-lang/gluon/commit/1713a4424b2c3f54363f02f25d6dea216c148951))
+*   Avoid recursing more in occurs check ([c0acb066](https://github.com/gluon-lang/gluon/commit/c0acb066b4503a407ee13f7b99a3a7111bcdfc82))
+*   Use VecMap for type variable -> type lookup ([e5f086c9](https://github.com/gluon-lang/gluon/commit/e5f086c9848a3208e3f242a6e0a9889a0414621c))
+*   Avoid some clones when adding implicit bindings ([86b2c9a6](https://github.com/gluon-lang/gluon/commit/86b2c9a61b5d0ef029e0c3814113d6456fd9b429))
+*   Use HashTrie over RedBlackTree ([878f311a](https://github.com/gluon-lang/gluon/commit/878f311aa34509a218f6423a107c40ddb1571b4a))
+*   Avoid allocating new ArcKind in Type::kind ([2911d7ef](https://github.com/gluon-lang/gluon/commit/2911d7ef9261c9dfbc0509f1756908b5e95f5ce6))
+*   Properly rename type projections ([fb6f3e14](https://github.com/gluon-lang/gluon/commit/fb6f3e14c723a6653b66b695430f39e5bedff306))
+*   Don't allocate individual boxes for values in Fixed{Map,Vec} ([b2532a17](https://github.com/gluon-lang/gluon/commit/b2532a17d1b1eea8af0567e22d2b43a11c5f2e4c))
+*   Speedup global metadata lookup ([2c0477c7](https://github.com/gluon-lang/gluon/commit/2c0477c725bbf36029af7355ba05ea631315fd09))
+*   Intern alias groups in translation ([e20a1dba](https://github.com/gluon-lang/gluon/commit/e20a1dba3c160b0390cdb34ae5dd6ff148ec639d))
+*   Avoid some recursion when unpacking aliases with `AliasRef::typ` ([64edfb05](https://github.com/gluon-lang/gluon/commit/64edfb057545a71184572a0f38a881f0ef75e8d6))
+*   Avoid recomputing generalization for the same type ([0732ce1a](https://github.com/gluon-lang/gluon/commit/0732ce1a35b41386d518cdc9383ee1eeef48d846))
+*   Compare and hash types by the minimum necessary ([75174cdf](https://github.com/gluon-lang/gluon/commit/75174cdf2bd6535419f8f270179780c8082dd883))
+*   Avoid doing two hash lookups in interning ([e3a3556c](https://github.com/gluon-lang/gluon/commit/e3a3556c8de75bf550c6542d905245e431c8b5f7))
+* **base:**  Remove an indirection in aliases ([8327a035](https://github.com/gluon-lang/gluon/commit/8327a035f0b72d2662f53a294680928809408ea9))
+* **check:**
+  *  Re-use the allocations for variables ([d569cdc2](https://github.com/gluon-lang/gluon/commit/d569cdc2341ca7ad70f3b3bf83ae7377a3d7575f))
+  *  Cuts the max memory use roughly in half on the lisp benchmark ([5b91b6d3](https://github.com/gluon-lang/gluon/commit/5b91b6d3b2e8d95e7f053c0a7de78e998d73a690))
+  *  Avoid allocations for the field duplication check ([18abf71e](https://github.com/gluon-lang/gluon/commit/18abf71e0ca1e006e46ab7d8db9aa8f88bb45dfe))
+  *  Partition implicit lookup more ([e80f683d](https://github.com/gluon-lang/gluon/commit/e80f683dc855a9d658f10fa91a7a3a5752a54d6a))
+  *  Don't look in the global context for non-globals ([45bc2ad6](https://github.com/gluon-lang/gluon/commit/45bc2ad653d9d2e20b875d16b973069f209da0ac))
+  *  Optmize occurs check ([2ce4ec07](https://github.com/gluon-lang/gluon/commit/2ce4ec07cd67904e238e82c51bffb78fd6fd30b1))
+* **kindcheck:**
+  *  Avoid some unnecessary kind allocations ([0afc648d](https://github.com/gluon-lang/gluon/commit/0afc648d2883895d75ec493dcae5b0dbb147ceb9))
+  *  Use a HashMap for lookups and cache computed kinds ([27571ea5](https://github.com/gluon-lang/gluon/commit/27571ea5ead63810c302a1e697604e35f0da4d9b))
+* **metadata:**  Use Arc to do shallow clones of Metadata (-4%) ([4faf41b0](https://github.com/gluon-lang/gluon/commit/4faf41b0245a4ce9634fdec381a48819f28f7a88))
+* **parser:**
+  *  Pre-allocate space for record fields ([d1f3cfec](https://github.com/gluon-lang/gluon/commit/d1f3cfecab2495d32360df666bb929894d499bb3))
+  *  Shrink LALRPOP's internal symbol size by boxing ([c845f753](https://github.com/gluon-lang/gluon/commit/c845f753e8d7b7eecaf5a6c017ebdf814b7d94a5))
+* **translate:**  Fix N^2 behavior in translation due to type replacements. ([14fc70fb](https://github.com/gluon-lang/gluon/commit/14fc70fb3095e6f01f4f87b4e2c961bf0fa3e5eb))
+
+#### Features
+
+* **check:**  Allow non-Type kinded types at the top of aliases ([126ecebb](https://github.com/gluon-lang/gluon/commit/126ecebbf0cdde4ff09ee5e9a6b3ad2ef17627f7), closes [#186](https://github.com/gluon-lang/gluon/issues/186))
+
+#### Bug Fixes
+
+*   Honor the compiler settings through all import!'s ([4da5b5f9](https://github.com/gluon-lang/gluon/commit/4da5b5f92f010d052aa57b08c75564c8fc97868b))
+* **check:**  Take the parameters of record type fields into account when inserting forall ([b390db10](https://github.com/gluon-lang/gluon/commit/b390db109cadd5028ae76fa1f4661735d72291ae))
+* **doc:**  Don't display an empty module section ([39478e07](https://github.com/gluon-lang/gluon/commit/39478e072ddc45791f3d8d53aca50534c1319bfa))
+* **kindcheck:**  Force scoped type variables to have the same type in each scope ([cadbc29c](https://github.com/gluon-lang/gluon/commit/cadbc29c618c20135f84a8abcb4971d07cd8e2bf))
+* **rename:**  Don't try to rename symbols if they are only defined in an earlier compilation ([56c115ed](https://github.com/gluon-lang/gluon/commit/56c115ed961dcfc1d5196f3560d4e3329e582cd9))
+* **std.http:**  Don't let one slow TLS connection block the server ([68cc1286](https://github.com/gluon-lang/gluon/commit/68cc12869cdd2f84a7ac0cf3a981e9df5bd04d7b))
+
+
+
 <a name="v0.10.1"></a>
 ### v0.10.1 (2019-01-27)
 

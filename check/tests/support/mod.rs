@@ -303,9 +303,7 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
 
 pub fn variant(arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
     let arg = intern_unscoped(arg);
-    let symbols = get_local_interner();
-    let mut symbols = symbols.borrow_mut();
-    Field::ctor(&mut *symbols, arg, types.iter().cloned())
+    Field::ctor(arg, types.iter().cloned())
 }
 
 pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> ArcType {

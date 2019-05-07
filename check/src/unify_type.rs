@@ -45,6 +45,7 @@ pub struct State<'a> {
     subs: &'a Substitution<RcType>,
     record_context: Option<(RcType, RcType)>,
     pub in_alias: bool,
+    refinement: bool,
 }
 
 impl<'a> State<'a> {
@@ -52,12 +53,21 @@ impl<'a> State<'a> {
         env: &'a (TypeEnv<Type = RcType> + 'a),
         subs: &'a Substitution<RcType>,
     ) -> State<'a> {
+        State::with_refinement(env, subs, false)
+    }
+
+    pub fn with_refinement(
+        env: &'a (TypeEnv<Type = RcType> + 'a),
+        subs: &'a Substitution<RcType>,
+        refinement: bool,
+    ) -> State<'a> {
         State {
             env,
             reduced_aliases: Vec::new(),
             subs,
             record_context: None,
             in_alias: false,
+            refinement,
         }
     }
 
@@ -273,7 +283,16 @@ impl Substitutable for RcType<Symbol> {
     where
         F: types::Walker<'a, Self>,
     {
-        types::walk_type_(self, f)
+        match &**self {
+            Type::Function(ArgType::Constructor, arg, ret) => match &**ret {
+                Type::Function(ArgType::Constructor, ..) => {
+                    f.walk(arg);
+                    f.walk(arg);
+                }
+                _ => f.walk(arg),
+            },
+            _ => types::walk_type_(self, f),
+        }
     }
 
     fn instantiate(&self, mut subs: &Substitution<Self>) -> Self {
@@ -634,7 +653,7 @@ where
 
             match (&lhs_base, &rhs_base) {
                 (&None, &None) => {
-                    debug!("Unify error: {:?} <=> {:?}", expected, actual);
+                    debug!("Unify error: {} <=> {}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
@@ -1100,6 +1119,31 @@ pub fn subsumes(
     }
 }
 
+pub fn subsumes_implicit(
+    subs: &Substitution<RcType>,
+    state: State,
+    l: &RcType,
+    r: &RcType,
+    receiver: &mut FnMut(&RcType),
+) -> Result<RcType, (RcType, Errors<Error<Symbol>>)> {
+    debug!("Subsume {} <=> {}", l, r);
+    let mut unifier = UnifierState {
+        state: state,
+        unifier: Subsume {
+            subs: subs,
+            errors: Errors::new(),
+            allow_returned_type_replacement: true,
+        },
+    };
+
+    let typ = unifier.subsumes_implicit(l, r, receiver);
+    if unifier.unifier.errors.has_errors() {
+        Err((typ.unwrap_or_else(|| l.clone()), unifier.unifier.errors))
+    } else {
+        Ok(typ.unwrap_or_else(|| l.clone()))
+    }
+}
+
 pub fn subsumes_no_subst(
     state: State,
     l: &RcType,
@@ -1130,6 +1174,68 @@ struct Subsume<'e> {
 }
 
 impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
+    fn subsumes_implicit(
+        &mut self,
+        l: &RcType,
+        r: &RcType,
+        receiver: &mut FnMut(&RcType),
+    ) -> Option<RcType> {
+        debug!("Subsume implicit {} <=> {}", l, r);
+
+        // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
+        // specified to have implicit arguments)
+
+        let l_orig = &l;
+        let mut map = FnvMap::default();
+
+        let r = r.instantiate_generics(&mut self.unifier.subs, &mut FnvMap::default());
+        let typ = match *r {
+            Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
+                let l = l.skolemize(&mut self.unifier.subs, &mut map);
+
+                match **self.unifier.subs.real(&l) {
+                    Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => {
+                        self.subsume_check(&l, &r)
+                    }
+
+                    _ => {
+                        receiver(&arg_type);
+
+                        self.subsumes_implicit(&l, r_ret, receiver);
+                        None
+                    }
+                }
+            }
+            _ => self.try_match(&l, &r),
+        };
+
+        // If a skolem variable we just created somehow appears in the original type it has been
+        // unified with a type variable outside of this skolem scope meaning it has escaped
+        //
+        // Unifying:
+        // forall s . Test s 2 <=> Test 1 1
+        //      ^ skolemize
+        // ==> 1 <=> s@3
+        // ==> 1 <=> 2
+        // ==> s@3 <=> 2
+        //
+        // `l_orig` is still `forall s . Test s 2` so we can detect `s@2` escaping in the
+        // variable `2`
+        if !map.is_empty() {
+            self.skolem_escape_check(&map, l_orig);
+        }
+
+        typ.or(if l_orig.forall_params().next().is_some() {
+            Some(l.clone())
+        } else {
+            None
+        })
+        .map(|typ| {
+            self.unifier.allow_returned_type_replacement = false;
+            self.unifier.subs.with_forall(typ, l_orig)
+        })
+    }
+
     fn subsume_check(&mut self, l: &RcType, r: &RcType) -> Option<RcType> {
         let l_orig = &l;
         let mut map = FnvMap::default();
@@ -1199,27 +1305,45 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
     }
 
     fn unify_function(&mut self, actual: &RcType) -> (RcType, RcType) {
+        self.remove_aliases_in(actual, |self_, actual| {
+            let subs = self_.state.subs;
+
+            match actual.as_explicit_function() {
+                Some((arg, ret)) => return (arg.clone(), ret.clone()),
+                None => (),
+            }
+
+            let arg = subs.new_var();
+            let ret = subs.new_var();
+            let f = self_.state.subs.function(Some(arg.clone()), ret.clone());
+            if let Err(errors) = unify::unify(subs, self_.state.clone(), &f, &actual) {
+                for err in errors {
+                    self_.report_error(err);
+                }
+            }
+
+            (arg, ret)
+        })
+    }
+
+    fn remove_aliases_in<R>(&mut self, typ: &RcType, f: impl FnOnce(&mut Self, &RcType) -> R) -> R {
         let subs = self.state.subs;
-        let actual = match self.state.remove_aliases(subs, &actual) {
-            Ok(t) => t.map_or_else(|| Cow::Borrowed(actual), Cow::Owned),
+
+        let before = self.state.reduced_aliases.len();
+
+        let typ = match self.state.remove_aliases(subs, &typ) {
+            Ok(t) => t.map_or_else(|| Cow::Borrowed(typ), Cow::Owned),
             Err(err) => {
                 self.report_error(UnifyError::Other(err));
-                Cow::Borrowed(actual)
+                Cow::Borrowed(typ)
             }
         };
-        match actual.as_explicit_function() {
-            Some((arg, ret)) => return (arg.clone(), ret.clone()),
-            None => (),
-        }
-        let arg = subs.new_var();
-        let ret = subs.new_var();
-        let f = self.state.subs.function(Some(arg.clone()), ret.clone());
-        if let Err(errors) = unify::unify(subs, self.state.clone(), &f, &actual) {
-            for err in errors {
-                self.report_error(err);
-            }
-        }
-        (arg, ret)
+
+        let r = f(self, &typ);
+
+        self.state.reduced_aliases.truncate(before);
+
+        r
     }
 }
 
@@ -1258,14 +1382,26 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 self.try_match_res(l, &r)
             }
 
-            (_, &Type::Variable(ref r)) => {
+            (_, &Type::Variable(_)) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(r, l)?;
                 Ok(None)
             }
-            (&Type::Variable(ref l), _) => {
+            (&Type::Variable(_), _) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (&Type::Skolem(_), _) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (_, &Type::Skolem(_)) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(r, l)?;
                 Ok(None)
             }
 

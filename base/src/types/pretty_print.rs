@@ -85,17 +85,22 @@ where
     width: usize,
     typ: &'a T,
     filter: &'a Fn(&I) -> Filter,
+    symbol_text: &'a Fn(&I) -> &str,
     annotate_symbol: &'a Fn(&I) -> Option<A>,
     _marker: PhantomData<I>,
 }
 
-impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
+impl<'a, I, T, A> TypeFormatter<'a, I, T, A>
+where
+    I: AsRef<str>,
+{
     pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
             typ,
             filter: &|_| Filter::Retain,
             annotate_symbol: &|_| None,
+            symbol_text: &|s: &I| s.as_ref(),
             _marker: PhantomData,
         }
     }
@@ -117,6 +122,11 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
         self
     }
 
+    pub fn symbol_text(mut self, symbol_text: &'a Fn(&I) -> &str) -> Self {
+        self.symbol_text = symbol_text;
+        self
+    }
+
     pub fn pretty(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
@@ -128,6 +138,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
             arena,
             source: &(),
             filter: self.filter,
+            symbol_text: self.symbol_text,
             annotate_symbol: self.annotate_symbol,
         })
     }
@@ -137,6 +148,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
             arena,
             source,
             filter: self.filter,
+            symbol_text: self.symbol_text,
             annotate_symbol: self.annotate_symbol,
         }
     }
@@ -166,15 +178,20 @@ pub struct Printer<'a, I: 'a, A: 'a> {
     pub arena: &'a Arena<'a, A>,
     pub source: &'a Source,
     filter: &'a Fn(&I) -> Filter,
+    symbol_text: &'a Fn(&I) -> &str,
     annotate_symbol: &'a Fn(&I) -> Option<A>,
 }
 
 impl<'a, I, A> Printer<'a, I, A> {
-    pub fn new(arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
+    pub fn new(arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A>
+    where
+        I: AsRef<str>,
+    {
         Printer {
             arena,
             source,
             filter: &|_| Filter::Retain,
+            symbol_text: &|s: &I| s.as_ref(),
             annotate_symbol: &|_| None,
         }
     }
@@ -183,11 +200,8 @@ impl<'a, I, A> Printer<'a, I, A> {
         (self.filter)(field)
     }
 
-    pub fn symbol(&self, symbol: &'a I) -> DocBuilder<'a, Arena<'a, A>, A>
-    where
-        I: AsRef<str>,
-    {
-        self.symbol_with(symbol, symbol.as_ref())
+    pub fn symbol(&self, symbol: &'a I) -> DocBuilder<'a, Arena<'a, A>, A> {
+        self.symbol_with(symbol, (self.symbol_text)(symbol))
     }
 
     pub fn symbol_with(&self, symbol: &'a I, text: &'a str) -> DocBuilder<'a, Arena<'a, A>, A> {

@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::base::{
-    ast::{self, DisplayEnv, Literal, Typed, TypedIdent},
+    ast::{DisplayEnv, Typed, TypedIdent},
     kind::{ArcKind, KindEnv},
     pos::Line,
     resolve,
@@ -12,7 +12,7 @@ use crate::base::{
 };
 
 use crate::{
-    core::{self, CExpr, Expr, Pattern},
+    core::{self, CExpr, Expr, Literal, Pattern},
     interner::InternedStr,
     source_map::{LocalMap, SourceMap},
     types::*,
@@ -815,27 +815,27 @@ impl<'a> Compiler<'a> {
                         Pattern::Literal(ref l) => {
                             let lhs_i = function.stack_size() - 1;
                             match *l {
-                                ast::Literal::Byte(b) => {
+                                Literal::Byte(b) => {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushByte(b));
                                     function.emit(ByteEQ);
                                 }
-                                ast::Literal::Int(i) => {
+                                Literal::Int(i) => {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushInt(i));
                                     function.emit(IntEQ);
                                 }
-                                ast::Literal::Char(ch) => {
+                                Literal::Char(ch) => {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushInt(u32::from(ch).into()));
                                     function.emit(IntEQ);
                                 }
-                                ast::Literal::Float(f) => {
+                                Literal::Float(f) => {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushFloat(f.into_inner()));
                                     function.emit(FloatEQ);
                                 }
-                                ast::Literal::String(ref s) => {
+                                Literal::String(ref s) => {
                                     self.load_identifier(&Symbol::from("@string_eq"), function)?;
                                     let lhs_i = function.stack_size() - 2;
                                     function.emit(Push(lhs_i));
@@ -926,7 +926,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                     }
-                    _ => ice!("ICE: Unexpected data type: {}", typ),
+                    _ => ice!("ICE: Unexpected data type for {}: {}", id.name, typ),
                 }
             }
         }

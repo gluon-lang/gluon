@@ -108,14 +108,11 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                         }
                     });
                     quote! {{
-                        let name = _gluon_base::symbol::Symbol::from(#ident);
-                        _gluon_base::types::Field {
-                            name: name.clone(),
-                            typ: _gluon_base::types::Type::tuple(
-                                &mut _gluon_base::symbol::Symbols::new(),
-                                vec![#(#args),*],
-                            ),
-                        }
+                        let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
+                        _gluon_base::types::Field::ctor(
+                            ctor_name,
+                            vec![#(#args),*],
+                        )
                     }}
                 });
                 quote! {
@@ -137,6 +134,32 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
     });
 
     let dummy_const = Ident::new(&format!("_IMPL_VM_TYPE_FOR_{}", ident), Span::call_site());
+
+    let make_type_impl = if container.newtype {
+        let type_application = gen_type_application(&generics);
+        let generic_params = map_type_params(&generics, |param| {
+            let lower_param = param.to_string().to_ascii_lowercase();
+            quote! {
+                vm.global_env().get_generic(#lower_param)
+            }
+        });
+
+        quote! {
+            let ty = if let Ok(ty) = vm.find_type_info(stringify!(#ident)) {
+                ty.into_type()
+            } else {
+                let ty = _gluon_base::types::Alias::new(
+                    _gluon_base::symbol::Symbol::from(stringify!(#ident)),
+                    vec![#(#generic_params),*],
+                    #make_type_impl,
+                );
+                vm.cache_alias(ty)
+            };
+            #type_application
+        }
+    } else {
+        make_type_impl
+    };
 
     quote! {
         #[allow(non_upper_case_globals)]

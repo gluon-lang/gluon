@@ -367,8 +367,6 @@ pub struct Thread {
     // thread can refer to any value in the parent thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
     parent: Option<RootedThread>,
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
     #[cfg_attr(feature = "serde_derive", serde(state))]
     rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
@@ -419,6 +417,8 @@ impl<'vm> Pushable<'vm> for RootedThread {
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for RootedThread {
+    impl_getable_simple!();
+
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Thread(thread) => thread.root_thread(),
@@ -497,7 +497,6 @@ impl RootedThread {
                 global_state.gc.get_mut().unwrap().new_child_gc(),
             )),
             global_state: Arc::new(global_state),
-            roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
             interrupt: AtomicBool::new(false),
@@ -540,7 +539,6 @@ impl Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
             context: Mutex::new(Context::new(self.owned_context().gc.new_child_gc())),
-            roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
             interrupt: AtomicBool::new(false),
@@ -703,6 +701,10 @@ impl Thread {
         self.global_env().register_type_as(name, alias, id)
     }
 
+    pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
+        self.global_env().cache_alias(alias)
+    }
+
     /// Locks and retrieves the global environment of the vm
     pub fn get_env<'b>(&'b self) -> RwLockReadGuard<'b, VmEnv> {
         self.global_env().get_env()
@@ -769,7 +771,6 @@ impl Thread {
 
     fn traverse_fields_except_stack(&self, gc: &mut Gc) {
         self.global_state.traverse(gc);
-        self.roots.read().unwrap().traverse(gc);
         self.rooted_values.read().unwrap().traverse(gc);
         self.child_threads.read().unwrap().traverse(gc);
     }
@@ -1257,9 +1258,6 @@ impl Context {
         .map(ValueRepr::Data)
         .map(Value::from)
     }
-    pub fn slide(&mut self, fields: VmIndex) {
-        self.stack.slide(fields);
-    }
 
     pub fn push_new_data(
         &mut self,
@@ -1281,6 +1279,7 @@ impl Context {
             .map(ValueRepr::Data)
             .map(Value::from)?
         };
+        self.stack.pop_many(fields as u32);
         self.stack.push(value);
         Ok(self.stack.last().unwrap())
     }
@@ -1303,6 +1302,7 @@ impl Context {
                 },
             )?)
         };
+        self.stack.pop_many(fields as u32);
         self.stack.push(value);
         Ok(self.stack.last().unwrap())
     }
@@ -1487,7 +1487,9 @@ impl<'b> OwnedContext<'b> {
 
             maybe_context = match state {
                 State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Extern(ref ext) if ext.is_locked() => return Ok(Async::Ready(Some(context))),
+                State::Extern(ref ext) if ext.is_locked() => {
+                    return Ok(Async::Ready(Some(context)))
+                }
 
                 State::Extern(mut ext) => {
                     // We are currently in the poll call of this extern function.
@@ -1755,7 +1757,15 @@ impl<'b> ExecuteContext<'b> {
 
             match instr {
                 Push(i) => {
-                    let v = self.stack[i].clone();
+                    let v = match self.stack.get(i as usize).cloned() {
+                        Some(v) => v,
+                        None => {
+                            return Err(Error::Panic(
+                                format!("ICE: Stack push out of bounds in {}", function.name),
+                                Some(self.stack.stack.stacktrace(0)),
+                            ));
+                        }
+                    };
                     self.stack.push(v);
                 }
                 PushInt(i) => {
@@ -2465,6 +2475,12 @@ impl<'vm> ActiveThread<'vm> {
             stack.get_variant(last).unwrap().get_value()
         };
         PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
+    }
+
+    pub(crate) fn last<'a>(&'a self) -> Option<Variants<'a>> {
+        let stack = &self.context.as_ref().unwrap().stack;
+        let last = stack.len() - 1;
+        stack.get_variant(last)
     }
 
     // For gluon_codegen

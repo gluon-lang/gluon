@@ -22,8 +22,10 @@ let {
     Request,
     StatusCode,
     Response,
+    ResponseBody,
     HttpEffect,
-    HttpState, } = import! std.http.types
+    HttpState,
+    Uri, } = import! std.http.types
 let http_prim = import! std.http.prim
 
 let status =

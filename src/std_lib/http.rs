@@ -81,6 +81,8 @@ impl<'vm> Pushable<'vm> for Headers {
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for Headers {
+    impl_getable_simple!();
+
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         Headers(
             Collect::from_value(vm, value)
@@ -98,7 +100,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.Body")]
 #[gluon(crate_name = "::vm")]
 // Representation of a http body that is in the prograss of being read
 pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
@@ -125,13 +128,14 @@ fn read_chunk(
 }
 
 // A http body that is being written
-#[derive(Userdata)]
+#[derive(Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.ResponseBody")]
 #[gluon(crate_name = "::vm")]
 pub struct ResponseBody(Arc<Mutex<Option<hyper::body::Sender>>>);
 
 impl fmt::Debug for ResponseBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "hyper::Response")
+        write!(f, "ResponseBody")
     }
 }
 
@@ -174,7 +178,8 @@ fn write_response(
     })
 }
 
-#[derive(Debug, Userdata)]
+#[derive(Debug, Userdata, VmType)]
+#[gluon(vm_type = "std.http.types.Uri")]
 #[gluon(crate_name = "::vm")]
 struct Uri(http::Uri);
 
@@ -373,23 +378,23 @@ fn listen(
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
 // separate function which is called before loading `http_types`
 pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
-    vm.register_type::<Body>("Body", &[])?;
-    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
-    vm.register_type::<Uri>("Uri", &[])?;
+    vm.register_type::<Body>("std.http.types.Body", &[])?;
+    vm.register_type::<ResponseBody>("std.http.types.ResponseBody", &[])?;
+    vm.register_type::<Uri>("std.http.types.Uri", &[])?;
 
     ExternModule::new(
         vm,
         record! {
             // Define the types so that they can be used from gluon
-            type Body => Body,
-            type ResponseBody => ResponseBody,
-            type Uri => Uri,
-            type Method => String,
-            type StatusCode => u16,
-            type Request => Request,
-            type Response => Response,
-            type Headers => Headers,
-            type HttpState => HttpState
+            type std::http::types::Body => Body,
+            type std::http::types::ResponseBody => ResponseBody,
+            type std::http::types::Uri => Uri,
+            type std::http::Method => String,
+            type std::http::StatusCode => u16,
+            type std::http::Request => Request,
+            type std::http::Response => Response,
+            type std::http::Headers => Headers,
+            type std::http::HttpState => HttpState
         },
     )
 }
@@ -406,7 +411,7 @@ macro_rules! uri_binds {
 
 mod std {
     pub(crate) mod http {
-        pub(crate) use crate::http as prim;
+        pub(crate) use crate::std_lib::http as prim;
     }
 }
 
