@@ -1,5 +1,5 @@
 #[macro_export]
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
 macro_rules! assert_deq {
     ($left:expr, $right:expr) => {{
         match (&$left, &$right) {
@@ -17,14 +17,14 @@ macro_rules! assert_deq {
     }};
 }
 
-#[cfg(all(test, feature = "test"))]
-lalrpop_mod!(
+#[cfg(any(test, feature = "test"))]
+lalrpop_util::lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
     pub grammar,
     "/core/grammar.rs"
 );
 pub mod dead_code;
-mod inline;
+pub mod inline;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
@@ -270,27 +270,45 @@ fn is_constructor(s: &Symbol) -> bool {
 }
 
 mod internal {
-    use super::{Allocator, Expr};
+    use super::*;
 
+    use std::sync::Arc;
+
+    // `Allocator` is not `Sync` due to the `RefCell` it contains. But since we do not allow
+    // `Allocator` to be accessed there is not way to interact with it and we can safely allow
+    // shared access on multiple threads to the expression
+    unsafe impl Sync for CoreExpr where CExpr<'static>: Sync {}
+    unsafe impl Send for CoreExpr where CExpr<'static>: Send {}
+
+    #[derive(Clone)]
     pub struct CoreExpr {
-        allocator: Allocator<'static>,
-        expr: Expr<'static>,
+        _allocator: Arc<Allocator<'static>>,
+        expr: CExpr<'static>,
+    }
+
+    impl fmt::Debug for CoreExpr {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.expr().fmt(f)
+        }
     }
 
     impl CoreExpr {
-        pub fn new(allocator: Allocator<'static>, expr: Expr<'static>) -> CoreExpr {
-            CoreExpr { allocator, expr }
+        pub fn new(allocator: Allocator<'static>, expr: CExpr<'static>) -> CoreExpr {
+            assert_sync::<Self>();
+
+            CoreExpr {
+                _allocator: Arc::new(allocator),
+                expr,
+            }
         }
 
         // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
-        pub fn expr(&self) -> &Expr {
-            &self.expr
-        }
-
-        pub fn allocator(&self) -> &Allocator {
-            unsafe { ::std::mem::transmute(&self.allocator) }
+        pub fn expr<'a>(&'a self) -> CExpr<'a> {
+            self.expr
         }
     }
+
+    fn assert_sync<T: Sync>() {}
 }
 
 pub use self::internal::CoreExpr;
@@ -368,23 +386,25 @@ impl<T> ArenaExt<T> for Arena<T> {
     }
 }
 
-pub fn translate(env: &dyn PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
-    // Here we temporarily forget the lifetime of `translator` so it can be moved into a
-    // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
-    // long as the `CoreExpr` making it safe again
+pub fn with_translator<'e>(
+    env: &'e dyn PrimitiveEnv<Type = ArcType>,
+    f: impl for<'a> FnOnce(&'a Translator<'a, 'e>) -> CExpr<'a>,
+) -> CoreExpr {
+    let translator = Translator::new(env);
     unsafe {
-        let translator = Translator::new(env);
-        let core_expr = {
-            let core_expr = (*(&translator as *const Translator))
-                .translate(expr)
-                .clone();
-            mem::transmute::<Expr, Expr<'static>>(core_expr)
-        };
+        // Here we temporarily forget the lifetime of `translator` so it can be moved into a
+        // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
+        // long as the `CoreExpr` making it safe again
+        let core_expr = f(&*(&translator as *const _));
         CoreExpr::new(
             mem::transmute::<Allocator, Allocator<'static>>(translator.allocator),
-            core_expr,
+            mem::transmute::<CExpr, CExpr<'static>>(core_expr),
         )
     }
+}
+
+pub fn translate(env: &dyn PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+    with_translator(env, |translator| translator.translate_alloc(expr))
 }
 
 pub struct Translator<'a, 'e> {
@@ -1858,21 +1878,24 @@ pub(crate) fn is_primitive(name: &Symbol) -> bool {
     name.as_ref() == "&&" || name.as_ref() == "||" || name.as_ref().starts_with('#')
 }
 
-#[cfg(all(test, feature = "test"))]
-mod tests {
+#[cfg(any(test, feature = "test"))]
+pub mod tests {
     extern crate gluon_parser as parser;
 
     use super::*;
 
     use std::collections::HashMap;
 
-    use crate::base::ast;
-    use crate::base::symbol::{Symbol, SymbolModule, Symbols};
-    use crate::base::types::TypeCache;
+    use crate::base::{
+        ast,
+        symbol::{Symbol, SymbolModule, Symbols},
+        types::TypeCache,
+    };
 
-    use crate::core::grammar::ExprParser;
-
-    use crate::vm::RootedThread;
+    use crate::{
+        core::grammar::ExprParser,
+        vm::{RootedThread, Thread},
+    };
 
     fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::SpannedExpr<Symbol> {
         self::parser::parse_expr(
@@ -1995,20 +2018,22 @@ mod tests {
         }
     }
 
-    pub(crate) fn check_translation(expr_str: &str, expected_str: &str) {
-        check_translation_with(expr_str, expected_str, |_, e| e)
+    pub fn check_translation(expr_str: &str, expected_str: &str) {
+        let vm = RootedThread::new();
+        check_translation_with(&vm, expr_str, expected_str, |_, e| e)
     }
 
-    pub(crate) fn check_translation_with(
+    pub fn check_translation_with(
+        vm: &Thread,
         expr_str: &str,
         expected_str: &str,
         post: impl for<'a> FnOnce(&'a Allocator<'a>, CExpr<'a>) -> CExpr<'a>,
     ) {
+        #[cfg(test)]
         let _ = ::env_logger::try_init();
 
         let mut symbols = Symbols::new();
 
-        let vm = RootedThread::new();
         let env = vm.get_env();
         let translator = Translator::new(&env);
 
@@ -2016,8 +2041,16 @@ mod tests {
         let core_expr = translator.translate_expr(&expr);
         let core_expr = post(&translator.allocator, core_expr);
 
+        check_expr_eq(core_expr, expected_str);
+    }
+
+    pub fn check_expr_eq(core_expr: CExpr, expected_str: &str) {
+        let mut symbols = Symbols::new();
+
+        let allocator = Allocator::new();
+
         let expected_expr = ExprParser::new()
-            .parse(&mut symbols, &translator.allocator, expected_str)
+            .parse(&mut symbols, &allocator, expected_str)
             .unwrap_or_else(|err| {
                 let filemap = codespan::FileMap::new("test".into(), expected_str);
                 panic!(

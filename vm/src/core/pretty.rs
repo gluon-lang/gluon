@@ -86,7 +86,7 @@ impl<'a> Expr<'a> {
                     prec.enclose(arena, doc)
                 }
             },
-            Expr::Ident(ref id, _) => arena.text(id.as_ref()),
+            Expr::Ident(ref id, _) => base::types::pretty_print::ident(arena, id.as_ref()),
             Expr::Let(ref bind, ref expr) => {
                 let doc = chain![arena;
                     match bind.expr {

@@ -14,13 +14,14 @@ use {
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
         pos::BytePos,
-        symbol::{Name, Symbol, SymbolRef},
+        symbol::{Name, Symbol, SymbolModule, SymbolRef},
         types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
     vm::{
         self,
         api::ValueRef,
         compiler::{CompiledModule, CompilerEnv, Variable},
+        core::{self, CoreExpr},
         internal::Value,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
@@ -188,6 +189,7 @@ impl CompilerDatabase {
 
         self.query(ModuleTextQuery).sweep(strategy);
         self.query(TypecheckedModuleQuery).sweep(strategy);
+        self.query(CoreExprQuery).sweep(strategy);
         self.query(CompiledModuleQuery).sweep(strategy);
     }
 }
@@ -217,7 +219,7 @@ impl std::hash::Hash for DatabaseGlobal {
     }
 }
 
-pub(crate) trait CompilationBase: salsa::Database {
+pub trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
     fn invalidate_module(&self, module: String, contents: &str);
@@ -225,7 +227,7 @@ pub(crate) trait CompilationBase: salsa::Database {
 }
 
 #[salsa::query_group(CompileStorage)]
-pub(crate) trait Compilation: CompilationBase {
+pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn compiler_settings(&self) -> Settings;
 
@@ -245,6 +247,10 @@ pub(crate) trait Compilation: CompilationBase {
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
+
+    #[salsa::cycle(recover_cycle)]
+    #[salsa::volatile]
+    fn core_expr(&self, module: String) -> StdResult<CoreExpr, Error>;
 
     #[salsa::cycle(recover_cycle)]
     fn compiled_module(&self, module: String) -> StdResult<CompiledModule, Error>;
@@ -330,20 +336,59 @@ fn typechecked_module(
     .map_err(|(_, err)| err)
 }
 
-fn compiled_module(db: &impl Compilation, module: String) -> StdResult<CompiledModule, Error> {
-    let text = db.module_text(module.clone())?;
+fn core_expr(db: &impl Compilation, module: String) -> StdResult<CoreExpr, Error> {
+    let thread = db.thread();
+
     let value = db.typechecked_module(module.clone(), None)?;
+    let settings = db.compiler_settings();
+
+    let env = thread.get_env();
+    Ok(core::with_translator(&env, |translator| {
+        let expr = translator.translate_expr(&value.expr);
+
+        debug!("Translation returned: {}", expr);
+
+        if settings.optimize {
+            core::optimize::optimize(&translator.allocator, &env, expr)
+        } else {
+            expr
+        }
+    }))
+}
+
+fn compiled_module(db: &impl Compilation, module: String) -> StdResult<CompiledModule, Error> {
+    let core_expr = db.core_expr(module.clone())?;
+    let settings = db.compiler_settings();
 
     let thread = db.thread();
-    value
-        .compile(
-            &mut Compiler::new().module_compiler(db.compiler()),
-            thread,
-            &module,
-            &text,
-            None::<ArcType>,
-        )
-        .map(|value| value.module)
+    let env = thread.get_env();
+
+    let compiler = Compiler::new();
+    let mut compiler = compiler.module_compiler(db.compiler());
+
+    let source = compiler
+        .get_filemap(&module)
+        .expect("Filemap does not exist");
+
+    let name = Name::new(&module);
+    let symbols = SymbolModule::new(
+        String::from(AsRef::<str>::as_ref(name.module())),
+        &mut compiler.symbols,
+    );
+
+    let mut compiler = vm::compiler::Compiler::new(
+        &env,
+        thread.global_env(),
+        symbols,
+        &source,
+        module.clone(),
+        settings.emit_debug_info,
+    );
+
+    let mut compiled_module = compiler.compile_expr(core_expr.expr())?;
+    compiled_module.function.id = Symbol::from(module);
+
+    Ok(compiled_module)
 }
 
 fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {

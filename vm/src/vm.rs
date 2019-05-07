@@ -257,7 +257,7 @@ pub trait VmEnv: CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv {
 
 pub struct VmEnvInstance<'a>(
     // FIXME Use the database stored here for lookups
-    Box<dyn VmEnv>,
+    Vec<Box<dyn VmEnv>>,
     RwLockReadGuard<'a, Globals>,
 );
 
@@ -635,16 +635,8 @@ impl GlobalVmState {
 
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn get_env(&self, thread: &Thread) -> VmEnvInstance {
-        let mut capabilities = self.macros.get_capabilities::<dyn VmEnv>(thread);
-        assert!(
-            !capabilities.is_empty(),
-            "Expected at least one instance of VmEnv"
-        );
-        VmEnvInstance(
-            capabilities.swap_remove(0),
-            // FIXME
-            self.env.read().unwrap(),
-        )
+        let capabilities = self.macros.get_capabilities::<dyn VmEnv>(thread);
+        VmEnvInstance(capabilities, self.env.read().unwrap())
     }
 
     pub fn get_debug_level(&self) -> DebugLevel {

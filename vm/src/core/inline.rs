@@ -17,14 +17,14 @@ const INLINE_COST_LIMIT: Cost = 20;
 pub(crate) struct Inline<'a, 'b> {
     allocator: &'a Allocator<'a>,
     implementations: FnvMap<&'a SymbolRef, (usize, &'a LetBinding<'a>)>,
-    env: &'b TypeEnv<Type = ArcType>,
+    env: &'b dyn TypeEnv<Type = ArcType>,
     costs: Costs<'a>,
 }
 
 impl<'a, 'b> Inline<'a, 'b> {
     pub fn new(
         allocator: &'a Allocator<'a>,
-        env: &'b TypeEnv<Type = ArcType>,
+        env: &'b dyn TypeEnv<Type = ArcType>,
         costs: Costs<'a>,
     ) -> Self {
         Inline {
@@ -45,6 +45,12 @@ impl<'a, 'b> Visitor<'a, 'a> for Inline<'a, 'b> {
                 let f = self.visit_expr(f).unwrap_or(f);
                 let (closure_id, closure_args, closure_expr) = self.as_closure(f)?;
 
+                trace!(
+                    "Inline test {}: {} == {}",
+                    closure_id,
+                    closure_args.len(),
+                    args.len()
+                );
                 if closure_args.len() == args.len() {
                     let closure_cost = self
                         .costs
@@ -216,6 +222,10 @@ struct AnalyzeCost<'a> {
 }
 
 impl<'a> AnalyzeCost<'a> {
+    fn add_cost(&mut self, cost: usize) {
+        *self.current.last_mut().unwrap() += cost;
+    }
+
     fn cost_of(&mut self, expr: CExpr<'a>) -> Cost {
         self.current.push(0);
         self.visit_expr(expr);
@@ -251,30 +261,31 @@ impl<'a> Visitor<'a, 'a> for AnalyzeCost<'a> {
             }
 
             Expr::Match(body, alts) => {
-                *self.current.last_mut().unwrap() += 5;
+                self.add_cost(5);
                 self.visit_expr(body);
 
-                *self.current.last_mut().unwrap() += alts
+                let alt_cost = alts
                     .iter()
                     .map(|alt| self.cost_of(alt.expr))
                     .max()
-                    .unwrap_or(0)
+                    .unwrap_or(0);
+                self.add_cost(alt_cost);
             }
 
             Expr::Call(Expr::Ident(id, ..), ..) if is_primitive(&id.name) => {
-                *self.current.last_mut().unwrap() += 2;
+                self.add_cost(2);
                 walk_expr(self, expr);
             }
 
             Expr::Call(..) => {
-                *self.current.last_mut().unwrap() += 10000;
+                self.add_cost(10000);
                 walk_expr(self, expr);
             }
 
-            Expr::Const(..) | Expr::Ident(..) => *self.current.last_mut().unwrap() += 1,
+            Expr::Const(..) | Expr::Ident(..) => self.add_cost(1),
 
             Expr::Data(..) => {
-                *self.current.last_mut().unwrap() += 5;
+                self.add_cost(5);
                 walk_expr(self, expr);
             }
         }
@@ -295,16 +306,20 @@ pub(crate) fn analyze_costs<'a>(expr: CExpr<'a>) -> Costs<'a> {
     visitor.costs
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(any(feature = "test", test))]
+pub mod tests {
     use super::*;
+    use crate::thread::{RootedThread, Thread};
 
-    use base::ast::EmptyEnv;
+    pub fn check_inline(expr_str: &str, expected_str: &str) {
+        check_inline_with(&RootedThread::new(), expr_str, expected_str)
+    }
 
-    use crate::core::tests::check_translation_with;
+    pub fn check_inline_with(thread: &Thread, expr_str: &str, expected_str: &str) {
+        use crate::core::tests::check_translation_with;
+        use base::ast::EmptyEnv;
 
-    fn check_inline(expr_str: &str, expected_str: &str) {
-        check_translation_with(expr_str, expected_str, |allocator, expr| {
+        check_translation_with(thread, expr_str, expected_str, |allocator, expr| {
             let costs = analyze_costs(expr);
             Inline::new(allocator, &EmptyEnv::default(), costs)
                 .visit_expr(expr)
@@ -346,16 +361,16 @@ mod tests {
     fn inline_through_record() {
         let expr_str = r#"
             let { add } =
-                let add x y = x #Int+ y
-                { add }
+                let add_ x y = x #Int+ y
+                { add = add_ }
             add 1 2
         "#;
 
         let expected_str = r#"
             let match_pattern =
-                rec let add x y = (#Int+) x y
+                rec let add_ x y = (#Int+) x y
                 in
-                { add = add }
+                { add = add_ }
             in
             match match_pattern with
             | { add } -> (#Int+) 1 2

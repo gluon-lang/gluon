@@ -21,16 +21,19 @@ bitflags = "1.0.0"
 codespan = "0.3"
 codespan-reporting = "0.3"
 collect-mac = "0.1.0"
+difference = { version = "2", optional = true }
 crossbeam-utils = "0.6"
 frunk_core = "0.3"
 futures = "0.1.0"
 itertools = "0.8"
+lalrpop-util = { version = "0.16", optional = true }
 log = "0.4"
 mopa = { path = "../../mopa" }
 ordered-float = "1"
 petgraph = "0.4"
 pretty = "0.5"
 quick-error = "1.1.0"
+regex = { versino = "1", optional = true }
 smallvec = "0.6"
 slab = "0.4"
 typed-arena = "1.2.0"
@@ -65,4 +68,4 @@ gluon_parser = { path = "../parser", version = "0.12.0" } # GLUON
 
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "serde_json", "gluon_base/serialization", "codespan/serialization"]
-test = ["lalrpop", "serialization"]
+test = ["difference", "lalrpop", "lalrpop-util", "regex", "serialization", "gluon_parser"]

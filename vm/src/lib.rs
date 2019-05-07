@@ -23,9 +23,6 @@ extern crate serde_json;
 
 #[cfg(test)]
 extern crate env_logger;
-#[cfg(test)]
-#[macro_use]
-extern crate lalrpop_util;
 
 #[macro_use]
 pub extern crate gluon_base as base;

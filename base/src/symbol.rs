@@ -424,6 +424,12 @@ impl AsRef<Name> for Name {
     }
 }
 
+impl AsRef<str> for Name {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 impl AsRef<str> for NameBuf {
     fn as_ref(&self) -> &str {
         &*self.0

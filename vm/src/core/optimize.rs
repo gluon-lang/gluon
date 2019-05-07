@@ -171,7 +171,7 @@ fn optimize_unnecessary_allocation<'a>(
 
 pub fn optimize<'a>(
     allocator: &'a Allocator<'a>,
-    env: &'a TypeEnv<Type = ArcType>,
+    env: &'a dyn TypeEnv<Type = ArcType>,
     expr: &'a Expr<'a>,
 ) -> &'a Expr<'a> {
     let expr = optimize_unnecessary_allocation(allocator, expr);

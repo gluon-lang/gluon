@@ -30,7 +30,7 @@ use crate::check::{metadata, rename};
 
 use crate::vm::{
     compiler::CompiledModule,
-    core,
+    core::{self, CoreExpr},
     macros::MacroExpander,
     thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
 };
@@ -598,9 +598,10 @@ where
 }
 
 /// Result of successful compilation
-#[derive(Eq, PartialEq, Hash, Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct CompileValue<E> {
     pub expr: E,
+    pub core_expr: CoreExpr,
     pub typ: ArcType,
     pub metadata: Arc<Metadata>,
     pub module: CompiledModule,
@@ -610,12 +611,14 @@ impl<E> CompileValue<E> {
     pub fn map<F>(self, f: impl FnOnce(E) -> F) -> CompileValue<F> {
         let CompileValue {
             expr,
+            core_expr,
             typ,
             metadata,
             module,
         } = self;
         CompileValue {
             expr: f(expr),
+            core_expr,
             typ,
             metadata,
             module,
@@ -676,9 +679,11 @@ where
                      typ,
                      metadata,
                      module,
+                     core_expr,
                      ..
                  }| CompileValue {
                     expr: self.expr,
+                    core_expr,
                     typ,
                     metadata,
                     module,
@@ -707,11 +712,12 @@ where
 
         let settings = compiler.compiler_settings();
 
+        let core_expr;
+
         let mut module = {
             let env = thread.get_env();
 
-            let translator = core::Translator::new(&env);
-            let expr = {
+            core_expr = core::with_translator(&env, |translator| {
                 let expr = translator.translate_expr(self.expr.borrow());
 
                 debug!("Translation returned: {}", expr);
@@ -721,7 +727,7 @@ where
                 } else {
                     expr
                 }
-            };
+            });
 
             let source = compiler
                 .get_filemap(filename)
@@ -742,11 +748,12 @@ where
                 filename.to_string(),
                 settings.emit_debug_info,
             );
-            compiler.compile_expr(expr)?
+            compiler.compile_expr(core_expr.expr())?
         };
         module.function.id = Symbol::from(filename);
         Ok(CompileValue {
             expr: &self.expr,
+            core_expr,
             typ: self.typ.clone(),
             metadata: self.metadata.clone(),
             module,
@@ -850,6 +857,7 @@ where
     {
         let CompileValue {
             expr,
+            core_expr: _,
             typ,
             mut module,
             metadata,
@@ -1032,6 +1040,7 @@ where
     use crate::vm::serialization::SeSeed;
     let CompileValue {
         expr: _,
+        core_expr: _,
         typ,
         metadata,
         module,

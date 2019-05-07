@@ -5,7 +5,7 @@
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.12.0")] // # GLUON
-
+#![recursion_limit = "128"]
 #[cfg(test)]
 extern crate env_logger;
 
@@ -46,6 +46,7 @@ macro_rules! try_future {
 pub mod compiler_pipeline;
 #[macro_use]
 pub mod import;
+#[doc(hidden)]
 pub mod query;
 pub mod std_lib;
 
@@ -284,7 +285,7 @@ impl Error {
 pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct Settings {
+pub struct Settings {
     implicit_prelude: bool,
     emit_debug_info: bool,
     full_metadata: bool,
