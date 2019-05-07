@@ -218,6 +218,14 @@ guess_loop ()
 
 You can try gluon in your browser at http://gluon-lang.org/try/. ([Github](https://github.com/gluon-lang/try_gluon))
 
+### Install
+
+Gluon can be installed by using one of the prebuilt executables at [Github](https://github.com/gluon-lang/gluon/releases) or you can use Cargo in order to install the `gluon_repl` crate:
+
+```
+cargo install gluon_repl
+```
+
 ### REPL
 
 Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
