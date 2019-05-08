@@ -100,7 +100,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .expect("Thread was not set in the compiler")
     }
 
-    fn new_module(&self, module: String, contents: &str) {
+    fn invalidate_module(&self, module: String, contents: &str) {
         let mut state = self.state();
         state.add_filemap(&module, &contents[..]);
         state
@@ -209,7 +209,7 @@ impl std::hash::Hash for DatabaseGlobal {
 pub(crate) trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
-    fn new_module(&self, module: String, contents: &str);
+    fn invalidate_module(&self, module: String, contents: &str);
     fn report_errors(&self, error: &mut Iterator<Item = Error>);
 }
 
@@ -221,12 +221,14 @@ pub(crate) trait Compilation: CompilationBase {
     #[salsa::input]
     fn module_states(&self) -> Arc<FnvMap<String, usize>>;
 
+    #[salsa::dependencies]
     fn module_state(&self, module: String) -> usize;
 
+    #[salsa::dependencies]
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
-    fn module_text_inner(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
+    #[salsa::volatile]
     fn typechecked_module(
         &self,
         module: String,
@@ -282,16 +284,6 @@ fn module_state(db: &impl Compilation, module: String) -> usize {
 }
 
 fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
-    let contents = db.module_text_inner(module.clone())?;
-    // By using an inner query we only update our own revision if the source actually changed
-    db.new_module(module, &contents);
-    Ok(contents)
-}
-
-fn module_text_inner(
-    db: &impl Compilation,
-    module: String,
-) -> StdResult<Arc<Cow<'static, str>>, Error> {
     // We just need to depend on updates to the state, we don't care what it is
     db.module_state(module.clone());
 

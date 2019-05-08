@@ -107,22 +107,6 @@ pub struct DatabaseSnapshot {
     snapshot: Option<salsa::Snapshot<CompilerDatabase>>,
 }
 
-impl Drop for DatabaseSnapshot {
-    fn drop(&mut self) {
-        if let Some(thread) = self.thread.as_ref() {
-            let import = crate::get_import(thread);
-
-            self.snapshot.take();
-
-            let mut compiler = import.compiler.lock().unwrap();
-            if Arc::get_mut(&mut compiler.state).is_some() {
-                let new_states = compiler.state().module_states.clone();
-                compiler.set_module_states(Arc::new(new_states));
-            }
-        }
-    }
-}
-
 impl Deref for DatabaseSnapshot {
     type Target = CompilerDatabase;
     fn deref(&self) -> &Self::Target {
