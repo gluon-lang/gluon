@@ -20,7 +20,7 @@ use {
     vm::{
         self,
         api::ValueRef,
-        compiler::{CompilerEnv, Variable},
+        compiler::{CompiledModule, CompilerEnv, Variable},
         internal::Value,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
@@ -236,10 +236,7 @@ pub(crate) trait Compilation: CompilationBase {
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    fn compiled_module(
-        &self,
-        module: String,
-    ) -> StdResult<CompileValue<Arc<SpannedExpr<Symbol>>>, Error>;
+    fn compiled_module(&self, module: String) -> StdResult<CompiledModule, Error>;
 
     #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
@@ -322,21 +319,20 @@ fn typechecked_module(
     .map_err(|(_, err)| err)
 }
 
-fn compiled_module(
-    db: &impl Compilation,
-    module: String,
-) -> StdResult<CompileValue<Arc<SpannedExpr<Symbol>>>, Error> {
+fn compiled_module(db: &impl Compilation, module: String) -> StdResult<CompiledModule, Error> {
     let text = db.module_text(module.clone())?;
     let value = db.typechecked_module(module.clone(), None)?;
 
     let thread = db.thread();
-    value.compile(
-        &mut Compiler::new().module_compiler(db.compiler()),
-        thread,
-        &module,
-        &text,
-        None::<ArcType>,
-    )
+    value
+        .compile(
+            &mut Compiler::new().module_compiler(db.compiler()),
+            thread,
+            &module,
+            &text,
+            None::<ArcType>,
+        )
+        .map(|value| value.module)
 }
 
 fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
@@ -374,31 +370,30 @@ fn globals(db: &impl Compilation) -> Arc<FnvMap<String, DatabaseGlobal>> {
 
 fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
     let vm = db.thread();
-    let compiler = db.compiler();
-    let compile_value = db.compiled_module(name.clone())?;
-    let execute_value = Executable::run_expr(
-        compile_value,
-        &mut Compiler::new().module_compiler(compiler),
-        vm,
-        &name,
-        "",
-        (),
-    )
-    .wait()?;
+
+    let TypecheckValue { metadata, typ, .. } = db.typechecked_module(name.clone(), None)?;
+    let mut compiled_module = db.compiled_module(name.clone())?;
+
+    let module_id = Symbol::from(format!("@{}", name));
+    compiled_module.function.id = module_id.clone();
+    let closure = vm.global_env().new_global_thunk(&vm, compiled_module)?;
+
+    let vm1 = vm.clone();
+    let value = vm1.call_thunk_top(closure).wait()?;
 
     vm.set_global(
-        execute_value.id.clone(),
-        execute_value.typ.clone(),
-        execute_value.metadata.clone(),
-        execute_value.value.get_value(),
+        module_id.clone(),
+        typ.clone(),
+        metadata.clone(),
+        value.get_value(),
     )
     .unwrap();
 
     Ok(DatabaseGlobal {
-        id: execute_value.id,
-        typ: execute_value.typ,
-        metadata: execute_value.metadata,
-        value: execute_value.value,
+        id: module_id,
+        typ,
+        metadata,
+        value,
     })
 }
 
