@@ -1729,8 +1729,7 @@ impl<Id> TypeExt for ArcType<Id> {
 
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         let flags = Flags::from_type(&typ);
-        let typ = Arc::new(ArcTypeInner { typ, flags });
-        ArcType { typ }
+        Self::with_flags(typ, flags)
     }
 
     fn strong_count(typ: &ArcType<Id>) -> usize {
@@ -1777,6 +1776,12 @@ where
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
+    }
+}
+
+impl<Id> From<(Type<Id, ArcType<Id>>, Flags)> for ArcType<Id> {
+    fn from((typ, flags): (Type<Id, ArcType<Id>>, Flags)) -> ArcType<Id> {
+        ArcType::with_flags(typ, flags)
     }
 }
 
@@ -2051,6 +2056,11 @@ where
 }
 
 impl<Id> ArcType<Id> {
+    fn with_flags(typ: Type<Id, ArcType<Id>>, flags: Flags) -> ArcType<Id> {
+        let typ = Arc::new(ArcTypeInner { typ, flags });
+        ArcType { typ }
+    }
+
     pub fn set(into: &mut Self, typ: Type<Id, Self>)
     where
         Id: Clone,
@@ -2827,6 +2837,10 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern(typ)
         }
 
+        fn intern_flags(&mut self, typ: $crate::types::Type<$id, $typ>, flags: $crate::types::Flags) -> $typ {
+            $crate::expr!(self, $($tokens)+).intern_flags(typ, flags)
+        }
+
         fn builtin(&mut self, typ: $crate::types::BuiltinType) -> $typ {
             $crate::expr!(self, $($tokens)+).builtin(typ)
         }
@@ -2925,8 +2939,15 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).new_data_alias(data)
         }
 
-        fn alias_group(&mut self, group: Vec<$crate::types::AliasData<$id, $typ>>) -> Vec<$crate::types::Alias<$id, $typ>> {
-            $crate::expr!(self, $($tokens)+).alias_group(group)
+        fn alias_group(
+            &mut self,
+            group: Vec<$crate::types::AliasData<$id, $typ>>,
+            is_implicit_iter: impl IntoIterator<Item = bool>
+            ) -> Vec<$crate::types::Alias<$id, $typ>>
+        where
+            $typ: $crate::types::TypeExt<Id = $id>,
+        {
+            $crate::expr!(self, $($tokens)+).alias_group(group, is_implicit_iter)
         }
 
         /*
@@ -2988,6 +3009,8 @@ pub struct InternerVisitor<'i, F, T> {
 }
 
 pub trait TypeContext<Id, T> {
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T;
+
     fn intern(&mut self, typ: Type<Id, T>) -> T;
 
     fn hole(&mut self) -> T {
@@ -3238,15 +3261,33 @@ pub trait TypeContext<Id, T> {
         }
     }
 
-    fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
+    fn alias_group(
+        &mut self,
+        group: Vec<AliasData<Id, T>>,
+        is_implicit_iter: impl IntoIterator<Item = bool>,
+    ) -> Vec<Alias<Id, T>>
+    where
+        T: TypeExt<Id = Id>,
+    {
         let group = Arc::<[_]>::from(group);
         (0..group.len())
-            .map(|index| Alias {
-                _typ: self.intern(Type::Alias(AliasRef {
+            .zip(is_implicit_iter)
+            .map(|(index, is_implicit)| {
+                let typ = Type::Alias(AliasRef {
                     index,
                     group: group.clone(),
-                })),
-                _marker: PhantomData,
+                });
+                let flags = Flags::from_type(&typ)
+                    | (if is_implicit {
+                        Flags::HAS_IMPLICIT
+                    } else {
+                        Flags::empty()
+                    });
+
+                Alias {
+                    _typ: self.intern_flags(typ, flags),
+                    _marker: PhantomData,
+                }
             })
             .collect()
     }
@@ -3285,10 +3326,14 @@ pub struct NullInterner;
 
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
-    T: From<Type<Id, T>>,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 }
 
@@ -3304,10 +3349,14 @@ macro_rules! forward_to_cache {
 
 impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
-    T: From<Type<Id, T>> + Clone,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 
     forward_to_cache! {
@@ -3318,10 +3367,14 @@ where
 
 impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
-    T: From<Type<Id, T>> + Clone,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 
     forward_to_cache! {
@@ -3376,19 +3429,19 @@ where
 
 pub trait TypeContextAlloc: Sized {
     type Id;
-    fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
+    fn alloc(into: &mut Self, typ: Type<Self::Id, Self>, flags: Flags);
 }
 
 impl TypeContextAlloc for ArcType {
     type Id = Symbol;
-    fn alloc(into: &mut Self, typ: Type<Symbol, Self>) {
+    fn alloc(into: &mut Self, typ: Type<Symbol, Self>, flags: Flags) {
         match Arc::get_mut(&mut into.typ) {
             Some(into) => {
-                into.flags = Flags::from_type(&typ);
+                into.flags = flags;
                 into.typ = typ;
             }
             None => {
-                *into = Self::new(typ);
+                *into = Self::with_flags(typ, flags);
             }
         }
     }
@@ -3446,9 +3499,14 @@ where
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
+        let flags = Flags::from_type(&typ);
+        self.intern_flags(typ, flags)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
         use std::collections::hash_map::Entry;
 
-        T::alloc(&mut self.scratch.0, typ);
+        T::alloc(&mut self.scratch.0, typ, flags);
         match self.set.entry(self.scratch.clone()) {
             Entry::Occupied(entry) => return entry.key().0.clone(),
             Entry::Vacant(entry) => {

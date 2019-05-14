@@ -2161,7 +2161,12 @@ impl<'a> Typecheck<'a> {
                 .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
                 .collect(),
         );
-        let alias_group = self.subs.alias_group(resolved_aliases);
+        let alias_group = self.subs.alias_group(
+            resolved_aliases,
+            bindings
+                .iter()
+                .map(|bind| bind.metadata.get_attribute("implicit").is_some()),
+        );
         for (bind, alias) in bindings.iter_mut().zip(arc_alias_group) {
             bind.finalized_alias = Some(alias);
         }

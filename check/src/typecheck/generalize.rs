@@ -41,9 +41,7 @@ impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b> {
 }
 
 impl<'a, 'b> TypeContext<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
-    fn intern(&mut self, typ: Type<Symbol, RcType>) -> RcType {
-        (&self.tc.subs).intern(typ)
-    }
+    gluon_base::forward_type_interner_methods!(Symbol, RcType, self_, &self_.tc.subs);
 }
 
 impl<'a, 'b> TypeGeneralizer<'a, 'b> {
