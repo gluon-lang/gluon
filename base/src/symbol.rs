@@ -317,7 +317,7 @@ impl Name {
 
     pub fn module(&self) -> &Name {
         let s = self.0.trim_end_matches(|c| c != '.');
-        Name::new(s.trim_end_matches('.'))
+        Name::new(if s.is_empty() { s } else { &s[..s.len() - 1] })
     }
 
     pub fn name(&self) -> &Name {
