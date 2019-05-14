@@ -1532,8 +1532,6 @@ impl<'a> Typecheck<'a> {
                         };
                         arg.typ = self.subs.bind_arc(&arg_type);
                         arg_types.push(arg_type.clone());
-                        self.implicit_resolver
-                            .add_implicits_of_record(&self.subs, &arg.name, &arg_type);
                         self.stack_var(arg.name.clone(), arg_type.clone());
                     }
                     ArgType::Explicit => match args.get_mut(i) {
@@ -3262,10 +3260,12 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                             return None;
                         }
                         last_alias = Some(alias.name.clone());
+                        self.tc.named_variables.clear();
                         match alias.typ(&mut &self.tc.subs).apply_args(
                             alias.params(),
                             &args,
                             &mut &self.tc.subs,
+                            &mut self.tc.named_variables,
                         ) {
                             Some(typ) => (None, typ.clone()),
                             None => return None,

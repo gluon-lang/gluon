@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 
-use crate::symbol::Symbol;
-use crate::types::{AliasRef, Type, TypeContext, TypeEnv, TypeExt};
+use crate::{
+    fnv::FnvMap,
+    symbol::Symbol,
+    types::{AliasRef, Type, TypeContext, TypeEnv, TypeExt},
+};
 
 quick_error! {
     #[derive(Debug, PartialEq)]
@@ -17,13 +20,23 @@ quick_error! {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct AliasRemover {
+#[derive(Debug)]
+pub struct AliasRemover<T> {
     reduced_aliases: Vec<Symbol>,
+    pub named_variables: FnvMap<Symbol, T>,
 }
 
-impl AliasRemover {
-    pub fn new() -> AliasRemover {
+impl<T> Default for AliasRemover<T> {
+    fn default() -> Self {
+        AliasRemover {
+            reduced_aliases: Default::default(),
+            named_variables: Default::default(),
+        }
+    }
+}
+
+impl<T> AliasRemover<T> {
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -39,7 +52,12 @@ impl AliasRemover {
         self.reduced_aliases.truncate(to)
     }
 
-    pub fn canonical_alias<'t, F, T>(
+    pub fn clear(&mut self) {
+        self.reduced_aliases.clear();
+        self.named_variables.clear();
+    }
+
+    pub fn canonical_alias<'t, F>(
         &mut self,
         env: &TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
@@ -64,6 +82,7 @@ impl AliasRemover {
                         alias.params(),
                         &typ.unapplied_args(),
                         interner,
+                        &mut self.named_variables,
                     ) {
                         Some(typ) => Cow::Owned(
                             self.canonical_alias(env, interner, &typ, canonical)?
@@ -77,7 +96,44 @@ impl AliasRemover {
         })
     }
 
-    pub fn remove_aliases<T>(
+    pub fn remove_aliases_to_concrete<'a>(
+        &mut self,
+        env: &TypeEnv<Type = T>,
+        interner: &mut impl TypeContext<Symbol, T>,
+        mut typ: T,
+    ) -> Result<T, Error>
+    where
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    {
+        loop {
+            typ = match self.remove_alias_to_concrete(env, interner, &typ)? {
+                Some((typ, args)) => match *typ {
+                    Type::Builtin(..)
+                    | Type::Function(..)
+                    | Type::Function(..)
+                    | Type::Record(..)
+                    | Type::Variant(..)
+                    | Type::Effect(..)
+                    | Type::EmptyRow
+                    | Type::ExtendRow { .. }
+                        if args.is_empty() =>
+                    {
+                        return Ok(typ)
+                    }
+                    _ => {
+                        let typ = typ
+                            .replace_generics(interner, &mut self.named_variables)
+                            .unwrap_or_else(|| typ);
+
+                        interner.app(typ, args.iter().cloned().collect())
+                    }
+                },
+                None => return Ok(typ),
+            };
+        }
+    }
+
+    pub fn remove_aliases(
         &mut self,
         env: &TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
@@ -94,7 +150,7 @@ impl AliasRemover {
         }
     }
 
-    pub fn remove_alias<T>(
+    pub fn remove_alias(
         &mut self,
         env: &TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
@@ -103,19 +159,71 @@ impl AliasRemover {
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
+        Ok(self.remove_alias_to_concrete(env, interner, typ)?.map(
+            |(non_replaced_type, unapplied_args)| {
+                let non_replaced_type = non_replaced_type
+                    .replace_generics(interner, &mut self.named_variables)
+                    .unwrap_or_else(|| non_replaced_type.clone());
+
+                interner.app(non_replaced_type, unapplied_args.iter().cloned().collect())
+            },
+        ))
+    }
+
+    pub fn remove_alias_to_concrete<'a>(
+        &mut self,
+        env: &'a TypeEnv<Type = T>,
+        interner: &mut impl TypeContext<Symbol, T>,
+        typ: &'a T,
+    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
+    where
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    {
         match peek_alias(env, &typ)? {
-            Some(alias) => {
-                if self.reduced_aliases.iter().any(|name| *name == alias.name) {
-                    return Err(Error::SelfRecursiveAlias(alias.name.clone()));
-                }
-                self.reduced_aliases.push(alias.name.clone());
-                // Opaque types should only exist as the alias itself
-                if let Type::Opaque = **alias.unresolved_type() {
-                    return Ok(None);
-                }
-                Ok(alias
-                    .typ(interner)
-                    .apply_args(alias.params(), &typ.unapplied_args(), interner))
+            Some(alias) => self.remove_alias_to_concrete_inner(interner, typ, alias),
+            None => Ok(None),
+        }
+    }
+
+    pub fn remove_alias_to_concrete_inner<'a>(
+        &mut self,
+        interner: &mut impl TypeContext<Symbol, T>,
+        typ: &'a T,
+        alias: &'a AliasRef<Symbol, T>,
+    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
+    where
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    {
+        if self.reduced_aliases.iter().any(|name| *name == alias.name) {
+            return Err(Error::SelfRecursiveAlias(alias.name.clone()));
+        }
+        self.reduced_aliases.push(alias.name.clone());
+        // Opaque types should only exist as the alias itself
+        if let Type::Opaque = **alias.unresolved_type() {
+            return Ok(None);
+        }
+
+        let unapplied_args = typ.unapplied_args();
+
+        let opt = alias.typ(interner).arg_application(
+            alias.params(),
+            &unapplied_args,
+            interner,
+            &mut self.named_variables,
+        );
+        match opt {
+            Some((t, a)) => {
+                let l = unapplied_args.len() - a.len();
+                Ok(Some((
+                    t,
+                    match unapplied_args {
+                        Cow::Borrowed(slice) => Cow::Borrowed(&slice[l..]),
+                        Cow::Owned(mut vec) => {
+                            vec.drain(l..);
+                            Cow::Owned(vec)
+                        }
+                    },
+                )))
             }
             None => Ok(None),
         }
@@ -171,7 +279,12 @@ where
             } else {
                 alias
                     .typ(interner)
-                    .apply_args(alias.params(), &typ.unapplied_args(), interner)
+                    .apply_args(
+                        alias.params(),
+                        &typ.unapplied_args(),
+                        interner,
+                        &mut Default::default(),
+                    )
                     .map(|typ| {
                         Cow::Owned(canonical_alias(env, interner, &typ, canonical).into_owned())
                     })
@@ -197,9 +310,12 @@ where
         if let Type::Opaque = **alias.unresolved_type() {
             return None;
         }
-        alias
-            .typ(interner)
-            .apply_args(alias.params(), &typ.unapplied_args(), interner)
+        alias.typ(interner).apply_args(
+            alias.params(),
+            &typ.unapplied_args(),
+            interner,
+            &mut Default::default(),
+        )
     }))
 }
 

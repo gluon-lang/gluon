@@ -760,6 +760,7 @@ pub struct ImplicitResolver<'a> {
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     pub(crate) implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
+    alias_resolver: resolve::AliasRemover<RcType>,
 }
 
 impl<'a> ImplicitResolver<'a> {
@@ -773,33 +774,12 @@ impl<'a> ImplicitResolver<'a> {
             implicit_bindings: Vec::new(),
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),
+            alias_resolver: resolve::AliasRemover::new(),
         }
     }
 
     pub fn on_stack_var(&mut self, subs: &Substitution<RcType>, id: &Symbol, typ: &RcType) {
-        if self.implicit_bindings.is_empty() {
-            self.implicit_bindings.push(ImplicitBindings::new());
-        }
-
-        let metadata = self.metadata.get(id);
-
-        let opt = self.try_create_implicit(
-            metadata.map(|m| &**m),
-            &typ,
-            &[TypedIdent {
-                name: id.clone(),
-                typ: typ.clone(),
-            }],
-        );
-
-        if let Some((definition, path, implicit_type)) = opt {
-            self.implicit_bindings.last_mut().unwrap().insert(
-                subs,
-                definition,
-                path,
-                &implicit_type,
-            );
-        }
+        self.add_implicits_of_record(subs, id, typ);
     }
 
     pub fn add_implicits_of_record(
@@ -811,6 +791,8 @@ impl<'a> ImplicitResolver<'a> {
         if self.implicit_bindings.is_empty() {
             self.implicit_bindings.push(ImplicitBindings::new());
         }
+
+        self.alias_resolver.clear();
 
         let mut path = Vec::new();
         path.push(TypedIdent {
@@ -829,20 +811,55 @@ impl<'a> ImplicitResolver<'a> {
         metadata: Option<&Metadata>,
         path: &mut Vec<TypedIdent<Symbol, RcType>>,
     ) {
-        let mut alias_resolver = resolve::AliasRemover::new();
+        let typ = subs.real(typ);
 
-        let mut typ = subs.real(typ).clone();
+        let opt = self.try_create_implicit(metadata, typ, path);
+
+        let mut typ = typ.clone();
+        if let Some((definition, path, _)) = opt {
+            if !self.alias_resolver.named_variables.is_empty() {
+                if let Some(t) =
+                    typ.replace_generics(&mut subs, &mut self.alias_resolver.named_variables)
+                {
+                    typ = t;
+                }
+            }
+
+            self.implicit_bindings
+                .last_mut()
+                .unwrap()
+                .insert(subs, definition, path, &typ);
+        }
+
         let mut forall_params = Vec::new();
         while let Type::Forall(params, next) = &*typ {
             forall_params.extend(params.iter().cloned());
             typ = next.clone();
         }
-        let raw_type =
-            match alias_resolver.remove_aliases(&self.environment, &mut subs, typ.clone()) {
-                Ok(t) => t,
-                // Don't recurse into self recursive aliases
-                Err(_) => return,
-            };
+
+        let raw_type = match resolve::peek_alias(&self.environment, &typ) {
+            Ok(Some(_)) => {
+                if !self.alias_resolver.named_variables.is_empty() {
+                    if let Some(t) =
+                        typ.replace_generics(&mut subs, &mut self.alias_resolver.named_variables)
+                    {
+                        typ = t;
+                    }
+                }
+
+                match self.alias_resolver.remove_aliases_to_concrete(
+                    &self.environment,
+                    &mut subs,
+                    typ.clone(),
+                ) {
+                    Ok(t) => t,
+                    // Don't recurse into self recursive aliases
+                    Err(_) => return,
+                }
+            }
+            Ok(None) => typ,
+            Err(_) => return,
+        };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
@@ -858,18 +875,7 @@ impl<'a> ImplicitResolver<'a> {
                         typ: field_type.clone(),
                     });
 
-                    let opt = self.try_create_implicit(field_metadata, &field_type, path);
-
-                    if let Some((definition, path, implicit_type)) = opt {
-                        self.implicit_bindings.last_mut().unwrap().insert(
-                            subs,
-                            definition,
-                            path,
-                            &implicit_type,
-                        );
-                    }
-
-                    self.add_implicits_of_record_rec(subs, &field.typ, field_metadata, path);
+                    self.add_implicits_of_record_rec(subs, &field_type, field_metadata, path);
 
                     path.pop();
                 }

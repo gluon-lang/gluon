@@ -1409,9 +1409,26 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         Self::Id: Clone + Eq + Hash,
         Self: Clone,
     {
+        if named_variables.is_empty() {
+            None
+        } else {
+            self.replace_generics_(interner, named_variables)
+        }
+    }
+
+    fn replace_generics_(
+        &self,
+        interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Option<Self>
+    where
+        Self::Id: Clone + Eq + Hash,
+        Self: Clone,
+    {
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
         }
+
         match &**self {
             Type::Generic(generic) => named_variables.get(&generic.id).cloned(),
             Type::Forall(params, typ) => {
@@ -1430,7 +1447,7 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
             _ => walk_move_type_opt(
                 self,
                 &mut InternerVisitor::control(interner, |interner, typ: &Self| {
-                    typ.replace_generics(interner, named_variables)
+                    typ.replace_generics_(interner, named_variables)
                 }),
             ),
         }
@@ -1469,37 +1486,64 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    fn apply_args(
+    fn apply_args<'a>(
         &self,
         params: &[Generic<Self::Id>],
-        args: &[Self],
+        args: &'a [Self],
         interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
+        Self: fmt::Display,
+        Self::Id: fmt::Display,
     {
-        let typ = self.clone();
+        let (non_replaced_type, unapplied_args) =
+            self.arg_application(params, args, interner, named_variables)?;
 
-        // It is ok to take the type only if it is fully applied or if it
-        // the missing argument only appears in order at the end, i.e:
-        //
-        // type Test a b c = Type (a Int) b c
-        //
-        // Test a b == Type (a Int) b
-        // Test a == Type (a Int)
-        // Test == ??? (Impossible to do a sane substitution)
-        let (d, arg_types) = split_app(&typ);
-        let allowed_missing_args = arg_types
-            .iter()
-            .rev()
-            .zip(params.iter().rev())
-            .take_while(|&(l, r)| match **l {
-                Type::Generic(ref g) => g == r,
-                _ => false,
-            })
-            .count();
+        let non_replaced_type = non_replaced_type
+            .replace_generics(interner, named_variables)
+            .unwrap_or_else(|| non_replaced_type.clone());
+        Some(interner.app(non_replaced_type, unapplied_args.iter().cloned().collect()))
+    }
 
-        let typ = if params.len() <= allowed_missing_args + args.len() {
+    fn arg_application<'a>(
+        &self,
+        params: &[Generic<Self::Id>],
+        args: &'a [Self],
+        interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Option<(Self, &'a [Self])>
+    where
+        Self::Id: Clone + Eq + Hash,
+        Self: fmt::Display,
+        Self::Id: fmt::Display,
+    {
+        let typ = if params.len() == args.len() {
+            Cow::Borrowed(self)
+        } else {
+            // It is ok to take the type only if it is fully applied or if it
+            // the missing argument only appears in order at the end, i.e:
+            //
+            // type Test a b c = Type (a Int) b c
+            //
+            // Test a b == Type (a Int) b
+            // Test a == Type (a Int)
+            // Test == ??? (Impossible to do a sane substitution)
+            let (d, arg_types) = split_app(self);
+            let allowed_missing_args = arg_types
+                .iter()
+                .rev()
+                .zip(params.iter().rev())
+                .take_while(|&(l, r)| match **l {
+                    Type::Generic(ref g) => g == r,
+                    _ => false,
+                })
+                .count();
+
+            if params.len() > allowed_missing_args + args.len() {
+                return None;
+            }
             // Remove the args at the end of the aliased type
             let arg_types: AppVec<_> = arg_types
                 .iter()
@@ -1507,32 +1551,18 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
                 .cloned()
                 .collect();
 
-            let d = d
-                .cloned()
-                .unwrap_or_else(|| interner.intern(Type::Builtin(BuiltinType::Function)));
-            interner.app(d, arg_types)
-        } else {
-            return None;
+            let d = d.cloned().unwrap_or_else(|| interner.function_builtin());
+            Cow::Owned(interner.app(d, arg_types))
         };
 
-        let mut map = params
-            .iter()
-            .map(|g| g.id.clone())
-            .zip(args.iter().cloned())
-            .collect();
+        named_variables.extend(
+            params
+                .iter()
+                .map(|g| g.id.clone())
+                .zip(args.iter().cloned()),
+        );
 
-        let typ = typ
-            .replace_generics(interner, &mut map)
-            .unwrap_or_else(|| typ.clone());
-        Some(
-            interner.app(
-                typ,
-                args[params.len().min(args.len())..]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ),
-        )
+        Some((typ.into_owned(), &args[params.len().min(args.len())..]))
     }
 
     fn flags(&self) -> Flags {
