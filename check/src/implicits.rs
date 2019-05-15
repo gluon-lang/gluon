@@ -1,11 +1,4 @@
-use std::{
-    borrow::Borrow,
-    cmp::Ordering,
-    fmt,
-    hash::{Hash, Hasher},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, fmt, rc::Rc, sync::Arc};
 
 use itertools::{Either, Itertools};
 
@@ -21,8 +14,8 @@ use crate::base::{
     pos::{self, BytePos, Span, Spanned},
     resolve,
     scoped_map::{self, ScopedMap},
-    symbol::{Symbol, SymbolRef},
-    types::{self, ArgType, BuiltinType, Type, TypeContext, TypeExt},
+    symbol::Symbol,
+    types::{self, ArgType, BuiltinType, SymbolKey, Type, TypeContext, TypeExt},
 };
 
 use crate::{
@@ -33,77 +26,33 @@ use crate::{
     TypecheckEnv,
 };
 
-impl SymbolKey {
-    pub fn split<'a>(
-        subs: &'a Substitution<RcType>,
-        typ: &'a RcType,
-    ) -> Option<(SymbolKey, Option<&'a RcType>)> {
-        let symbol = match **subs.real(typ) {
-            Type::App(ref id, ref args) => {
-                return SymbolKey::split(subs, id)
-                    .map(|(k, _)| k)
-                    .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
-            }
-            Type::Function(ArgType::Implicit, _, ref ret_type) => {
-                SymbolKey::split(subs, ret_type)
+fn split_type<'a>(
+    subs: &'a Substitution<RcType>,
+    typ: &'a RcType,
+) -> Option<(SymbolKey, Option<&'a RcType>)> {
+    let symbol = match **subs.real(typ) {
+        Type::App(ref id, ref args) => {
+            return split_type(subs, id)
+                .map(|(k, _)| k)
+                .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
+        }
+        Type::Function(ArgType::Implicit, _, ref ret_type) => {
+            split_type(subs, ret_type)
                     // Usually the implicit argument will appear directly inside type whose `SymbolKey`
                     // that was returned so it is unlikely that partitition further
                     .map(|(s, _)| s)
-            }
-            Type::Function(ArgType::Explicit, ..) => {
-                Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
-            }
-            Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
-            Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
-            Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
-            Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-            Type::Forall(_, ref typ) => return SymbolKey::split(subs, typ),
-            _ => None,
-        };
-        symbol.map(|s| (s, None))
-    }
-}
-
-#[derive(Eq, Clone, Debug)]
-pub enum SymbolKey {
-    Owned(Symbol),
-    Ref(&'static SymbolRef),
-}
-
-impl Hash for SymbolKey {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        Borrow::<SymbolRef>::borrow(self).hash(state)
-    }
-}
-
-impl PartialEq for SymbolKey {
-    fn eq(&self, other: &Self) -> bool {
-        Borrow::<SymbolRef>::borrow(self) == Borrow::<SymbolRef>::borrow(other)
-    }
-}
-
-impl PartialOrd for SymbolKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Borrow::<SymbolRef>::borrow(self).partial_cmp(Borrow::<SymbolRef>::borrow(other))
-    }
-}
-
-impl Ord for SymbolKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        Borrow::<SymbolRef>::borrow(self).cmp(Borrow::<SymbolRef>::borrow(other))
-    }
-}
-
-impl Borrow<SymbolRef> for SymbolKey {
-    fn borrow(&self) -> &SymbolRef {
-        match *self {
-            SymbolKey::Owned(ref s) => s,
-            SymbolKey::Ref(s) => s,
         }
-    }
+        Type::Function(ArgType::Explicit, ..) => {
+            Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
+        }
+        Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
+        Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
+        Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
+        Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
+        Type::Forall(_, ref typ) => return split_type(subs, typ),
+        _ => None,
+    };
+    symbol.map(|s| (s, None))
 }
 
 type ImplicitBinding = Rc<(Vec<TypedIdent<Symbol, RcType>>, RcType)>;
@@ -202,7 +151,7 @@ impl<T> Partition<T> {
     where
         T: Clone,
     {
-        match typ.and_then(|typ| SymbolKey::split(subs, typ)) {
+        match typ.and_then(|typ| split_type(subs, typ)) {
             Some((symbol, rest)) => {
                 let mut partition = self.partition.get(&symbol).cloned().unwrap_or_default();
                 if partition.insert_(subs, rest, value.clone()) {
@@ -227,7 +176,7 @@ impl<T> Partition<T> {
     where
         T: fmt::Debug,
     {
-        match typ.and_then(|typ| SymbolKey::split(subs, &typ)) {
+        match typ.and_then(|typ| split_type(subs, &typ)) {
             Some((symbol, rest)) => {
                 match self
                     .partition
@@ -761,6 +710,7 @@ pub struct ImplicitResolver<'a> {
     pub(crate) implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
     alias_resolver: resolve::AliasRemover<RcType>,
+    is_implicit_memo: RefCell<FnvMap<SymbolKey, bool>>,
 }
 
 impl<'a> ImplicitResolver<'a> {
@@ -775,6 +725,7 @@ impl<'a> ImplicitResolver<'a> {
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),
             alias_resolver: resolve::AliasRemover::new(),
+            is_implicit_memo: Default::default(),
         }
     }
 
@@ -901,14 +852,16 @@ impl<'a> ImplicitResolver<'a> {
             is_implicit = iter
                 .typ
                 .remove_forall()
-                .name()
-                .and_then(|typename| {
-                    self.metadata
-                        .get(typename)
-                        .or_else(|| self.environment.get_metadata(typename))
-                        .map(|m| has_implicit_attribute(m))
-                })
-                .unwrap_or(false);
+                .owned_name()
+                .map_or(false, |typename| {
+                    let mut is_implicit_memo = self.is_implicit_memo.borrow_mut();
+                    *is_implicit_memo.entry(typename.clone()).or_insert_with(|| {
+                        self.metadata
+                            .get(&*typename)
+                            .or_else(|| self.environment.get_metadata(&typename))
+                            .map_or(false, |m| has_implicit_attribute(m))
+                    })
+                });
         }
 
         if is_implicit {

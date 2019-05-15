@@ -1,8 +1,9 @@
 use std::{
     borrow::{Borrow, Cow},
     cell::RefCell,
+    cmp::Ordering,
     fmt,
-    hash::Hash,
+    hash::{Hash, Hasher},
     iter,
     marker::PhantomData,
     mem,
@@ -1218,6 +1219,73 @@ where
             Type::Effect(_) => Some(SymbolRef::new("Effect")),
             _ => None,
         }
+    }
+
+    pub fn owned_name(&self) -> Option<SymbolKey> {
+        if let Some(id) = self.alias_ident() {
+            return Some(SymbolKey::Owned(id.clone()));
+        }
+
+        match *self {
+            Type::Function(..) => Some(SymbolKey::Ref(BuiltinType::Function.symbol())),
+            Type::App(ref id, _) => match **id {
+                Type::Builtin(b) => Some(SymbolKey::Ref(b.symbol())),
+                _ => None,
+            },
+            Type::Builtin(b) => Some(SymbolKey::Ref(b.symbol())),
+            Type::Effect(_) => Some(SymbolKey::Ref(SymbolRef::new("Effect"))),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Eq, Clone, Debug)]
+pub enum SymbolKey {
+    Owned(Symbol),
+    Ref(&'static SymbolRef),
+}
+
+impl Hash for SymbolKey {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        Borrow::<SymbolRef>::borrow(self).hash(state)
+    }
+}
+
+impl PartialEq for SymbolKey {
+    fn eq(&self, other: &Self) -> bool {
+        Borrow::<SymbolRef>::borrow(self) == Borrow::<SymbolRef>::borrow(other)
+    }
+}
+
+impl PartialOrd for SymbolKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Borrow::<SymbolRef>::borrow(self).partial_cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Ord for SymbolKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Borrow::<SymbolRef>::borrow(self).cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Deref for SymbolKey {
+    type Target = SymbolRef;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            SymbolKey::Owned(ref s) => s,
+            SymbolKey::Ref(s) => s,
+        }
+    }
+}
+
+impl Borrow<SymbolRef> for SymbolKey {
+    fn borrow(&self) -> &SymbolRef {
+        self
     }
 }
 
