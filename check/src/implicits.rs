@@ -1,6 +1,6 @@
 use std::{cell::RefCell, convert::TryInto, fmt, rc::Rc, sync::Arc};
 
-use itertools::Itertools;
+use {itertools::Itertools, smallvec::SmallVec};
 
 use rpds;
 
@@ -58,8 +58,10 @@ fn split_type<'a>(
 type ImplicitBinding = (Rc<[TypedIdent<Symbol, RcType>]>, RcType);
 
 pub struct Partition<T> {
-    partition: FnvMap<SymbolKey, Partition<T>>,
-    rest: Vec<(Level, T)>,
+    partition: Vec<(SymbolKey, Partition<T>)>,
+    // The partitioning should be very fine grained so we usually have very few elements in each
+    // partition
+    rest: SmallVec<[(Level, T); 3]>,
 }
 
 impl<T> fmt::Debug for Partition<T>
@@ -150,7 +152,13 @@ impl<T> Partition<T> {
     {
         match typ.and_then(|typ| split_type(subs, typ)) {
             Some((symbol, rest)) => {
-                let partition = self.partition.entry(symbol).or_default();
+                let partition = match self.partition.iter().position(|(k, _)| *k == symbol) {
+                    Some(i) => &mut self.partition[i].1,
+                    None => {
+                        self.partition.push((symbol, Default::default()));
+                        &mut self.partition.last_mut().unwrap().1
+                    }
+                };
                 if partition.insert_(subs, rest, level, value.clone()) {
                     // Add a fallback value, ideally we shouldn't need this
                     partition.rest.push((level, value));
@@ -167,9 +175,10 @@ impl<T> Partition<T> {
     fn remove(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>) -> bool {
         match typ.and_then(|typ| split_type(subs, typ)) {
             Some((symbol, rest)) => {
-                let partition = self
+                let (_, partition) = self
                     .partition
-                    .get_mut(&symbol)
+                    .iter_mut()
+                    .find(|(k, _)| *k == symbol)
                     .expect("Entry from insert call");
                 if partition.remove(subs, rest) {
                     partition.rest.pop();
@@ -198,9 +207,13 @@ impl<T> Partition<T> {
         }
         match typ.and_then(|typ| split_type(subs, &typ)) {
             Some((symbol, rest)) => {
-                match self.partition.get(&symbol).and_then(|bindings| {
-                    bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
-                }) {
+                match self
+                    .partition
+                    .iter()
+                    .find(|(k, _)| *k == symbol)
+                    .and_then(|(_, bindings)| {
+                        bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
+                    }) {
                     Some(()) => Some(()),
                     None => {
                         let end = self
@@ -239,7 +252,7 @@ impl Partition<ImplicitBinding> {
     where
         F: FnMut(&Symbol) -> Option<RcType>,
     {
-        for partition in self.partition.values_mut() {
+        for (_, partition) in &mut self.partition {
             partition.update(f);
         }
 
@@ -740,6 +753,7 @@ pub struct ImplicitResolver<'a> {
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
     alias_resolver: resolve::AliasRemover<RcType>,
     is_implicit_memo: RefCell<FnvMap<SymbolKey, bool>>,
+    path: Vec<TypedIdent<Symbol, RcType>>,
 }
 
 impl<'a> ImplicitResolver<'a> {
@@ -755,6 +769,7 @@ impl<'a> ImplicitResolver<'a> {
             visited: Default::default(),
             alias_resolver: resolve::AliasRemover::new(),
             is_implicit_memo: Default::default(),
+            path: Vec::new(),
         }
     }
 
@@ -770,20 +785,14 @@ impl<'a> ImplicitResolver<'a> {
     ) {
         self.alias_resolver.clear();
 
-        let mut path = Vec::new();
-        path.push(TypedIdent {
+        self.path.clear();
+        self.path.push(TypedIdent {
             name: id.clone(),
             typ: typ.clone(),
         });
 
         let meta = self.metadata.get(id).cloned();
-        self.add_implicits_of_record_rec(
-            subs,
-            typ,
-            meta.as_ref().map(|m| &**m),
-            &mut path,
-            &mut Vec::new(),
-        );
+        self.add_implicits_of_record_rec(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
     }
 
     fn add_implicits_of_record_rec(
@@ -791,7 +800,6 @@ impl<'a> ImplicitResolver<'a> {
         mut subs: &Substitution<RcType>,
         typ: &RcType,
         metadata: Option<&Metadata>,
-        path: &mut Vec<TypedIdent<Symbol, RcType>>,
         forall_params: &mut Vec<Generic<Symbol>>,
     ) {
         let typ = subs.real(typ);
@@ -810,7 +818,8 @@ impl<'a> ImplicitResolver<'a> {
 
             let typ = subs.forall(forall_params.iter().cloned().collect(), typ.clone());
 
-            self.implicit_bindings.insert(subs, definition, path, &typ);
+            self.implicit_bindings
+                .insert(subs, definition, &self.path, &typ);
         }
 
         let forall_params_len_before = forall_params.len();
@@ -850,7 +859,7 @@ impl<'a> ImplicitResolver<'a> {
                         .and_then(|metadata| metadata.module.get(field.name.as_pretty_str()))
                         .map(|m| &**m);
 
-                    path.push(TypedIdent {
+                    self.path.push(TypedIdent {
                         name: field.name.clone(),
                         typ: field.typ.clone(),
                     });
@@ -859,11 +868,10 @@ impl<'a> ImplicitResolver<'a> {
                         subs,
                         &field.typ,
                         field_metadata,
-                        path,
                         forall_params,
                     );
 
-                    path.pop();
+                    self.path.pop();
                 }
             }
             _ => (),
