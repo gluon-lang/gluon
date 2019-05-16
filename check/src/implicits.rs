@@ -58,7 +58,7 @@ fn split_type<'a>(
 type ImplicitBinding = (Rc<[TypedIdent<Symbol, RcType>]>, RcType);
 
 pub struct Partition<T> {
-    partition: Vec<(SymbolKey, Partition<T>)>,
+    partition: FnvMap<SymbolKey, Partition<T>>,
     // The partitioning should be very fine grained so we usually have very few elements in each
     // partition
     rest: SmallVec<[(Level, T); 3]>,
@@ -152,13 +152,7 @@ impl<T> Partition<T> {
     {
         match typ.and_then(|typ| split_type(subs, typ)) {
             Some((symbol, rest)) => {
-                let partition = match self.partition.iter().position(|(k, _)| *k == symbol) {
-                    Some(i) => &mut self.partition[i].1,
-                    None => {
-                        self.partition.push((symbol, Default::default()));
-                        &mut self.partition.last_mut().unwrap().1
-                    }
-                };
+                let partition = self.partition.entry(symbol).or_default();
                 if partition.insert_(subs, rest, level, value.clone()) {
                     // Add a fallback value, ideally we shouldn't need this
                     partition.rest.push((level, value));
@@ -175,10 +169,9 @@ impl<T> Partition<T> {
     fn remove(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>) -> bool {
         match typ.and_then(|typ| split_type(subs, typ)) {
             Some((symbol, rest)) => {
-                let (_, partition) = self
+                let partition = self
                     .partition
-                    .iter_mut()
-                    .find(|(k, _)| *k == symbol)
+                    .get_mut(&symbol)
                     .expect("Entry from insert call");
                 if partition.remove(subs, rest) {
                     partition.rest.pop();
@@ -207,13 +200,9 @@ impl<T> Partition<T> {
         }
         match typ.and_then(|typ| split_type(subs, &typ)) {
             Some((symbol, rest)) => {
-                match self
-                    .partition
-                    .iter()
-                    .find(|(k, _)| *k == symbol)
-                    .and_then(|(_, bindings)| {
-                        bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
-                    }) {
+                match self.partition.get(&symbol).and_then(|bindings| {
+                    bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
+                }) {
                     Some(()) => Some(()),
                     None => {
                         let end = self
@@ -252,7 +241,7 @@ impl Partition<ImplicitBinding> {
     where
         F: FnMut(&Symbol) -> Option<RcType>,
     {
-        for (_, partition) in &mut self.partition {
+        for partition in self.partition.values_mut() {
             partition.update(f);
         }
 
