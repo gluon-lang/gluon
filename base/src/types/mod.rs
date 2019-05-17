@@ -4,7 +4,7 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
-    iter,
+    iter::{self, FusedIterator},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -3762,38 +3762,37 @@ where
 pub fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
 where
     I: IntoIterator<Item = &'a T>,
+    I::IntoIter: FusedIterator + Clone,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
     R: Default + Extend<T> + DerefMut<Target = [T]>,
 {
     let mut out = R::default();
-    walk_move_types2(types.into_iter(), false, &mut out, &mut f);
+    walk_move_types2(types.into_iter(), &mut out, &mut f);
     if out.is_empty() {
         None
     } else {
-        out.reverse();
         Some(out)
     }
 }
-fn walk_move_types2<'a, I, F, T, R>(mut types: I, replaced: bool, output: &mut R, f: &mut F)
+fn walk_move_types2<'a, I, F, T, R>(mut types: I, output: &mut R, f: &mut F)
 where
-    I: Iterator<Item = &'a T>,
+    I: FusedIterator<Item = &'a T> + Clone,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
     R: Extend<T> + DerefMut<Target = [T]>,
 {
-    if let Some(typ) = types.next() {
-        let new = f(typ);
-        walk_move_types2(types, replaced || new.is_some(), output, f);
-        match new {
-            Some(typ) => {
-                output.extend(Some(typ));
-            }
-            None if replaced || !output.is_empty() => {
-                output.extend(Some(typ.clone()));
-            }
-            None => (),
+    let mut after_last_replacement = 0;
+    for (i, typ) in types.clone().enumerate() {
+        if let Some(typ) = f(typ) {
+            output.extend(types.by_ref().take(i - after_last_replacement).cloned());
+            types.next();
+            output.extend(Some(typ));
+            after_last_replacement = i + 1;
         }
+    }
+    if !output.is_empty() {
+        output.extend(types.cloned());
     }
 }
 
