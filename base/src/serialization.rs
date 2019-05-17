@@ -85,7 +85,6 @@ where
         + ::std::any::Any
         + DeserializeState<'de, Seed<Id, T>>,
 {
-    use crate::serialization::SharedSeed;
     let seed = SharedSeed::new(seed);
     DeserializeSeed::deserialize(seed, deserializer).map(|vec: Vec<_>| Arc::from(vec))
 }

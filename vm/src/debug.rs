@@ -27,8 +27,6 @@ mod std {
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    use self::std;
-
     ExternModule::new(
         vm,
         record! {

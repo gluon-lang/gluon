@@ -198,7 +198,6 @@ mod string {
                 size_of::<ValueArray>() + (self.lhs.len() + self.rhs.len()) * size_of::<u8>()
             }
             fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-                use crate::value::Repr;
                 unsafe {
                     let result = &mut *result.as_mut_ptr();
                     result.set_repr(Repr::Byte);
@@ -371,7 +370,6 @@ mod std {
 
 #[allow(non_camel_case_types)]
 pub fn load_float(thread: &Thread) -> Result<ExternModule> {
-    use self::std;
     use crate::real_std::f64;
 
     ExternModule::new(
@@ -444,7 +442,6 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
 
 #[allow(non_camel_case_types)]
 pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
-    use self::std;
     ExternModule::new(
         vm,
         record! {
@@ -481,7 +478,6 @@ pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
 
 #[allow(non_camel_case_types)]
 pub fn load_int(vm: &Thread) -> Result<ExternModule> {
-    use self::std;
     ExternModule::new(
         vm,
         record! {
@@ -532,7 +528,6 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
 
 #[allow(non_camel_case_types)]
 pub fn load_array(vm: &Thread) -> Result<ExternModule> {
-    use self::std;
     ExternModule::new(
         vm,
         record! {
@@ -545,7 +540,6 @@ pub fn load_array(vm: &Thread) -> Result<ExternModule> {
 }
 
 pub fn load_string(vm: &Thread) -> Result<ExternModule> {
-    use self::string;
     ExternModule::new(
         vm,
         record! {
@@ -705,8 +699,6 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
 
 #[allow(non_camel_case_types, deprecated)]
 pub fn load<'vm>(vm: &'vm Thread) -> Result<ExternModule> {
-    use self::std;
-
     vm.define_global(
         "error",
         primitive::<fn(StdString) -> Pushed<A>>("@error", std::prim::error),
