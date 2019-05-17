@@ -9,13 +9,13 @@ use codespan_reporting::{Diagnostic, Label};
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent},
     error::AsDiagnostic,
-    fnv::{FnvMap, FnvSet},
+    fnv::FnvMap,
     metadata::Metadata,
     pos::{self, BytePos, Span, Spanned},
     resolve,
     scoped_map::{self, ScopedMap},
-    symbol::{Symbol, SymbolRef},
-    types::{self, ArgType, BuiltinType, Flags, Type, TypeContext, TypeExt},
+    symbol::Symbol,
+    types::{self, ArgType, BuiltinType, Flags, Generic, SymbolKey, Type, TypeContext, TypeExt},
 };
 
 use crate::{
@@ -27,32 +27,32 @@ use crate::{
 };
 
 fn split_type<'a>(
-        subs: &'a Substitution<RcType>,
-        typ: &'a RcType,
+    subs: &'a Substitution<RcType>,
+    typ: &'a RcType,
 ) -> Option<(SymbolKey, Option<&'a RcType>)> {
-        let symbol = match **subs.real(typ) {
-            Type::App(ref id, ref args) => {
+    let symbol = match **subs.real(typ) {
+        Type::App(ref id, ref args) => {
             return split_type(subs, id)
-                    .map(|(k, _)| k)
-                    .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
-            }
-            Type::Function(ArgType::Implicit, _, ref ret_type) => {
+                .map(|(k, _)| k)
+                .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
+        }
+        Type::Function(ArgType::Implicit, _, ref ret_type) => {
             split_type(subs, ret_type)
                     // Usually the implicit argument will appear directly inside type whose `SymbolKey`
                     // that was returned so it is unlikely that partitition further
                     .map(|(s, _)| s)
-            }
-            Type::Function(ArgType::Explicit, ..) => {
-                Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
-            }
-            Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
-            Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
-            Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
-            Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
+        }
+        Type::Function(ArgType::Explicit, ..) => {
+            Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
+        }
+        Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
+        Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
+        Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
+        Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
         Type::Forall(_, ref typ) => return split_type(subs, typ),
-            _ => None,
-        };
-        symbol.map(|s| (s, None))
+        _ => None,
+    };
+    symbol.map(|s| (s, None))
 }
 
 type ImplicitBinding = (Rc<[TypedIdent<Symbol, RcType>]>, RcType);
@@ -250,10 +250,10 @@ impl Partition<ImplicitBinding> {
                 let name = &path[0].name;
                 if let Some(t) = f(name) {
                     *typ = t;
-                    }
                 }
             }
         }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -263,7 +263,7 @@ pub(crate) struct Level(u32);
 pub(crate) struct ImplicitBindings {
     pub partition: Partition<ImplicitBinding>,
     partition_insertions: Vec<Option<(RcType, Option<Symbol>)>>,
-    pub definitions: FnvSet<Symbol>,
+    pub definitions: ScopedMap<Symbol, ()>,
 }
 
 impl fmt::Display for ImplicitBindings {
@@ -281,7 +281,7 @@ impl ImplicitBindings {
         typ: &RcType,
     ) {
         if let Some(definition) = definition {
-            self.definitions.insert(definition.clone());
+            self.definitions.insert(definition.clone(), ());
         }
 
         let level = Level(self.partition_insertions.len().try_into().unwrap());
@@ -315,10 +315,12 @@ impl ImplicitBindings {
     }
 
     pub fn enter_scope(&mut self) {
+        self.definitions.enter_scope();
         self.partition_insertions.push(None);
     }
 
     pub fn exit_scope(&mut self, subs: &Substitution<RcType>) {
+        self.definitions.exit_scope();
         while let Some(Some((typ, definition))) = self.partition_insertions.pop() {
             if let Some(definition) = definition {
                 self.definitions.remove(&definition);
@@ -764,7 +766,7 @@ impl<'a> ImplicitResolver<'a> {
 
     pub fn on_stack_var(&mut self, subs: &Substitution<RcType>, id: &Symbol, typ: &RcType) {
         self.add_implicits_of_record(subs, id, typ);
-        }
+    }
 
     pub fn add_implicits_of_record(
         &mut self,
@@ -794,6 +796,24 @@ impl<'a> ImplicitResolver<'a> {
         let typ = subs.real(typ);
         if metadata.is_none() && !typ.flags().contains(Flags::HAS_IMPLICIT) {
             return;
+        }
+        info!(
+            "----- {} {}",
+            metadata
+                .and_then(|m| m.definition.as_ref())
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
+            typ
+        );
+
+        // If we know what originally defined this value, and that has already been added don't
+        // add it again to prevent ambiguities
+        if let Some(metadata) = metadata {
+            if let Some(ref definition) = metadata.definition {
+                if self.implicit_bindings.definitions.contains_key(definition) {
+                    return;
+                }
+            }
         }
 
         let opt = self.try_create_implicit(metadata, typ);
@@ -836,20 +856,24 @@ impl<'a> ImplicitResolver<'a> {
                     &mut subs,
                     typ.clone(),
                 ) {
-                Ok(t) => t,
-                // Don't recurse into self recursive aliases
-                Err(_) => return,
+                    Ok(t) => t,
+                    // Don't recurse into self recursive aliases
+                    Err(_) => return,
                 }
             }
             Ok(None) => typ,
             Err(_) => return,
-            };
+        };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
                     let field_metadata = metadata
                         .and_then(|metadata| metadata.module.get(field.name.as_pretty_str()))
                         .map(|m| &**m);
+                    if field_metadata.is_none() && !field.typ.flags().contains(Flags::HAS_IMPLICIT)
+                    {
+                        continue;
+                    }
 
                     self.path.push(TypedIdent {
                         name: field.name.clone(),
@@ -857,11 +881,11 @@ impl<'a> ImplicitResolver<'a> {
                     });
 
                     self.add_implicits_of_record_rec(
-                            subs,
+                        subs,
                         &field.typ,
                         field_metadata,
                         forall_params,
-                        );
+                    );
 
                     self.path.pop();
                 }
@@ -891,25 +915,15 @@ impl<'a> ImplicitResolver<'a> {
                 .map_or(false, |typename| {
                     let mut is_implicit_memo = self.is_implicit_memo.borrow_mut();
                     *is_implicit_memo.entry(typename.clone()).or_insert_with(|| {
-                    self.metadata
+                        self.metadata
                             .get(&*typename)
                             .or_else(|| self.environment.get_metadata(&typename))
                             .map_or(false, |m| has_implicit_attribute(m))
-                })
+                    })
                 });
         }
 
         if is_implicit {
-            // If we know what originally defined this value, and that has already been added don't
-            // add it again to prevent ambiguities
-            if let Some(metadata) = metadata {
-                if let Some(ref definition) = metadata.definition {
-                    if self.implicit_bindings.definitions.contains(definition) {
-                        return None;
-                    }
-                }
-            }
-
             Some(metadata.and_then(|m| m.definition.as_ref()))
         } else {
             None
