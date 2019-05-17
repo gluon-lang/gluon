@@ -820,14 +820,6 @@ impl<'a> ImplicitResolver<'a> {
 
         let mut typ = typ.clone();
         if let Some(definition) = opt {
-            if !self.alias_resolver.named_variables.is_empty() {
-                if let Some(t) =
-                    typ.replace_generics(&mut subs, &mut self.alias_resolver.named_variables)
-                {
-                    typ = t;
-                }
-            }
-
             let typ = subs.forall(forall_params.iter().cloned().collect(), typ.clone());
 
             self.implicit_bindings
@@ -841,29 +833,15 @@ impl<'a> ImplicitResolver<'a> {
             typ = next.clone();
         }
 
-        let raw_type = match resolve::peek_alias(&self.environment, &typ) {
-            Ok(Some(_)) => {
-                if !self.alias_resolver.named_variables.is_empty() {
-                    if let Some(t) =
-                        typ.replace_generics(&mut subs, &mut self.alias_resolver.named_variables)
-                    {
-                        typ = t;
-                    }
-                }
-
-                match self.alias_resolver.remove_aliases_to_concrete(
-                    &self.environment,
-                    &mut subs,
-                    typ.clone(),
-                ) {
-                    Ok(t) => t,
-                    // Don't recurse into self recursive aliases
-                    Err(_) => return,
-                }
-            }
-            Ok(None) => typ,
-            Err(_) => return,
-        };
+        let raw_type =
+            match self
+                .alias_resolver
+                .remove_aliases(&self.environment, &mut subs, typ.clone())
+            {
+                Ok(t) => t,
+                // Don't recurse into self recursive aliases
+                Err(_) => return,
+            };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
