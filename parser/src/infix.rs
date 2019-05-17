@@ -316,7 +316,6 @@ where
     Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     use self::Error::*;
-    use crate::base::pos;
 
     let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
         let span = pos::span(lhs.span.start(), rhs.span.end());

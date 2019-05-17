@@ -107,10 +107,12 @@ mod gen_skeptic {
 
 /// Safety check to make sure that all .rs files in `tests/` will run
 fn check_test_declarations_in_cargo_file() {
-    use std::collections::HashSet;
-    use std::ffi::OsStr;
-    use std::fs::{read_dir, File};
-    use std::io::{BufRead, BufReader};
+    use std::{
+        collections::HashSet,
+        ffi::OsStr,
+        fs::read_dir,
+        io::{BufRead, BufReader},
+    };
 
     let cargo_file = BufReader::new(File::open("Cargo.toml").unwrap());
 

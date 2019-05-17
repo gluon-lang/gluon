@@ -250,7 +250,6 @@ impl SymbolRef {
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 
-#[allow(derive_hash_xor_eq)]
 #[derive(Debug, Eq, Hash, Ord, PartialOrd)]
 pub struct Name(str);
 

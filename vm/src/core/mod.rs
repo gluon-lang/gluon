@@ -1153,8 +1153,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         variables: &[&'a Expr<'a>],
         equations: &[Equation<'a, 'p>],
     ) -> &'a Expr<'a> {
-        use std::borrow::Cow;
-
         let new_alt = {
             // Inspect the first pattern of each equation
             // (the rest of the equations are checked recursively)

@@ -77,8 +77,6 @@ mod std {
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    use self::std;
-
     let _ = vm.register_type::<Reference<A>>("std.reference.Reference", &["a"]);
     ExternModule::new(
         vm,
