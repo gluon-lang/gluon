@@ -797,14 +797,6 @@ impl<'a> ImplicitResolver<'a> {
         if metadata.is_none() && !typ.flags().contains(Flags::HAS_IMPLICIT) {
             return;
         }
-        info!(
-            "----- {} {}",
-            metadata
-                .and_then(|m| m.definition.as_ref())
-                .map(|d| d.to_string())
-                .unwrap_or_else(|| "N/A".to_string()),
-            typ
-        );
 
         // If we know what originally defined this value, and that has already been added don't
         // add it again to prevent ambiguities
