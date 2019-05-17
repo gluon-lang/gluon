@@ -117,6 +117,31 @@ type Test = Int
 }
 
 #[test]
+fn propagate_metadata_parens() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+/// The identity function
+let id x = x
+id
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata,
+        Metadata {
+            definition: Some(intern("id:32")),
+            comment: Some(line_comment("The identity function")),
+            args: vec![Argument::explicit(intern("x:35"))],
+            ..Metadata::default()
+        }
+    );
+}
+
+#[test]
 fn propagate_metadata_record_field_comment() {
     let _ = env_logger::try_init();
 

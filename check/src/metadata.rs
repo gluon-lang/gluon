@@ -65,7 +65,7 @@ impl ArcMetadata for MaybeMetadata {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum MaybeMetadata {
     Empty,
     Data(Arc<Metadata>),
@@ -371,6 +371,7 @@ pub fn metadata(
                 Expr::MacroExpansion {
                     ref replacement, ..
                 } => self.metadata_expr(replacement),
+                Expr::Tuple { ref elems, .. } if elems.len() == 1 => self.metadata_expr(&elems[0]),
                 _ => {
                     ast::walk_expr(self, expr);
                     Default::default()
