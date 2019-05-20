@@ -558,7 +558,18 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     where
         V: Visitor<'de>,
     {
-        self.tuple_variant(fields.len(), visitor)
+        let (value, types) = {
+            let mut map_deserializer = MapDeserializer::new(&mut *self.de, fields.iter().cloned());
+            (
+                visitor.visit_map(&mut map_deserializer)?,
+                map_deserializer.types,
+            )
+        };
+        self.de.variant = Some(Field::ctor(
+            self.de.state.symbols.symbol(self.variant),
+            vec![self.de.state.cache.record(vec![], types)],
+        ));
+        Ok(value)
     }
 }
 
@@ -599,6 +610,7 @@ mod tests {
         A,
         B(i32),
         C(String, f64),
+        D { foo: i32 },
     }
 
     #[test]
@@ -613,6 +625,9 @@ mod tests {
                 Field::ctor(symbols.symbol("A"), vec![]),
                 Field::ctor(symbols.symbol("B"), vec![Type::int()]),
                 Field::ctor(symbols.symbol("C"), vec![Type::string(), Type::float()],),
+                Field::ctor(symbols.symbol("D"), vec![
+                    Type::record(vec![], vec![Field::new(symbols.symbol("foo"), Type::int())])
+                ]),
             ])
         );
     }

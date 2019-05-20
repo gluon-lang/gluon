@@ -95,6 +95,7 @@ fn enum_struct_variants() {
     let mut compiler = Compiler::new();
 
     let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
+    println!("Types:\n{}", src);
     compiler.load_script(&vm, "types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_struct_enum_mod);
 
@@ -103,8 +104,8 @@ fn enum_struct_variants() {
         let { struct_enum_to_str } = import! functions
         let { assert } = import! std.test
 
-        assert (struct_enum_to_str (OneField 1337) == "OneField { field: 1337 }")
-        assert (struct_enum_to_str (TwoFields "Pi" 3.14) == "TwoFields { name: \"Pi\", val: 3.14 }")
+        assert (struct_enum_to_str (OneField { field = 1337 }) == "OneField { field: 1337 }")
+        assert (struct_enum_to_str (TwoFields { name = "Pi", val = 3.14 }) == "TwoFields { name: \"Pi\", val: 3.14 }")
     "#;
 
     if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {

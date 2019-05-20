@@ -101,19 +101,55 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
             Data::Enum(ref enum_) => {
                 let variants = enum_.variants.iter().map(|variant| {
                     let ident = variant.ident.to_string();
-                    let args = variant.fields.iter().map(|field| {
-                        let typ = &field.ty;
-                        quote! {
-                            <#typ as _gluon_api::VmType>::make_type(vm)
+                    match variant.fields {
+                        Fields::Named(ref fields) => {
+                            let fields = fields.named.iter().map(|field| {
+                                let ident = field.ident.as_ref().unwrap().to_string();
+                                let typ = &field.ty;
+                                quote! {
+                                    _gluon_base::types::Field {
+                                        name: _gluon_base::symbol::Symbol::from(#ident),
+                                        typ: <#typ as _gluon_api::VmType>::make_type(vm),
+                                    }
+                                }
+                            });
+                            quote! {{
+                                let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
+                                let typ = _gluon_base::types::Type::record(
+                                    vec![],
+                                    vec![#(#fields),*],
+                                );
+                                _gluon_base::types::Field::ctor(
+                                    ctor_name,
+                                    vec![typ],
+                                )
+                            }}
                         }
-                    });
-                    quote! {{
-                        let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
-                        _gluon_base::types::Field::ctor(
-                            ctor_name,
-                            vec![#(#args),*],
-                        )
-                    }}
+                        Fields::Unnamed(ref fields) => {
+                            let args = fields.unnamed.iter().map(|field| {
+                                let typ = &field.ty;
+                                quote! {
+                                    <#typ as _gluon_api::VmType>::make_type(vm)
+                                }
+                            });
+                            quote! {{
+                                let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
+                                _gluon_base::types::Field::ctor(
+                                    ctor_name,
+                                    vec![#(#args),*],
+                                )
+                            }}
+                        }
+                        Fields::Unit => quote! {{
+                            let ctor_name = _gluon_base::symbol::Symbol::from(#ident);
+                            _gluon_base::types::Field::ctor(
+                                ctor_name, vec![],
+                            )
+                        }}
+                    }
+                    //----------------------------------------------------
+                    
+                    //----------------------------------------------------
                 });
                 quote! {
                     _gluon_base::types::Type::variant(

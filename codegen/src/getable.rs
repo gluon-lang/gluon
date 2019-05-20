@@ -243,10 +243,10 @@ fn gen_variant_match(ident: &Ident, tag: usize, variant: &Variant) -> TokenStrea
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {
-            let cons = gen_struct_variant_cons(named);
+            let cons = gen_struct_variant_cons(ident, variant_ident, named);
 
             quote! {
-                #tag => #ident::#variant_ident#cons
+                #tag => #cons
             }
         }
     }
@@ -273,7 +273,7 @@ where
     }
 }
 
-fn gen_struct_variant_cons<'a, I>(fields: I) -> TokenStream
+fn gen_struct_variant_cons<'a, I>(ident: &Ident, variant_ident: &Ident, fields: I) -> TokenStream
 where
     I: IntoIterator<Item = &'a Field>,
 {
@@ -283,9 +283,9 @@ where
             .ident
             .as_ref()
             .expect("Struct fields always have names");
-
+        let quoted_field_ident = format!("{}", quote! { #field_ident });
         quote! {
-            #field_ident: if let Some(val) = data.get_variant(#idx) {
+            #field_ident: if let Some(val) = inner_data.lookup_field(vm, #quoted_field_ident) {
                 <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
                 panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
@@ -293,9 +293,17 @@ where
         }
     });
 
-    quote! {
-        {#(#fields),*}
-    }
+    quote! {{
+        if let Some(val) = data.get_variant(0) {
+            let inner_data = match val.as_ref() {
+                _gluon_api::ValueRef::Data(data) => data,
+                val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
+            };
+            #ident::#variant_ident{#(#fields),*}
+        } else {
+            panic!("Enum does not contain data at index '0'. Do the type definitions match?")
+        }
+    }}
 }
 
 fn create_getable_bounds(generics: &Generics) -> Vec<TokenStream> {

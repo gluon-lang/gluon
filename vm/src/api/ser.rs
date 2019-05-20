@@ -95,6 +95,7 @@ use gluon::vm::api::ser::Ser;
 enum Enum {
     A(i32),
     B(String, i32),
+    C { foo: f64, bar: i32 },
 }
 
 impl VmType for Enum {
@@ -113,12 +114,13 @@ impl VmType for Enum {
 let thread = new_vm();
 
 let expr = r#"
-type Enum = | A Int | B String Int
+type Enum = | A Int | B String Int | C { foo : Float, bar : Int }
 
 let f e =
     match e with
     | A a -> a
     | B b c -> c
+    | C { foo, bar } -> bar
 
 { Enum, f }
 "#;
@@ -131,8 +133,10 @@ let mut f: FunctionRef<fn (Ser<Enum>) -> i32> = thread
     .get_global("test.f")
     .unwrap_or_else(|err| panic!("{}", err));
 
-let result = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| panic!("{}", err));
-assert_eq!(result, 4);
+let result1 = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(result1, 4);
+let result2 = f.call(Ser(Enum::C{foo: 3.14, bar: 10})).unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(result2, 10);
 
 # }
 ```
@@ -559,17 +563,20 @@ impl<'s, 'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'s, 'a, 'vm> 
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
+        let field = self.thread.global_env().intern(key)?;
+        self.fields.push(field);
         value.serialize(&mut **self)?;
         self.values += 1;
         Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
-        self.serializer.alloc(self.variant_index, self.values)
+        self.serializer.alloc_record(&self.fields, self.values)?;
+        self.serializer.alloc(self.variant_index, 1)
     }
 }
 

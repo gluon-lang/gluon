@@ -122,7 +122,7 @@ Compiler::new()
     .load_script(
         &thread,
         "test",
-        r#" type Enum = | A Int | B String Float in { Enum } "#,
+        r#" type Enum = | A Int | B { string : String, test : Float } in { Enum } "#,
     )
     .unwrap_or_else(|err| panic!("{}", err));
 
@@ -142,7 +142,7 @@ let (De(enum_), _) = Compiler::new()
     .run_expr::<De<Enum>>(
         &thread,
         "test",
-        r#" let { Enum } = import! "test" in B "abc" 3.14 "#,
+        r#" let { Enum } = import! "test" in B { string = "abc", test = 3.14 } "#,
     )
     .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(
@@ -856,6 +856,38 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
     where
         V: Visitor<'de>,
     {
-        de::Deserializer::deserialize_seq(self.de, visitor)
+        let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, self.de.typ);
+        match (self.de.input.as_ref(), &**typ) {
+            (ValueRef::Data(data), &Type::Variant(ref row)) => {
+                match row.row_iter().nth(data.tag() as usize) {
+                    Some(field) => {
+                        let typ = resolve::remove_aliases_cow(
+                            self.de.state.env, &mut NullInterner, &field.typ);
+                        match (data.get_variant(0).unwrap().as_ref(), &**typ) {
+                            (ValueRef::Data(ref data), &Type::Function(_, ref typ, _)) => {
+                                let iter = typ.row_iter().flat_map(|field| {
+                                    data.lookup_field(self.de.state.thread, field.name.as_ref())
+                                        .map(|variant| (variant, &field.name, &field.typ))
+                                });
+                                visitor.visit_map(
+                                    MapDeserializer::new(self.de.state.clone(), iter))
+                            },
+                            _ => Err(VmError::Message(format!(
+                                "Unable to deserialize `{}`",
+                                self.de.typ
+                            ))),
+                        }
+                    }
+                    None => Err(VmError::Message(format!(
+                        "Unable to deserialize `{}`",
+                        self.de.typ
+                    ))),
+                }
+            },
+            _ => Err(VmError::Message(format!(
+                "Unable to deserialize `{}`",
+                self.de.typ
+            ))),
+        }
     }
 }
