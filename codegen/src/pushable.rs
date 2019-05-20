@@ -89,11 +89,23 @@ fn derive_enum(
             Fields::Unit => quote! { #ident::#variant_ident },
         };
 
-        let push_impl = gen_push_impl(Some(tag), &field_idents, &field_types);
-
-        quote! {
-            #pattern => {
-                #push_impl
+        match &variant.fields {
+            Fields::Named(_) => {
+                let push_impl = gen_push_impl(None, &field_idents, &field_types);
+                quote! {
+                    #pattern => {
+                        #push_impl
+                        ctx.context().push_new_data(vm, #tag as _gluon_types::VmTag, 1)?;
+                    }
+                }
+            },
+            _ => {
+                let push_impl = gen_push_impl(Some(tag), &field_idents, &field_types);
+                quote! {
+                    #pattern => {
+                        #push_impl
+                    }
+                }
             }
         }
     });

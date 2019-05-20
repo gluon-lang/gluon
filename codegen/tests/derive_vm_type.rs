@@ -5,6 +5,9 @@ extern crate gluon;
 mod init;
 
 use gluon::{base::types::Type, vm::api::VmType};
+use gluon::vm::api;
+#[macro_use]
+extern crate serde_derive;
 use init::new_vm;
 
 #[derive(VmType)]
@@ -25,7 +28,7 @@ fn struct_() {
     );
 }
 
-#[derive(VmType)]
+#[derive(VmType, Serialize, Deserialize)]
 #[allow(unused)]
 enum Enum {
     One,
@@ -37,9 +40,12 @@ enum Enum {
 fn enum_() {
     let vm = new_vm();
 
+    let src = api::typ::make_source::<Enum>(&vm).unwrap();
+    println!("Enum Types:\n{}", src);
+
     assert_eq!(
         Enum::make_type(&vm).to_string(),
-        "| One\n| Two Int\n| Three String"
+        "| One\n| Two Int\n| Three { id : String }"
     );
 }
 
