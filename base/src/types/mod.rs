@@ -3759,40 +3759,87 @@ where
     }
 }
 
-pub fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
+struct WalkMoveTypes<'a, I, F, T> {
+    types: I,
+    clone_types_iter: I,
+    f: F,
+    clone_types: usize,
+    next: Option<T>,
+    _marker: PhantomData<&'a T>,
+}
+
+impl<'a, I, F, T> Iterator for WalkMoveTypes<'a, I, F, T>
+where
+    I: Iterator<Item = &'a T>,
+    F: FnMut(&'a T) -> Option<T>,
+    T: Clone + 'a,
+{
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.clone_types > 0 {
+            self.clone_types -= 1;
+            self.clone_types_iter.next().cloned()
+        } else if let Some(typ) = self.next.take() {
+            self.clone_types_iter.next();
+            Some(typ)
+        } else {
+            let f = &mut self.f;
+            if let Some((i, typ)) = self
+                .types
+                .by_ref()
+                .enumerate()
+                .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
+            {
+                self.clone_types = i;
+                self.next = Some(typ);
+                self.next()
+            } else {
+                self.clone_types = usize::max_value();
+                self.next()
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.clone_types_iter.size_hint()
+    }
+}
+
+pub fn walk_move_types<'a, I, F, T, R>(types: I, f: F) -> Option<R>
 where
     I: IntoIterator<Item = &'a T>,
     I::IntoIter: FusedIterator + Clone,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Default + Extend<T> + DerefMut<Target = [T]>,
+    R: std::iter::FromIterator<T>,
 {
-    let mut out = R::default();
-    walk_move_types2(types.into_iter(), &mut out, &mut f);
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
+    walk_move_types_(types, f).map(|iter| iter.collect())
 }
-fn walk_move_types2<'a, I, F, T, R>(mut types: I, output: &mut R, f: &mut F)
+
+fn walk_move_types_<'a, I, F, T>(types: I, mut f: F) -> Option<WalkMoveTypes<'a, I::IntoIter, F, T>>
 where
-    I: FusedIterator<Item = &'a T> + Clone,
+    I: IntoIterator<Item = &'a T>,
+    I::IntoIter: FusedIterator + Clone,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Extend<T> + DerefMut<Target = [T]>,
 {
-    let mut after_last_replacement = 0;
-    for (i, typ) in types.clone().enumerate() {
-        if let Some(typ) = f(typ) {
-            output.extend(types.by_ref().take(i - after_last_replacement).cloned());
-            types.next();
-            output.extend(Some(typ));
-            after_last_replacement = i + 1;
-        }
-    }
-    if !output.is_empty() {
-        output.extend(types.cloned());
+    let mut types = types.into_iter();
+    let clone_types_iter = types.clone();
+    if let Some((i, typ)) = types
+        .by_ref()
+        .enumerate()
+        .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
+    {
+        Some(WalkMoveTypes {
+            clone_types_iter,
+            types,
+            f,
+            clone_types: i,
+            next: Some(typ),
+            _marker: PhantomData,
+        })
+    } else {
+        None
     }
 }
 
@@ -3912,5 +3959,18 @@ where
             }))
         }
         Type::EmptyRow => interner.empty_row(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn walk_move_types_test() {
+        assert_eq!(
+            walk_move_types([1, 2, 3].iter(), |i| if *i == 2 { Some(4) } else { None }),
+            Some(vec![1, 4, 3])
+        );
     }
 }
