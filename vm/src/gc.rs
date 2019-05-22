@@ -1,15 +1,17 @@
-use std::any::{Any, TypeId};
-use std::cell::Cell;
-use std::cmp::Ordering;
-use std::collections::hash_map::Entry;
-use std::collections::VecDeque;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::mem;
-use std::ops::{Deref, DerefMut};
-use std::ptr;
-use std::sync::Arc;
+use std::{
+    any::{Any, TypeId},
+    cell::Cell,
+    cmp::Ordering,
+    collections::hash_map::Entry,
+    collections::VecDeque,
+    fmt,
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr::{self, NonNull},
+    sync::Arc,
+};
 
 use crate::base::fnv::FnvMap;
 use crate::interner::InternedStr;
@@ -341,10 +343,7 @@ impl GcHeader {
 ///
 /// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
 /// where the garbage collector will find it during the mark phase).
-pub struct GcPtr<T: ?Sized> {
-    // TODO Use NonZero to allow for better optimizing
-    ptr: *const T,
-}
+pub struct GcPtr<T: ?Sized>(NonNull<T>);
 
 unsafe impl<T: ?Sized + Send + Sync> Send for GcPtr<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for GcPtr<T> {}
@@ -353,14 +352,14 @@ impl<T: ?Sized> Copy for GcPtr<T> {}
 
 impl<T: ?Sized> Clone for GcPtr<T> {
     fn clone(&self) -> GcPtr<T> {
-        GcPtr { ptr: self.ptr }
+        GcPtr(self.0)
     }
 }
 
 impl<T: ?Sized> Deref for GcPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        unsafe { &*self.ptr }
+        unsafe { self.0.as_ref() }
     }
 }
 
@@ -411,12 +410,12 @@ impl<T: ?Sized> GcPtr<T> {
     /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
     /// else
     pub unsafe fn as_mut(&mut self) -> &mut T {
-        &mut *(self.ptr as *mut T)
+        self.0.as_mut()
     }
 
     /// Unsafe as `ptr` must have been allocted by this garbage collector
     pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> {
-        GcPtr { ptr }
+        GcPtr(NonNull::new_unchecked(ptr as *mut _))
     }
 
     pub fn generation(&self) -> Generation {
@@ -444,13 +443,8 @@ impl<T: ?Sized> GcPtr<T> {
     }
 
     fn header(&self) -> &GcHeader {
-        // Use of transmute_copy allows us to get the pointer
-        // to the data regardless of wether T is unsized or not
-        // (DST is structured as (ptr, len))
-        // This function should always be safe to call as GcPtr's should always have a header
-        // TODO: Better way of doing this?
         unsafe {
-            let p: *mut u8 = mem::transmute_copy(&self.ptr);
+            let p = self.0.as_ptr() as *mut u8;
             let header = p.offset(-(GcHeader::value_offset() as isize));
             &*(header as *const GcHeader)
         }
@@ -460,8 +454,9 @@ impl<T: ?Sized> GcPtr<T> {
 impl<'a, T: Traverseable + Send + Sync + 'a> GcPtr<T> {
     /// Coerces `self` to a `Traverseable` trait object
     pub fn as_traverseable(self) -> GcPtr<Traverseable + Send + Sync + 'a> {
-        GcPtr {
-            ptr: self.ptr as *const (Traverseable + Send + Sync),
+        unsafe {
+            let ptr: &(Traverseable + Send + Sync) = self.0.as_ref();
+            GcPtr(NonNull::new_unchecked(ptr as *const _ as *mut _))
         }
     }
 }
@@ -470,8 +465,10 @@ impl GcPtr<str> {
     pub fn as_traverseable_string(self) -> GcPtr<Traverseable + Send + Sync> {
         // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
         // u8's Traverseable impl
-        GcPtr {
-            ptr: self.as_ptr() as *const (Traverseable + Send + Sync),
+        unsafe {
+            GcPtr(NonNull::new_unchecked(
+                self.as_ptr() as *const (Traverseable + Send + Sync) as *mut _,
+            ))
         }
     }
 }
@@ -791,7 +788,7 @@ impl Gc {
             // that the pointer was initialized
             assert!(ret == p);
             self.values = Some(ptr);
-            GcPtr { ptr: p }
+            GcPtr(NonNull::new_unchecked(p))
         }
     }
 
