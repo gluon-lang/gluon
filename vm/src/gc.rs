@@ -942,12 +942,12 @@ mod tests {
 
     impl PartialEq for Data_ {
         fn eq(&self, other: &Data_) -> bool {
-            self.fields.ptr == other.fields.ptr
+            self.fields.0 == other.fields.0
         }
     }
     impl fmt::Debug for Data_ {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            self.fields.ptr.fmt(f)
+            self.fields.0.fmt(f)
         }
     }
 
