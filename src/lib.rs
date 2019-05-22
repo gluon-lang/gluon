@@ -882,6 +882,12 @@ impl VmBuilder {
         add_extern_module(&vm, "std.process.prim", crate::std_lib::process::load);
         add_extern_module(&vm, "std.env.prim", crate::std_lib::env::load);
 
+        add_extern_module(
+            &vm,
+            "std.effect.st.string.prim",
+            crate::vm::primitives::load_string_buf,
+        );
+
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
             available_if = "gluon is compiled with the 'serialization' feature",

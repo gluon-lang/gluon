@@ -340,7 +340,8 @@ pub mod generic {
     macro_rules! make_generics {
         ($($i: ident)+) => {
             $(
-            #[derive(Clone, Copy, PartialEq, Debug)]
+            #[derive(Clone, Copy, PartialEq, Debug, Trace)]
+            #[gluon(gluon_vm)]
             pub enum $i { }
             impl VmType for $i {
                 type Type = $i;
@@ -351,10 +352,11 @@ pub mod generic {
                     vm.global_env().get_generic(lower_str)
                 }
             }
+
             )+
         }
     }
-    make_generics! {A B C D E F G H I J K L M N O P Q R X Y Z}
+    make_generics! {A B C D E F G H I J K L M N O P Q R S T U V X Y Z}
 }
 
 fn insert_forall(
@@ -1494,6 +1496,15 @@ impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, 
         match self {
             RuntimeResult::Return(value) => value.push(context),
             RuntimeResult::Panic(err) => Err(Error::Message(format!("{}", err))),
+        }
+    }
+}
+
+impl<T, E> RuntimeResult<T, E> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> RuntimeResult<U, E> {
+        match self {
+            RuntimeResult::Return(ok) => RuntimeResult::Return(f(ok)),
+            RuntimeResult::Panic(err) => RuntimeResult::Panic(err),
         }
     }
 }
