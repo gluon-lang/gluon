@@ -8,16 +8,19 @@ edition = "2018"
 license = "MIT"
 
 description = "A static, type inferred programming language for application embedding"
+readme = "README.md"
 
+homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
-readme = "README.md"
+
+[badges]
+travis-ci = { repository = "gluon-lang/gluon" }
 
 [workspace]
 members = ["c-api", "repl", "completion", "format", "doc", "codegen"]
 
 [lib]
-
 name = "gluon"
 path = "src/lib.rs"
 
@@ -119,49 +122,9 @@ name = "precompiled"
 harness = false
 
 [[test]]
-name = "api"
-[[test]]
-name = "array"
-[[test]]
-name = "compiletest"
-[[test]]
-name = "de"
-[[test]]
-name = "debug"
-[[test]]
-name = "error"
-[[test]]
-name = "io"
-[[test]]
-name = "limits"
-[[test]]
 name = "main"
 harness = false
-[[test]]
-name = "metadata"
-[[test]]
-name = "parallel"
-[[test]]
-name = "pattern_match"
-[[test]]
-name = "row_polymorphism"
-[[test]]
-name = "safety"
-[[test]]
-name = "serialization"
-[[test]]
-name = "skeptic-tests"
-[[test]]
-name = "stack_overflow"
-[[test]]
-name = "tutorial"
-[[test]]
-name = "vm"
-[[test]]
-name = "ui"
 
-[[example]]
-name = "24"
 [[example]]
 name = "marshalling"
 required-features = ["serialization"]

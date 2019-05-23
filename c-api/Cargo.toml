@@ -8,8 +8,12 @@ license = "MIT"
 
 description = "C-api for gluon, a static, type inferred programming language for application embedding"
 
+homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
+
+[badges]
+travis-ci = { repository = "gluon-lang/gluon" }
 
 [lib]
 crate-type = ["cdylib"]

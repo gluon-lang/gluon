@@ -7,8 +7,12 @@ edition = "2018"
 license = "MIT"
 description = "REPL for gluon. A static, type inferred programming language for application embedding"
 
+homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
-documentation = "https://docs.rs/gluon_repl"
+documentation = "https://docs.rs/gluon"
+
+[badges]
+travis-ci = { repository = "gluon-lang/gluon" }
 
 [[bin]]
 name = "gluon"
