@@ -1,39 +1,26 @@
 //! REPL for the gluon programming language
 #![doc(html_root_url = "https://docs.rs/gluon_repl/0.4.1")] // # GLUON
 
-extern crate app_dirs;
-#[macro_use]
-extern crate clap;
-extern crate codespan;
-extern crate codespan_reporting;
-#[cfg(feature = "env_logger")]
-extern crate env_logger;
-extern crate futures;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-extern crate structopt;
 #[allow(unused_imports)]
 #[macro_use]
 extern crate structopt_derive;
-extern crate tokio;
-extern crate tokio_signal;
-extern crate walkdir;
 
-extern crate gluon;
-extern crate gluon_doc;
-extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
 #[macro_use]
 extern crate gluon_codegen;
 
-use std::ffi::OsStr;
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::{
+    ffi::OsStr,
+    fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use codespan_reporting::termcolor;
 use structopt::StructOpt;
@@ -42,15 +29,13 @@ use walkdir::WalkDir;
 use futures::future;
 use tokio::runtime::Runtime;
 
-use gluon::base;
-use gluon::parser;
-use gluon::vm;
+use gluon::{base, parser, vm};
 
 use crate::base::filename_to_module;
 
-use gluon::vm::thread::ThreadInternal;
-use gluon::vm::Error as VMError;
-use gluon::{new_vm, Compiler, Error, Result, Thread};
+use gluon::{
+    new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Compiler, Error, Result, Thread,
+};
 
 mod repl;
 
@@ -114,7 +99,7 @@ pub enum SubOpt {
     Doc(::gluon_doc::Opt),
 }
 
-const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+const LONG_VERSION: &str = concat!(clap::crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 
 #[derive(StructOpt)]
 #[structopt(about = "executes gluon programs", raw(long_version = "LONG_VERSION"))]

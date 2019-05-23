@@ -1,23 +1,28 @@
 //! The thread/vm type
-use std::any::{Any, TypeId};
-use std::cmp::Ordering;
-use std::fmt;
-use std::mem;
-use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
-use std::result::Result as StdResult;
-use std::string::String as StdString;
-use std::sync::atomic::{self, AtomicBool};
-use std::sync::Arc;
-use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::usize;
+use std::{
+    any::{Any, TypeId},
+    cmp::Ordering,
+    fmt, mem,
+    ops::{Add, Deref, DerefMut, Div, Mul, Sub},
+    result::Result as StdResult,
+    string::String as StdString,
+    sync::atomic::{self, AtomicBool},
+    sync::Arc,
+    sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    usize,
+};
 
-use futures::future::{self, Either, FutureResult};
-use futures::{Async, Future, Poll};
+use futures::{
+    future::{self, Either, FutureResult},
+    try_ready, Async, Future, Poll,
+};
 
-use crate::base::metadata::Metadata;
-use crate::base::pos::Line;
-use crate::base::symbol::Symbol;
-use crate::base::types::{self, Alias, ArcType};
+use crate::base::{
+    metadata::Metadata,
+    pos::Line,
+    symbol::Symbol,
+    types::{self, Alias, ArcType},
+};
 
 use crate::api::{Getable, Pushable, ValueRef, VmType};
 use crate::compiler::UpvarInfo;
@@ -1180,7 +1185,7 @@ impl<'a> StackInfo<'a> {
     }
 }
 
-bitflags! {
+bitflags::bitflags! {
     #[derive(Default)]
     pub struct HookFlags: u8 {
         /// Call the hook when execution moves to a new line

@@ -9,13 +9,9 @@
 #[cfg(test)]
 extern crate env_logger;
 
-extern crate codespan;
 #[macro_use]
 extern crate collect_mac;
-extern crate codespan_reporting;
 pub extern crate either;
-extern crate futures;
-extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]

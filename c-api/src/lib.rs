@@ -1,19 +1,17 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
 #![doc(html_root_url = "https://docs.rs/gluon_c-api/0.11.2")] // # GLUON
 
-extern crate gluon;
-#[cfg(not(target_arch = "wasm32"))]
-extern crate libc;
+use std::{slice, str};
 
-use std::slice;
-use std::str;
-
-use gluon::vm::api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable};
-use gluon::vm::stack;
-use gluon::vm::thread::{RootedThread, Status, Thread, ThreadInternal};
-use gluon::vm::types::{VmIndex, VmInt};
-
-use gluon::Compiler;
+use gluon::{
+    vm::{
+        api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable},
+        stack,
+        thread::{RootedThread, Status, Thread, ThreadInternal},
+        types::{VmIndex, VmInt},
+    },
+    Compiler,
+};
 
 pub type Function = extern "C" fn(&Thread) -> Status;
 
@@ -264,9 +262,7 @@ mod tests {
 
     use gluon::vm::thread::{Status, Thread};
 
-    use std::ptr;
-    use std::slice;
-    use std::str;
+    use std::{ptr, slice, str};
 
     #[test]
     fn push_pop() {

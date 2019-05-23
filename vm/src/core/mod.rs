@@ -121,8 +121,7 @@ pub enum Expr<'a> {
 #[cfg(feature = "test")]
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use crate::pretty;
-        let arena = pretty::Arena::new();
+        let arena = ::pretty::Arena::new();
         let mut s = Vec::new();
         self.pretty(&arena).1.render(80, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
@@ -139,8 +138,7 @@ impl fmt::Display for Pattern {
 impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use crate::core::pretty::Prec;
-        use crate::pretty;
-        let arena = pretty::Arena::new();
+        let arena = ::pretty::Arena::new();
         let mut s = Vec::new();
         self.pretty(&arena, Prec::Top).1.render(80, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))

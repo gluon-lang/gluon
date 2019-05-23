@@ -3,25 +3,15 @@
 #![recursion_limit = "1024"]
 
 #[macro_use]
-extern crate bitflags;
-extern crate codespan;
-#[macro_use]
 extern crate collect_mac;
 #[doc(hidden)]
 pub extern crate frunk_core;
 #[macro_use]
-extern crate futures;
-extern crate itertools;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate mopa;
-extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-#[cfg(feature = "serde_derive")]
-#[macro_use]
-extern crate serde_derive;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive_state;
