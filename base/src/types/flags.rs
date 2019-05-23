@@ -10,6 +10,7 @@ bitflags! {
         const HAS_GENERICS = 1 << 2;
         const HAS_FORALL = 1 << 3;
         const HAS_IDENTS = 1 << 4;
+        const HAS_IMPLICIT = 1 << 5;
 
 
         const NEEDS_GENERALIZE =

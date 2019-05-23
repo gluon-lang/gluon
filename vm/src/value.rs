@@ -350,6 +350,11 @@ mod gc_str {
     #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
 
+    // Needed due to https://github.com/rust-lang/rust/pull/60444, unsure if that is due to a bug
+    // or not
+    unsafe impl Send for GcStr {}
+    unsafe impl Sync for GcStr {}
+
     impl fmt::Debug for GcStr {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             f.debug_tuple("GcStr").field(&&**self).finish()

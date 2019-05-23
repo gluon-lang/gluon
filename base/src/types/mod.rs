@@ -1,9 +1,10 @@
 use std::{
     borrow::{Borrow, Cow},
     cell::RefCell,
+    cmp::Ordering,
     fmt,
-    hash::Hash,
-    iter,
+    hash::{Hash, Hasher},
+    iter::{self, FusedIterator},
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -1219,6 +1220,73 @@ where
             _ => None,
         }
     }
+
+    pub fn owned_name(&self) -> Option<SymbolKey> {
+        if let Some(id) = self.alias_ident() {
+            return Some(SymbolKey::Owned(id.clone()));
+        }
+
+        match *self {
+            Type::Function(..) => Some(SymbolKey::Ref(BuiltinType::Function.symbol())),
+            Type::App(ref id, _) => match **id {
+                Type::Builtin(b) => Some(SymbolKey::Ref(b.symbol())),
+                _ => None,
+            },
+            Type::Builtin(b) => Some(SymbolKey::Ref(b.symbol())),
+            Type::Effect(_) => Some(SymbolKey::Ref(SymbolRef::new("Effect"))),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Eq, Clone, Debug)]
+pub enum SymbolKey {
+    Owned(Symbol),
+    Ref(&'static SymbolRef),
+}
+
+impl Hash for SymbolKey {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        Borrow::<SymbolRef>::borrow(self).hash(state)
+    }
+}
+
+impl PartialEq for SymbolKey {
+    fn eq(&self, other: &Self) -> bool {
+        Borrow::<SymbolRef>::borrow(self) == Borrow::<SymbolRef>::borrow(other)
+    }
+}
+
+impl PartialOrd for SymbolKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Borrow::<SymbolRef>::borrow(self).partial_cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Ord for SymbolKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Borrow::<SymbolRef>::borrow(self).cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Deref for SymbolKey {
+    type Target = SymbolRef;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            SymbolKey::Owned(ref s) => s,
+            SymbolKey::Ref(s) => s,
+        }
+    }
+}
+
+impl Borrow<SymbolRef> for SymbolKey {
+    fn borrow(&self) -> &SymbolRef {
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -1409,9 +1477,26 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         Self::Id: Clone + Eq + Hash,
         Self: Clone,
     {
+        if named_variables.is_empty() {
+            None
+        } else {
+            self.replace_generics_(interner, named_variables)
+        }
+    }
+
+    fn replace_generics_(
+        &self,
+        interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Option<Self>
+    where
+        Self::Id: Clone + Eq + Hash,
+        Self: Clone,
+    {
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
         }
+
         match &**self {
             Type::Generic(generic) => named_variables.get(&generic.id).cloned(),
             Type::Forall(params, typ) => {
@@ -1430,7 +1515,7 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
             _ => walk_move_type_opt(
                 self,
                 &mut InternerVisitor::control(interner, |interner, typ: &Self| {
-                    typ.replace_generics(interner, named_variables)
+                    typ.replace_generics_(interner, named_variables)
                 }),
             ),
         }
@@ -1469,37 +1554,64 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    fn apply_args(
+    fn apply_args<'a>(
         &self,
         params: &[Generic<Self::Id>],
-        args: &[Self],
+        args: &'a [Self],
         interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
+        Self: fmt::Display,
+        Self::Id: fmt::Display,
     {
-        let typ = self.clone();
+        let (non_replaced_type, unapplied_args) =
+            self.arg_application(params, args, interner, named_variables)?;
 
-        // It is ok to take the type only if it is fully applied or if it
-        // the missing argument only appears in order at the end, i.e:
-        //
-        // type Test a b c = Type (a Int) b c
-        //
-        // Test a b == Type (a Int) b
-        // Test a == Type (a Int)
-        // Test == ??? (Impossible to do a sane substitution)
-        let (d, arg_types) = split_app(&typ);
-        let allowed_missing_args = arg_types
-            .iter()
-            .rev()
-            .zip(params.iter().rev())
-            .take_while(|&(l, r)| match **l {
-                Type::Generic(ref g) => g == r,
-                _ => false,
-            })
-            .count();
+        let non_replaced_type = non_replaced_type
+            .replace_generics(interner, named_variables)
+            .unwrap_or_else(|| non_replaced_type.clone());
+        Some(interner.app(non_replaced_type, unapplied_args.iter().cloned().collect()))
+    }
 
-        let typ = if params.len() <= allowed_missing_args + args.len() {
+    fn arg_application<'a>(
+        &self,
+        params: &[Generic<Self::Id>],
+        args: &'a [Self],
+        interner: &mut impl TypeContext<Self::Id, Self>,
+        named_variables: &mut FnvMap<Self::Id, Self>,
+    ) -> Option<(Self, &'a [Self])>
+    where
+        Self::Id: Clone + Eq + Hash,
+        Self: fmt::Display,
+        Self::Id: fmt::Display,
+    {
+        let typ = if params.len() == args.len() {
+            Cow::Borrowed(self)
+        } else {
+            // It is ok to take the type only if it is fully applied or if it
+            // the missing argument only appears in order at the end, i.e:
+            //
+            // type Test a b c = Type (a Int) b c
+            //
+            // Test a b == Type (a Int) b
+            // Test a == Type (a Int)
+            // Test == ??? (Impossible to do a sane substitution)
+            let (d, arg_types) = split_app(self);
+            let allowed_missing_args = arg_types
+                .iter()
+                .rev()
+                .zip(params.iter().rev())
+                .take_while(|&(l, r)| match **l {
+                    Type::Generic(ref g) => g == r,
+                    _ => false,
+                })
+                .count();
+
+            if params.len() > allowed_missing_args + args.len() {
+                return None;
+            }
             // Remove the args at the end of the aliased type
             let arg_types: AppVec<_> = arg_types
                 .iter()
@@ -1507,32 +1619,18 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
                 .cloned()
                 .collect();
 
-            let d = d
-                .cloned()
-                .unwrap_or_else(|| interner.intern(Type::Builtin(BuiltinType::Function)));
-            interner.app(d, arg_types)
-        } else {
-            return None;
+            let d = d.cloned().unwrap_or_else(|| interner.function_builtin());
+            Cow::Owned(interner.app(d, arg_types))
         };
 
-        let mut map = params
-            .iter()
-            .map(|g| g.id.clone())
-            .zip(args.iter().cloned())
-            .collect();
+        named_variables.extend(
+            params
+                .iter()
+                .map(|g| g.id.clone())
+                .zip(args.iter().cloned()),
+        );
 
-        let typ = typ
-            .replace_generics(interner, &mut map)
-            .unwrap_or_else(|| typ.clone());
-        Some(
-            interner.app(
-                typ,
-                args[params.len().min(args.len())..]
-                    .iter()
-                    .cloned()
-                    .collect(),
-            ),
-        )
+        Some((typ.into_owned(), &args[params.len().min(args.len())..]))
     }
 
     fn flags(&self) -> Flags {
@@ -1631,8 +1729,7 @@ impl<Id> TypeExt for ArcType<Id> {
 
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         let flags = Flags::from_type(&typ);
-        let typ = Arc::new(ArcTypeInner { typ, flags });
-        ArcType { typ }
+        Self::with_flags(typ, flags)
     }
 
     fn strong_count(typ: &ArcType<Id>) -> usize {
@@ -1679,6 +1776,12 @@ where
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
+    }
+}
+
+impl<Id> From<(Type<Id, ArcType<Id>>, Flags)> for ArcType<Id> {
+    fn from((typ, flags): (Type<Id, ArcType<Id>>, Flags)) -> ArcType<Id> {
+        ArcType::with_flags(typ, flags)
     }
 }
 
@@ -1953,6 +2056,11 @@ where
 }
 
 impl<Id> ArcType<Id> {
+    fn with_flags(typ: Type<Id, ArcType<Id>>, flags: Flags) -> ArcType<Id> {
+        let typ = Arc::new(ArcTypeInner { typ, flags });
+        ArcType { typ }
+    }
+
     pub fn set(into: &mut Self, typ: Type<Id, Self>)
     where
         Id: Clone,
@@ -2729,6 +2837,10 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern(typ)
         }
 
+        fn intern_flags(&mut self, typ: $crate::types::Type<$id, $typ>, flags: $crate::types::Flags) -> $typ {
+            $crate::expr!(self, $($tokens)+).intern_flags(typ, flags)
+        }
+
         fn builtin(&mut self, typ: $crate::types::BuiltinType) -> $typ {
             $crate::expr!(self, $($tokens)+).builtin(typ)
         }
@@ -2827,8 +2939,15 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).new_data_alias(data)
         }
 
-        fn alias_group(&mut self, group: Vec<$crate::types::AliasData<$id, $typ>>) -> Vec<$crate::types::Alias<$id, $typ>> {
-            $crate::expr!(self, $($tokens)+).alias_group(group)
+        fn alias_group(
+            &mut self,
+            group: Vec<$crate::types::AliasData<$id, $typ>>,
+            is_implicit_iter: impl IntoIterator<Item = bool>
+            ) -> Vec<$crate::types::Alias<$id, $typ>>
+        where
+            $typ: $crate::types::TypeExt<Id = $id>,
+        {
+            $crate::expr!(self, $($tokens)+).alias_group(group, is_implicit_iter)
         }
 
         /*
@@ -2890,6 +3009,8 @@ pub struct InternerVisitor<'i, F, T> {
 }
 
 pub trait TypeContext<Id, T> {
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T;
+
     fn intern(&mut self, typ: Type<Id, T>) -> T;
 
     fn hole(&mut self) -> T {
@@ -3140,15 +3261,33 @@ pub trait TypeContext<Id, T> {
         }
     }
 
-    fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
+    fn alias_group(
+        &mut self,
+        group: Vec<AliasData<Id, T>>,
+        is_implicit_iter: impl IntoIterator<Item = bool>,
+    ) -> Vec<Alias<Id, T>>
+    where
+        T: TypeExt<Id = Id>,
+    {
         let group = Arc::<[_]>::from(group);
         (0..group.len())
-            .map(|index| Alias {
-                _typ: self.intern(Type::Alias(AliasRef {
+            .zip(is_implicit_iter)
+            .map(|(index, is_implicit)| {
+                let typ = Type::Alias(AliasRef {
                     index,
                     group: group.clone(),
-                })),
-                _marker: PhantomData,
+                });
+                let flags = Flags::from_type(&typ)
+                    | (if is_implicit {
+                        Flags::HAS_IMPLICIT
+                    } else {
+                        Flags::empty()
+                    });
+
+                Alias {
+                    _typ: self.intern_flags(typ, flags),
+                    _marker: PhantomData,
+                }
             })
             .collect()
     }
@@ -3187,10 +3326,14 @@ pub struct NullInterner;
 
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
-    T: From<Type<Id, T>>,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 }
 
@@ -3206,10 +3349,14 @@ macro_rules! forward_to_cache {
 
 impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
-    T: From<Type<Id, T>> + Clone,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 
     forward_to_cache! {
@@ -3220,10 +3367,14 @@ where
 
 impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
-    T: From<Type<Id, T>> + Clone,
+    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
+        T::from((typ, flags))
     }
 
     forward_to_cache! {
@@ -3278,19 +3429,19 @@ where
 
 pub trait TypeContextAlloc: Sized {
     type Id;
-    fn alloc(into: &mut Self, typ: Type<Self::Id, Self>);
+    fn alloc(into: &mut Self, typ: Type<Self::Id, Self>, flags: Flags);
 }
 
 impl TypeContextAlloc for ArcType {
     type Id = Symbol;
-    fn alloc(into: &mut Self, typ: Type<Symbol, Self>) {
+    fn alloc(into: &mut Self, typ: Type<Symbol, Self>, flags: Flags) {
         match Arc::get_mut(&mut into.typ) {
             Some(into) => {
-                into.flags = Flags::from_type(&typ);
+                into.flags = flags;
                 into.typ = typ;
             }
             None => {
-                *into = Self::new(typ);
+                *into = Self::with_flags(typ, flags);
             }
         }
     }
@@ -3348,9 +3499,14 @@ where
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
+        let flags = Flags::from_type(&typ);
+        self.intern_flags(typ, flags)
+    }
+
+    fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
         use std::collections::hash_map::Entry;
 
-        T::alloc(&mut self.scratch.0, typ);
+        T::alloc(&mut self.scratch.0, typ, flags);
         match self.set.entry(self.scratch.clone()) {
             Entry::Occupied(entry) => return entry.key().0.clone(),
             Entry::Vacant(entry) => {
@@ -3603,41 +3759,87 @@ where
     }
 }
 
-pub fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
-where
-    I: IntoIterator<Item = &'a T>,
-    F: FnMut(&'a T) -> Option<T>,
-    T: Clone + 'a,
-    R: Default + Extend<T> + DerefMut<Target = [T]>,
-{
-    let mut out = R::default();
-    walk_move_types2(types.into_iter(), false, &mut out, &mut f);
-    if out.is_empty() {
-        None
-    } else {
-        out.reverse();
-        Some(out)
-    }
+struct WalkMoveTypes<'a, I, F, T> {
+    types: I,
+    clone_types_iter: I,
+    f: F,
+    clone_types: usize,
+    next: Option<T>,
+    _marker: PhantomData<&'a T>,
 }
-fn walk_move_types2<'a, I, F, T, R>(mut types: I, replaced: bool, output: &mut R, f: &mut F)
+
+impl<'a, I, F, T> Iterator for WalkMoveTypes<'a, I, F, T>
 where
     I: Iterator<Item = &'a T>,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Extend<T> + DerefMut<Target = [T]>,
 {
-    if let Some(typ) = types.next() {
-        let new = f(typ);
-        walk_move_types2(types, replaced || new.is_some(), output, f);
-        match new {
-            Some(typ) => {
-                output.extend(Some(typ));
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.clone_types > 0 {
+            self.clone_types -= 1;
+            self.clone_types_iter.next().cloned()
+        } else if let Some(typ) = self.next.take() {
+            self.clone_types_iter.next();
+            Some(typ)
+        } else {
+            let f = &mut self.f;
+            if let Some((i, typ)) = self
+                .types
+                .by_ref()
+                .enumerate()
+                .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
+            {
+                self.clone_types = i;
+                self.next = Some(typ);
+                self.next()
+            } else {
+                self.clone_types = usize::max_value();
+                self.next()
             }
-            None if replaced || !output.is_empty() => {
-                output.extend(Some(typ.clone()));
-            }
-            None => (),
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.clone_types_iter.size_hint()
+    }
+}
+
+pub fn walk_move_types<'a, I, F, T, R>(types: I, f: F) -> Option<R>
+where
+    I: IntoIterator<Item = &'a T>,
+    I::IntoIter: FusedIterator + Clone,
+    F: FnMut(&'a T) -> Option<T>,
+    T: Clone + 'a,
+    R: std::iter::FromIterator<T>,
+{
+    walk_move_types_(types, f).map(|iter| iter.collect())
+}
+
+fn walk_move_types_<'a, I, F, T>(types: I, mut f: F) -> Option<WalkMoveTypes<'a, I::IntoIter, F, T>>
+where
+    I: IntoIterator<Item = &'a T>,
+    I::IntoIter: FusedIterator + Clone,
+    F: FnMut(&'a T) -> Option<T>,
+    T: Clone + 'a,
+{
+    let mut types = types.into_iter();
+    let clone_types_iter = types.clone();
+    if let Some((i, typ)) = types
+        .by_ref()
+        .enumerate()
+        .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
+    {
+        Some(WalkMoveTypes {
+            clone_types_iter,
+            types,
+            f,
+            clone_types: i,
+            next: Some(typ),
+            _marker: PhantomData,
+        })
+    } else {
+        None
     }
 }
 
@@ -3757,5 +3959,18 @@ where
             }))
         }
         Type::EmptyRow => interner.empty_row(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn walk_move_types_test() {
+        assert_eq!(
+            walk_move_types([1, 2, 3].iter(), |i| if *i == 2 { Some(4) } else { None }),
+            Some(vec![1, 4, 3])
+        );
     }
 }

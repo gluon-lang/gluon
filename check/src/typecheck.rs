@@ -363,13 +363,11 @@ impl<'a> Typecheck<'a> {
     fn enter_scope(&mut self) {
         self.environment.stack.enter_scope();
         self.environment.stack_types.enter_scope();
-        self.implicit_resolver.enter_scope();
     }
 
     fn exit_scope(&mut self) {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
-        self.implicit_resolver.exit_scope();
     }
 
     fn generalize_binding(
@@ -1532,8 +1530,6 @@ impl<'a> Typecheck<'a> {
                         };
                         arg.typ = self.subs.bind_arc(&arg_type);
                         arg_types.push(arg_type.clone());
-                        self.implicit_resolver
-                            .add_implicits_of_record(&self.subs, &arg.name, &arg_type);
                         self.stack_var(arg.name.clone(), arg_type.clone());
                     }
                     ArgType::Explicit => match args.get_mut(i) {
@@ -1926,6 +1922,7 @@ impl<'a> Typecheck<'a> {
 
         let mut types = Vec::new();
         for (i, bind) in bindings.iter_mut().enumerate() {
+            self.implicit_resolver.enter_scope();
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let typ = if !is_recursive {
@@ -2031,18 +2028,10 @@ impl<'a> Typecheck<'a> {
             debug!("End generalize recursive");
         }
         // Update the implicit bindings with the generalized types we just created
-        let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
         let stack = &self.environment.stack;
-        bindings.update(|name| {
-            Some(
-                stack
-                    .get(name)
-                    .unwrap_or_else(|| ice!("Implicit binding `{}` could not be updated", name))
-                    .typ
-                    .concrete
-                    .clone(),
-            )
-        });
+        self.implicit_resolver
+            .implicit_bindings
+            .update(|name| stack.get(name).map(|b| b.typ.concrete.clone()));
 
         debug!("Typecheck `in`");
         self.environment.type_variables.exit_scope();
@@ -2172,7 +2161,12 @@ impl<'a> Typecheck<'a> {
                 .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
                 .collect(),
         );
-        let alias_group = self.subs.alias_group(resolved_aliases);
+        let alias_group = self.subs.alias_group(
+            resolved_aliases,
+            bindings
+                .iter()
+                .map(|bind| bind.metadata.get_attribute("implicit").is_some()),
+        );
         for (bind, alias) in bindings.iter_mut().zip(arc_alias_group) {
             bind.finalized_alias = Some(alias);
         }
@@ -3262,10 +3256,12 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                             return None;
                         }
                         last_alias = Some(alias.name.clone());
+                        self.tc.named_variables.clear();
                         match alias.typ(&mut &self.tc.subs).apply_args(
                             alias.params(),
                             &args,
                             &mut &self.tc.subs,
+                            &mut self.tc.named_variables,
                         ) {
                             Some(typ) => (None, typ.clone()),
                             None => return None,
@@ -3311,6 +3307,10 @@ fn generalize_binding(
     binding: &mut ValueBinding<Symbol>,
 ) {
     crate::implicits::resolve(generalizer.tc, &mut binding.expr);
+    generalizer
+        .tc
+        .implicit_resolver
+        .exit_scope(&generalizer.tc.subs);
 
     generalizer.generalize_type_top(resolved_type);
 }
