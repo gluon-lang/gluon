@@ -3,15 +3,18 @@ name = "gluon_vm"
 version = "0.11.2" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
+build = "build.rs"
 
 license = "MIT"
 
 description = "The virtual machine for executing the gluon programming language"
 
+homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
-build = "build.rs"
+[badges]
+travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 bitflags = "1.0.0"

@@ -8,10 +8,14 @@ license = "MIT"
 
 description = "The parser for the gluon programming language"
 
+homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 build = "build.rs"
+
+[badges]
+travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 collect-mac = "0.1.0"

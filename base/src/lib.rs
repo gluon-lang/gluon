@@ -5,20 +5,11 @@
 
 #[macro_use]
 extern crate collect_mac;
-extern crate itertools;
 #[macro_use]
 extern crate log;
-extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-extern crate either;
-extern crate smallvec;
-extern crate stable_deref_trait;
 
-extern crate codespan;
-extern crate codespan_reporting;
-
-extern crate ordered_float;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;

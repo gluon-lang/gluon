@@ -6,12 +6,14 @@ use std::sync::{Arc, RwLock};
 
 use futures::{stream, Future, Stream};
 
-use crate::base::ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings};
-use crate::base::error::Errors as BaseErrors;
-use crate::base::fnv::FnvMap;
-use crate::base::pos;
-use crate::base::pos::{BytePos, Spanned};
-use crate::base::symbol::{Symbol, Symbols};
+use crate::base::{
+    ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
+    error::Errors as BaseErrors,
+    fnv::FnvMap,
+    pos,
+    pos::{BytePos, Spanned},
+    symbol::{Symbol, Symbols},
+};
 
 use crate::thread::Thread;
 
