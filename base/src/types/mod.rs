@@ -22,7 +22,7 @@ use crate::{
     ast::{Commented, EmptyEnv, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
-    merge::merge,
+    merge::{merge, merge_iter},
     metadata::Comment,
     pos::{BytePos, HasSpan, Span},
     source::Source,
@@ -3856,52 +3856,6 @@ where
     }
 }
 
-struct WalkMoveTypes<'a, I, F, T> {
-    types: I,
-    clone_types_iter: I,
-    f: F,
-    clone_types: usize,
-    next: Option<T>,
-    _marker: PhantomData<&'a T>,
-}
-
-impl<'a, I, F, T> Iterator for WalkMoveTypes<'a, I, F, T>
-where
-    I: Iterator<Item = &'a T>,
-    F: FnMut(&'a T) -> Option<T>,
-    T: Clone + 'a,
-{
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.clone_types > 0 {
-            self.clone_types -= 1;
-            self.clone_types_iter.next().cloned()
-        } else if let Some(typ) = self.next.take() {
-            self.clone_types_iter.next();
-            Some(typ)
-        } else {
-            let f = &mut self.f;
-            if let Some((i, typ)) = self
-                .types
-                .by_ref()
-                .enumerate()
-                .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
-            {
-                self.clone_types = i;
-                self.next = Some(typ);
-                self.next()
-            } else {
-                self.clone_types = usize::max_value();
-                self.next()
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.clone_types_iter.size_hint()
-    }
-}
-
 pub fn walk_move_types<'a, I, F, T, R>(types: I, f: F) -> Option<R>
 where
     I: IntoIterator<Item = &'a T>,
@@ -3910,34 +3864,7 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    walk_move_types_(types, f).map(|iter| iter.collect())
-}
-
-fn walk_move_types_<'a, I, F, T>(types: I, mut f: F) -> Option<WalkMoveTypes<'a, I::IntoIter, F, T>>
-where
-    I: IntoIterator<Item = &'a T>,
-    I::IntoIter: FusedIterator + Clone,
-    F: FnMut(&'a T) -> Option<T>,
-    T: Clone + 'a,
-{
-    let mut types = types.into_iter();
-    let clone_types_iter = types.clone();
-    if let Some((i, typ)) = types
-        .by_ref()
-        .enumerate()
-        .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
-    {
-        Some(WalkMoveTypes {
-            clone_types_iter,
-            types,
-            f,
-            clone_types: i,
-            next: Some(typ),
-            _marker: PhantomData,
-        })
-    } else {
-        None
-    }
+    merge_iter(types, f, Clone::clone)
 }
 
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
