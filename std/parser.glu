@@ -4,106 +4,157 @@ let prelude = import! std.prelude
 let { Functor, Applicative, Alternative, Monad, (<>) } = prelude
 let { id, flip, (>>), (<<), (|>), (<|) } = import! std.function
 
+let { Option } = import! std.option
+let { Result, map_err } = import! std.result
+let { StateT, eval_state_t , ? } = import! std.statet
 let { Bool } = import! std.bool
 let char @ { Char, ? } = import! std.char
 let int = import! std.int
 let list @ { List } = import! std.list
-let { Option } = import! std.option
-let { Result } = import! std.result
-let streamlike @ { Streamlike, ? } = import! std.streamlike
 let string @ { String, ? } = import! std.string
 
-// TODO How handle atom streams generically? Stream-like interface?
+// type Parser s e a = StateT s (Result e) a
+
+type ParseError =
+    | EndOfStream
+    | PredicateFailed
+    | TokenMismatch String
+    | MsgErr String
+    | Label String (List ParseErr)
+
 // TODO How handle error position generically? Zip stream with enumeration?
-type Parser s e a = StateT s (Result e) a
-// TODO How have Parser (Result Err) on surface but Streamer type (Option) internally?
-//   How handle custom error types this way? Do I need to build mini failure lib?
+type Parser s a = StateT s (Result (List ParseErr)) a
 
-// use implicit argument that user fills in with error type and end case?
-let sr_to_psr end sr : e -> Streamer s a -> Parser s e a =
-    sr >> \opt -> match opt with
-        | Some next -> Ok next
-        | None -> Err end
+#[implicit]
+type Parsable a s = {
+    any_atom : Parser s a
+}
 
-// terrible idea?
-let any_atom : [Streamlike atm srm] -> Parser srm e atm =
-    sr_to_psr ? uncons // TODO Error handling
+let any_atom ?pb : [Parsable atm srm] -> Parser srm atm = pb.any_atom
 
-// TODO mixing stream processors and stream adapters does not work
-let take n : [Streamlike atm srm] -> Int -> Parser srm e () =
-    \xs -> Ok {value = (), state = streamlike.take n xs}
+let fail err : ParseErr -> Parser srm _ = \_ ->
+    wrap_monad <| Err <| Cons err Nil
 
-// TODO What error type should library functions return?
-let satisfy_map pred : [Streamlike atm srm] -> (atm -> Option a) -> Parser srm e a =
+let fail_msg msg : String -> Parser srm _ = \_ ->
+    fail (MsgErr msg)
+
+let label_parser lbl psr : String -> Parser srm a -> Parser srm a = \s ->
+    psr s |> map_err (\errs -> Cons (Label lbl errs) Nil)
+
+#[infix(left, 0)]
+let (<?>) = flip label_parser
+
+
+// succeeds iff the stream is empty
+let eos : Parser s () = \s ->
+    match any_atom s with
+    | Err EndOfStream -> wrap ()
+    | Ok _ -> wrap_monad (Err PredicateFailed)
+    | e -> e
+
+let parse_foldl f acc psr : (b -> a -> b) -> b -> Parser s a -> Parser s b =
+    map (\x -> parse_foldl f (f acc x) psr) psr <|> wrap acc
+
+let parse_foldr f acc psr : (a -> b -> b) -> b -> Parser s a -> Parser s b =
+    (wrap f <*> psr <*> parse_foldr f acc psr) <|> wrap acc
+
+let many psr : [Parsable atm srm] -> Parser srm a -> Parser srm (List a) =
+    parse_foldl (flip Cons) Nil psr
+
+let many1 psr : [Parsable atm srm] -> Parser srm a -> Parser srm (List a) =
+    wrap Cons <*> prs <*> many psr
+
+let chain vpsr oppsr acc : Parser s a -> Parser (b -> a -> b) -> b -> Parser s b =
+    let rhs = map flip oppsr <*>
+    parse_foldl (|>) acc rhs
+
+let chain1 vpsr oppsr = vpsr |> map (chain vpsr oppsr)
+
+let skip n : [Parsable atm srm] -> Int -> Parser srm () =
+    any_atom >>= \_ -> if n == 0 then
+        wrap ()
+    else
+        skip (n - 1)
+
+let take_with n psr : [Parsable atm srm] -> Int -> Parser srm a -> Parser srm (List a) =
+    if n > 0 then
+        wrap Cons <*> psr <*> take_with (n-1) psr
+    else
+        wrap Nil
+
+let take = flip take_with any_atom
+
+let satisfy_map pred : [Parsable atm srm] -> (atm -> Option a) -> Parser srm a =
     any_atom >>= \atm ->
         match pred atm with
         | Some a -> wrap a
-        | None -> // TODO Error handling
+        | None -> wrap_monad <| Err PredicateFailed
 
-let satisfy pred : [Streamlike atm srm] -> (atm -> Bool) -> Parser srm e atm =
+let satisfy pred : [Parsable atm srm] -> (atm -> Bool) -> Parser srm atm =
     satisfy_map (\c -> if pred c then Some c else None)
 
-let atom x : [Streamlike atm srm] -> [Eq atm] -> atm -> Parser srm e atm =
+let atom x : [Parsable atm srm] -> [Eq atm] -> atm -> Parser srm atm =
     satisfy <| (==) x
 
-rec let token ts : [Streamlike atm srm] -> [Streamlike atm tknsrm] -> [Eq atm] -> tknsrm -> Parser srm e atm =
-    any_atom >>= \x ->
-        match any_atom ts with
-        | Ok {value = t, state = ts'} ->
+let one_of atms : [Parsable atm srm] -> [Foldable (m atm)] -> [Eq atm] -> m atm -> Parser srm atm =
+    satisfy (flip elem atms)
+
+// FIXME Fails if end of token is at end of stream?
+rec let token ts : [Parsable atm srm] -> [Streamlike atm tksrm] -> [Eq atm] -> tksrm -> Parser srm tksrm =
+    match uncons ts with
+    | Some {value = t, state = ts'} -> 
+        s |> (any_atom >>= \x ->
             if x == t then
                 map (\_ -> ts) (token ts')
             else
-                Err ? // TODO Error handling
-        | Err ? -> wrap ts // TODO Error handling: needs to be EndOfStream error
-        | Err e -> (\_ -> Err e) // unreachable?
+                wrap_monad (Err TokenMismatch))
+    | None -> wrap ts
 
-// end - matches end of stream
-// take_while1?
-// many
-// many1
-// skip_many?
-// between
-// one_of
+let between fst x snd : Parser s a -> Parser s b -> Parser s c =
+    fst *> x <* snd
+
 // sep_by
 // sep_by1
 // chain
 // chain1
 // parse
+// lazy_parser?
 
 type Position = Int
 type OffsetString = { start : Position, end : Position, buffer : String }
-type StringParser a = Parser OffsetString ? a // TODO Error handling
+type StringParser a = Parser OffsetString a
 
 let eolsym c : Char -> Bool =
     elem c ['\r', '\n']
 
-let space : [Streamlike Char srm] -> Parser srm e Char =
+let eol : [Parsable Char srm] -> Parser srm Char = (atom '\r' *> atom '\n') <|> atom '\n' <|> atom '\r'
+
+let space : [Parsable Char srm] -> Parser srm Char =
     atom ' '
 
-let eol : [Streamlike Char srm] -> Parser srm e Char = (atom '\r' *> atom '\n') <|> atom '\n' <|> atom '\r'
+let spaces = many space
 
-let whitespace : [Streamlike Char srm] -> Parser srm e Char =
+let whitespace : [Parsable Char srm] -> Parser srm Char =
     satisfy char.is_whitespace
 
-let letter : [Streamlike Char srm] -> Parser srm e Char =
+let whitespaces = many whitespace
+
+let letter : [Parsable Char srm] -> Parser srm Char =
     satisfy char.is_alphabetic
 
-let digit : [Streamlike Char srm] -> Parser srm e Char =
+let digit : [Parsable Char srm] -> Parser srm Char =
     satisfy <| flip char.is_digit 10
 
-let alphanum : [Streamlike Char srm] -> Parser srm e Char =
+let alphanum : [Parsable Char srm] -> Parser srm Char =
     letter <|> digit
 
-// spaces
-// whitespaces?
-// rest of line (all but line break)?
+let rest_of_line : Parser s a = 
+    many // TODO not eol
+
 
 type ByteParser a = // TODO
 
 
 // practice parser implementation
-type PsrErr =
-    | ParseFailure String
-    | EndOfStream
 
-type Parser a = Parser [Byte] PsrErr a
+type Parser a = Parser [Byte] a
