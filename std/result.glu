@@ -1,4 +1,4 @@
-//@NO-IMPLICIT-PRELUDEJ
+//@NO-IMPLICIT-PRELUDE
 //! Error handling type.
 
 let { Eq, Ord, Ordering, (==) } = import! std.cmp
@@ -72,6 +72,14 @@ let monad : Monad (Result e) = {
         | Ok x -> f x
         | Err err -> Err err,
 }
+
+let alternative : [Alternative e] -> Alternative (Result e) =
+    let or a b = a |> map_err \ea ->
+        b |> map_err \eb ->
+            ea <|> eb
+    let empty = Err empty
+
+    { or, empty }
 
 let foldable : Foldable (Result e) = {
     foldr = \f z r ->
