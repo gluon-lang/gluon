@@ -21,17 +21,16 @@ let functor : [Functor m] -> Functor (StateT s m) =
 
     { map = stmap }
 
-// the typechecker can't find map and Functor m without help
-let applicative ?mo : [Monad m] -> Applicative (StateT s m) =
+let applicative : [Monad m] -> Applicative (StateT s m) =
     let apply srf sr : StateT s m (a -> b) -> StateT s m a -> StateT s m b = \state ->
         srf state >>= \fout ->
             let {value = f, state = state'} = fout
-            mo.applicative.functor.map (map_sout f) (sr state')
+            map (map_sout f) (sr state')
 
     let stwrap value : a -> StateT s m a = \state ->
         wrap { value, state }
 
-    { functor = functor ?mo.applicative.functor, apply, wrap = stwrap }
+    { functor, apply, wrap = stwrap }
 
 let monad : [Monad m] -> Monad (StateT s m) =
     let flat_map f sr : (a -> StateT s m b) -> StateT s m a -> StateT s m b = \state ->
@@ -45,7 +44,7 @@ let transformer : Transformer (StateT s) =
     let wrap_monad ma : [Monad m] -> m a -> StateT s m a = \state ->
         ma >>= \value -> wrap {value, state}
 
-    { /* monad, */ wrap_monad }
+    { wrap_monad }
 
 let alternative : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
     let stor sra srb = or << sra <*> srb
