@@ -1,33 +1,17 @@
 let { id } = import! std.function
-let { Lazy, lazy, force } = import! std.lazy
 
-let statet @ { StateT, StateOut } = import! std.statet
-let lazyt @ { LazyT } = import! std.lazyt
+let statet @ { StateT } = import! std.statet
 
-// StateT vs no (vs effect system?)
-// strict vs lazy
-// state-machine vs dynamic vs closures (vs impl Trait equivalent?)
 
-// handle adapter types with monomorphization or dynamic dispatch?
-// new type, Lazy (Option (a, srm)) as output type of all adapters, hiding special behavior behind closure?
-// should streamlike be monadic? (a, srm) looks like State. uncons looks kinda like wrap.
-
-// Streamlike as a composition of monads? State + Option + Lazy?
+type Streamer a srm = StateT srm Option a
 
 #[implicit]
 type Streamlike a srm = {
-    uncons : srm -> LazyT Option (a, srm)
+    uncons : Streamer a srm
 }
 
-let option_streamlike : [Streamlike a srm] -> Streamlike a (Option (a, srm)) =
-    { uncons = force }
-
-let uncons ?sl : [Streamlike a srm] -> srm -> Option (a, srm) =
+let uncons ?sl : [Streamlike a srm] -> Streamer a srm =
     sl.uncons
-
-let empty = lazy (\_ -> None)
-
-let singleton = lazy (\_ -> Some {value = x, state = empty}
 
 let next srm : [Streamlike a srm] -> srm -> Option a =
     map fst (uncons srm)
@@ -39,30 +23,10 @@ let take n xs : [Streamlike a srm] -> Int -> srm -> ? =
         | None -> empty
     else empty
 
-let functor ?sml : [Streamlike a srm] -> Functor (Lazy (Option (a, srm))) =
-    rec let map f smout =
-        match force smout with
-        | Some (a, srm') -> lazy (\_ -> Some (f a, map f (sml.uncons srm')))
-        | None -> lazy (\_ -> None)
-
-    { map }
-
-let applicative ?sml : [Streamlike a srm] -> Applicative (Lazy (Option (a, srm))) =
-    let wrap = sml.uncons
-    let apply mf smout = ?
-
-    { functor, apply, wrap }
-
-let monad ?sml : [Streamlike a srm] -> Monad (Lazy (Option (a, srm))) =
-    let flat_map f smout =
-        functor.map f (force smout)
-
-    { applicative, flat_map }
-
 let semigroup : [Streamlike a srm] -> Semigroup srm =
     let append xs ys =
         match uncons xs with
-        | Some (x, xs') -> lazy (\_ -> Some (x, (append xs' ys)))
+        | Some (x, xs') -> Some {value = x, state = append xs' ys}
         | None -> ys
 
     { append }
@@ -76,7 +40,6 @@ type Streamlike a srm = {
     uncons : srm -> Option (StateOut srm a)
 }
 
-type Streamer a srm = StateT srm Option a
 
 // state-machine adapters
 type Unfold acc = {
