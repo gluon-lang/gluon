@@ -1,17 +1,24 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::base::{
     ast::TypedIdent,
-    merge::{merge_collect, merge_fn, merge_iter},
+    fnv::FnvSet,
+    merge::{merge, merge_collect, merge_fn, merge_iter},
     pos,
     symbol::Symbol,
     types::{ArcType, Field, TypeEnv, TypeExt},
 };
 
 use crate::core::{
-    Allocator, Alternative, ArenaAllocatable, ArenaExt, CExpr, Closure, Expr, LetBinding, Named,
-    Pattern,
+    dead_code::{self},
+    interpreter::Global,
+    Allocator, Alternative, ArenaAllocatable, ArenaExt, CExpr, Closure, CoreExpr, Expr, LetBinding,
+    Named, Pattern,
 };
+
+pub trait OptimizeEnv: TypeEnv {
+    fn find_expr(&self, id: &Symbol) -> Option<Global<CoreExpr>>;
+}
 
 pub trait Produce<'a, 'b, P, Input> {
     fn produce_with(input: &'b Input, producer: &mut P) -> Self;
@@ -44,9 +51,12 @@ where
     }
 }
 
-pub trait ExprProducer<'a, 'b>: Visitor<'a, 'b> {
-    fn new(allocator: &'a Allocator<'a>) -> Self;
+pub trait ExprProducer<'a, 'b> {
+    fn new(allocator: &'a Allocator<'a>) -> Self
+    where
+        Self: Sized;
     fn produce(&mut self, expr: CExpr<'b>) -> CExpr<'a>;
+    fn produce_slice(&mut self, expr: &'b [Expr<'b>]) -> &'a [Expr<'a>];
     fn produce_alt(&mut self, alt: &'b Alternative<'b>) -> Alternative<'a>;
 }
 
@@ -56,6 +66,9 @@ impl<'a> ExprProducer<'a, 'a> for SameLifetime<'a> {
         SameLifetime(allocator)
     }
     fn produce(&mut self, expr: CExpr<'a>) -> CExpr<'a> {
+        expr
+    }
+    fn produce_slice(&mut self, expr: &'a [Expr<'a>]) -> &'a [Expr<'a>] {
         expr
     }
     fn produce_alt(&mut self, alt: &'a Alternative<'a>) -> Alternative<'a> {
@@ -94,6 +107,18 @@ impl<'a, 'b> ExprProducer<'a, 'b> for DifferentLifetime<'a, 'b> {
             _ => walk_expr_alloc(self, expr).unwrap(),
         }
     }
+    fn produce_slice(&mut self, exprs: &'b [Expr<'b>]) -> &'a [Expr<'a>] {
+        self.0
+            .arena
+            .alloc_fixed(exprs.iter().map(|expr| match *expr {
+                Expr::Const(ref id, ref span) => Expr::Const(id.clone(), span.clone()),
+                Expr::Ident(ref id, ref span) => Expr::Ident(id.clone(), span.clone()),
+                Expr::Data(ref id, args, pos) if args.is_empty() => {
+                    Expr::Data(id.clone(), &[], pos.clone())
+                }
+                _ => walk_expr(self, expr).unwrap(),
+            }))
+    }
     fn produce_alt(&mut self, alt: &'b Alternative<'b>) -> Alternative<'a> {
         Alternative {
             pattern: alt.pattern.clone(),
@@ -121,6 +146,14 @@ pub trait Visitor<'a, 'b> {
 
     fn visit_expr_(&mut self, expr: CExpr<'b>) -> Option<Expr<'a>> {
         self.visit_expr(expr).map(Clone::clone)
+    }
+
+    fn visit_binding(&mut self, _: &Symbol) -> Option<Symbol> {
+        None
+    }
+
+    fn visit_pattern(&mut self, expr: &'b Pattern) -> Option<Pattern> {
+        walk_pattern(self, expr)
     }
 
     fn visit_alt(&mut self, alt: &'b Alternative<'b>) -> Option<Alternative<'a>> {
@@ -224,20 +257,45 @@ fn optimize_unnecessary_allocation<'a>(
 }
 
 pub fn optimize<'a>(
-    allocator: &'a Allocator<'a>,
-    env: &'a dyn TypeEnv<Type = ArcType>,
+    allocator: &'a Arc<Allocator<'a>>,
+    env: &'a dyn OptimizeEnv<Type = ArcType>,
     expr: &'a Expr<'a>,
-) -> &'a Expr<'a> {
+) -> Global<CoreExpr> {
     let expr = optimize_unnecessary_allocation(allocator, expr);
 
-    let costs = crate::core::inline::analyze_costs(expr);
-    let mut optimizer = crate::core::inline::Inline::new(allocator, env, costs);
-    optimizer.visit_expr(expr).unwrap_or(expr)
+    let pure_symbols = crate::core::purity::purity(expr);
+
+    let mut dep_graph = dead_code::DepGraph::default();
+    let used_bindings = dep_graph.used_bindings(expr);
+    let cyclic_bindings: FnvSet<_> = dep_graph.cycles().flat_map(|cycle| cycle).collect();
+
+    let expr = dead_code::dead_code_elimination(&used_bindings, &pure_symbols, allocator, expr);
+
+    let costs = crate::core::costs::analyze_costs(&cyclic_bindings, expr);
+
+    let f = |symbol: &Symbol| {
+        env.find_expr(symbol)
+            .map(crate::core::interpreter::Binding::Expr)
+    };
+    let mut interpreter = crate::core::interpreter::Compiler::new(allocator, &f)
+        .costs(costs)
+        .pure_symbols(&pure_symbols);
+    let expr = interpreter.compile_expr(expr).ok().unwrap_or(expr);
+
+    let mut dep_graph = dead_code::DepGraph::default();
+    let used_bindings = dep_graph.used_bindings(expr);
+    let expr = dead_code::dead_code_elimination(&used_bindings, &pure_symbols, allocator, expr);
+
+    Global {
+        value: crate::core::freeze_expr(allocator, expr),
+        info: Arc::new(interpreter.optimizer_info(allocator)),
+    }
 }
 
 pub fn walk_expr_alloc<'a, 'b, V>(visitor: &mut V, expr: CExpr<'b>) -> Option<CExpr<'a>>
 where
     V: ?Sized + Visitor<'a, 'b>,
+    V::Producer: Visitor<'a, 'b, Producer = V::Producer>,
 {
     walk_expr(visitor, expr).map(|expr| &*visitor.allocator().arena.alloc(expr))
 }
@@ -245,6 +303,7 @@ where
 pub fn walk_expr<'a, 'b, V>(visitor: &mut V, expr: CExpr<'b>) -> Option<Expr<'a>>
 where
     V: ?Sized + Visitor<'a, 'b>,
+    V::Producer: Visitor<'a, 'b, Producer = V::Producer>,
 {
     let allocator: Option<&'a Allocator<'a>> = visitor.detach_allocator();
     match *expr {
@@ -310,45 +369,121 @@ where
                 Expr::Match,
             )
         }
+
+        Expr::Cast(expr, ref typ) => visitor
+            .visit_expr(expr)
+            .map(|expr| Expr::Cast(expr, typ.clone())),
     }
 }
 
-fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &LetBinding<'b>) -> Option<&'a LetBinding<'a>>
+pub fn walk_pattern<'a, 'b, V>(visitor: &mut V, pattern: &'b Pattern) -> Option<Pattern>
+where
+    V: ?Sized + Visitor<'a, 'b>,
+{
+    match pattern {
+        Pattern::Ident(id) => visitor.visit_binding(&id.name).map(|name| {
+            Pattern::Ident(TypedIdent {
+                typ: id.typ.clone(),
+                name,
+            })
+        }),
+        Pattern::Literal(_) => None,
+        Pattern::Constructor(id, fields) => merge_iter(
+            fields,
+            |field| {
+                visitor.visit_binding(&field.name).map(|name| TypedIdent {
+                    typ: field.typ.clone(),
+                    name,
+                })
+            },
+            |field| field.clone(),
+        )
+        .map(|iter| Pattern::Constructor(id.clone(), iter.collect())),
+        Pattern::Record(fields) => merge_iter(
+            fields,
+            |field| {
+                visitor
+                    .visit_binding(field.1.as_ref().unwrap_or(&field.0.name))
+                    .map(|name| (field.0.clone(), Some(name)))
+            },
+            |e| e.clone(),
+        )
+        .map(|iter| Pattern::Record(iter.collect())),
+    }
+}
+
+pub fn walk_named<'a, 'b, V>(visitor: &mut V, bind: &Named<'b>) -> Option<Named<'a>>
+where
+    V: ?Sized + Visitor<'a, 'b>,
+{
+    match bind {
+        Named::Recursive(closures) => walk_closures(visitor, closures).map(Named::Recursive),
+        Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
+    }
+}
+
+pub fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &LetBinding<'b>) -> Option<&'a LetBinding<'a>>
+where
+    V: ?Sized + Visitor<'a, 'b>,
+    V::Producer: Visitor<'a, 'b, Producer = V::Producer>,
+{
+    let allocator = visitor.detach_allocator();
+    let new_named = walk_named(visitor, &bind.expr);
+    let new_name = match bind.expr {
+        Named::Recursive(..) => None,
+        Named::Expr(_) => visitor
+            .visit_binding(&bind.name.name)
+            .map(|name| TypedIdent {
+                typ: bind.name.typ.clone(),
+                name,
+            }),
+    };
+
+    merge_fn(
+        &bind.name,
+        Clone::clone,
+        new_name,
+        &bind.expr,
+        |e| walk_named(&mut V::Producer::new(allocator.unwrap()), e).unwrap(),
+        new_named,
+        |name, expr| {
+            &*allocator
+                .expect("Allocator")
+                .let_binding_arena
+                .alloc(LetBinding {
+                    name,
+                    expr,
+                    span_start: bind.span_start,
+                })
+        },
+    )
+}
+
+pub fn walk_closures<'a, 'b, V>(
+    visitor: &mut V,
+    closures: &[Closure<'b>],
+) -> Option<Vec<Closure<'a>>>
 where
     V: ?Sized + Visitor<'a, 'b>,
 {
     let allocator = visitor.detach_allocator();
-    let new_named = match bind.expr {
-        Named::Recursive(ref closures) => merge_collect(
-            closures,
-            |closure| {
-                visitor.visit_expr(closure.expr).map(|new_expr| Closure {
-                    pos: closure.pos,
-                    name: closure.name.clone(),
-                    args: closure.args.clone(),
-                    expr: new_expr,
-                })
-            },
-            |closure| Closure {
+    merge_collect(
+        closures,
+        |closure| {
+            visitor.visit_expr(closure.expr).map(|new_expr| Closure {
                 pos: closure.pos,
                 name: closure.name.clone(),
                 args: closure.args.clone(),
-                expr: V::Producer::new(allocator.expect("Allocator")).produce(closure.expr),
-            },
-        )
-        .map(Named::Recursive),
-        Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
-    };
-    new_named.map(|named| {
-        &*allocator
-            .expect("Allocator")
-            .let_binding_arena
-            .alloc(LetBinding {
-                name: bind.name.clone(),
-                expr: named,
-                span_start: bind.span_start,
+                expr: new_expr,
             })
-    })
+        },
+        |closure| Closure {
+            pos: closure.pos,
+            name: closure.name.clone(),
+            args: closure.args.clone(),
+            expr: V::Producer::new(allocator.expect("Allocator")).produce(closure.expr),
+        },
+    )
 }
 
 pub fn merge_slice<'a, T, U>(
@@ -380,6 +515,18 @@ where
     .map(|iter| ArenaAllocatable::alloc_iter_into(iter, allocator.expect("Allocator")))
 }
 
+pub fn merge_match<'a>(
+    allocator: &'a Allocator<'a>,
+    expr: CExpr<'a>,
+    new_expr: Option<CExpr<'a>>,
+    alts: &'a [Alternative<'a>],
+    new_alts: Option<&'a [Alternative<'a>]>,
+) -> Option<CExpr<'a>> {
+    merge(&expr, new_expr, &alts, new_alts, |expr, alts| {
+        &*allocator.arena.alloc(Expr::Match(expr, alts))
+    })
+}
+
 #[cfg(all(test, feature = "test"))]
 pub(crate) mod tests {
     use super::*;
@@ -402,7 +549,7 @@ pub(crate) mod tests {
                 .unwrap(),
         );
 
-        let optimized_expr = optimize_unnecessary_allocation(&allocator, initial_expr);
+        let optimized_expr = optimize(&allocator, initial_expr);
 
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &allocator, expected_str)
@@ -424,6 +571,6 @@ pub(crate) mod tests {
             in
             l
             "#;
-        check_optimization(initial_str, expected_str, optimize);
+        check_optimization(initial_str, expected_str, optimize_unnecessary_allocation);
     }
 }

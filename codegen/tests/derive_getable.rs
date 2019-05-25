@@ -11,6 +11,7 @@ extern crate gluon_vm;
 mod init;
 
 use gluon::{
+    import,
     vm::{
         self,
         api::{
@@ -20,7 +21,7 @@ use gluon::{
         },
         ExternModule,
     },
-    {import, Compiler, RootedThread, Thread},
+    Compiler, RootedThread, Thread, ThreadExt,
 };
 use init::new_vm;
 
@@ -182,7 +183,8 @@ fn derive_generates_same_type_as_gluon_define() {
     let _ = env_logger::try_init();
 
     let vm = new_vm();
-    let compiler = Compiler::new().implicit_prelude(false);
+    vm.get_database_mut().implicit_prelude(false);
+    let compiler = Compiler::new();
 
     import::add_extern_module(&vm, "test", |vm| {
         ExternModule::new(vm, primitive!(1, "test", |_: Enum| ()))

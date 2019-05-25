@@ -1085,6 +1085,16 @@ impl<Id, T> Type<Id, T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
+    pub fn is_array(&self) -> bool {
+        match self {
+            Type::App(typ, _) => match &**typ {
+                Type::Builtin(BuiltinType::Array) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     pub fn as_function(&self) -> Option<(&T, &T)> {
         self.as_function_with_type().map(|t| (t.1, t.2))
     }

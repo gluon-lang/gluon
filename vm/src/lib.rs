@@ -262,6 +262,6 @@ impl ExternModule {
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
     pub use crate::interner::InternedStr;
-    pub use crate::value::{Value, ValuePrinter};
+    pub use crate::value::{Cloner, ClosureData, Value, ValuePrinter};
     pub use crate::vm::Global;
 }

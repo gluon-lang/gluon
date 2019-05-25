@@ -1,7 +1,7 @@
 use crate::base::{
     ast::{TypedIdent},
     pos::{BytePos, Span},
-    symbol::{Symbol, Symbols},
+    symbol::{Name, Symbol, SymbolData, Symbols},
     types::{Field, Type},
 };
 
@@ -18,8 +18,9 @@ Comma<Rule>: Vec<Rule> =
 
 
 Identifier: Symbol = {
-    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.simple_symbol(<>),
-    <r"\(#?[A-Za-z_]*[+\-*/]\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1])
+    <r"@?[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(SymbolData::<&Name>::from(<>)),
+    <r"\(#?[A-Za-z_]+[+\-*/]\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
+    <r"\([&\|=*><+]+\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
 };
 
 Field: (Symbol, Option<Symbol>) = {
@@ -112,9 +113,22 @@ RecLetBinding: Closure<'a> = {
         }
 };
 
+ProjectionExpr: Expr<'a> = {
+    <expr: AtomicExpr> <projection : ("." <Identifier>)*> => {
+        projection.into_iter().fold(expr, |expr, field| {
+            let f = TypedIdent::new(field);
+            let alt = Alternative {
+                pattern: Pattern::Record(vec![(f.clone(), None)]),
+                expr: allocator.arena.alloc(Expr::Ident(f.clone(), Default::default())),
+            };
+            Expr::Match(allocator.arena.alloc(expr), allocator.alternative_arena.alloc_extend(Some(alt)))
+        })
+    },
+};
+
 pub Expr: Expr<'a> = {
-    AtomicExpr,
-    <f: AtomicExpr> <args: AtomicExpr+> => {
+    ProjectionExpr,
+    <f: ProjectionExpr> <args: ProjectionExpr+> => {
         let args = allocator.arena.alloc_extend(args.into_iter());
         match f {
             Expr::Data(id, ..) =>

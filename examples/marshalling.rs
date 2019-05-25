@@ -1,30 +1,28 @@
 #[macro_use]
 extern crate gluon_codegen;
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use gluon::base::types::ArcType;
-
-use gluon::base::types::{AppVec, Type};
-use gluon::vm::{
-    self,
-    api::{
+use gluon::{
+    base::types::{AppVec, ArcType, Type},
+    import, new_vm,
+    vm::{
         self,
-        generic::{A, L, R},
-        ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable, UserdataValue,
-        ValueRef, VmType, IO,
+        api::{
+            self,
+            generic::{A, L, R},
+            ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable,
+            UserdataValue, ValueRef, VmType, IO,
+        },
+        ExternModule, Variants,
     },
-    ExternModule, Variants,
+    Compiler, Result, RootedThread, Thread, ThreadExt,
 };
-use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
 enum Enum {
@@ -172,7 +170,9 @@ fn flip<'a>(
 
 fn marshal_generic() -> Result<()> {
     let thread = new_vm();
-    let mut compiler = Compiler::new_lock();
+    thread.get_database_mut().run_io(true);
+
+    let compiler = Compiler::new_lock();
 
     // define the gluon type that maps to the rust Either
     let src = r#"
@@ -219,7 +219,6 @@ fn marshal_generic() -> Result<()> {
         | Right _ -> error "wrong answer!"
     "#;
 
-    compiler.set_run_io(true);
     compiler.run_expr::<IO<()>>(&thread, "example", script)?;
 
     Ok(())
@@ -422,7 +421,7 @@ enum List<T> {
 
 fn marshal_recursive() -> Result<()> {
     let vm = new_vm();
-    let mut compiler = gluon::Compiler::new();
+    let compiler = gluon::Compiler::new();
 
     // Load std.list before we try to use it in `VmType for List`
     compiler.run_expr::<OpaqueValue<RootedThread, Hole>>(&vm, "example", "import! std.list")?;

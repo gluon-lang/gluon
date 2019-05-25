@@ -16,13 +16,17 @@ use gluon::{compiler_pipeline::*, new_vm, Compiler};
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
     let compiler = Compiler::new();
-        let text = fs::read_to_string("std/prelude.glu").unwrap();
+    let text = fs::read_to_string("std/prelude.glu").unwrap();
     let MacroValue { expr } = text
         .expand_macro(&mut compiler.module_compiler(), &vm, "std.prelude", &text)
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     b.iter(|| {
-        let result =
-            MacroValue { expr: expr.clone() }.typecheck(&mut compiler.module_compiler(), &vm, "std.prelude", &text);
+        let result = MacroValue { expr: expr.clone() }.typecheck(
+            &mut compiler.module_compiler(),
+            &vm,
+            "std.prelude",
+            &text,
+        );
         if let Err(ref err) = result {
             println!("{}", err);
             assert!(false);
@@ -45,13 +49,17 @@ fn clone_prelude(b: &mut Bencher) {
 fn typecheck_24(b: &mut Bencher) {
     let vm = new_vm();
     let compiler = Compiler::new();
-        let text = fs::read_to_string("examples/24.glu").unwrap();
+    let text = fs::read_to_string("examples/24.glu").unwrap();
     let MacroValue { expr } = text
         .expand_macro(&mut compiler.module_compiler(), &vm, "examples.24", &text)
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     b.iter(|| {
-        let result =
-            MacroValue { expr: expr.clone() }.typecheck(&mut compiler.module_compiler(), &vm, "examples.24", &text);
+        let result = MacroValue { expr: expr.clone() }.typecheck(
+            &mut compiler.module_compiler(),
+            &vm,
+            "examples.24",
+            &text,
+        );
         if let Err(ref err) = result {
             println!("{}", err);
             assert!(false);
@@ -63,7 +71,7 @@ fn typecheck_24(b: &mut Bencher) {
 fn typecheck_file(b: &mut Bencher, file: &str) {
     let vm = new_vm();
     let compiler = Compiler::new();
-        let text = fs::read_to_string(file).unwrap();
+    let text = fs::read_to_string(file).unwrap();
     let module_name = base::filename_to_module(file);
     let reparsed = text
         .reparse_infix(&mut compiler.module_compiler(), &vm, &module_name, &text)

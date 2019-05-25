@@ -58,7 +58,7 @@ id
         Metadata {
             definition: metadata.definition.clone(),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         }
     );
@@ -83,7 +83,7 @@ let id x = x
         Some(&Metadata {
             definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         })
     );
@@ -133,9 +133,9 @@ id
     assert_eq!(
         metadata,
         Metadata {
-            definition: Some(intern("id:32")),
+            definition: Some(intern("id@3_5")),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         }
     );
@@ -301,7 +301,7 @@ let x ?test : [Test a] -> a = test.x
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
-            args: vec![Argument::implicit(intern("test:55"))],
+            args: vec![Argument::implicit(intern("test@7_8"))],
             ..Metadata::default()
         })
     );
@@ -330,7 +330,7 @@ let x ?test : [Test a] -> a = test.x
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
-            args: vec![Argument::implicit(intern("test:55"))],
+            args: vec![Argument::implicit(intern("test@7_8"))],
             ..Metadata::default()
         })
     );
@@ -364,7 +364,7 @@ let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
                 name: "attribute".into(),
                 arguments: None,
             }],
-            args: vec![Argument::implicit(intern("test:76"))],
+            args: vec![Argument::implicit(intern("test@9_8"))],
             ..Metadata::default()
         })
     );

@@ -75,10 +75,11 @@ fn undefined_infix() {
     "#;
 
     let vm = support::make_vm();
+
+    vm.get_database_mut().implicit_prelude(false);
+
     let result = expr.reparse_infix(
-        &mut Compiler::new_lock()
-            .implicit_prelude(false)
-            .module_compiler(&vm.get_database()),
+        &mut Compiler::new_lock().module_compiler(&vm.get_database()),
         &vm,
         "test",
         expr,

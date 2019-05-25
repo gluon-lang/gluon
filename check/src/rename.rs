@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::base::{
     ast::{
         self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
@@ -29,6 +31,7 @@ pub fn rename<'s>(
         source: &'s (dyn Source + 's),
         symbols: &'b mut SymbolModule<'a>,
         seen_symbols: FnvMap<Symbol, u32>,
+        scope: Vec<Symbol>,
         env: Environment,
     }
 
@@ -80,21 +83,30 @@ pub fn rename<'s>(
 
         // Renames the symbol to be unique in this module
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
-            let new_id =
-                self.symbols
-                    .symbol(SymbolData { global: false, name: id.as_str(), location: Some((span.start().0, 0)) });
+            let mut location = self
+                .source
+                .location(span.start())
+                .map(|location| (location.line.0 + 1, location.column.0 + 1))
+                .unwrap_or_else(|| (span.start().0, 0));
+            let new_id = self.symbols.symbol(SymbolData {
+                global: false,
+                name: id.as_str(),
+                location: Some(location),
+            });
 
             let index = self.seen_symbols.entry(new_id.clone()).or_default();
             let new_id = if *index == 0 {
                 *index += 1;
                 new_id
             } else {
+                // TODO More reliable way of generating unique symbols
                 *index += 1;
+                location.1 += *index;
                 self.symbols.symbol(SymbolData {
                     global: false,
                     name: id.as_str(),
-                    location: Some((span.start().0, *index)),
-                } )
+                    location: Some(location),
+                })
             };
 
             debug!("Rename binding `{:?}` = `{:?}`", id, new_id);
@@ -187,7 +199,15 @@ pub fn rename<'s>(
 
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
+                            if let Pattern::Ident(id) = &bind.name.value {
+                                self.scope.push(id.name.clone());
+                            }
+
                             self.visit_expr(&mut bind.expr);
+
+                            if let Pattern::Ident(_) = &bind.name.value {
+                                self.scope.pop();
+                            }
                         }
                         if let Some(ref mut typ) = bind.typ {
                             self.visit_ast_type(typ.as_mut())
@@ -202,7 +222,17 @@ pub fn rename<'s>(
                                 arg.name.value.name =
                                     self.stack_var(arg.name.value.name.clone(), arg.name.span);
                             }
+
+                            if let Pattern::Ident(id) = &bind.name.value {
+                                self.scope.push(id.name.clone());
+                            }
+
                             self.visit_expr(&mut bind.expr);
+
+                            if let Pattern::Ident(_) = &bind.name.value {
+                                self.scope.pop();
+                            }
+
                             self.env.stack.exit_scope();
                         }
                     }
@@ -211,12 +241,16 @@ pub fn rename<'s>(
                 }
                 Expr::Lambda(ref mut lambda) => {
                     let location = self.source.location(expr.span.start()).unwrap_or_else(|| ice!("Lambda without source location"));
-                    let name = format!("{}.lambda", self.symbols.module());
-                    lambda.id.name = self.symbols.symbol(SymbolData { global: false, location:
-                        
-                        
-                    Some(( location.line.0 + 1, location.column.0 + 1)
-                        ),name });
+                    let name = format!(
+                        "{}.{}",
+                        self.symbols.module(),
+                        self.scope.iter().map(|s| s.as_str()).format("."),
+                    );
+                    lambda.id.name = self.symbols.symbol(SymbolData {
+                        global: false,
+                        location: Some((location.line.0 + 1, location.column.0 + 1)),
+                        name,
+                    });
 
                     self.env.stack.enter_scope();
 
@@ -320,7 +354,7 @@ pub fn rename<'s>(
                         }
                     }
                 }
-                Type::Projection( ids) => {
+                Type::Projection(ids) => {
                     // The first id refers to a local variable so we need to rename it
                     if let Some(new_id) = self.rename(&mut ids[0]) {
                         ids[0] = new_id;
@@ -341,6 +375,7 @@ pub fn rename<'s>(
         source,
         symbols: symbols,
         seen_symbols: Default::default(),
+        scope: Vec::new(),
         env: Environment {
             stack: ScopedMap::new(),
         },

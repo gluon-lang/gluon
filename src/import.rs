@@ -26,6 +26,7 @@ use crate::base::{
 
 use crate::vm::{
     self,
+    gc::Trace,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread, ThreadInternal},
     vm::VmEnv,
@@ -234,8 +235,7 @@ impl<I> Import<I> {
 
     pub(crate) fn get_module_source(
         &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
+        db: &impl Compilation,
         module: &str,
         filename: &str,
     ) -> Result<Cow<'static, str>, Error> {
@@ -244,7 +244,7 @@ impl<I> Import<I> {
         // Retrieve the source, first looking in the standard library included in the
         // binary
 
-        let std_file = if compiler.settings.use_standard_lib {
+        let std_file = if db.compiler_settings().use_standard_lib {
             STD_LIBS.iter().find(|tup| tup.0 == module)
         } else {
             None
@@ -405,10 +405,10 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
-    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<Any>> {
-        if id == TypeId::of::<VmEnv>() {
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        if id == TypeId::of::<dyn VmEnv>() {
             Some(Box::new(
-                Box::new(self.snapshot(thread.root_thread())) as Box<VmEnv>
+                Box::new(self.snapshot(thread.root_thread())) as Box<dyn VmEnv>
             ))
         } else {
             None
@@ -461,4 +461,8 @@ where
                 .map(|expr| pos::spanned(args[0].span, expr)),
         ))
     }
+}
+
+unsafe impl<I> Trace for Import<I> {
+    impl_trace! { self, gc, mark(&*self.compiler.lock().unwrap().snapshot().globals(), gc) }
 }

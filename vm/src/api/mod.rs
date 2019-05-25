@@ -1005,7 +1005,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for String {
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> String {
         match value.as_ref() {
             ValueRef::String(i) => String::from(&i[..]),
-            _ => ice!("ValueRef is not a String"),
+            _ => ice!("ValueRef is not a String: {:?}", value),
         }
     }
 }

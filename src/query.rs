@@ -4,7 +4,10 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use {futures::Future, salsa::Database};
+use {
+    futures::{future, Future},
+    salsa::Database,
+};
 
 use {
     base::{
@@ -19,10 +22,11 @@ use {
     },
     vm::{
         self,
-        api::ValueRef,
-        compiler::{CompiledModule, CompilerEnv, Variable},
-        core::{self, CoreExpr},
-        internal::Value,
+        api::{OpaqueValue, ValueRef},
+        compiler::{CompilerEnv, Variable},
+        core::{self, interpreter, optimize::OptimizeEnv, CoreExpr},
+        gc::{CloneUnrooted, GcPtr, Trace},
+        internal::ClosureData,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
@@ -30,6 +34,39 @@ use {
 };
 
 use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Compiler, Error, Result, Settings};
+
+#[derive(Debug, Trace)]
+#[gluon(crate_name = "gluon_vm")]
+pub struct UnrootedValue(vm::internal::Value);
+
+impl Clone for UnrootedValue {
+    fn clone(&self) -> Self {
+        unsafe { UnrootedValue(self.0.clone_unrooted()) }
+    }
+}
+
+impl UnrootedValue {
+    unsafe fn root_with(&self, vm: RootedThread) -> RootedValue<RootedThread> {
+        vm.root_value(self.0.get_variants())
+    }
+}
+
+unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> DatabaseGlobal {
+    let UnrootedGlobal {
+        id,
+        typ,
+        metadata,
+        value,
+    } = global;
+    DatabaseGlobal {
+        id,
+        typ,
+        metadata,
+        value: value.root_with(vm),
+    }
+}
+pub type UnrootedGlobal = vm::vm::Global<UnrootedValue>;
+pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 
 #[derive(Default)]
 pub(crate) struct State {
@@ -57,19 +94,13 @@ impl State {
             })
     }
 
-    pub fn get_filemap(&self, file: &str) -> Option<&Arc<codespan::FileMap>> {
-        self.index_map
-            .get(file)
-            .and_then(move |i| self.code_map.find_file(*i))
-    }
-
     #[doc(hidden)]
     pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
     where
         S: AsRef<str> + Into<String>,
     {
         match self.get_filemap(file) {
-            Some(file_map) if file_map.src() == source.as_ref() => return file_map.clone(),
+            Some(ref file_map) if file_map.src() == source.as_ref() => return file_map.clone(),
             _ => (),
         }
         let file_map = self.code_map.add_filemap(
@@ -80,15 +111,25 @@ impl State {
         file_map
     }
 
-    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
+    pub(crate) fn get_or_insert_filemap<S>(
+        &mut self,
+        file: &str,
+        source: S,
+    ) -> Arc<codespan::FileMap>
     where
         S: AsRef<str> + Into<String>,
     {
-        self.state().get_or_insert_filemap(file, source)
+        if let Some(i) = self.index_map.get(file) {
+            return self.code_map.find_file(*i).unwrap().clone();
+        }
+        self.add_filemap(file, source)
     }
 
     pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
-        self.state().get_filemap(file).cloned()
+        self.index_map
+            .get(file)
+            .and_then(move |i| self.code_map.find_file(*i))
+            .cloned()
     }
 }
 
@@ -122,7 +163,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .or_default();
     }
 
-    fn report_errors(&self, error: &mut Iterator<Item = Error>) {
+    fn report_errors(&self, error: &mut dyn Iterator<Item = Error>) {
         self.state().errors.extend(error);
     }
 }
@@ -130,6 +171,9 @@ impl crate::query::CompilationBase for CompilerDatabase {
 impl salsa::Database for CompilerDatabase {
     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
+    }
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
     }
 }
 
@@ -171,7 +215,14 @@ impl CompilerDatabase {
     }
 
     pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
-        self.state().get_filemap(file).cloned()
+        self.state().get_filemap(file)
+    }
+
+    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
+    where
+        S: AsRef<str> + Into<String>,
+    {
+        self.state().get_or_insert_filemap(file, source)
     }
 
     #[doc(hidden)]
@@ -194,36 +245,11 @@ impl CompilerDatabase {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct DatabaseGlobal {
-    pub id: Symbol,
-    pub typ: ArcType,
-    pub metadata: Arc<Metadata>,
-    pub value: RootedValue<RootedThread>,
-}
-
-impl Eq for DatabaseGlobal {}
-
-impl PartialEq for DatabaseGlobal {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl std::hash::Hash for DatabaseGlobal {
-    fn hash<H>(&self, hasher: &mut H)
-    where
-        H: std::hash::Hasher,
-    {
-        self.id.hash(hasher)
-    }
-}
-
 pub trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
     fn invalidate_module(&self, module: String, contents: &str);
-    fn report_errors(&self, error: &mut Iterator<Item = Error>);
+    fn report_errors(&self, error: &mut dyn Iterator<Item = Error>);
 }
 
 #[salsa::query_group(CompileStorage)]
@@ -241,7 +267,6 @@ pub trait Compilation: CompilationBase {
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
-    #[salsa::volatile]
     fn typechecked_module(
         &self,
         module: String,
@@ -249,17 +274,24 @@ pub trait Compilation: CompilationBase {
     ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    #[salsa::volatile]
-    fn core_expr(&self, module: String) -> StdResult<CoreExpr, Error>;
+    fn core_expr(&self, module: String) -> StdResult<interpreter::Global<CoreExpr>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    fn compiled_module(&self, module: String) -> StdResult<CompiledModule, Error>;
+    #[salsa::dependencies]
+    fn compiled_module(
+        &self,
+        module: String,
+    ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
-    fn globals(&self) -> Arc<FnvMap<String, DatabaseGlobal>>;
+    fn globals(&self) -> Arc<FnvMap<String, UnrootedGlobal>>;
 
+    #[salsa::cycle(recover_cycle)]
+    fn global_(&self, name: String) -> Result<UnrootedGlobal>;
+
+    #[salsa::transparent]
     #[salsa::cycle(recover_cycle)]
     fn global(&self, name: String) -> Result<DatabaseGlobal>;
 }
@@ -309,7 +341,7 @@ fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'stat
 
         Arc::new(
             crate::get_import(db.thread())
-                .get_module_source(&module, &filename)
+                .get_module_source(db, &module, &filename)
                 .map_err(macros::Error::new)?,
         )
     };
@@ -322,6 +354,8 @@ fn typechecked_module(
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<TypecheckValue<Arc<SpannedExpr<Symbol>>>, Error> {
+    db.salsa_runtime().report_untracked_read();
+
     let text = db.module_text(module.clone())?;
 
     let thread = db.thread();
@@ -336,32 +370,44 @@ fn typechecked_module(
     .map_err(|(_, err)| err)
 }
 
-fn core_expr(db: &impl Compilation, module: String) -> StdResult<CoreExpr, Error> {
-    let thread = db.thread();
+fn core_expr(
+    db: &impl Compilation,
+    module: String,
+) -> StdResult<interpreter::Global<CoreExpr>, Error> {
+    db.salsa_runtime().report_untracked_read();
 
     let value = db.typechecked_module(module.clone(), None)?;
     let settings = db.compiler_settings();
 
-    let env = thread.get_env();
+    let env = db.compiler();
     Ok(core::with_translator(&env, |translator| {
         let expr = translator.translate_expr(&value.expr);
 
         debug!("Translation returned: {}", expr);
 
-        if settings.optimize {
-            core::optimize::optimize(&translator.allocator, &env, expr)
+        let core_expr = if settings.optimize {
+            core::optimize::optimize(&translator.allocator, env, expr)
         } else {
-            expr
-        }
+            interpreter::Global {
+                value: core::freeze_expr(&translator.allocator, expr),
+                info: Default::default(),
+            }
+        };
+        debug!("Optimization returned: {}", core_expr);
+
+        core_expr
     }))
 }
 
-fn compiled_module(db: &impl Compilation, module: String) -> StdResult<CompiledModule, Error> {
+fn compiled_module(
+    db: &impl Compilation,
+    module: String,
+) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error> {
     let core_expr = db.core_expr(module.clone())?;
     let settings = db.compiler_settings();
 
     let thread = db.thread();
-    let env = thread.get_env();
+    let env = db.compiler();
 
     let compiler = Compiler::new();
     let mut compiler = compiler.module_compiler(db.compiler());
@@ -385,10 +431,14 @@ fn compiled_module(db: &impl Compilation, module: String) -> StdResult<CompiledM
         settings.emit_debug_info,
     );
 
-    let mut compiled_module = compiler.compile_expr(core_expr.expr())?;
-    compiled_module.function.id = Symbol::from(module);
+    let mut compiled_module = compiler.compile_expr(core_expr.value.expr())?;
+    let module_id = Symbol::from(format!("@{}", name));
+    compiled_module.function.id = module_id.clone();
+    let closure = thread
+        .global_env()
+        .new_global_thunk(&thread, compiled_module)?;
 
-    Ok(compiled_module)
+    Ok(closure)
 }
 
 fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
@@ -415,76 +465,112 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     Ok(Expr::Ident(TypedIdent::new(name)))
 }
 
-fn globals(db: &impl Compilation) -> Arc<FnvMap<String, DatabaseGlobal>> {
+fn globals(db: &impl Compilation) -> Arc<FnvMap<String, UnrootedGlobal>> {
     let globals = db
         .module_states()
         .keys()
-        .filter_map(|name| db.global(name.clone()).ok().map(|g| (name.clone(), g)))
+        .filter_map(|name| db.global_(name.clone()).ok().map(|g| (name.clone(), g)))
         .collect();
     Arc::new(globals)
 }
 
-fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
+fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
     let vm = db.thread();
 
     let TypecheckValue { metadata, typ, .. } = db.typechecked_module(name.clone(), None)?;
-    let mut compiled_module = db.compiled_module(name.clone())?;
+    let closure = db.compiled_module(name.clone())?;
 
-    let module_id = Symbol::from(format!("@{}", name));
-    compiled_module.function.id = module_id.clone();
-    let closure = vm.global_env().new_global_thunk(&vm, compiled_module)?;
+    let module_id = closure.function.name.clone();
 
     let vm1 = vm.clone();
-    let value = vm1.call_thunk_top(closure).wait()?;
+    let ExecuteValue {
+        id,
+        metadata,
+        typ,
+        value,
+        ..
+    } = vm1
+        .call_thunk_top(&closure)
+        .map(move |value| ExecuteValue {
+            id: module_id,
+            expr: (),
+            typ,
+            value,
+            metadata,
+        })
+        .map_err(Error::from)
+        .and_then(move |v| {
+            if db.compiler_settings().run_io {
+                future::Either::B(crate::compiler_pipeline::run_io(vm, v))
+            } else {
+                future::Either::A(future::ok(v))
+            }
+        })
+        .wait()?;
 
-    vm.set_global(
-        module_id.clone(),
-        typ.clone(),
-        metadata.clone(),
-        value.get_value(),
-    )
-    .unwrap();
+    let mut gc = vm.global_env().gc.lock().unwrap();
+    let mut cloner = vm::internal::Cloner::new(vm, &mut gc);
+    let value = cloner.deep_clone(&value)?;
 
-    Ok(DatabaseGlobal {
-        id: module_id,
+    Ok(UnrootedGlobal {
+        id,
         typ,
         metadata,
-        value,
+        value: unsafe { UnrootedValue(value.get_value().clone_unrooted()) },
     })
 }
 
-impl CompilerEnv for DatabaseSnapshot {
+fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
+    db.global_(name)
+        .map(|global| unsafe { root_global_with(global, db.thread().root_thread()) })
+}
+
+impl CompilerEnv for CompilerDatabase {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
-        self.global(id.definition_name().into())
-            .ok()
-            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+        if id.is_global() {
+            self.get_global(id.definition_name())
+                .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+        } else {
+            None
+        }
     }
 }
 
-impl KindEnv for DatabaseSnapshot {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
-        None
+impl KindEnv for CompilerDatabase {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
+        if id.is_global() {
+            TypeEnv::find_type_info(self, id).map(|t| {
+                t.kind(&self.thread().global_env().type_cache().kind_cache)
+                    .into_owned()
+            })
+        } else {
+            None
+        }
     }
 }
 
-impl TypeEnv for DatabaseSnapshot {
+impl TypeEnv for CompilerDatabase {
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
-        self.global(id.definition_name().into())
-            .ok()
-            .map(|g| g.typ.clone())
+        if id.is_global() {
+            self.get_global(id.definition_name()).map(|g| g.typ.clone())
+        } else {
+            None
+        }
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        self.thread()
-            .get_env()
-            .find_type_info(id.definition_name())
-            .ok()
+        if id.is_global() {
+            let globals = self.thread().global_env().get_globals();
+            globals.type_infos.find_type_info(id)
+        } else {
+            None
+        }
     }
 }
 
-impl PrimitiveEnv for DatabaseSnapshot {
+impl PrimitiveEnv for CompilerDatabase {
     fn get_bool(&self) -> ArcType {
         self.find_type_info("std.types.Bool")
             .expect("std.types.Bool")
@@ -492,27 +578,109 @@ impl PrimitiveEnv for DatabaseSnapshot {
     }
 }
 
+impl MetadataEnv for CompilerDatabase {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
+        if id.is_global() {
+            self.typechecked_module(id.definition_name().into(), None)
+                .ok()
+                .map(|v| v.metadata.clone())
+        } else {
+            None
+        }
+    }
+}
+
+impl OptimizeEnv for CompilerDatabase {
+    fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
+        if id.is_global() {
+            self.core_expr(id.definition_name().into()).ok()
+        } else {
+            None
+        }
+    }
+}
+
+unsafe impl Trace for CompilerDatabase {
+    impl_trace! { self, gc,
+        for x in &*self.globals() {
+            mark(&x, gc);
+        }
+    }
+}
+
+impl VmEnv for CompilerDatabase {
+    fn get_global(&self, name: &str) -> Option<vm::vm::Global<RootedValue<RootedThread>>> {
+        let module = Name::new(name.trim_start_matches('@'));
+
+        let globals = self.thread().global_env().get_globals();
+        globals
+            .globals
+            .get(name)
+            .map(|global| DatabaseGlobal {
+                id: global.id.clone(),
+                typ: global.typ.clone(),
+                metadata: global.metadata.clone(),
+                value: self.thread().root_value(global.value.get_variants()),
+            })
+            .or_else(|| self.global(module.as_str().into()).ok())
+    }
+}
+
+impl CompilerEnv for DatabaseSnapshot {
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
+        CompilerEnv::find_var(&**self, id)
+    }
+}
+
+impl KindEnv for DatabaseSnapshot {
+    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
+        KindEnv::find_kind(&**self, id)
+    }
+}
+
+impl TypeEnv for DatabaseSnapshot {
+    type Type = ArcType;
+
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
+        TypeEnv::find_type(&**self, id)
+    }
+
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        TypeEnv::find_type_info(&**self, id)
+    }
+}
+
+impl PrimitiveEnv for DatabaseSnapshot {
+    fn get_bool(&self) -> ArcType {
+        (&**self).get_bool()
+    }
+}
+
 impl MetadataEnv for DatabaseSnapshot {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        self.thread()
-            .get_env()
-            .get_metadata(id.definition_name())
-            .ok()
+        MetadataEnv::get_metadata(&**self, id)
+    }
+}
+
+impl OptimizeEnv for DatabaseSnapshot {
+    fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
+        (&**self).find_expr(id)
+    }
+}
+
+unsafe impl Trace for DatabaseSnapshot {
+    impl_trace! { self, gc,
+        mark(&**self, gc)
     }
 }
 
 impl VmEnv for DatabaseSnapshot {
-    fn get_global(&self, name: &str) -> Option<vm::vm::Global> {
-        self.global(name.into()).ok().map(|g| vm::vm::Global {
-            id: g.id,
-            metadata: g.metadata,
-            typ: g.typ,
-            value: g.value.get_value(),
-        })
+    fn get_global(&self, name: &str) -> Option<vm::vm::Global<RootedValue<RootedThread>>> {
+        VmEnv::get_global(&**self, name)
     }
 }
 
-impl DatabaseSnapshot {
+impl CompilerDatabase {
     pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
         let (_, typ) = self.get_binding(name.module().as_str())?;
@@ -527,40 +695,49 @@ impl DatabaseSnapshot {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
+    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
         let mut module = Name::new(name.trim_start_matches('@'));
-        let global;
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
         // Test: "x.y.z"
         // Test: "x.y"
         // Test: "x"
         // Test: -> Error
-        loop {
+        let globals = self.thread().global_env().get_globals();
+        let global = loop {
             if module.as_str() == "" {
                 return None;
             }
-            if let Ok(g) = self.global(module.as_str().into()) {
-                global = g;
-                break;
+            if let Some(g) = globals
+                .globals
+                .get(name)
+                .map(|global| DatabaseGlobal {
+                    id: global.id.clone(),
+                    typ: global.typ.clone(),
+                    metadata: global.metadata.clone(),
+                    value: self.thread().root_value(global.value.get_variants()),
+                })
+                .or_else(|| self.global(module.as_str().into()).ok())
+            {
+                break g;
             }
             module = module.module();
-        }
+        };
         let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
         let remaining_fields = Name::new(&name[remaining_offset..]);
         Some((remaining_fields, global))
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Value, ArcType)> {
+    pub fn get_binding(&self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
-            .get_global(name)
+            .get_scoped_global(name)
             .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?;
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((global.value.get_value(), global.typ.clone()));
+            return Ok((global.value, global.typ.clone()));
         }
 
         let mut typ = global.typ;
@@ -596,17 +773,16 @@ impl DatabaseSnapshot {
             typ =
                 next_type.ok_or_else(move || vm::Error::UndefinedField(typ, field_name.into()))?;
         }
-        Ok((value.get_value(), typ))
+        Ok((self.thread().root_value(value), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
-        eprintln!("META {}", name_str);
         self.get_metadata_(name_str)
             .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
     }
 
     fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
-        let (remaining, global) = self.get_global(name_str)?;
+        let (remaining, global) = self.get_scoped_global(name_str)?;
 
         let mut metadata = &global.metadata;
         for field_name in remaining.components() {

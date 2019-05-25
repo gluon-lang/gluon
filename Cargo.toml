@@ -145,3 +145,6 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+serde_derive_state = { version = "0.4.7", path = "../serde/serde_derive" }

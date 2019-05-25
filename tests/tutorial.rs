@@ -1,5 +1,3 @@
-extern crate env_logger;
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
@@ -28,7 +26,9 @@ fn access_field_through_alias() {
     Compiler::new()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.int "#)
         .unwrap();
-    let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.int.num.(+)").unwrap();
+    let mut add: FunctionRef<fn(i32, i32) -> i32> = vm
+        .get_global("std.int.num.(+)")
+        .unwrap_or_else(|err| panic!("{}", err));
     let result = add.call(1, 2);
     assert_eq!(result, Ok(3));
 }

@@ -15,7 +15,7 @@ use crate::gc::{Move, Trace};
 use crate::stack::{ExternState, StackFrame};
 use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot, VmRootInternal};
 use crate::types::{Instruction, VmIndex};
-use crate::value::{ExternFunction, ValueRepr};
+use crate::value::ExternFunction;
 use crate::{Error, Result, Variants};
 
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
@@ -525,19 +525,19 @@ impl<T: VmType> VmType for TypedBytecode<T> {
 
 impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let mut context = context.context();
-        let mut compiled_module = CompiledModule::from(CompiledFunction::new(
-            self.args,
-            self.id,
-            T::make_forall_type(thread),
-            "".into(),
-        ));
-        compiled_module.function.instructions = self.instructions;
-        let closure = thread
-            .global_env()
-            .new_global_thunk(thread, compiled_module)?;
-        context.stack.push(ValueRepr::Closure(closure));
-        Ok(())
+        let closure = {
+            let thread = context.thread();
+            let mut compiled_module = CompiledModule::from(CompiledFunction::new(
+                self.args,
+                self.id,
+                T::make_forall_type(thread),
+                "".into(),
+            ));
+            compiled_module.function.instructions = self.instructions;
+            thread
+                .global_env()
+                .new_global_thunk(thread, compiled_module)?
+        };
+        closure.push(context)
     }
 }

@@ -196,40 +196,52 @@ impl<T> AliasRemover<T> {
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         match peek_alias(env, &typ)? {
-            Some(alias) => {
-                if self.reduced_aliases.iter().any(|name| *name == alias.name) {
-                    return Err(Error::SelfRecursiveAlias(alias.name.clone()));
-                }
-                self.reduced_aliases.push(alias.name.clone());
-                // Opaque types should only exist as the alias itself
-                if let Type::Opaque = **alias.unresolved_type() {
-                    return Ok(None);
-                }
+            Some(ref alias) if predicate(alias) => {
+                self.remove_alias_to_concrete_inner(interner, typ, alias)
+            }
+            _ => Ok(None),
+        }
+    }
 
-                let unapplied_args = typ.unapplied_args();
+    fn remove_alias_to_concrete_inner<'a>(
+        &mut self,
+        interner: &mut impl TypeContext<Symbol, T>,
+        typ: &'a T,
+        alias: &AliasRef<Symbol, T>,
+    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
+    where
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    {
+        if self.reduced_aliases.iter().any(|name| *name == alias.name) {
+            return Err(Error::SelfRecursiveAlias(alias.name.clone()));
+        }
+        self.reduced_aliases.push(alias.name.clone());
+        // Opaque types should only exist as the alias itself
+        if let Type::Opaque = **alias.unresolved_type() {
+            return Ok(None);
+        }
 
-                let opt = alias.typ(interner).arg_application(
-                    alias.params(),
-                    &unapplied_args,
-                    interner,
-                    &mut self.named_variables,
-                );
-                match opt {
-                    Some((t, a)) => {
-                        let l = unapplied_args.len() - a.len();
-                        Ok(Some((
-                            t,
-                            match unapplied_args {
-                                Cow::Borrowed(slice) => Cow::Borrowed(&slice[l..]),
-                                Cow::Owned(mut vec) => {
-                                    vec.drain(l..);
-                                    Cow::Owned(vec)
-                                }
-                            },
-                        )))
-                    }
-                    None => Ok(None),
-                }
+        let unapplied_args = typ.unapplied_args();
+
+        let opt = alias.typ(interner).arg_application(
+            alias.params(),
+            &unapplied_args,
+            interner,
+            &mut self.named_variables,
+        );
+        match opt {
+            Some((t, a)) => {
+                let l = unapplied_args.len() - a.len();
+                Ok(Some((
+                    t,
+                    match unapplied_args {
+                        Cow::Borrowed(slice) => Cow::Borrowed(&slice[l..]),
+                        Cow::Owned(mut vec) => {
+                            vec.drain(l..);
+                            Cow::Owned(vec)
+                        }
+                    },
+                )))
             }
             None => Ok(None),
         }

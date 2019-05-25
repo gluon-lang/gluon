@@ -35,11 +35,10 @@ impl de::Error for VmError {
 #[macro_use]
 extern crate serde_derive;
 
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::{Compiler, Thread, new_vm};
+use gluon::{Compiler, Thread, ThreadExt, new_vm};
 use gluon::base::types::ArcType;
 use gluon::vm::api::VmType;
 use gluon::vm::api::de::De;
@@ -69,9 +68,9 @@ impl VmType for Vec2 {
 # }
 
 let thread = new_vm();
+# thread.get_database_mut().implicit_prelude(false);
 
 let (De(vec), _) = Compiler::new()
-#   .implicit_prelude(false)
     .run_expr::<De<Vec2>>(&thread, "test", "{ x = 1.0, y = 2.0 }")
     .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(vec, Vec2 {
@@ -88,9 +87,7 @@ assert_eq!(vec, Vec2 {
 #[macro_use]
 extern crate serde_derive;
 
-extern crate gluon;
-
-use gluon::{Compiler, Thread, new_vm};
+use gluon::{Compiler, Thread, ThreadExt, new_vm};
 use gluon::base::types::ArcType;
 use gluon::vm::api::VmType;
 use gluon::vm::api::de::De;
@@ -116,9 +113,9 @@ impl VmType for Enum {
 # }
 
 let thread = new_vm();
+# thread.get_database_mut().implicit_prelude(false);
 
 Compiler::new()
-#   .implicit_prelude(false)
     .load_script(
         &thread,
         "test",
@@ -127,7 +124,6 @@ Compiler::new()
     .unwrap_or_else(|err| panic!("{}", err));
 
 let (De(enum_), _) = Compiler::new()
-#   .implicit_prelude(false)
     .run_expr::<De<Enum>>(
         &thread,
         "test",
@@ -138,7 +134,6 @@ assert_eq!(enum_, Enum::A(123));
 
 // The field names of record variants are ignored so make sure the fields are declared correctly
 let (De(enum_), _) = Compiler::new()
-#   .implicit_prelude(false)
     .run_expr::<De<Enum>>(
         &thread,
         "test",

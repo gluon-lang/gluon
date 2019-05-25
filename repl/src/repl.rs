@@ -364,7 +364,7 @@ fn eval_line_(
     vm: RootedThread,
     line: &str,
 ) -> impl Future<Item = (), Error = (Compiler, GluonError)> {
-    let compiler = Compiler::new().run_io(true);
+    let compiler = Compiler::new();
     let db = vm.get_database();
     let mut module_compiler = compiler.module_compiler(&db);
     let repl_line = {

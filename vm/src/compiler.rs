@@ -596,13 +596,10 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         debug!("Load {}", id);
-        match self.find(id, function).unwrap_or_else(|| {
-            ice!(
-                "Undefined variable `{}` in {}",
-                self.symbols.string(&id),
-                self.source_name,
-            )
-        }) {
+        match self
+            .find(id, function)
+            .unwrap_or_else(|| ice!("Undefined variable `{:?}` in {}", id, self.source_name,))
+        {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             // Zero argument constructors can be compiled as integers
@@ -796,9 +793,10 @@ impl<'a> Compiler<'a> {
                                     .unwrap_or_else(|| {
                                         ice!(
                                             "ICE: Could not find tag for {}::{} when matching on \
-                                             expression",
+                                             expression:\n{}",
                                             typ,
                                             self.symbols.string(&id.name),
+                                            expr
                                         )
                                     });
 
@@ -938,6 +936,8 @@ impl<'a> Compiler<'a> {
                     _ => ice!("ICE: Unexpected data type for {}: {}", id.name, typ),
                 }
             }
+
+            Expr::Cast(expr, _) => return Ok(Some(expr)),
         }
         Ok(None)
     }

@@ -57,7 +57,7 @@ pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants
 #[gluon(gluon_vm)]
 #[repr(C)]
 pub struct ClosureData {
-    pub(crate) function: GcPtr<BytecodeFunction>,
+    pub function: GcPtr<BytecodeFunction>,
     pub(crate) upvars: Array<Value>,
 }
 
@@ -1494,7 +1494,7 @@ impl<'t> Cloner<'t> {
         self
     }
 
-    pub(crate) fn deep_clone<'gc>(&'gc mut self, value: &Value) -> Result<Variants<'gc>> {
+    pub fn deep_clone<'gc>(&'gc mut self, value: &Value) -> Result<Variants<'gc>> {
         unsafe {
             self.deep_clone_inner(value)
                 .map(move |v| Variants::with_root(&v, self.gc))
@@ -1826,5 +1826,4 @@ mod tests {
     fn value_size() {
         assert!(size_of::<Value>() <= 16);
     }
-
 }

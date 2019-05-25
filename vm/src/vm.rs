@@ -2,9 +2,12 @@ use std::{
     any::{Any, TypeId},
     result::Result as StdResult,
     string::String as StdString,
-    sync::{Arc, Mutex, RwLock, RwLockReadGuard},
+    sync::{self, Arc, Mutex, RwLock, RwLockReadGuard},
     usize,
 };
+
+#[cfg(feature = "serde_derive_state")]
+use serde::de::DeserializeState;
 
 use crate::base::{
     ast,
@@ -20,12 +23,14 @@ use crate::base::{
 };
 
 use crate::{
-    api::{ValueRef, IO},
+    api::{OpaqueValue, ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
+    core::{interpreter, optimize::OptimizeEnv, CoreExpr},
     gc::{CloneUnrooted, Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
+    thread::ThreadInternal,
     types::*,
     value::{BytecodeFunction, ClosureData, ClosureDataDef, Value},
     Error, Result, Variants,
@@ -47,7 +52,7 @@ unsafe impl Trace for ThreadSlab {
 }
 
 fn new_bytecode<'gc>(
-    env: &VmEnv<Type = ArcType>,
+    env: &dyn VmEnv<Type = ArcType>,
     interner: &mut Interner,
     gc: &'gc mut Gc,
     vm: &GlobalVmState,
@@ -59,16 +64,22 @@ fn new_bytecode<'gc>(
     } = m;
     let bytecode_function = new_bytecode_function(interner, gc, vm, function)?;
 
-    let globals = module_globals.into_iter().map(|index| {
-        env.get_global(index.definition_name())
-            .expect("ICE: Global is missing from environment")
-            .value
-    });
+    let globals = module_globals
+        .into_iter()
+        .map(|index| {
+            env.get_global(index.definition_name())
+                .expect("ICE: Global is missing from environment")
+                .value
+        })
+        .collect::<Vec<_>>();
 
     // SAFETY No collection are done while we create these functions
     unsafe {
         let bytecode_function = bytecode_function.unrooted();
-        gc.alloc(ClosureDataDef(&bytecode_function, globals))
+        gc.alloc(ClosureDataDef(
+            &bytecode_function,
+            globals.iter().map(|v| v.get_value()),
+        ))
     }
 }
 
@@ -117,24 +128,7 @@ fn new_bytecode_function<'gc>(
     }))
 }
 
-impl Eq for Global {}
-
-impl PartialEq for Global {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl std::hash::Hash for Global {
-    fn hash<H>(&self, hasher: &mut H)
-    where
-        H: std::hash::Hasher,
-    {
-        self.id.hash(hasher)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "serde_derive_state",
     derive(DeserializeState, SerializeState)
@@ -143,14 +137,15 @@ impl std::hash::Hash for Global {
     feature = "serde_derive_state",
     serde(
         deserialize_state = "crate::serialization::DeSeed<'gc>",
-        de_parameters = "'gc"
+        de_parameters = "'gc",
+        bound(deserialize = "V: DeserializeState<'de, crate::serialization::DeSeed<'gc>>")
     )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
-pub struct Global {
+pub struct Global<V> {
     #[cfg_attr(
         feature = "serde_derive",
         serde(state_with = "crate::serialization::symbol")
@@ -163,10 +158,32 @@ pub struct Global {
     pub typ: ArcType,
     pub metadata: Arc<Metadata>,
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub value: Value,
+    pub value: V,
 }
 
-unsafe impl Trace for Global {
+pub type RootedGlobal = Global<RootedValue<RootedThread>>;
+
+impl<V> Eq for Global<V> {}
+
+impl<V> PartialEq for Global<V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<V> std::hash::Hash for Global<V> {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.id.hash(hasher)
+    }
+}
+
+unsafe impl<V> Trace for Global<V>
+where
+    V: Trace,
+{
     impl_trace! { self, gc,
         mark(&self.value, gc)
     }
@@ -225,6 +242,8 @@ unsafe impl Trace for GlobalVmState {
             mark(g, gc);
         }
 
+        mark(&self.macros, gc);
+
         // Also need to check the interned string table
         mark(&*self.interner.read().unwrap(), gc);
         mark(&*self.generation_0_threads.read().unwrap(), gc);
@@ -248,32 +267,64 @@ pub struct Globals {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub globals: FnvMap<StdString, Global>,
+    pub globals: FnvMap<StdString, Global<Value>>,
 }
 
-pub trait VmEnv: CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv {
-    fn get_global(&self, name: &str) -> Option<Global>;
+unsafe impl Trace for Globals {
+    impl_trace! { self, gc, {
+        mark(&self.globals, gc);
+    } }
 }
 
-pub struct VmEnvInstance<'a>(
+pub trait VmEnv:
+    OptimizeEnv + CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv + Trace
+{
+    fn get_global(&self, name: &str) -> Option<RootedGlobal>;
+}
+
+pub struct VmEnvInstance<'a> {
     // FIXME Use the database stored here for lookups
-    Vec<Box<dyn VmEnv>>,
-    RwLockReadGuard<'a, Globals>,
-);
+    vm_envs: Vec<Box<dyn VmEnv>>,
+    globals: RwLockReadGuard<'a, Globals>,
+    thread: &'a Thread,
+}
+
+unsafe impl Trace for VmEnvInstance<'_> {
+    impl_trace! { self, gc, {
+        mark(&self.vm_envs, gc);
+        mark(&*self.globals, gc);
+    } }
+}
+
+impl<'a> OptimizeEnv for VmEnvInstance<'a> {
+    fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
+        self.vm_envs.iter().find_map(|env| env.find_expr(id))
+    }
+}
 
 impl<'a> CompilerEnv for VmEnvInstance<'a> {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
-        self.1
-            .globals
-            .get(id.definition_name())
-            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
-            .or_else(|| self.1.type_infos.find_var(id))
+        self.vm_envs
+            .iter()
+            .filter_map(|env| env.find_var(id))
+            .next()
+            .or_else(|| {
+                self.globals
+                    .globals
+                    .get(id.definition_name())
+                    .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
+            })
+            .or_else(|| self.globals.type_infos.find_var(id))
     }
 }
 
 impl<'a> KindEnv for VmEnvInstance<'a> {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
-        self.1.type_infos.find_kind(id)
+        self.vm_envs
+            .iter()
+            .filter_map(|env| env.find_kind(id))
+            .next()
+            .or_else(|| self.globals.type_infos.find_kind(id))
     }
 }
 
@@ -281,21 +332,46 @@ impl<'a> TypeEnv for VmEnvInstance<'a> {
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
-        self.1
-            .globals
-            .get(id.definition_name())
-            .map(|g| g.typ.clone())
+        self.vm_envs
+            .iter()
+            .filter_map(|env| env.find_type(id))
+            .next()
+            .or_else(|| {
+                self.globals
+                    .globals
+                    .get(id.definition_name())
+                    .map(|g| g.typ.clone())
+            })
+            .or_else(|| {
+                self.globals
+                    .type_infos
+                    .id_to_type
+                    .values()
+                    .filter_map(|alias| match **alias.unresolved_type() {
+                        Type::Variant(ref row) => row
+                            .row_iter()
+                            .find(|field| *field.name == *id)
+                            .map(|field| &field.typ),
+                        _ => None,
+                    })
+                    .next()
+                    .map(|ctor| ctor.clone())
+            })
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        self.1.type_infos.find_type_info(id)
+        self.vm_envs
+            .iter()
+            .filter_map(|env| env.find_type_info(id))
+            .next()
+            .or_else(|| self.globals.type_infos.find_type_info(id))
     }
 }
 
 impl<'a> PrimitiveEnv for VmEnvInstance<'a> {
     fn get_bool(&self) -> ArcType {
         self.find_type_info("std.types.Bool")
-            .expect("std.types.Bool")
+            .expect("Missing std.types.Bool")
             .into_type()
     }
 }
@@ -307,8 +383,14 @@ impl<'a> MetadataEnv for VmEnvInstance<'a> {
 }
 
 impl<'a> VmEnv for VmEnvInstance<'a> {
-    fn get_global(&self, name: &str) -> Option<Global> {
-        self.1.globals.get(name).cloned()
+    fn get_global(&self, name: &str) -> Option<RootedGlobal> {
+        if name.contains("+") {
+            123.to_string();
+        }
+        self.vm_envs
+            .iter()
+            .filter_map(|env| env.get_global(name))
+            .next()
     }
 }
 
@@ -316,7 +398,7 @@ impl<'a> VmEnvInstance<'a> {
     pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
 
-        if let Some(alias) = self.1.type_infos.id_to_type.get(name.as_str()) {
+        if let Some(alias) = self.globals.type_infos.id_to_type.get(name.as_str()) {
             return Ok(alias.clone());
         }
 
@@ -339,7 +421,7 @@ impl<'a> VmEnvInstance<'a> {
         maybe_type_info.ok_or_else(move || Error::UndefinedField(typ, name.name().as_str().into()))
     }
 
-    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, Global)> {
+    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, RootedGlobal)> {
         let mut module = Name::new(name.trim_start_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
@@ -358,13 +440,14 @@ impl<'a> VmEnvInstance<'a> {
             }
             module = module.module();
         }
+
         let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
         let remaining_fields = Name::new(&name[remaining_offset..]);
         Some((remaining_fields, global))
     }
 
     #[doc(hidden)]
-    pub fn get_binding(&self, name: &str) -> Result<(&Value, ArcType)> {
+    pub fn get_binding(&self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
@@ -373,7 +456,7 @@ impl<'a> VmEnvInstance<'a> {
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((&global.value, global.typ));
+            return Ok((global.value, global.typ));
         }
 
         let mut typ = global.typ;
@@ -408,7 +491,7 @@ impl<'a> VmEnvInstance<'a> {
             };
             typ = next_type.ok_or_else(move || Error::UndefinedField(typ, field_name.into()))?;
         }
-        Ok((value.get_value(), typ))
+        Ok((self.thread.root_value(value), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
@@ -510,12 +593,14 @@ impl GlobalVmState {
         &self,
         thread: &Thread,
         f: CompiledModule,
-    ) -> Result<GcPtr<ClosureData>> {
+    ) -> Result<OpaqueValue<RootedThread, GcPtr<ClosureData>>> {
         let env = self.get_env(thread);
         let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        // FIXME
-        unsafe { Ok(new_bytecode(&env, &mut interner, &mut gc, self, f)?.unrooted()) }
+        let byte_code = new_bytecode(&env, &mut interner, &mut gc, self, f)?;
+        Ok(OpaqueValue::from_value(
+            thread.root_value(Variants::from(byte_code)),
+        ))
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
@@ -634,9 +719,27 @@ impl GlobalVmState {
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
-    pub fn get_env(&self, thread: &Thread) -> VmEnvInstance {
+    pub fn get_env<'t>(&'t self, thread: &'t Thread) -> VmEnvInstance<'t> {
         let capabilities = self.macros.get_capabilities::<dyn VmEnv>(thread);
-        VmEnvInstance(capabilities, self.env.read().unwrap())
+        VmEnvInstance {
+            vm_envs: capabilities,
+            globals: self.env.read().unwrap(),
+            thread,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn get_lookup_env<'t>(&'t self, thread: &'t Thread) -> VmEnvInstance<'t> {
+        VmEnvInstance {
+            vm_envs: Vec::new(),
+            globals: self.env.read().unwrap(),
+            thread,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn get_globals(&self) -> sync::RwLockReadGuard<Globals> {
+        self.env.read().unwrap()
     }
 
     pub fn get_debug_level(&self) -> DebugLevel {

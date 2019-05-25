@@ -80,11 +80,10 @@ assert_eq!(result, 13);
 #[macro_use]
 extern crate serde_derive;
 
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::{Compiler, Thread, new_vm};
+use gluon::{Compiler, Thread, ThreadExt, new_vm};
 use gluon::base::types::ArcType;
 use gluon::vm::api::{FunctionRef, VmType};
 use gluon::vm::api::ser::Ser;
@@ -112,6 +111,7 @@ impl VmType for Enum {
 # }
 
 let thread = new_vm();
+# thread.get_database_mut().implicit_prelude(false);
 
 let expr = r#"
 type Enum = | A Int | B String Int | C { foo : Float, bar : Int }
@@ -127,7 +127,6 @@ let f e =
 { Enum, f }
 "#;
 Compiler::new()
-#   .implicit_prelude(false)
     .load_script(&thread, "test", expr)
     .unwrap_or_else(|err| panic!("{}", err));
 

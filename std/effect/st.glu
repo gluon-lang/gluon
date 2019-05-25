@@ -11,8 +11,10 @@ type State s r a =
     | Write : forall b . b -> STRef s b -> State s r ()
     .. r
 
+#[inline(never)]
 let extract_state x : forall s . [| st : State s | r |] a -> State s r a = convert_variant! x
 
+#[inline(never)]
 let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a = Impure (convert_effect! st f) Pure
 
 let new_ST_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)

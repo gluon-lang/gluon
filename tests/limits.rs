@@ -1,12 +1,13 @@
-extern crate env_logger;
-extern crate gluon;
-
 mod support;
 
-use gluon::vm::api::{Hole, OpaqueValue};
-use gluon::vm::thread::ThreadInternal;
-use gluon::vm::Error as VMError;
-use gluon::{Compiler, Error, Thread};
+use gluon::{
+    vm::{
+        api::{Hole, OpaqueValue},
+        thread::ThreadInternal,
+        Error as VMError,
+    },
+    Compiler, Error, Thread, ThreadExt,
+};
 
 use crate::support::make_vm;
 
@@ -16,11 +17,10 @@ fn out_of_memory() {
 
     let vm = make_vm();
     vm.set_memory_limit(10);
+    vm.get_database_mut().implicit_prelude(false);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new_lock()
-        .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
     match result {
         // FIXME This should just need to match on the explicit out of memory error
@@ -36,11 +36,10 @@ fn stack_overflow() {
 
     let vm = make_vm();
     vm.context().set_max_stack_size(3);
+    vm.get_database_mut().implicit_prelude(false);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new_lock()
-        .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
     match result {
         Err(Error::VM(VMError::StackOverflow(3))) => (),

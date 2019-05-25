@@ -3,14 +3,12 @@ extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
 
-extern crate gluon;
-
 use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Field, Type};
 use gluon::vm::api::de::{self, De};
 use gluon::vm::api::{Getable, Hole, OpaqueValue, VmType};
 use gluon::vm::thread::Thread;
-use gluon::{new_vm, Compiler};
+use gluon::{new_vm, Compiler, ThreadExt};
 
 #[test]
 fn bool() {
@@ -174,8 +172,8 @@ fn enum_() {
     let _ = env_logger::try_init();
 
     let thread = new_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
     Compiler::new_lock()
-        .implicit_prelude(false)
         .load_script(
             &thread,
             "test",
@@ -184,7 +182,6 @@ fn enum_() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let (De(enum_), _) = Compiler::new_lock()
-        .implicit_prelude(false)
         .run_expr::<De<Enum>>(
             &thread,
             "test",
@@ -194,7 +191,6 @@ fn enum_() {
     assert_eq!(enum_, Enum::A("abc".to_string()));
 
     let (De(enum_), _) = Compiler::new_lock()
-        .implicit_prelude(false)
         .run_expr::<De<Enum>>(
             &thread,
             "test",

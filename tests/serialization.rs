@@ -21,7 +21,7 @@ use gluon::{
         thread::{RootedThread, RootedValue, Thread},
         Variants,
     },
-    Compiler,
+    Compiler, ThreadExt,
 };
 
 fn serialize_value(value: Variants) {
@@ -228,9 +228,9 @@ fn roundtrip_std_thread() {
 #[ignore] // Unimplemented so far
 fn roundtrip_thread() {
     let thread = new_vm();
+    thread.get_database_mut().run_io(true);
     let expr = r#" let t = import! std.thread in t.new_thread ()"#;
     let (value, _) = Compiler::new()
-        .run_io(true)
         .run_expr::<IO<OpaqueValue<&Thread, Hole>>>(&thread, "test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &Into::<Result<_, _>>::into(value).unwrap());

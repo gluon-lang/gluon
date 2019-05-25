@@ -19,8 +19,8 @@ use std::{
 use {
     crossbeam_utils::atomic::AtomicCell,
     futures::{
-    future::{self, Either, FutureResult},
-    try_ready, Async, Future, Poll,
+        future::{self, Either, FutureResult},
+        try_ready, Async, Future, Poll,
     },
 };
 
@@ -39,7 +39,7 @@ use crate::{
     macros::MacroEnv,
     source_map::LocalIter,
     stack::{
-    ClosureState, ExternCallState, ExternState, Frame, Stack, StackFrame, StackState, State,
+        ClosureState, ExternCallState, ExternState, Frame, Stack, StackFrame, StackState, State,
     },
     types::*,
     value::{
@@ -49,7 +49,7 @@ use crate::{
         ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String},
         VariantDef,
     },
-    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnv, VmEnvInstance},
+    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnvInstance},
     BoxFuture, Error, Result, Variants,
 };
 
@@ -100,7 +100,7 @@ where
         let thread = self.thread.take().unwrap();
         // SAFETY `value` is produced (and owned) by `thread`
         unsafe { Ok(Async::Ready(thread.root_value_with_self(&value))) }
-        }
+    }
 }
 
 pub struct ExecuteTop<T>(pub Execute<T>);
@@ -189,7 +189,7 @@ where
     fn clone(&self) -> Self {
         // SAFETY `self.vm` owns the value already, we just create another root
         unsafe { RootedValue::new(self.vm.clone(), &self.value) }
-        }
+    }
 }
 
 impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
@@ -209,7 +209,7 @@ where
     fn drop(&mut self) {
         if self.rooted.load() {
             self.unroot_();
-    }
+        }
     }
 }
 
@@ -238,7 +238,7 @@ where
             };
 
             Ok(RootedValue::new(vm, &value))
-    }
+        }
     }
 
     // SAFETY The value must be owned by `vm`'s GC
@@ -251,7 +251,7 @@ where
             vm,
             rooted: AtomicCell::new(true),
             value: value.clone_unrooted(),
-    }
+        }
     }
 
     pub fn get_value(&self) -> &Value {
@@ -594,8 +594,8 @@ impl Drop for RootedThread {
         if self.rooted.load() {
             let is_empty = self.unroot_();
             if is_empty {
-            // The last RootedThread was dropped, there is no way to refer to the global state any
-            // longer so drop everything
+                // The last RootedThread was dropped, there is no way to refer to the global state any
+                // longer so drop everything
                 let mut gc_ref = self.thread.global_state.gc.lock().unwrap_or_else(|err| {
                     // Ignore poisoning since we don't need to interact with the Gc values, only
                     // drop them
@@ -603,16 +603,16 @@ impl Drop for RootedThread {
                 });
                 let mut gc_to_drop =
                     ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
-            // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
-            // when the Gc is dropped
-            drop(gc_ref);
+                // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
+                // when the Gc is dropped
+                drop(gc_ref);
 
                 // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
                 // droppting the thread
                 unsafe {
                     gc_to_drop.clear();
-        }
-    }
+                }
+            }
         }
     }
 }
@@ -664,10 +664,10 @@ impl RootedThread {
         };
 
         let ptr = unsafe {
-        let mut gc = Gc::new(Generation::default(), usize::MAX);
+            let mut gc = Gc::new(Generation::default(), usize::MAX);
             let mut ptr = gc
                 .alloc_owned(Move(thread))
-            .expect("Not enough memory to allocate thread")
+                .expect("Not enough memory to allocate thread")
                 .unrooted();
             *ptr.global_state.gc.lock().unwrap() = gc;
 
@@ -705,7 +705,7 @@ impl RootedThread {
         RootedThread {
             thread: GcPtr::from_raw(ptr),
             rooted: AtomicCell::new(true),
-    }
+        }
     }
 
     fn root_(&self) {
@@ -793,49 +793,11 @@ impl Thread {
             RootedThread {
                 thread,
                 rooted: AtomicCell::new(true),
+            }
         }
     }
-    }
 
-    /// Creates a new global value at `name`.
-    /// Fails if a global called `name` already exists.
-    ///
-    /// # Examples
-    ///
-    /// Load the `factorial` rust function into gluon and evaluate `factorial 5`
-    ///
-    /// ```
-    /// # extern crate gluon;
-    /// # #[macro_use] extern crate gluon_vm;
-    /// # use gluon::{new_vm,Compiler};
-    /// # use gluon::base::types::Type;
-    /// fn factorial(x: i32) -> i32 {
-    ///     if x <= 1 { 1 } else { x * factorial(x - 1) }
-    /// }
-    /// # fn main() {
-    ///
-    /// # if ::std::env::var("GLUON_PATH").is_err() {
-    /// #     ::std::env::set_var("GLUON_PATH", "..");
-    /// # }
-    ///
-    /// let vm = new_vm();
-    ///
-    /// vm.define_global("factorial", primitive!(1, factorial)).unwrap();
-    ///
-    /// let result = Compiler::new()
-    ///     .run_expr::<i32>(&vm, "example", "factorial 5")
-    ///     .unwrap_or_else(|err| panic!("{}", err));
-    /// let expected = (120, Type::int());
-    ///
-    /// assert_eq!(result, expected);
-    /// # }
-    /// ```
-    ///
-    #[deprecated(
-        since = "0.7.0",
-        note = "Use `gluon::import::add_extern_module` instead"
-    )]
-    pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
+    pub(crate) fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
     where
         T: Pushable<'vm> + VmType,
     {
@@ -898,7 +860,7 @@ impl Thread {
 
         // Finally check that type of the returned value is correct
         if check_signature(&env, &expected, &actual) {
-            Ok(T::from_value(self, unsafe { Variants::new(&value) }))
+            Ok(T::from_value(self, Variants::new(&value)))
         } else {
             Err(Error::WrongType(expected, actual))
         }
@@ -942,6 +904,11 @@ impl Thread {
     /// Locks and retrieves the global environment of the vm
     pub fn get_env<'b>(&'b self) -> VmEnvInstance<'b> {
         self.global_env().get_env(self)
+    }
+
+    #[doc(hidden)]
+    pub fn get_lookup_env<'t>(&'t self) -> VmEnvInstance<'t> {
+        self.global_env().get_lookup_env(self)
     }
 
     /// Retrieves the macros defined for this vm
@@ -1045,8 +1012,8 @@ impl Thread {
             });
         }
         let ptr = unsafe {
-                // Threads must only be on the garbage collectors heap which makes this safe
-                GcPtr::from_raw(self)
+            // Threads must only be on the garbage collectors heap which makes this safe
+            GcPtr::from_raw(self)
         };
         let roots = Roots {
             vm: &ptr,
@@ -1068,7 +1035,7 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     /// Roots a value
     unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self> {
         RootedValue::new(self, value)
-        }
+    }
 }
 
 impl<'a> VmRoot<'a> for &'a Thread {
@@ -1116,12 +1083,12 @@ where
     /// Evaluates a zero argument function (a thunk)
     fn call_thunk<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> FutureValue<Execute<RootedThread>>;
 
     fn call_thunk_top<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
     where
         Self: Send + Sync,
@@ -1202,20 +1169,20 @@ impl ThreadInternal for Thread {
         T: VmRoot<'vm>,
     {
         unsafe { T::new_root(self).root_value_with_self(value.get_value()) }
-        }
+    }
 
     fn call_thunk<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> FutureValue<Execute<RootedThread>> {
         let mut context = self.owned_context();
         context.stack.push(construct_gc!(Closure(@&closure)));
         StackFrame::<State>::current(&mut context.stack).enter_scope(
             0,
-            &ClosureState {
-                closure,
+            &*construct_gc!(ClosureState {
+                @closure: gc::Borrow::new(closure),
                 instruction_index: 0,
-            },
+            }),
         );
         match try_future!(context.execute(), Either::A) {
             Async::Ready(context) => {
@@ -1683,11 +1650,11 @@ where
 {
     unsafe {
         let ptr = GcPtr::from_raw(thread);
-    let roots = Roots {
+        let roots = Roots {
             // Threads must only be on the garbage collectors heap which makes this safe
             vm: &ptr,
-        stack: stack,
-    };
+            stack: stack,
+        };
         gc.alloc_and_collect(roots, def)
     }
 }
@@ -1772,13 +1739,13 @@ impl<'b> OwnedContext<'b> {
                     if ext.call_state == ExternCallState::Poll {
                         if let Some(frame_index) = context.poll_fns.last().map(|f| f.frame_index) {
                             unsafe {
-                            ext = ExternState::from_state(
+                                ext = ExternState::from_state(
                                     &context.stack.stack().get_frames()[frame_index as usize].state,
                                 )
                                 .clone_unrooted();
+                            }
                         }
                     }
-                }
                     match &mut context.stack.frame_mut().state {
                         State::Extern(ext) => ext.call_state = ExternCallState::Poll,
                         _ => unreachable!(),
@@ -1794,33 +1761,33 @@ impl<'b> OwnedContext<'b> {
                 }) => {
                     let max_stack_size = context.max_stack_size;
                     let instruction_index = *instruction_index;
-                        let function_size = closure.function.max_stack_size;
+                    let function_size = closure.function.max_stack_size;
 
-                        // Before entering a function check that the stack cannot exceed `max_stack_size`
-                        if instruction_index == 0
+                    // Before entering a function check that the stack cannot exceed `max_stack_size`
+                    if instruction_index == 0
                         && context.stack.stack().len() + function_size > max_stack_size
-                        {
-                            return Err(Error::StackOverflow(max_stack_size));
-                        }
+                    {
+                        return Err(Error::StackOverflow(max_stack_size));
+                    }
 
                     if context.stack.stack().get_frames().len() == 0 {
                         return Ok(Async::Ready(Some(self)));
-                        } else {
+                    } else {
                         debug!(
-                                "Continue with {}\nAt: {}/{}\n{:?}",
-                                closure.function.name,
-                                instruction_index,
-                                closure.function.instructions.len(),
-                                &context.stack[..]
-                            );
+                            "Continue with {}\nAt: {}/{}\n{:?}",
+                            closure.function.name,
+                            instruction_index,
+                            closure.function.instructions.len(),
+                            &context.stack[..]
+                        );
 
                         let closure_context = context.from_state();
                         match try_ready!(closure_context.execute_()) {
                             Some(new_context) => context = new_context,
                             None => return Ok(None.into()),
-                            }
                         }
                     }
+                }
             };
         }
     }
@@ -2007,7 +1974,7 @@ where
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
-        {
+    {
         alloc(&mut self.gc, self.thread, &self.stack.stack(), data)
     }
 
@@ -2089,7 +2056,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
 
             if self.hook.flags.contains(HookFlags::LINE_FLAG) {
                 try_ready!(self.run_hook(&function, instruction_index));
-                    }
+            }
 
             match instr {
                 Push(i) => {
@@ -2197,17 +2164,17 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             Variants::tag(0)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
-                                let field_names = &function.records[record as usize];
+                            let field_names = &function.records[record as usize];
                             Variants::from(alloc(
                                 self.gc,
                                 self.thread,
                                 &self.stack.stack(),
-                                    RecordDef {
-                                        elems: fields,
-                                        fields: field_names,
-                                    },
-                                )?)
-                            }
+                                RecordDef {
+                                    elems: fields,
+                                    fields: field_names,
+                                },
+                            )?)
+                        }
                     };
                     self.stack.pop_many(args);
                     self.stack.push(d);
@@ -2235,17 +2202,17 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         if args == 0 {
                             Variants::tag(0)
                         } else {
-                                let field_names = &function.records[record as usize];
+                            let field_names = &function.records[record as usize];
                             Variants::from(alloc(
                                 &mut self.gc,
                                 self.thread,
                                 &self.stack.stack(),
-                                    UninitializedRecord {
-                                        elems: args as usize,
-                                        fields: field_names,
-                                    },
-                                )?)
-                            }
+                                UninitializedRecord {
+                                    elems: args as usize,
+                                    fields: field_names,
+                                },
+                            )?)
+                        }
                     };
                     self.stack.push(d);
                 }
@@ -2453,8 +2420,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 Return => {
                     drop(program_counter);
                     break;
+                }
             }
-        }
         }
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame().excess;
@@ -2609,28 +2576,28 @@ where
         closure: &GcPtr<ClosureData>,
         excess: bool,
     ) -> ExecuteContext<'b, 'gc, State> {
+        info!("Call {} {:?}", closure.function.name, &self.stack[..]);
         self.enter_scope(
-                    closure.function.args,
+            closure.function.args,
             &*construct_gc!(ClosureState {
                 @closure,
-                        instruction_index: 0,
+                instruction_index: 0,
             }),
             excess,
         )
         .to_state()
-            }
+    }
 
     fn enter_extern(
         self,
         ext: &GcPtr<ExternFunction>,
         excess: bool,
     ) -> ExecuteContext<'b, 'gc, State> {
-                assert!(self.stack.len() >= ext.args + 1);
-                let function_index = self.stack.len() - ext.args - 1;
-        trace!("------- {} {:?}", function_index, &self.stack[..]);
+        assert!(self.stack.len() >= ext.args + 1);
+        info!("Call {} {:?}", ext.id, &self.stack[..]);
         self.enter_scope(ext.args, &*ExternState::new(ext), excess)
             .to_state()
-            }
+    }
 
     fn call_function_with_upvars(
         mut self,
@@ -2884,7 +2851,7 @@ impl<'vm> ActiveThread<'vm> {
             hook: &mut context.hook,
             max_stack_size: context.max_stack_size,
             poll_fns: &context.poll_fns,
-    }
+        }
     }
 
     // For gluon_codegen

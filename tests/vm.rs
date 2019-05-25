@@ -1,9 +1,6 @@
-extern crate codespan;
-extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 
-extern crate gluon;
 extern crate gluon_completion as completion;
 
 #[macro_use]
@@ -11,12 +8,16 @@ mod support;
 
 use crate::support::*;
 
-use gluon::base::pos::BytePos;
-use gluon::base::types::Type;
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
-use gluon::vm::channel::Sender;
-use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
-use gluon::{vm, Compiler, Error, ThreadExt};
+use gluon::{
+    base::{pos::BytePos, types::Type},
+    vm,
+    vm::{
+        api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},
+        channel::Sender,
+        thread::{RootedThread, Thread, ThreadInternal},
+    },
+    Compiler, Error, ThreadExt,
+};
 
 test_expr! { pass_function_value,
 r"
@@ -105,6 +106,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
         _ => panic!(),
     }
 }
+
 #[test]
 fn script() {
     let _ = ::env_logger::try_init();
@@ -118,7 +120,7 @@ let sub l r = { x = l.x #Int- r.x, y = l.y #Int- r.y } in
     load_script(&mut vm, "vec", text).unwrap_or_else(|err| panic!("{}", err));
 
     let script = r#"
-let { T, add, sub } = vec
+let { T, add, sub } = import! vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, script);
@@ -553,9 +555,9 @@ let large_record = { x = 1 }
 }
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new_lock()
-        .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
+    vm.get_database_mut().implicit_prelude(false);
+    let result =
+        Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
@@ -649,8 +651,9 @@ fn opaque_value_type_mismatch() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
 
+    vm.get_database_mut().implicit_prelude(false);
+
     Compiler::new_lock()
-        .implicit_prelude(false)
         .run_expr::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
         .unwrap();
 
@@ -659,9 +662,8 @@ let { sender, receiver } = channel 0
 send sender 1
 sender
 "#;
-    let result = Compiler::new_lock()
-        .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
+    let result =
+        Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -888,7 +890,6 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 #[test]
 #[ignore] // FIXME
 fn deep_clone_partial_application() {
-    use gluon::base::metadata::Metadata;
     use gluon::base::symbol::Symbol;
 
     let _ = ::env_logger::try_init();
@@ -900,16 +901,15 @@ fn deep_clone_partial_application() {
 
     assert_eq!(child.allocated_memory(), 0);
 
-    let result = Compiler::new_lock()
-        .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(
-            &child,
-            "test",
-            r#"
+    child.get_database_mut().set_implicit_prelude(false);
+    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(
+        &child,
+        "test",
+        r#"
                 let f x y = y
                 f 1
             "#,
-        );
+    );
     assert!(result.is_ok(), "{}", result.err().unwrap());
 
     let global_memory_without_closures = vm.global_env().gc.lock().unwrap().allocated_memory();

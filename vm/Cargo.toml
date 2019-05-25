@@ -17,6 +17,7 @@ documentation = "https://docs.rs/gluon"
 travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
+backtrace = "0.3"
 bitflags = "1.0.0"
 codespan = "0.3"
 codespan-reporting = "0.3"
@@ -26,14 +27,14 @@ crossbeam-utils = "0.6"
 frunk_core = "0.3"
 futures = "0.1.0"
 itertools = "0.8"
-lalrpop-util = { version = "0.16", optional = true }
+lalrpop-util = { version = "0.17", optional = true }
 log = "0.4"
 mopa = { path = "../../mopa" }
 ordered-float = "1"
 petgraph = "0.4"
 pretty = "0.5"
 quick-error = "1.1.0"
-regex = { versino = "1", optional = true }
+regex = { version = "1", optional = true }
 smallvec = "0.6"
 slab = "0.4"
 typed-arena = "1.2.0"
@@ -47,6 +48,7 @@ serde_derive_state = { version = "0.4.7", optional = true }
 gluon_base = { path = "../base", version = "0.12.0" } # GLUON
 gluon_check = { path = "../check", version = "0.12.0" } # GLUON
 gluon_codegen = { path = "../codegen", version = "0.12.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.12.0", optional = true } # GLUON
 
 [build-dependencies]
 lalrpop = { version = "0.17", optional = true }

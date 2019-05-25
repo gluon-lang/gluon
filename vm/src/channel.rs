@@ -99,7 +99,12 @@ where
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.get_env().find_type_info("std.channel.Sender").unwrap().name.clone();
+        let symbol = vm
+            .get_env()
+            .find_type_info("std.channel.Sender")
+            .unwrap()
+            .name
+            .clone();
         Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
@@ -184,9 +189,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
                     instruction_index: 0,
                 })))
             }
-            ValueRepr::Function(function) => {
-                construct_gc!(State::Extern(@ ExternState::new(function)))
-            }
+            ValueRepr::Function(function) => construct_gc!(State::Extern(@ ExternState::new(function))),
             _ => gc::Borrow::from_static(State::Unknown),
         };
         value_variant.clone().push(&mut context)?;

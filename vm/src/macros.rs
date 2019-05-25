@@ -19,7 +19,7 @@ use crate::base::{
     symbol::{Symbol, Symbols},
 };
 
-use crate::thread::Thread;
+use crate::{gc::Trace, thread::Thread};
 
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
@@ -140,7 +140,7 @@ impl Error {
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro: ::mopa::Any + Send + Sync {
+pub trait Macro: Trace + ::mopa::Any + Send + Sync {
     fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
     where
         Self: Sized,
@@ -195,6 +195,10 @@ where
 #[derive(Default)]
 pub struct MacroEnv {
     macros: RwLock<FnvMap<String, Arc<dyn Macro>>>,
+}
+
+unsafe impl Trace for MacroEnv {
+    impl_trace! { self, gc, mark(&*self.macros.read().unwrap(), gc) }
 }
 
 impl MacroEnv {

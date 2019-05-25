@@ -12,7 +12,6 @@ fn inline_cross_module() {
     thread.get_database_mut().set_implicit_prelude(false);
 
     gluon::Compiler::new()
-        .implicit_prelude(false)
         .load_script(
             &thread,
             "test",
@@ -29,15 +28,7 @@ fn inline_cross_module() {
         .core_expr("test".into())
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
-        match std_num with
-        | { (+) } ->
-            let implicit = std_int
-            in
-            match std_int with
-            | { } ->
-                (#Int+) 1 2
-            end
-        end
+        3
     "#;
-    check_expr_eq(core_expr.expr(), expected_str);
+    check_expr_eq(core_expr.value.expr(), expected_str);
 }

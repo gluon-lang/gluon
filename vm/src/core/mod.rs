@@ -23,14 +23,15 @@ lalrpop_util::lalrpop_mod!(
     pub grammar,
     "/core/grammar.rs"
 );
+pub mod costs;
 pub mod dead_code;
-pub mod inline;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
 mod pretty;
+pub mod purity;
 
-use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem, sync::Arc};
 
 use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec, typed_arena::Arena};
 
@@ -111,6 +112,7 @@ pub enum Expr<'a> {
     Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos),
     Let(&'a LetBinding<'a>, CExpr<'a>),
     Match(CExpr<'a>, &'a [Alternative<'a>]),
+    Cast(CExpr<'a>, ArcType),
 }
 
 #[cfg(feature = "test")]
@@ -118,7 +120,7 @@ impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = ::pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        self.pretty(&arena).1.render(100, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -135,7 +137,10 @@ impl<'a> fmt::Display for Expr<'a> {
         use crate::core::pretty::Prec;
         let arena = ::pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena, Prec::Top).1.render(80, &mut s).unwrap();
+        self.pretty(&arena, Prec::Top)
+            .1
+            .render(100, &mut s)
+            .unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -208,7 +213,7 @@ struct Binder<'a> {
 impl<'a> Binder<'a> {
     fn bind(&mut self, expr: CExpr<'a>, typ: ArcType) -> Expr<'a> {
         let name = TypedIdent {
-            name: Symbol::from(format!("bind_arg{}", self.bindings.len())),
+            name: Symbol::from(format!("bind_arg{:p}", expr)),
             typ,
         };
         self.bind_id(name, expr)
@@ -263,6 +268,8 @@ impl<'a> Expr<'a> {
                 let span_start = expr.span();
                 Span::new(span_start.start(), alts.last().unwrap().expr.span().end())
             }
+
+            Expr::Cast(expr, ..) => expr.span(),
         }
     }
 }
@@ -275,21 +282,67 @@ fn is_constructor(s: &Symbol) -> bool {
         .starts_with(char::is_uppercase)
 }
 
+#[derive(Clone, Debug)]
+pub struct ClosureRef<'a> {
+    pub id: &'a TypedIdent<Symbol>,
+    pub args: &'a [TypedIdent<Symbol>],
+    pub body: CExpr<'a>,
+}
+
+impl fmt::Display for ClosureRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "let {} {} = {}",
+            self.id.name,
+            self.args.iter().map(|arg| &arg.name).format(" "),
+            self.body
+        )
+    }
+}
+
 mod internal {
     use super::*;
 
-    use std::sync::Arc;
+    use std::{
+        hash::{Hash, Hasher},
+        ptr,
+        sync::Arc,
+    };
+
+    #[derive(Clone)]
+    pub struct FrozenAllocator(Arc<Allocator<'static>>);
 
     // `Allocator` is not `Sync` due to the `RefCell` it contains. But since we do not allow
     // `Allocator` to be accessed there is not way to interact with it and we can safely allow
     // shared access on multiple threads to the expression
-    unsafe impl Sync for CoreExpr where CExpr<'static>: Sync {}
-    unsafe impl Send for CoreExpr where CExpr<'static>: Send {}
+    unsafe impl Sync for FrozenAllocator where CExpr<'static>: Sync {}
+    unsafe impl Send for FrozenAllocator where CExpr<'static>: Send {}
 
     #[derive(Clone)]
     pub struct CoreExpr {
-        _allocator: Arc<Allocator<'static>>,
+        allocator: FrozenAllocator,
         expr: CExpr<'static>,
+    }
+
+    impl Eq for CoreExpr {}
+
+    impl PartialEq for CoreExpr {
+        fn eq(&self, other: &Self) -> bool {
+            ptr::eq(self.expr(), other.expr())
+        }
+    }
+
+    impl Hash for CoreExpr {
+        fn hash<H: Hasher>(&self, h: &mut H) {
+            ptr::hash(self.expr(), h)
+        }
+    }
+
+    impl fmt::Display for CoreExpr {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.expr().fmt(f)
+        }
     }
 
     impl fmt::Debug for CoreExpr {
@@ -299,30 +352,248 @@ mod internal {
     }
 
     impl CoreExpr {
-        pub fn new(allocator: Allocator<'static>, expr: CExpr<'static>) -> CoreExpr {
+        pub fn new(allocator: FrozenAllocator, expr: CExpr<'static>) -> CoreExpr {
             assert_sync::<Self>();
 
-            CoreExpr {
-                _allocator: Arc::new(allocator),
-                expr,
-            }
+            CoreExpr { allocator, expr }
         }
 
         // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
         pub fn expr<'a>(&'a self) -> CExpr<'a> {
             self.expr
         }
+
+        pub fn with<F, R>(self, f: F) -> R
+        where
+            F: for<'a, 'b> FnOnce(
+                &(dyn Fn(CExpr<'a>) -> CoreExpr + 'b),
+                &(dyn Fn(&'a TypedIdent<Symbol>, &'a [TypedIdent<Symbol>], CExpr<'a>) -> CoreClosure
+                      + 'b),
+                CExpr<'a>,
+            ) -> R,
+        {
+            let allocator = &self.allocator;
+            f(
+                &|expr| {
+                    // The lifetime is the same as the one we had in `self` so it is the same
+                    // expression or it points into an inner expression
+                    unsafe {
+                        CoreExpr {
+                            allocator: allocator.clone(),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                        }
+                    }
+                },
+                &|id, args, expr| {
+                    // The lifetime is the same as the one we had in `self` so it is the same
+                    // expression or it points into an inner expression
+                    unsafe {
+                        CoreClosure {
+                            allocator: allocator.clone(),
+                            id: mem::transmute::<&TypedIdent<Symbol>, &'static TypedIdent<Symbol>>(
+                                id,
+                            ),
+                            args: mem::transmute::<
+                                &[TypedIdent<Symbol>],
+                                &'static [TypedIdent<Symbol>],
+                            >(args),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                        }
+                    }
+                },
+                self.expr(),
+            )
+        }
+
+        pub fn map(self, f: impl for<'a> FnOnce(CExpr<'a>) -> CExpr<'a>) -> Self {
+            CoreExpr {
+                allocator: self.allocator,
+                expr: f(self.expr),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct CoreClosure {
+        allocator: FrozenAllocator,
+        id: &'static TypedIdent<Symbol>,
+        args: &'static [TypedIdent<Symbol>],
+        expr: CExpr<'static>,
+    }
+
+    impl Eq for CoreClosure {}
+
+    impl PartialEq for CoreClosure {
+        fn eq(&self, other: &Self) -> bool {
+            ptr::eq(self.closure().body, other.closure().body)
+        }
+    }
+
+    impl Hash for CoreClosure {
+        fn hash<H: Hasher>(&self, h: &mut H) {
+            ptr::hash(self.closure().body, h)
+        }
+    }
+
+    impl fmt::Display for CoreClosure {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let ClosureRef { id, args, body } = self.closure();
+            write!(
+                f,
+                "{}@\\{} -> {}",
+                id.name,
+                args.iter().map(|arg| &arg.name).format(" "),
+                body
+            )
+        }
+    }
+
+    impl fmt::Debug for CoreClosure {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            let ClosureRef { id, args, body } = self.closure();
+            write!(f, "{:?}@\\{:?} -> {:?}", id, args, body)
+        }
+    }
+
+    impl CoreClosure {
+        pub fn new(
+            allocator: FrozenAllocator,
+            id: &'static TypedIdent<Symbol>,
+            args: &'static [TypedIdent<Symbol>],
+            expr: CExpr<'static>,
+        ) -> CoreClosure {
+            assert_sync::<Self>();
+
+            CoreClosure {
+                allocator,
+                id,
+                args,
+                expr,
+            }
+        }
+
+        // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
+        pub fn closure<'a>(&'a self) -> ClosureRef<'a> {
+            ClosureRef {
+                id: self.id,
+                args: self.args,
+                body: self.expr,
+            }
+        }
+
+        pub fn into_expr(self) -> CoreExpr {
+            CoreExpr {
+                allocator: self.allocator,
+                expr: self.expr,
+            }
+        }
+
+        pub fn map(
+            self,
+            f: impl for<'a> FnOnce(
+                &'a TypedIdent<Symbol>,
+                &'a [TypedIdent<Symbol>],
+                CExpr<'a>,
+            )
+                -> (&'a TypedIdent<Symbol>, &'a [TypedIdent<Symbol>], CExpr<'a>),
+        ) -> Self {
+            let (id, args, expr) = f(self.id, self.args, self.expr);
+            CoreClosure {
+                allocator: self.allocator,
+                id,
+                args,
+                expr,
+            }
+        }
+
+        pub fn with<F, R>(self, f: F) -> R
+        where
+            F: for<'a, 'b> FnOnce(
+                &(dyn Fn(CExpr<'a>) -> CoreExpr + 'b),
+                &(dyn Fn(&'a TypedIdent<Symbol>, &'a [TypedIdent<Symbol>], CExpr<'a>) -> CoreClosure
+                      + 'b),
+                ClosureRef<'a>,
+            ) -> R,
+        {
+            let allocator = &self.allocator;
+            f(
+                &|expr| {
+                    // The lifetime is the same as the one we had in `self` so it is the same
+                    // expression or it points into an inner expression
+                    unsafe {
+                        CoreExpr {
+                            allocator: allocator.clone(),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                        }
+                    }
+                },
+                &|id, args, expr| {
+                    // The lifetime is the same as the one we had in `self` so it is the same
+                    // expression or it points into an inner expression
+                    unsafe {
+                        CoreClosure {
+                            allocator: allocator.clone(),
+                            id: mem::transmute::<&TypedIdent<Symbol>, &'static TypedIdent<Symbol>>(
+                                id,
+                            ),
+                            args: mem::transmute::<
+                                &[TypedIdent<Symbol>],
+                                &'static [TypedIdent<Symbol>],
+                            >(args),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                        }
+                    }
+                },
+                self.closure(),
+            )
+        }
+    }
+
+    pub fn freeze_expr<'a>(allocator: &'a Arc<Allocator<'a>>, expr: CExpr<'a>) -> CoreExpr {
+        unsafe {
+            // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
+            // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
+            // long as the `CoreExpr` making it safe again
+            CoreExpr::new(
+                FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
+                    allocator.clone(),
+                )),
+                mem::transmute::<CExpr, CExpr<'static>>(expr),
+            )
+        }
+    }
+
+    pub fn freeze_closure<'a>(
+        allocator: &'a Arc<Allocator<'a>>,
+        id: &'a TypedIdent<Symbol>,
+        args: &'a [TypedIdent<Symbol>],
+        expr: CExpr<'a>,
+    ) -> CoreClosure {
+        unsafe {
+            // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
+            // `CoreClosure`. After we have it in `CoreClusre` the expression is then guaranteed to live as
+            // long as the `CoreClosure` making it safe again
+            CoreClosure::new(
+                FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
+                    allocator.clone(),
+                )),
+                mem::transmute::<&TypedIdent<Symbol>, &TypedIdent<Symbol>>(id),
+                mem::transmute::<&[TypedIdent<Symbol>], &[TypedIdent<Symbol>]>(args),
+                mem::transmute::<CExpr, CExpr<'static>>(expr),
+            )
+        }
     }
 
     fn assert_sync<T: Sync>() {}
 }
 
-pub use self::internal::CoreExpr;
+pub use self::internal::{freeze_closure, freeze_expr, CoreClosure, CoreExpr};
 
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
     pub alternative_arena: Arena<Alternative<'a>>,
     pub let_binding_arena: Arena<LetBinding<'a>>,
+    _marker: ::std::marker::PhantomData<*mut &'a ()>,
 }
 
 impl<'a> Allocator<'a> {
@@ -331,6 +602,7 @@ impl<'a> Allocator<'a> {
             arena: Arena::new(),
             alternative_arena: Arena::new(),
             let_binding_arena: Arena::new(),
+            _marker: ::std::marker::PhantomData,
         }
     }
 }
@@ -439,29 +711,27 @@ impl<T> ArenaExt<T> for Arena<T> {
     }
 }
 
-pub fn with_translator<'e>(
+pub fn with_translator<'e, R>(
     env: &'e dyn PrimitiveEnv<Type = ArcType>,
-    f: impl for<'a> FnOnce(&'a Translator<'a, 'e>) -> CExpr<'a>,
-) -> CoreExpr {
+    f: impl for<'a> FnOnce(&'a Translator<'a, 'e>) -> R,
+) -> R {
     let translator = Translator::new(env);
-    unsafe {
-        // Here we temporarily forget the lifetime of `translator` so it can be moved into a
-        // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
-        // long as the `CoreExpr` making it safe again
-        let core_expr = f(&*(&translator as *const _));
-        CoreExpr::new(
-            mem::transmute::<Allocator, Allocator<'static>>(translator.allocator),
-            mem::transmute::<CExpr, CExpr<'static>>(core_expr),
-        )
-    }
+    f(&translator)
+}
+
+pub fn with_allocator<R>(f: impl for<'a> FnOnce(&'a Arc<Allocator<'a>>) -> R) -> R {
+    let allocator = Arc::new(Allocator::new());
+    f(&allocator)
 }
 
 pub fn translate(env: &dyn PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
-    with_translator(env, |translator| translator.translate_alloc(expr))
+    with_translator(env, |translator| {
+        freeze_expr(&translator.allocator, translator.translate_alloc(expr))
+    })
 }
 
 pub struct Translator<'a, 'e> {
-    pub allocator: Allocator<'a>,
+    pub allocator: Arc<Allocator<'a>>,
 
     // Since we merge all patterns that match on the same thing (variants with the same tag,
     // any record or tuple ...), tuple patterns
@@ -477,7 +747,7 @@ pub struct Translator<'a, 'e> {
 impl<'a, 'e> Translator<'a, 'e> {
     pub fn new(env: &'e dyn PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
         Translator {
-            allocator: Allocator::new(),
+            allocator: Arc::new(Allocator::new()),
             ident_replacements: Default::default(),
             env,
             dummy_symbol: TypedIdent::new(Symbol::from("")),
@@ -885,8 +1155,11 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::MacroExpansion {
                 replacement: ref expr,
                 ..
+            } => self.translate_(expr),
+
+            ast::Expr::Annotated(ref expr, ref typ) => {
+                Expr::Cast(arena.alloc(self.translate_(expr)), typ.clone())
             }
-            | ast::Expr::Annotated(ref expr, _) => self.translate_(expr),
 
             ast::Expr::Error(_) => self.error_expr("Evaluated an invalid exprssion"),
         }
@@ -1116,13 +1389,14 @@ impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Symbol>, String> {
-        match *self {
+        match self {
             Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
-            Expr::Const(ref literal, _) => literal.try_type_of(env),
-            Expr::Data(ref id, ..) => Ok(id.typ.clone()),
-            Expr::Ident(ref id, _) => Ok(id.typ.clone()),
-            Expr::Let(_, ref body) => body.try_type_of(env),
+            Expr::Const(literal, _) => literal.try_type_of(env),
+            Expr::Data(id, ..) => Ok(id.typ.clone()),
+            Expr::Ident(id, _) => Ok(id.typ.clone()),
+            Expr::Let(_, body) => body.try_type_of(env),
             Expr::Match(_, alts) => alts[0].expr.try_type_of(env),
+            Expr::Cast(_, typ) => Ok(typ.clone()),
         }
     }
 }

@@ -35,6 +35,7 @@ use crate::base::filename_to_module;
 
 use gluon::{
     new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Compiler, Error, Result, Thread,
+    ThreadExt,
 };
 
 mod repl;
@@ -162,8 +163,9 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
-    let mut compiler = Compiler::new().use_standard_lib(!opt.no_std);
     let thread = new_vm();
+    thread.get_database_mut().use_standard_lib(!opt.no_std);
+    let compiler = Compiler::new();
 
     Ok(compiler.format_expr(
         &mut gluon_format::Formatter::default(),
@@ -284,10 +286,11 @@ fn main() {
 
     let opt = Opt::from_args();
 
-    let mut compiler = Compiler::new()
-        .run_io(true)
-        .use_standard_lib(!opt.no_std);
+    let mut compiler = Compiler::new();
     let vm = new_vm();
+    vm.get_database_mut()
+        .use_standard_lib(!opt.no_std)
+        .run_io(true);
 
     if let Err(err) = run(&opt, &mut compiler, opt.color, &vm) {
         match err {

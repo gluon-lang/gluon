@@ -8,8 +8,10 @@ type Writer s r a =
     | Tell : s -> Writer s r ()
     .. r
 
+#[inline(never)]
 let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s r a = convert_variant! x
 
+#[inline(never)]
 let send_writer f : Writer s r a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! writer f) Pure
 
 let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =

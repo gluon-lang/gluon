@@ -52,7 +52,7 @@ pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
 
-use futures::{Future, IntoFuture};
+use futures::{future, prelude::*};
 
 use either::Either;
 
@@ -286,11 +286,12 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Settings {
-    implicit_prelude: bool,
-    emit_debug_info: bool,
-    full_metadata: bool,
-    use_standard_lib: bool,
-    optimize: bool,
+    pub implicit_prelude: bool,
+    pub emit_debug_info: bool,
+    pub full_metadata: bool,
+    pub use_standard_lib: bool,
+    pub optimize: bool,
+    pub run_io: bool,
 }
 
 impl Default for Settings {
@@ -301,18 +302,15 @@ impl Default for Settings {
             full_metadata: false,
             use_standard_lib: true,
             optimize: true,
+            run_io: false,
         }
     }
 }
 
 /// Type which enables parsing, typechecking and compiling an AST into bytecode
-pub struct Compiler {
-    pub run_io: bool,
-    pub implicit_prelude: bool,
-}
+pub struct Compiler {}
 
 pub struct ModuleCompiler<'a> {
-    compiler: &'a Compiler,
     database: &'a query::CompilerDatabase,
     symbols: Symbols,
 }
@@ -385,32 +383,22 @@ impl import::CompilerLock {
         /// (default: true)
         optimize set_optimize: bool
     }
+
+    runtime_option! {
+        /// Sets whether `IO` expressions are evaluated.
+        /// (default: false)
+        run_io set_run_io: bool
+    }
 }
 
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Self {
-        Compiler {
-            run_io: false,
-            implicit_prelude: true,
-            use_standard_lib: true,
-        }
+        Compiler {}
     }
 
     pub fn new_lock() -> Self {
         Self::new()
-    }
-
-    option! {
-        /// Sets whether the implicit prelude should be include when compiling a file using this
-        /// compiler (default: true)
-        implicit_prelude set_implicit_prelude: bool
-    }
-
-    option! {
-        /// Sets whether `IO` expressions are evaluated.
-        /// (default: false)
-        run_io set_run_io: bool
     }
 
     pub fn module_compiler<'a>(
@@ -418,7 +406,6 @@ impl Compiler {
         database: &'a query::CompilerDatabase,
     ) -> ModuleCompiler<'a> {
         ModuleCompiler {
-            compiler: self,
             database,
             symbols: Default::default(),
         }
@@ -591,13 +578,13 @@ impl Compiler {
         filename: &str,
         input: &str,
     ) -> impl Future<Item = (), Error = Error> + 'vm {
-        input.load_script(
-            &mut self.module_compiler(&get_db_snapshot(&vm)),
-            vm,
-            filename,
-            input,
-            None,
-        )
+        let module_name = filename_to_module(filename);
+        let db = get_db_snapshot(&vm);
+        db.compiler()
+            .state()
+            .inline_modules
+            .insert(module_name.clone(), input.into());
+        future::result(db.global(module_name).map(|_| ()))
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
@@ -966,8 +953,8 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let thread = new_vm();
+        thread.get_database_mut().set_implicit_prelude(false);
         Compiler::new()
-            .implicit_prelude(false)
             .run_expr::<()>(&thread, "prelude", PRELUDE)
             .unwrap_or_else(|err| panic!("{}", err));
     }

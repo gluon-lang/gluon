@@ -22,7 +22,7 @@ use crate::base::{
     fnv::FnvMap,
     metadata::Metadata,
     resolve,
-    symbol::{Name, NameBuf, Symbol, SymbolModule},
+    symbol::{Name, NameBuf, Symbol, SymbolData, SymbolModule},
     types::{ArcType, NullInterner, Type, TypeCache},
 };
 
@@ -30,7 +30,7 @@ use crate::check::{metadata, rename};
 
 use crate::vm::{
     compiler::CompiledModule,
-    core::{self, CoreExpr},
+    core::{self, interpreter, CoreExpr},
     macros::MacroExpander,
     thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
 };
@@ -166,7 +166,6 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         if compiler.compiler_settings().implicit_prelude
-            && compiler.compiler.implicit_prelude
             && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE")
         {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
@@ -334,13 +333,13 @@ where
 
     fn extract_metadata(
         mut self,
-        _compiler: &mut ModuleCompiler,
-        thread: &Thread,
+        compiler: &mut ModuleCompiler,
+        _thread: &Thread,
         _file: &str,
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
-        let env = thread.get_env();
-        let (metadata, metadata_map) = metadata::metadata(&env, self.expr.borrow_mut());
+        let env = compiler.database;
+        let (metadata, metadata_map) = metadata::metadata(env, self.expr.borrow_mut());
         Ok(WithMetadata {
             expr: self.expr,
             metadata,
@@ -550,7 +549,7 @@ where
 
         let typ = {
             let result = {
-                let env = thread.get_env();
+                let env = compiler.database;
                 let mut tc = Typecheck::new(
                     file.into(),
                     &mut compiler.symbols,
@@ -568,7 +567,7 @@ where
                         Some(TypecheckValue {
                             typ: expr
                                 .borrow_mut()
-                                .try_type_of(&thread.get_env())
+                                .try_type_of(&compiler.database)
                                 .unwrap_or_else(|_| thread.global_env().type_cache().error()),
                             expr,
                             metadata_map,
@@ -582,7 +581,7 @@ where
 
         // Some metadata requires typechecking so recompute it if full metadata is required
         let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
-            let env = thread.get_env();
+            let env = compiler.database;
             metadata::metadata(&env, expr.borrow_mut())
         } else {
             (metadata, metadata_map)
@@ -598,10 +597,10 @@ where
 }
 
 /// Result of successful compilation
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CompileValue<E> {
     pub expr: E,
-    pub core_expr: CoreExpr,
+    pub core_expr: interpreter::Global<CoreExpr>,
     pub typ: ArcType,
     pub metadata: Arc<Metadata>,
     pub module: CompiledModule,
@@ -715,7 +714,7 @@ where
         let core_expr;
 
         let mut module = {
-            let env = thread.get_env();
+            let env = compiler.database;
 
             core_expr = core::with_translator(&env, |translator| {
                 let expr = translator.translate_expr(self.expr.borrow());
@@ -723,11 +722,16 @@ where
                 debug!("Translation returned: {}", expr);
 
                 if settings.optimize {
-                    core::optimize::optimize(&translator.allocator, &env, expr)
+                    core::optimize::optimize(&translator.allocator, env, expr)
                 } else {
-                    expr
+                    interpreter::Global {
+                        value: core::freeze_expr(&translator.allocator, expr),
+                        info: Default::default(),
+                    }
                 }
             });
+
+            debug!("Optimization returned: {}", core_expr);
 
             let source = compiler
                 .get_filemap(filename)
@@ -748,7 +752,7 @@ where
                 filename.to_string(),
                 settings.emit_debug_info,
             );
-            compiler.compile_expr(core_expr.expr())?
+            compiler.compile_expr(core_expr.value.expr())?
         };
         module.function.id = Symbol::from(filename);
         Ok(CompileValue {
@@ -862,14 +866,14 @@ where
             mut module,
             metadata,
         } = self;
-        let run_io = compiler.compiler.run_io;
+        let run_io = compiler.database.compiler_settings().run_io;
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(&vm, module));
 
         let vm1 = vm.clone();
         Box::new(
-            vm1.call_thunk_top(closure)
+            vm1.call_thunk_top(&closure)
                 .map(move |value| ExecuteValue {
                     id: module_id,
                     expr,
@@ -976,7 +980,7 @@ where
         let metadata = module.metadata;
         let closure = try_future!(vm.global_env().new_global_thunk(&vm, module.module));
         Box::new(
-            vm.call_thunk_top(closure)
+            vm.call_thunk_top(&closure)
                 .map(move |value| ExecuteValue {
                     id: module_id,
                     expr: (),
@@ -1015,7 +1019,7 @@ where
             location: None,
             name: name,
         });
-        try_future!(vm.set_global(id, typ, metadata.clone(), value,));
+        try_future!(vm.set_global(id, typ, metadata.clone(), &value,));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))
     }
