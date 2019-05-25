@@ -74,10 +74,10 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    merge_iter(types, |(l, r)| f(l, r), |(l, _)| l.clone())
+    merge_collect(types, |(l, r)| f(l, r), |(l, _)| l.clone())
 }
 
-struct MergeIter<I, F, G, T> {
+pub struct MergeIter<I, F, G, T> {
     types: I,
     clone_types_iter: I,
     action: F,
@@ -123,7 +123,18 @@ where
     }
 }
 
-pub fn merge_iter<I, F, G, U, R>(types: I, action: F, converter: G) -> Option<R>
+impl<I, F, G, U> ExactSizeIterator for MergeIter<I, F, G, U>
+where
+    I: ExactSizeIterator,
+    F: FnMut(I::Item) -> Option<U>,
+    G: FnMut(I::Item) -> U,
+{
+    fn len(&self) -> usize {
+        self.clone_types_iter.len()
+    }
+}
+
+pub fn merge_collect<I, F, G, U, R>(types: I, action: F, converter: G) -> Option<R>
 where
     I: IntoIterator,
     I::IntoIter: FusedIterator + Clone,
@@ -131,10 +142,10 @@ where
     G: FnMut(I::Item) -> U,
     R: std::iter::FromIterator<U>,
 {
-    merge_iter_(types, action, converter).map(|iter| iter.collect())
+    merge_iter(types, action, converter).map(|iter| iter.collect())
 }
 
-fn merge_iter_<I, F, G, U>(
+pub fn merge_iter<I, F, G, U>(
     types: I,
     mut action: F,
     converter: G,

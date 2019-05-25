@@ -2,17 +2,52 @@ use std::marker::PhantomData;
 
 use crate::base::{
     ast::TypedIdent,
-    merge::{merge_fn, merge_iter},
+    merge::{merge_collect, merge_fn, merge_iter},
     pos,
     symbol::Symbol,
     types::{ArcType, Field, TypeEnv, TypeExt},
 };
 
-use crate::core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
+use crate::core::{
+    Allocator, Alternative, ArenaAllocatable, ArenaExt, CExpr, Closure, Expr, LetBinding, Named,
+    Pattern,
+};
+
+pub trait Produce<'a, 'b, P, Input> {
+    fn produce_with(input: &'b Input, producer: &mut P) -> Self;
+}
+
+impl<'a, 'b, P> Produce<'a, 'b, P, Expr<'b>> for Expr<'a>
+where
+    P: ExprProducer<'a, 'b>,
+{
+    fn produce_with(input: &'b Expr<'b>, producer: &mut P) -> Self {
+        producer.produce(input).clone()
+    }
+}
+
+impl<'a, 'b, P> Produce<'a, 'b, P, Expr<'b>> for CExpr<'a>
+where
+    P: ExprProducer<'a, 'b>,
+{
+    fn produce_with(input: &'b Expr<'b>, producer: &mut P) -> Self {
+        producer.produce(input)
+    }
+}
+
+impl<'a, 'b, P> Produce<'a, 'b, P, Alternative<'b>> for Alternative<'a>
+where
+    P: ExprProducer<'a, 'b>,
+{
+    fn produce_with(input: &'b Alternative<'b>, producer: &mut P) -> Self {
+        producer.produce_alt(input)
+    }
+}
 
 pub trait ExprProducer<'a, 'b>: Visitor<'a, 'b> {
     fn new(allocator: &'a Allocator<'a>) -> Self;
     fn produce(&mut self, expr: CExpr<'b>) -> CExpr<'a>;
+    fn produce_alt(&mut self, alt: &'b Alternative<'b>) -> Alternative<'a>;
 }
 
 pub struct SameLifetime<'a>(&'a Allocator<'a>);
@@ -22,6 +57,9 @@ impl<'a> ExprProducer<'a, 'a> for SameLifetime<'a> {
     }
     fn produce(&mut self, expr: CExpr<'a>) -> CExpr<'a> {
         expr
+    }
+    fn produce_alt(&mut self, alt: &'a Alternative<'a>) -> Alternative<'a> {
+        alt.clone()
     }
 }
 
@@ -56,6 +94,12 @@ impl<'a, 'b> ExprProducer<'a, 'b> for DifferentLifetime<'a, 'b> {
             _ => walk_expr_alloc(self, expr).unwrap(),
         }
     }
+    fn produce_alt(&mut self, alt: &'b Alternative<'b>) -> Alternative<'a> {
+        Alternative {
+            pattern: alt.pattern.clone(),
+            expr: self.produce(alt.expr),
+        }
+    }
 }
 
 impl<'a, 'b> Visitor<'a, 'b> for DifferentLifetime<'a, 'b> {
@@ -74,9 +118,19 @@ pub trait Visitor<'a, 'b> {
     type Producer: ExprProducer<'a, 'b>;
 
     fn visit_expr(&mut self, expr: CExpr<'b>) -> Option<&'a Expr<'a>>;
+
     fn visit_expr_(&mut self, expr: CExpr<'b>) -> Option<Expr<'a>> {
         self.visit_expr(expr).map(Clone::clone)
     }
+
+    fn visit_alt(&mut self, alt: &'b Alternative<'b>) -> Option<Alternative<'a>> {
+        let new_expr = self.visit_expr(alt.expr);
+        new_expr.map(|expr| Alternative {
+            pattern: alt.pattern.clone(),
+            expr: expr,
+        })
+    }
+
     fn detach_allocator(&self) -> Option<&'a Allocator<'a>>;
     fn allocator(&self) -> &'a Allocator<'a> {
         self.detach_allocator().expect("Allocator")
@@ -192,20 +246,13 @@ pub fn walk_expr<'a, 'b, V>(visitor: &mut V, expr: CExpr<'b>) -> Option<Expr<'a>
 where
     V: ?Sized + Visitor<'a, 'b>,
 {
-    let allocator = visitor.detach_allocator();
+    let allocator: Option<&'a Allocator<'a>> = visitor.detach_allocator();
     match *expr {
         Expr::Call(f, args) => {
             let new_f = visitor.visit_expr(f);
-            let new_args = merge_iter(
-                args,
-                |expr| visitor.visit_expr_(expr),
-                |e| {
-                    V::Producer::new(allocator.expect("Allocator"))
-                        .produce(e)
-                        .clone()
-                },
-            )
-            .map(|exprs: Vec<_>| &*visitor.allocator().arena.alloc_extend(exprs.into_iter()));
+            let new_args = merge_slice_produce::<V::Producer, _, _, _>(allocator, args, |expr| {
+                visitor.visit_expr_(expr)
+            });
 
             merge_fn(
                 &f,
@@ -215,31 +262,20 @@ where
                 |a| {
                     let a = a
                         .iter()
-                        .map(|a| V::Producer::new(visitor.allocator()).produce(a).clone())
-                        .collect::<Vec<_>>();
-                    visitor.allocator().arena.alloc_extend(a)
+                        .map(|a| V::Producer::new(visitor.allocator()).produce(a).clone());
+                    &*visitor.allocator().arena.alloc_fixed(a)
                 },
                 new_args,
                 Expr::Call,
             )
         }
         Expr::Const(_, _) | Expr::Ident(_, _) => None,
-        Expr::Data(ref id, exprs, pos) => merge_iter(
-            exprs,
-            |expr| visitor.visit_expr_(expr),
-            |e| {
-                V::Producer::new(allocator.expect("Allocator"))
-                    .produce(e)
-                    .clone()
-            },
-        )
-        .map(|exprs: Vec<_>| {
-            Expr::Data(
-                id.clone(),
-                visitor.allocator().arena.alloc_extend(exprs.into_iter()),
-                pos,
-            )
-        }),
+        Expr::Data(ref id, exprs, pos) => {
+            merge_slice_produce::<V::Producer, _, _, _>(allocator, exprs, |expr| {
+                visitor.visit_expr_(expr)
+            })
+            .map(|exprs| Expr::Data(id.clone(), exprs, pos))
+        }
         Expr::Let(ref bind, expr) => {
             let new_bind = walk_bind(visitor, bind);
             let new_expr = visitor.visit_expr(expr);
@@ -255,19 +291,8 @@ where
         }
         Expr::Match(expr, alts) => {
             let new_expr = visitor.visit_expr(expr);
-            let new_alts = merge_iter(
-                alts,
-                |expr| walk_alt(visitor, expr),
-                |alt| {
-                    walk_alt(&mut V::Producer::new(allocator.expect("Allocator")), alt)
-                        .expect("alt")
-                },
-            )
-            .map(|alts: Vec<_>| {
-                &*visitor
-                    .allocator()
-                    .alternative_arena
-                    .alloc_extend(alts.into_iter())
+            let new_alts = merge_slice_produce::<V::Producer, _, _, _>(allocator, alts, |alt| {
+                visitor.visit_alt(alt)
             });
             merge_fn(
                 &expr,
@@ -275,14 +300,11 @@ where
                 new_expr,
                 &alts,
                 |a| {
-                    let a = a
-                        .iter()
-                        .map(|a| Alternative {
-                            pattern: a.pattern.clone(),
-                            expr: V::Producer::new(visitor.allocator()).produce(a.expr),
-                        })
-                        .collect::<Vec<_>>();
-                    visitor.allocator().alternative_arena.alloc_extend(a)
+                    let a = a.iter().map(|a| Alternative {
+                        pattern: a.pattern.clone(),
+                        expr: V::Producer::new(visitor.allocator()).produce(a.expr),
+                    });
+                    visitor.allocator().alternative_arena.alloc_fixed(a)
                 },
                 new_alts,
                 Expr::Match,
@@ -297,7 +319,7 @@ where
 {
     let allocator = visitor.detach_allocator();
     let new_named = match bind.expr {
-        Named::Recursive(ref closures) => merge_iter(
+        Named::Recursive(ref closures) => merge_collect(
             closures,
             |closure| {
                 visitor.visit_expr(closure.expr).map(|new_expr| Closure {
@@ -329,15 +351,33 @@ where
     })
 }
 
-fn walk_alt<'a, 'b, V>(visitor: &mut V, alt: &'b Alternative<'b>) -> Option<Alternative<'a>>
+pub fn merge_slice<'a, T, U>(
+    allocator: &'a Allocator<'a>,
+    slice: &'a [U],
+    action: impl FnMut(&'a U) -> Option<T>,
+) -> Option<&'a [T]>
 where
-    V: ?Sized + Visitor<'a, 'b>,
+    U: ArenaAllocatable<'a> + 'a,
+    T: ArenaAllocatable<'a> + Produce<'a, 'a, SameLifetime<'a>, U>,
 {
-    let new_expr = visitor.visit_expr(alt.expr);
-    new_expr.map(|expr| Alternative {
-        pattern: alt.pattern.clone(),
-        expr: expr,
+    merge_slice_produce::<SameLifetime, _, _, _>(Some(allocator), slice, action)
+}
+
+pub fn merge_slice_produce<'a, 'b, P, T, U, F>(
+    allocator: Option<&'a Allocator<'a>>,
+    slice: &'b [U],
+    action: F,
+) -> Option<&'a [T]>
+where
+    U: ArenaAllocatable<'b> + 'b,
+    T: ArenaAllocatable<'a> + Produce<'a, 'b, P, U>,
+    P: ExprProducer<'a, 'b>,
+    F: FnMut(&'b U) -> Option<T>,
+{
+    merge_iter(slice, action, |e| {
+        T::produce_with(e, &mut P::new(allocator.expect("Allocator")))
     })
+    .map(|iter| ArenaAllocatable::alloc_iter_into(iter, allocator.expect("Allocator")))
 }
 
 #[cfg(all(test, feature = "test"))]

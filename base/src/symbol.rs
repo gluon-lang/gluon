@@ -11,7 +11,7 @@ use crate::ast::{DisplayEnv, IdentEnv};
 // FIXME Don't have a double indirection (Arc + String)
 /// A symbol uniquely identifies something regardless of its name and which module it originated
 /// from
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, Default)]
 pub struct Symbol(Arc<SymbolData>);
 
 #[derive(Debug, Eq, PartialEq, Hash)]
@@ -297,7 +297,7 @@ impl SymbolRef {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
@@ -504,7 +504,7 @@ impl Symbols {
             location: None,
             name,
         })
-    }
+        }
 
     /// Looks up the symbol for `name` or creates a new symbol if it does not exist
     pub fn symbol<N>(&mut self, name: SymbolData<N>) -> Symbol

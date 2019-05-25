@@ -65,7 +65,13 @@ pub enum Named<'a> {
     Expr(&'a Expr<'a>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl<'a> Default for Named<'a> {
+    fn default() -> Self {
+        Named::Recursive(Vec::new())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct LetBinding<'a> {
     pub name: TypedIdent<Symbol>,
     pub expr: Named<'a>,
@@ -326,6 +332,53 @@ impl<'a> Allocator<'a> {
             alternative_arena: Arena::new(),
             let_binding_arena: Arena::new(),
         }
+    }
+}
+
+pub trait ArenaAllocatable<'a>: Sized {
+    fn alloc_into(self, allocator: &'a Allocator<'a>) -> &'a Self;
+    fn alloc_iter_into(
+        iter: impl IntoIterator<Item = Self>,
+        allocator: &'a Allocator<'a>,
+    ) -> &'a [Self];
+}
+
+impl<'a> ArenaAllocatable<'a> for Expr<'a> {
+    fn alloc_into(self, allocator: &'a Allocator<'a>) -> &'a Self {
+        allocator.arena.alloc(self)
+    }
+
+    fn alloc_iter_into(
+        iter: impl IntoIterator<Item = Self>,
+        allocator: &'a Allocator<'a>,
+    ) -> &'a [Self] {
+        allocator.arena.alloc_fixed(iter)
+    }
+}
+
+impl<'a> ArenaAllocatable<'a> for Alternative<'a> {
+    fn alloc_into(self, allocator: &'a Allocator<'a>) -> &'a Self {
+        allocator.alternative_arena.alloc(self)
+    }
+
+    fn alloc_iter_into(
+        iter: impl IntoIterator<Item = Self>,
+        allocator: &'a Allocator<'a>,
+    ) -> &'a [Self] {
+        allocator.alternative_arena.alloc_fixed(iter)
+    }
+}
+
+impl<'a> ArenaAllocatable<'a> for LetBinding<'a> {
+    fn alloc_into(self, allocator: &'a Allocator<'a>) -> &'a Self {
+        allocator.let_binding_arena.alloc(self)
+    }
+
+    fn alloc_iter_into(
+        iter: impl IntoIterator<Item = Self>,
+        allocator: &'a Allocator<'a>,
+    ) -> &'a [Self] {
+        allocator.let_binding_arena.alloc_fixed(iter)
     }
 }
 

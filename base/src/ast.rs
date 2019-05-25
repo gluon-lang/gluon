@@ -181,7 +181,7 @@ impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
     pub typ: T,
     pub name: Id,

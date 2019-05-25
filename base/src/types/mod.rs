@@ -22,7 +22,7 @@ use crate::{
     ast::{Commented, EmptyEnv, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
-    merge::{merge, merge_iter},
+    merge::{merge, merge_collect},
     metadata::Comment,
     pos::{BytePos, HasSpan, Span},
     source::Source,
@@ -3864,7 +3864,7 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    merge_iter(types, f, Clone::clone)
+    merge_collect(types, f, Clone::clone)
 }
 
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>

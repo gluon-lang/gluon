@@ -4,7 +4,7 @@ use crate::base::{
     ast::TypedIdent,
     fnv::FnvSet,
     kind::{ArcKind, KindEnv},
-    merge::merge_iter,
+    merge::merge_collect,
     scoped_map::ScopedMap,
     symbol::{Symbol, SymbolRef},
     types::{Alias, ArcType, TypeEnv, TypeExt},
@@ -486,7 +486,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             );
                         }
                         let mut result = Ok(());
-                        let new_closures = merge_iter(
+                        let new_closures = merge_collect(
                             closures,
                             |closure| {
                                 function.stack.enter_scope();
