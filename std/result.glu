@@ -73,13 +73,17 @@ let monad : Monad (Result e) = {
         | Err err -> Err err,
 }
 
-let alternative : [Alternative e] -> Alternative (Result e) =
-    let or a b = a |> map_err \ea ->
-        b |> map_err \eb ->
-            ea <|> eb
-    let empty = Err empty
+let alternative ?alt : [Alternative m] -> Alternative (Result (m e)) =
+    let or a b =
+        match a with
+        | Ok a -> Ok a
+        | Err ea ->
+            match b with
+            | Ok b -> Ok b
+            | Err eb -> Err (ea <|> eb)
+    let empty = Err alt.empty
 
-    { or, empty }
+    { applicative, or, empty }
 
 let foldable : Foldable (Result e) = {
     foldr = \f z r ->
@@ -119,6 +123,7 @@ let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
     functor,
     applicative,
     monad,
+    alternative,
     foldable,
     traversable,
     show,
