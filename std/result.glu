@@ -6,6 +6,7 @@ let { Show } = import! std.show
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
+let { Alternative, (<|>) } = import! std.alternative
 let { Result } = import! std.types
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
