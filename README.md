@@ -204,7 +204,7 @@ let guess_loop _ =
                 else io.println ("Incorrect, " <> int.show.show result <> " != 24") *> guess_loop ()
             else
                 io.println
-                    "Expression is not valid, you must use each of the four numbers exactly once!"
+                    "Expression is not valid. You must use each of the four numbers exactly once!"
                     *> guess_loop ()
 
 guess_loop ()
@@ -329,7 +329,7 @@ These goals may change or be refined over time as I experiment with what is poss
 
 * **Strict** - Strict languages are usually easier to reason about, especially considering that it is what most people are accustomed to. For cases where laziness is desired, an explict type is provided.
 
-* **Modular** - The library is split into parser, typechecker, and virtual machine + compiler. Each of these components can be use independently of each other, allowing applications to pick and choose exactly what they need.
+* **Modular** - The library is split into its parser, typechecker, and virtual machine + compiler. Each of these components can be used independently of each other, allowing applications to pick and choose exactly what they need.
 
 [hm]:https://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system
 [prelude]:https://github.com/gluon-lang/gluon/blob/master/std/prelude.glu
