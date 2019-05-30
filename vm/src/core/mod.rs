@@ -33,6 +33,7 @@ lalrpop_mod!(
     pub grammar,
     "/core/grammar.rs"
 );
+pub mod dead_code;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
@@ -1889,7 +1890,7 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct PatternEq<'a>(&'a Expr<'a>);
+    pub struct PatternEq<'a>(pub &'a Expr<'a>);
 
     impl<'a> fmt::Display for PatternEq<'a> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

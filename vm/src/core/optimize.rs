@@ -329,23 +329,21 @@ where
 }
 
 #[cfg(all(test, feature = "test"))]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use base::symbol::Symbols;
 
-    use crate::core::{self, grammar::ExprParser};
+    use crate::core::{self, grammar::ExprParser, tests::PatternEq};
 
-    #[test]
-    fn unnecessary_allocation() {
+    pub(crate) fn check_optimization(
+        initial_str: &str,
+        expected_str: &str,
+        optimize: impl for<'a> FnOnce(&'a Allocator<'a>, CExpr<'a>) -> CExpr<'a>,
+    ) {
         let mut symbols = Symbols::new();
         let allocator = core::Allocator::new();
 
-        let initial_str = r#"
-            match { l, r } with
-            | { l, r } -> l
-            end
-            "#;
         let initial_expr = allocator.arena.alloc(
             ExprParser::new()
                 .parse(&mut symbols, &allocator, initial_str)
@@ -354,6 +352,19 @@ mod tests {
 
         let optimized_expr = optimize(&allocator, initial_expr);
 
+        let expected_expr = ExprParser::new()
+            .parse(&mut symbols, &allocator, expected_str)
+            .unwrap();
+        assert_deq!(PatternEq(optimized_expr), expected_expr);
+    }
+
+    #[test]
+    fn unnecessary_allocation() {
+        let initial_str = r#"
+            match { l, r } with
+            | { l, r } -> l
+            end
+            "#;
         let expected_str = r#"
             let l = l
             in
@@ -361,9 +372,6 @@ mod tests {
             in
             l
             "#;
-        let expected_expr = ExprParser::new()
-            .parse(&mut symbols, &allocator, expected_str)
-            .unwrap();
-        assert_deq!(*optimized_expr, expected_expr);
+        check_optimization(initial_str, expected_str, optimize);
     }
 }
