@@ -10,22 +10,60 @@ use base::{
 
 use crate::core::{
     self,
-    optimize::{walk_expr, walk_expr_alloc, SameLifetime, Visitor},
-    Allocator, CExpr, Expr, LetBinding,
+    optimize::{walk_expr, walk_expr_alloc, DifferentLifetime, SameLifetime, Visitor},
+    Allocator, CExpr, Expr, LetBinding, Named, Pattern,
 };
 
+fn is_pure_simple(expr: CExpr) -> bool {
+    pub struct SimplePure(bool);
+
+    impl<'l, 'expr> Visitor<'l, 'expr> for SimplePure {
+        type Producer = DifferentLifetime<'l, 'expr>;
+
+        fn visit_expr(&mut self, expr: CExpr<'expr>) -> Option<CExpr<'l>> {
+            if !self.0 {
+                return None;
+            }
+            match *expr {
+                Expr::Call(..) => {
+                    self.0 = false;
+                    None
+                }
+                Expr::Let(ref bind, expr) => {
+                    match bind.expr {
+                        // Creating a group of closures is always pure (though calling them may not be)
+                        Named::Recursive(_) => (),
+                        Named::Expr(expr) => {
+                            self.visit_expr(expr);
+                        }
+                    }
+                    self.visit_expr(expr)
+                }
+                _ => walk_expr_alloc(self, expr),
+            }
+        }
+        fn detach_allocator(&self) -> Option<&'l Allocator<'l>> {
+            None
+        }
+    }
+
+    let mut visitor = SimplePure(true);
+    visitor.visit_expr(expr);
+    visitor.0
+}
+
 pub fn dead_code_elimination<'a>(allocator: &'a Allocator<'a>, expr: CExpr<'a>) -> CExpr<'a> {
-    struct FreeVars<'a> {
+    struct DeadCodeEliminator<'a> {
         allocator: &'a Allocator<'a>,
         used_bindings: FnvSet<&'a SymbolRef>,
     }
-    impl FreeVars<'_> {
+    impl DeadCodeEliminator<'_> {
         fn is_used(&self, s: &Symbol) -> bool {
             self.used_bindings.contains(&**s)
         }
     }
 
-    impl<'e> Visitor<'e, 'e> for FreeVars<'e> {
+    impl<'e> Visitor<'e, 'e> for DeadCodeEliminator<'e> {
         type Producer = SameLifetime<'e>;
 
         fn visit_expr(&mut self, expr: CExpr<'e>) -> Option<CExpr<'e>> {
@@ -69,6 +107,26 @@ pub fn dead_code_elimination<'a>(allocator: &'a Allocator<'a>, expr: CExpr<'a>) 
                         &*self.allocator.arena.alloc(Expr::Let(bind, body))
                     })
                 }
+
+                Expr::Match(scrutinee, alts) if alts.len() == 1 => match &alts[0].pattern {
+                    Pattern::Record(fields) => {
+                        if !is_pure_simple(scrutinee)
+                            || fields
+                                .iter()
+                                .map(|(x, y)| y.as_ref().unwrap_or(&x.name))
+                                .any(|field_bind| self.is_used(&field_bind))
+                        {
+                            walk_expr_alloc(self, expr)
+                        } else {
+                            Some(
+                                self.visit_expr(alts[0].expr)
+                                    .unwrap_or_else(|| alts[0].expr),
+                            )
+                        }
+                    }
+                    _ => walk_expr_alloc(self, expr),
+                },
+
                 _ => walk_expr_alloc(self, expr),
             }
         }
@@ -77,7 +135,7 @@ pub fn dead_code_elimination<'a>(allocator: &'a Allocator<'a>, expr: CExpr<'a>) 
         }
     }
 
-    let mut free_vars = FreeVars {
+    let mut free_vars = DeadCodeEliminator {
         allocator,
         used_bindings: DepGraph::default().used_bindings(expr),
     };
@@ -221,6 +279,42 @@ mod tests {
             let x = 1
             in
             x
+            "#;
+        check_optimization(initial_str, expected_str, dead_code_elimination);
+    }
+
+    #[test]
+    fn eliminate_redundant_match() {
+        let initial_str = r#"
+            match { x = 1 } with
+            | { x } -> 1
+            end
+            "#;
+        let expected_str = r#"
+            1
+            "#;
+        check_optimization(initial_str, expected_str, dead_code_elimination);
+    }
+
+    #[test]
+    fn dont_eliminate_used_match() {
+        let initial_str = r#"
+            rec let f y = y
+            in
+            let x = f 123
+            in
+            match { x } with
+            | { x } -> x
+            end
+            "#;
+        let expected_str = r#"
+            rec let f y = y
+            in
+            let x = f 123
+            in
+            match { x } with
+            | { x } -> x
+            end
             "#;
         check_optimization(initial_str, expected_str, dead_code_elimination);
     }

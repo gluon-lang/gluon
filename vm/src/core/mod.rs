@@ -1910,6 +1910,14 @@ mod tests {
     }
 
     fn expr_eq(map: &mut HashMap<Symbol, Symbol>, l: &Expr, r: &Expr) -> bool {
+        let b = expr_eq_(map, l, r);
+        if !b {
+            eprintln!("{} != {}", l, r);
+        }
+        b
+    }
+
+    fn expr_eq_(map: &mut HashMap<Symbol, Symbol>, l: &Expr, r: &Expr) -> bool {
         match (l, r) {
             (&Expr::Match(_, l_alts), &Expr::Match(_, r_alts)) => {
                 for (l, r) in l_alts.iter().zip(r_alts) {
@@ -1952,7 +1960,20 @@ mod tests {
             (&Expr::Ident(ref l, _), &Expr::Ident(ref r, _)) => check(map, &l.name, &r.name),
             (&Expr::Let(ref lb, l), &Expr::Let(ref rb, r)) => {
                 let b = match (&lb.expr, &rb.expr) {
-                    (&Named::Expr(le), &Named::Expr(re)) => expr_eq(map, le, re),
+                    (Named::Expr(le), Named::Expr(re)) => expr_eq(map, le, re),
+                    (Named::Recursive(lc), Named::Recursive(rc)) => {
+                        lc.len() == rc.len()
+                            && lc.iter().zip(rc).all(|(lc, rc)| {
+                                check(map, &lc.name.name, &rc.name.name)
+                                    && lc.args.len() == rc.args.len()
+                                    && lc
+                                        .args
+                                        .iter()
+                                        .zip(&rc.args)
+                                        .all(|(l, r)| check(map, &l.name, &r.name))
+                                    && expr_eq(map, lc.expr, rc.expr)
+                            })
+                    }
                     _ => false,
                 };
                 check(map, &lb.name.name, &rb.name.name) && b && expr_eq(map, l, r)
