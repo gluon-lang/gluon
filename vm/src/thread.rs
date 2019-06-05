@@ -286,7 +286,7 @@ impl<'b> Traverseable for Roots<'b> {
 }
 
 impl<'b> crate::gc::CollectScope for Roots<'b> {
-    fn scope<F>(&self, gc: &mut Gc, f: F)
+    fn scope<F>(&self, gc: &mut Gc, sweep: F)
     where
         F: FnOnce(&mut Gc),
     {
@@ -295,8 +295,10 @@ impl<'b> crate::gc::CollectScope for Roots<'b> {
         // never leak any lifetimes outside of this function
         unsafe {
             let locks = self.mark_child_roots(gc);
-            // Scan `self` sweep `gc`
-            f(gc);
+
+            // Remove any threads that aren't marked as they are about to be collected
+
+            sweep(gc);
 
             // `sweep` all child gcs
             for (_, mut context, _) in locks {
@@ -553,7 +555,7 @@ impl Thread {
             let mut context = vm.owned_context();
             StackFrame::<State>::frame(&mut context.stack, 0, State::Unknown);
         }
-        let ptr = self.context().gc.alloc(Move(vm))?;
+        let ptr = self.context().alloc(Move(vm))?;
 
         Ok(ptr.root_thread())
     }
