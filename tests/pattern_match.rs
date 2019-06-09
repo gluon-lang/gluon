@@ -188,3 +188,17 @@ match (Some 10, 1) with
 "#,
 10
 }
+
+test_expr! {
+pattern_match_tuple_alias,
+r#"
+type MyType = (String, Int)
+
+let getName thing : MyType -> String =
+    let (name, count) = thing
+    name
+
+getName ("abc", 123)
+"#,
+"abc".to_string()
+}

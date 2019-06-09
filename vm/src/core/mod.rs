@@ -1675,6 +1675,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     }
                 }
                 ast::Pattern::Tuple { ref typ, ref elems } => {
+                    let typ = remove_aliases_cow(&self.0.env, &mut NullInterner, typ);
+
                     for (i, (elem, field_type)) in elems.iter().zip(typ.row_iter()).enumerate() {
                         if !add_duplicate_ident(
                             &mut replacements,
