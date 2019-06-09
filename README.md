@@ -204,7 +204,7 @@ let guess_loop _ =
                 else io.println ("Incorrect, " <> int.show.show result <> " != 24") *> guess_loop ()
             else
                 io.println
-                    "Expression is not valid. You must use each of the four numbers exactly once!"
+                    "Expression is not valid, you must use each of the four numbers exactly once!"
                     *> guess_loop ()
 
 guess_loop ()
