@@ -84,9 +84,9 @@ where
 {
     width: usize,
     typ: &'a T,
-    filter: &'a Fn(&I) -> Filter,
-    symbol_text: &'a Fn(&I) -> &str,
-    annotate_symbol: &'a Fn(&I) -> Option<A>,
+    filter: &'a dyn Fn(&I) -> Filter,
+    symbol_text: &'a dyn Fn(&I) -> &str,
+    annotate_symbol: &'a dyn Fn(&I) -> Option<A>,
     _marker: PhantomData<I>,
 }
 
@@ -112,17 +112,17 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
         self
     }
 
-    pub fn filter(mut self, filter: &'a Fn(&I) -> Filter) -> Self {
+    pub fn filter(mut self, filter: &'a dyn Fn(&I) -> Filter) -> Self {
         self.filter = filter;
         self
     }
 
-    pub fn annotate_symbol(mut self, annotate_symbol: &'a Fn(&I) -> Option<A>) -> Self {
+    pub fn annotate_symbol(mut self, annotate_symbol: &'a dyn Fn(&I) -> Option<A>) -> Self {
         self.annotate_symbol = annotate_symbol;
         self
     }
 
-    pub fn symbol_text(mut self, symbol_text: &'a Fn(&I) -> &str) -> Self {
+    pub fn symbol_text(mut self, symbol_text: &'a dyn Fn(&I) -> &str) -> Self {
         self.symbol_text = symbol_text;
         self
     }
@@ -143,7 +143,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
         })
     }
 
-    pub fn build(&self, arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
+    pub fn build(&self, arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Printer<'a, I, A> {
         Printer {
             arena,
             source,
@@ -176,14 +176,14 @@ where
 
 pub struct Printer<'a, I: 'a, A: 'a> {
     pub arena: &'a Arena<'a, A>,
-    pub source: &'a Source,
-    filter: &'a Fn(&I) -> Filter,
-    symbol_text: &'a Fn(&I) -> &str,
-    annotate_symbol: &'a Fn(&I) -> Option<A>,
+    pub source: &'a dyn Source,
+    filter: &'a dyn Fn(&I) -> Filter,
+    symbol_text: &'a dyn Fn(&I) -> &str,
+    annotate_symbol: &'a dyn Fn(&I) -> Option<A>,
 }
 
 impl<'a, I, A> Printer<'a, I, A> {
-    pub fn new(arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A>
+    pub fn new(arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Printer<'a, I, A>
     where
         I: AsRef<str>,
     {

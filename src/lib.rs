@@ -102,7 +102,7 @@ pub enum Error {
         display("{}", err)
         from()
     }
-    Other(err: Box<StdError + Send + Sync>) {
+    Other(err: Box<dyn StdError + Send + Sync>) {
         description(err.description())
         display("{}", err)
         from()

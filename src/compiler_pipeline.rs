@@ -36,7 +36,7 @@ use crate::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoo
 
 use crate::{Compiler, Error, Result};
 
-pub type BoxFuture<'vm, T, E> = Box<Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> = Box<dyn Future<Item = T, Error = E> + Send + 'vm>;
 
 macro_rules! try_future {
     ($e:expr) => {

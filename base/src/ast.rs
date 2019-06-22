@@ -853,17 +853,17 @@ pub use self::ref_::{walk_alias, walk_ast_type, walk_expr, walk_pattern, Visitor
 pub trait Typed {
     type Ident;
 
-    fn env_type_of(&self, env: &TypeEnv<Type = ArcType>) -> ArcType<Self::Ident> {
+    fn env_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> ArcType<Self::Ident> {
         self.try_type_of(env).unwrap()
     }
 
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<Self::Ident>, String>;
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Self::Ident>, String>;
 }
 
 impl<Id: Clone> Typed for TypedIdent<Id> {
     type Ident = Id;
 
-    fn try_type_of(&self, _: &TypeEnv<Type = ArcType>) -> Result<ArcType<Id>, String> {
+    fn try_type_of(&self, _: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Id>, String> {
         Ok(self.typ.clone())
     }
 }
@@ -871,7 +871,7 @@ impl<Id: Clone> Typed for TypedIdent<Id> {
 impl Typed for Literal {
     type Ident = Symbol;
 
-    fn try_type_of(&self, _: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+    fn try_type_of(&self, _: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         Ok(match *self {
             Literal::Int(_) => Type::int(),
             Literal::Float(_) => Type::float(),
@@ -885,7 +885,7 @@ impl Typed for Literal {
 impl Typed for Expr<Symbol> {
     type Ident = Symbol;
 
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         match *self {
             Expr::Ident(ref id) => Ok(id.typ.clone()),
             Expr::Projection(_, _, ref typ)
@@ -916,14 +916,14 @@ impl Typed for Expr<Symbol> {
 impl<T: Typed> Typed for Spanned<T, BytePos> {
     type Ident = T::Ident;
 
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<T::Ident>, String> {
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<T::Ident>, String> {
         self.value.try_type_of(env)
     }
 }
 
 impl Typed for Pattern<Symbol> {
     type Ident = Symbol;
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
             Pattern::As(_, ref pat) => pat.try_type_of(env),
@@ -938,7 +938,7 @@ impl Typed for Pattern<Symbol> {
 }
 
 fn get_return_type(
-    env: &TypeEnv<Type = ArcType>,
+    env: &dyn TypeEnv<Type = ArcType>,
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {

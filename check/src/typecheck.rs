@@ -62,7 +62,7 @@ struct StackBinding {
 
 pub(crate) struct Environment<'a> {
     /// The global environment which the typechecker extracts types from
-    environment: &'a (TypecheckEnv<Type = RcType> + 'a),
+    environment: &'a (dyn TypecheckEnv<Type = RcType> + 'a),
     /// Stack allocated variables
     stack: ScopedMap<Symbol, StackBinding>,
     /// Types which exist in some scope (`type Test = ... in ...`)
@@ -164,7 +164,7 @@ impl<'a> Typecheck<'a> {
     pub fn new(
         module: String,
         symbols: &'a mut Symbols,
-        environment: &'a (TypecheckEnv<Type = ArcType> + 'a),
+        environment: &'a (dyn TypecheckEnv<Type = ArcType> + 'a),
         interner: &TypeCache<Symbol, ArcType>,
         metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     ) -> Typecheck<'a> {
@@ -383,7 +383,7 @@ impl<'a> Typecheck<'a> {
     fn generalize_variables<'i>(
         &mut self,
         level: u32,
-        args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
+        args: &mut dyn Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
         let typ = self.subs.hole();
@@ -1342,7 +1342,7 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         func_type: ModType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
-        args: &mut ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
+        args: &mut dyn ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
     ) -> TcResult<TailCall> {
         fn attach_extra_argument_help<F, R>(self_: &mut Typecheck, actual: u32, f: F) -> R
         where
@@ -2618,7 +2618,7 @@ impl<'a> Typecheck<'a> {
         error_order: ErrorOrder,
         expected: &RcType,
         actual: RcType,
-        receiver: &mut FnMut(Expr<Symbol>),
+        receiver: &mut dyn FnMut(Expr<Symbol>),
     ) -> RcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
 
@@ -2833,7 +2833,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         function_arg_type: Option<ArgType>,
         actual: RcType,
-        merge_fn: &mut FnMut(&mut Self, &RcType, RcType),
+        merge_fn: &mut dyn FnMut(&mut Self, &RcType, RcType),
     ) -> (ArgType, RcType, RcType) {
         let actual = self.remove_aliases(actual);
         match actual.as_function_with_type() {
@@ -3139,8 +3139,8 @@ impl<'a> Typecheck<'a> {
 }
 
 pub fn translate_projected_type(
-    env: &TypeEnv<Type = RcType>,
-    symbols: &mut IdentEnv<Ident = Symbol>,
+    env: &dyn TypeEnv<Type = RcType>,
+    symbols: &mut dyn IdentEnv<Ident = Symbol>,
     interner: &mut impl TypeContext<Symbol, RcType>,
     ids: &[Symbol],
 ) -> TcResult<RcType> {
@@ -3222,7 +3222,7 @@ pub fn extract_generics(args: &[RcType]) -> Vec<Generic<Symbol>> {
 }
 
 fn get_alias_app<'a>(
-    env: &'a TypeEnv<Type = RcType>,
+    env: &'a dyn TypeEnv<Type = RcType>,
     typ: &'a RcType,
 ) -> Option<(&'a AliasRef<Symbol, RcType>, Cow<'a, [RcType]>)> {
     match **typ {

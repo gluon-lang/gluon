@@ -738,7 +738,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
 
 pub struct ImplicitResolver<'a> {
     pub(crate) metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
-    environment: &'a TypecheckEnv<Type = RcType>,
+    environment: &'a dyn TypecheckEnv<Type = RcType>,
     pub(crate) implicit_bindings: ImplicitBindings,
     pub(crate) implicit_vars: ScopedMap<Symbol, Level>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
@@ -749,7 +749,7 @@ pub struct ImplicitResolver<'a> {
 
 impl<'a> ImplicitResolver<'a> {
     pub fn new(
-        environment: &'a TypecheckEnv<Type = RcType>,
+        environment: &'a dyn TypecheckEnv<Type = RcType>,
         metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
     ) -> ImplicitResolver<'a> {
         ImplicitResolver {

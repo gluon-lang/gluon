@@ -301,7 +301,7 @@ mod test {
         where
             F: Walker<'a, Self>,
         {
-            fn traverse_<'t>(typ: &'t TType, f: &mut Walker<'t, TType>) {
+            fn traverse_<'t>(typ: &'t TType, f: &mut dyn Walker<'t, TType>) {
                 match *typ.0 {
                     Type::Arrow(ref a, ref r) => {
                         f.walk(a);

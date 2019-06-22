@@ -315,7 +315,7 @@ pub enum Variant<Id> {
 }
 
 // Hack around LALRPOP's limited type syntax
-type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
+type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
@@ -385,7 +385,7 @@ impl ParserSource for codespan::FileMap {
 }
 
 pub fn parse_partial_expr<Id, S>(
-    symbols: &mut IdentEnv<Ident = Id>,
+    symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
@@ -431,7 +431,7 @@ where
 }
 
 pub fn parse_expr(
-    symbols: &mut IdentEnv<Ident = Symbol>,
+    symbols: &mut dyn IdentEnv<Ident = Symbol>,
     type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
 ) -> Result<SpannedExpr<Symbol>, ParseErrors> {
@@ -445,7 +445,7 @@ pub enum ReplLine<Id> {
 }
 
 pub fn parse_partial_repl_line<Id, S>(
-    symbols: &mut IdentEnv<Ident = Id>,
+    symbols: &mut dyn IdentEnv<Ident = Id>,
     input: &S,
 ) -> Result<Option<ReplLine<Id>>, (Option<ReplLine<Id>>, ParseErrors)>
 where
@@ -499,7 +499,7 @@ where
 
 pub fn reparse_infix<Id>(
     metadata: &FnvMap<Id, Arc<Metadata>>,
-    symbols: &IdentEnv<Ident = Id>,
+    symbols: &dyn IdentEnv<Ident = Id>,
     expr: &mut SpannedExpr<Id>,
 ) -> Result<(), ParseErrors>
 where

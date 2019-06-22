@@ -104,7 +104,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 #[gluon(vm_type = "std.http.types.Body")]
 #[gluon(crate_name = "::vm")]
 // Representation of a http body that is in the prograss of being read
-pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
+pub struct Body(Arc<Mutex<Box<dyn Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
 
 // Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
 impl fmt::Debug for Body {
@@ -241,7 +241,7 @@ fn listen(
         type ResBody = hyper::Body;
         type Error = vm::Error;
         type Future =
-            Box<Future<Item = http::Response<hyper::Body>, Error = Self::Error> + Send + 'static>;
+            Box<dyn Future<Item = http::Response<hyper::Body>, Error = Self::Error> + Send + 'static>;
 
         fn call(&mut self, request: http::Request<hyper::Body>) -> Self::Future {
             let (parts, body) = request.into_parts();

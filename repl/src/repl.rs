@@ -232,7 +232,7 @@ impl<'vm> Pushable<'vm> for ReadlineError {
     }
 }
 
-fn app_dir_root() -> Result<PathBuf, Box<StdError>> {
+fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     Ok(::app_dirs::app_root(
         ::app_dirs::AppDataType::UserData,
         &crate::APP_INFO,
@@ -501,7 +501,7 @@ fn save_history(editor: &Editor) -> IO<()> {
             .unwrap()
             .save_history(&*path.join("history"))
             .map_err(|err| {
-                let err: Box<StdError> = Box::new(err);
+                let err: Box<dyn StdError> = Box::new(err);
                 err
             })
     });
@@ -571,7 +571,7 @@ pub fn run(
     color: Color,
     prompt: &str,
     debug_level: DebugLevel,
-) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
+) -> impl Future<Item = (), Error = Box<dyn StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
     vm.global_env().set_debug_level(debug_level);
 

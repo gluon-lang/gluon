@@ -87,7 +87,7 @@ where
 }
 
 pub fn parse_string<'env, 'input>(
-    symbols: &'env mut IdentEnv<Ident = String>,
+    symbols: &'env mut dyn IdentEnv<Ident = String>,
     input: &'input str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, &TypeCache::default(), input)

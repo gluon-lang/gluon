@@ -24,8 +24,8 @@ pub type Result<T> = StdResult<T, SpannedError<Symbol, RcType<Symbol>>>;
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
     variables: ScopedMap<Symbol, ArcKind>,
-    info: &'a (TypeEnv<Type = RcType> + 'a),
-    idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
+    info: &'a (dyn TypeEnv<Type = RcType> + 'a),
+    idents: &'a mut (dyn ast::IdentEnv<Ident = Symbol> + 'a),
     subs: Substitution<ArcKind>,
     kind_cache: KindCache,
     /// A cached one argument kind function, `Type -> Type`
@@ -66,8 +66,8 @@ where
 
 impl<'a> KindCheck<'a> {
     pub fn new(
-        info: &'a (TypeEnv<Type = RcType> + 'a),
-        idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
+        info: &'a (dyn TypeEnv<Type = RcType> + 'a),
+        idents: &'a mut (dyn ast::IdentEnv<Ident = Symbol> + 'a),
         kind_cache: KindCache,
     ) -> KindCheck<'a> {
         let typ = kind_cache.typ();

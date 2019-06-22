@@ -27,7 +27,7 @@ use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String}
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
         let _ = deep_cloner;
         Err(Error::Message("Userdata cannot be cloned".into()))
     }
@@ -470,7 +470,7 @@ pub(crate) enum ValueRepr {
             feature = "serde_derive",
             serde(serialize_with = "crate::serialization::serialize_userdata")
         )]
-        GcPtr<Box<Userdata>>,
+        GcPtr<Box<dyn Userdata>>,
     ),
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
@@ -604,7 +604,7 @@ const INDENT: usize = 4;
 
 struct InternalPrinter<'a, 't> {
     typ: &'t ArcType,
-    env: &'t TypeEnv<Type = ArcType>,
+    env: &'t dyn TypeEnv<Type = ArcType>,
     arena: &'a Arena<'a>,
     prec: Prec,
     level: i32,
@@ -1131,7 +1131,7 @@ impl_repr! {
     GcStr, Repr::String,
     GcPtr<ValueArray>, Repr::Array,
     Value, Repr::Unknown,
-    GcPtr<Box<Userdata>>, Repr::Userdata,
+    GcPtr<Box<dyn Userdata>>, Repr::Userdata,
     GcPtr<Thread>, Repr::Thread
 }
 
@@ -1175,7 +1175,7 @@ macro_rules! on_array {
                 Repr::String => $f(array.unsafe_array::<GcStr>()),
                 Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
                 Repr::Unknown => $f(array.unsafe_array::<Value>()),
-                Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
+                Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<dyn Userdata>>>()),
                 Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
             }
         }
@@ -1503,7 +1503,10 @@ impl<'t> Cloner<'t> {
         }
     }
 
-    fn deep_clone_userdata(&mut self, ptr: GcPtr<Box<Userdata>>) -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone_userdata(
+        &mut self,
+        ptr: GcPtr<Box<dyn Userdata>>,
+    ) -> Result<GcPtr<Box<dyn Userdata>>> {
         ptr.deep_clone(self)
     }
 
