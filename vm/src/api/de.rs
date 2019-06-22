@@ -199,7 +199,7 @@ where
 #[derive(Clone)]
 struct State<'de> {
     thread: &'de Thread,
-    env: &'de TypeEnv<Type = ArcType>,
+    env: &'de dyn TypeEnv<Type = ArcType>,
 }
 
 #[derive(Clone)]
@@ -212,7 +212,7 @@ struct Deserializer<'de, 't> {
 impl<'de, 't> Deserializer<'de, 't> {
     fn from_value(
         thread: &'de Thread,
-        env: &'de TypeEnv<Type = ArcType>,
+        env: &'de dyn TypeEnv<Type = ArcType>,
         input: Variants<'de>,
         typ: &'t ArcType,
     ) -> Self {

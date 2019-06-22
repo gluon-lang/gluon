@@ -163,6 +163,7 @@ mod functor;
 mod getable;
 mod pushable;
 mod shared;
+mod traverseable;
 mod userdata;
 mod vm_type;
 
@@ -188,6 +189,12 @@ pub fn userdata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(VmType, attributes(gluon))]
 pub fn vm_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     vm_type::derive(input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro_derive(Traverseable, attributes(gluon))]
+pub fn traverseable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    traverseable::derive(input.into()).into()
 }
 
 #[doc(hidden)]

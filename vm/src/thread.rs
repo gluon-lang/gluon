@@ -1074,7 +1074,7 @@ impl ThreadInternal for Thread {
     }
 }
 
-pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<Async<()>> + Send + Sync>;
+pub type HookFn = Box<dyn FnMut(&Thread, DebugInfo) -> Result<Async<()>> + Send + Sync>;
 
 pub struct DebugInfo<'a> {
     stack: &'a Stack,
@@ -1206,7 +1206,7 @@ struct Hook {
 }
 
 struct PollFn {
-    poll_fn: Box<for<'vm> FnMut(&'vm Thread) -> super::Result<Async<OwnedContext<'vm>>> + Send>,
+    poll_fn: Box<dyn for<'vm> FnMut(&'vm Thread) -> super::Result<Async<OwnedContext<'vm>>> + Send>,
     frame_index: VmIndex,
 }
 

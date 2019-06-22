@@ -432,7 +432,7 @@ impl CompilerEnv for TypeInfos {
 }
 
 pub struct Compiler<'a> {
-    globals: &'a (CompilerEnv<Type = ArcType> + 'a),
+    globals: &'a (dyn CompilerEnv<Type = ArcType> + 'a),
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
@@ -468,7 +468,7 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 
 impl<'a> Compiler<'a> {
     pub fn new(
-        globals: &'a (CompilerEnv<Type = ArcType> + 'a),
+        globals: &'a (dyn CompilerEnv<Type = ArcType> + 'a),
         vm: &'a GlobalVmState,
         mut symbols: SymbolModule<'a>,
         source: &'a ::codespan::FileMap,

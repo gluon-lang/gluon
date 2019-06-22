@@ -49,7 +49,7 @@ macro_rules! try_future {
     };
 }
 
-pub type BoxFuture<'vm, T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'vm>;
 
 #[macro_use]
 #[cfg(feature = "serde")]

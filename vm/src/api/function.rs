@@ -312,9 +312,9 @@ where
 }
 
 macro_rules! vm_function_impl {
-    ($f:tt, $($args:ident),*) => {
+    ([$($f:tt)*] $($args:ident),*) => {
 
-impl <'vm, $($args,)* R> VmFunction<'vm> for $f ($($args),*) -> R
+impl <'vm, $($args,)* R> VmFunction<'vm> for $($f)* ($($args),*) -> R
 where $($args: Getable<'vm, 'vm> + 'vm,)*
       R: AsyncPushable<'vm> + VmType + 'vm
 {
@@ -373,8 +373,8 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     }
 }
 
-vm_function_impl!(fn, $($args),*);
-vm_function_impl!(Fn, $($args),*);
+vm_function_impl!([fn] $($args),*);
+vm_function_impl!([dyn Fn] $($args),*);
 
 impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
     fn arguments() -> VmIndex {
@@ -382,13 +382,13 @@ impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
     }
 }
 
-impl <'s, $($args,)* R: VmType> FunctionType for Fn($($args),*) -> R + 's {
+impl <'s, $($args,)* R: VmType> FunctionType for dyn Fn($($args),*) -> R + 's {
     fn arguments() -> VmIndex {
         count!($($args),*) + R::extra_args()
     }
 }
 
-impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
+impl <'s, $($args: VmType,)* R: VmType> VmType for dyn Fn($($args),*) -> R + 's {
     type Type = fn ($($args::Type),*) -> R::Type;
 
     #[allow(non_snake_case)]
@@ -450,7 +450,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     pub fn call_async(
         &mut self
         $(, $args: $args)*
-        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
+        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
         use crate::thread::Execute;
         use futures::IntoFuture;
@@ -477,7 +477,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     pub fn call_fast_async(
         &mut self
         $(, $args: $args)*
-        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
+        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
         use crate::thread::Execute;
 

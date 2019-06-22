@@ -193,7 +193,7 @@ impl Default for Literal {
 impl Typed for Literal {
     type Ident = Symbol;
 
-    fn try_type_of(&self, _: &TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+    fn try_type_of(&self, _: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         Ok(match *self {
             Literal::Int(_) => Type::int(),
             Literal::Float(_) => Type::float(),
@@ -379,7 +379,7 @@ impl<T> ArenaExt<T> for Arena<T> {
     }
 }
 
-pub fn translate(env: &PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+pub fn translate(env: &dyn PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
     // Here we temporarily forget the lifetime of `translator` so it can be moved into a
     // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
     // long as the `CoreExpr` making it safe again
@@ -407,12 +407,12 @@ pub struct Translator<'a, 'e> {
     // that the variable bound in this pattern/field gets replaced with the
     // symbol from the earlier pattern
     ident_replacements: RefCell<FnvMap<Symbol, Symbol>>,
-    env: &'e PrimitiveEnv<Type = ArcType>,
+    env: &'e dyn PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a, 'e> Translator<'a, 'e> {
-    pub fn new(env: &'e PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
+    pub fn new(env: &'e dyn PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
         Translator {
             allocator: Allocator::new(),
             ident_replacements: Default::default(),
@@ -959,7 +959,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         &'a self,
         expr_type: ArcType,
         id: &TypedIdent<Symbol>,
-        new_args: &mut Iterator<Item = Expr<'a>>,
+        new_args: &mut dyn Iterator<Item = Expr<'a>>,
         span: Span<BytePos>,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
@@ -1051,7 +1051,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
-    fn try_type_of(&self, env: &TypeEnv<Type = ArcType>) -> Result<ArcType<Symbol>, String> {
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Symbol>, String> {
         match *self {
             Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
             Expr::Const(ref literal, _) => literal.try_type_of(env),
@@ -1064,7 +1064,7 @@ impl<'a> Typed for Expr<'a> {
 }
 
 fn get_return_type(
-    env: &TypeEnv<Type = ArcType>,
+    env: &dyn TypeEnv<Type = ArcType>,
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {
@@ -1539,7 +1539,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .unwrap_or(default),
             Some(_) => {
                 fn bind_variables<'b>(
-                    env: &PrimitiveEnv<Type = ArcType>,
+                    env: &dyn PrimitiveEnv<Type = ArcType>,
                     pat: &ast::SpannedPattern<Symbol>,
                     variable: CExpr<'b>,
                     binder: &mut Binder<'b>,
@@ -1622,7 +1622,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
     fn pattern_identifiers_<'b, 'p: 'b>(
         &self,
-        patterns: &mut Iterator<Item = &'b SpannedPattern<Symbol>>,
+        patterns: &mut dyn Iterator<Item = &'b SpannedPattern<Symbol>>,
     ) -> Pattern {
         let mut identifiers: Vec<TypedIdent<Symbol>> = Vec::new();
         let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();

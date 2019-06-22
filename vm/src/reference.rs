@@ -22,10 +22,10 @@ impl<T> Userdata for Reference<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = deep_cloner.deep_clone(&value)?;
-        let data: Box<Userdata> = Box::new(Reference {
+        let data: Box<dyn Userdata> = Box::new(Reference {
             value: Mutex::new(cloned_value),
             thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
             _marker: PhantomData::<A>,

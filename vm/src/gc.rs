@@ -454,21 +454,21 @@ impl<T: ?Sized> GcPtr<T> {
 
 impl<'a, T: Traverseable + Send + Sync + 'a> GcPtr<T> {
     /// Coerces `self` to a `Traverseable` trait object
-    pub fn as_traverseable(self) -> GcPtr<Traverseable + Send + Sync + 'a> {
+    pub fn as_traverseable(self) -> GcPtr<dyn Traverseable + Send + Sync + 'a> {
         unsafe {
-            let ptr: &(Traverseable + Send + Sync) = self.0.as_ref();
+            let ptr: &(dyn Traverseable + Send + Sync) = self.0.as_ref();
             GcPtr(NonNull::new_unchecked(ptr as *const _ as *mut _))
         }
     }
 }
 impl GcPtr<str> {
     /// Coerces `self` to a `Traverseable` trait object
-    pub fn as_traverseable_string(self) -> GcPtr<Traverseable + Send + Sync> {
+    pub fn as_traverseable_string(self) -> GcPtr<dyn Traverseable + Send + Sync> {
         // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
         // u8's Traverseable impl
         unsafe {
             GcPtr(NonNull::new_unchecked(
-                self.as_ptr() as *const (Traverseable + Send + Sync) as *mut _,
+                self.as_ptr() as *const (dyn Traverseable + Send + Sync) as *mut _,
             ))
         }
     }
@@ -544,7 +544,7 @@ macro_rules! empty_traverse {
     }
 }
 
-empty_traverse! { () Any u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str }
+empty_traverse! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str }
 
 impl<T: ?Sized> Traverseable for *const T {
     fn traverse(&self, _: &mut Gc) {}

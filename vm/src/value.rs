@@ -33,8 +33,8 @@ pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
     }
 }
 
-impl PartialEq for Userdata {
-    fn eq(&self, other: &Userdata) -> bool {
+impl PartialEq for dyn Userdata {
+    fn eq(&self, other: &dyn Userdata) -> bool {
         self as *const _ == other as *const _
     }
 }
@@ -340,14 +340,15 @@ impl<'b> Traverseable for UninitializedRecord<'b> {
 
 mod gc_str {
     use super::ValueArray;
-    use crate::gc::{Gc, GcPtr, Generation, Traverseable};
+    use crate::gc::{Gc, GcPtr, Generation};
     use crate::Error;
 
     use std::fmt;
     use std::ops::Deref;
     use std::str;
 
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, PartialEq, Traverseable)]
+    #[gluon(gluon_vm)]
     pub struct GcStr(GcPtr<ValueArray>);
 
     // Needed due to https://github.com/rust-lang/rust/pull/60444, unsure if that is due to a bug
@@ -404,12 +405,6 @@ mod gc_str {
 
         fn deref(&self) -> &str {
             unsafe { str::from_utf8_unchecked(self.0.as_slice::<u8>().unwrap()) }
-        }
-    }
-
-    impl Traverseable for GcStr {
-        fn traverse(&self, gc: &mut Gc) {
-            self.0.traverse(gc)
         }
     }
 }
@@ -565,7 +560,7 @@ use self::Prec::*;
 
 pub struct ValuePrinter<'a> {
     pub typ: &'a ArcType,
-    pub env: &'a TypeEnv<Type = ArcType>,
+    pub env: &'a dyn TypeEnv<Type = ArcType>,
     pub value: Variants<'a>,
     pub max_level: i32,
     pub width: usize,
@@ -574,7 +569,7 @@ pub struct ValuePrinter<'a> {
 
 impl<'t> ValuePrinter<'t> {
     pub fn new(
-        env: &'t TypeEnv<Type = ArcType>,
+        env: &'t dyn TypeEnv<Type = ArcType>,
         typ: &'t ArcType,
         value: Variants<'t>,
         debug_level: &'t DebugLevel,
@@ -1192,7 +1187,7 @@ impl fmt::Debug for ValueArray {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("ValueArray")
             .field("repr", &self.repr)
-            .field("array", on_array!(self, |x| x as &fmt::Debug))
+            .field("array", on_array!(self, |x| x as &dyn fmt::Debug))
             .finish()
     }
 }

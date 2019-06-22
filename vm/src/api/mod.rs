@@ -89,7 +89,7 @@ pub enum ValueRef<'a> {
     String(&'a str),
     Data(Data<'a>),
     Array(ArrayRef<'a>),
-    Userdata(&'a vm::Userdata),
+    Userdata(&'a dyn vm::Userdata),
     Thread(&'a Thread),
     Closure(Closure<'a>),
     Internal,
@@ -580,7 +580,7 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
         let context = context.context();
-        let data: Box<vm::Userdata> = Box::new(self);
+        let data: Box<dyn vm::Userdata> = Box::new(self);
         let userdata = context.alloc_with(thread, Move(data))?;
         context.stack.push(ValueRepr::Userdata(userdata));
         Ok(())

@@ -30,14 +30,14 @@ impl<T> Userdata for Lazy<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = match *value {
             Lazy_::Blackhole(..) => return Err(Error::Message("<<loop>>".into())),
             Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
             Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
         };
-        let data: Box<Userdata> = Box::new(Lazy {
+        let data: Box<dyn Userdata> = Box::new(Lazy {
             value: Mutex::new(cloned_value),
             thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
             _marker: PhantomData::<A>,
