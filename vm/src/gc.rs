@@ -10,6 +10,7 @@ use std::{
     mem,
     ops::{Deref, DerefMut},
     ptr::{self, NonNull},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -497,32 +498,22 @@ where
     }
 }
 
-impl<T: ?Sized> Traverseable for Box<T>
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        (**self).traverse(gc)
-    }
+macro_rules! deref_traverse {
+    ([$($params: tt)*] $ty: ty) => {
+        impl<$($params)*> Traverseable for $ty {
+            fn traverse(&self, gc: &mut Gc) {
+                (**self).traverse(gc);
+            }
+        }
+    };
 }
 
-impl<'a, T: ?Sized> Traverseable for &'a T
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        (**self).traverse(gc);
-    }
-}
-
-impl<'a, T: ?Sized> Traverseable for &'a mut T
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        (**self).traverse(gc);
-    }
-}
+deref_traverse! { ['a, T: ?Sized + Traverseable] &'a T }
+deref_traverse! { ['a, T: ?Sized + Traverseable] &'a mut T }
+deref_traverse! { ['a, T: ?Sized + Traverseable] Box<T> }
+deref_traverse! { ['a, T: ?Sized + Traverseable] Arc<T> }
+deref_traverse! { ['a, T: ?Sized + Traverseable] Rc<T> }
+deref_traverse! { ['a, T: Traverseable] Vec<T> }
 
 macro_rules! tuple_traverse {
     () => {};
@@ -580,15 +571,6 @@ where
         for x in self.iter() {
             x.traverse(f);
         }
-    }
-}
-
-impl<T> Traverseable for Vec<T>
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        (**self).traverse(gc);
     }
 }
 
