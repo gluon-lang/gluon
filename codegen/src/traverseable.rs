@@ -23,10 +23,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
         ..
     } = derive_input;
 
-    let tokens = match data {
-        Data::Struct(ast) => derive_struct(&container, ast, ident, generics),
-        Data::Enum(ast) => derive_enum(&container, ast, ident, generics),
-        Data::Union(_) => panic!("Unions are not supported"),
+    let tokens = if container.skip {
+        gen_impl(&container, ident, generics, quote!())
+    } else {
+        match data {
+            Data::Struct(ast) => derive_struct(&container, ast, ident, generics),
+            Data::Enum(ast) => derive_enum(&container, ast, ident, generics),
+            Data::Union(_) => panic!("Unions are not supported"),
+        }
     };
 
     tokens.into()
@@ -97,7 +101,8 @@ fn derive_enum(
         };
     }
 
-    gen_impl(container, ident, generics, cons)
+    let tokens = gen_impl(container, ident, generics, cons);
+    tokens
 }
 
 fn gen_impl(
@@ -138,6 +143,18 @@ fn gen_impl(
             impl #impl_generics _gluon_gc::Traverseable for #ident #ty_generics
                 #where_clause #(#traverseable_bounds,)*
             {
+                fn root(&self, gc: &mut _gluon_gc::Gc) {
+                    fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
+                        _gluon_gc::Traverseable::root(this, gc)
+                    }
+                    #push_impl
+                }
+                fn unroot(&self, gc: &mut _gluon_gc::Gc) {
+                    fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
+                        _gluon_gc::Traverseable::unroot(this, gc)
+                    }
+                    #push_impl
+                }
                 fn traverse(&self, gc: &mut _gluon_gc:: Gc) {
                     fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
                         _gluon_gc::Traverseable::traverse(this, gc)
@@ -162,7 +179,7 @@ fn gen_variant_match(ident: &Ident, variant: &Variant) -> TokenStream {
 
     quote! {
         #pattern => {
-            #(mark(#field_idents2);)*
+            #(mark(#field_idents2, gc);)*
         }
     }
 }
@@ -170,7 +187,7 @@ fn gen_variant_match(ident: &Ident, variant: &Variant) -> TokenStream {
 fn create_traverseable_bounds(generics: &Generics) -> Vec<TokenStream> {
     map_type_params(generics, |ty| {
         quote! {
-            #ty: _gluon_api::Traverseable
+            #ty: _gluon_gc::Traverseable
         }
     })
 }

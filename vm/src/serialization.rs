@@ -7,7 +7,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use crate::serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
-use crate::serde::ser::{Seeded, SerializeSeq, SerializeState, Serializer};
+use crate::serde::ser::{Seeded, Serialize, SerializeSeq, SerializeState, Serializer};
 use crate::serde::Deserializer;
 
 use crate::base::serialization::{NodeMap, NodeToId};
@@ -426,6 +426,28 @@ pub mod typ {
         fn borrow(&self) -> &crate::base::serialization::SeSeed {
             &self.node_to_id
         }
+    }
+}
+
+pub mod atomic_cell {
+    use super::*;
+
+    use crossbeam::atomic::AtomicCell;
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<AtomicCell<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        T::deserialize(deserializer).map(AtomicCell::new)
+    }
+
+    pub fn serialize<S, T>(t: &AtomicCell<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize + Copy,
+    {
+        t.load().serialize(serializer)
     }
 }
 

@@ -11,6 +11,7 @@ use std::{
     ops::{Deref, DerefMut},
     ptr::{self, NonNull},
     rc::Rc,
+    result::Result as StdResult,
     sync::Arc,
 };
 
@@ -205,7 +206,7 @@ unsafe impl<'s, 't, T> FromPtr<&'s &'t [T]> for [T] {
 /// A definition of some data which may be allocated by the garbage collector.
 pub unsafe trait DataDef {
     /// The type of the value allocated.
-    type Value: ?Sized + for<'a> FromPtr<&'a Self>;
+    type Value: ?Sized + for<'a> FromPtr<&'a Self> + Traverseable;
     /// Returns how many bytes need to be allocted for this `DataDef`
     fn size(&self) -> usize;
     /// Consumes `self` to initialize the allocated value.
@@ -223,9 +224,14 @@ pub unsafe trait DataDef {
 
 /// `DataDef` that moves its value directly into the pointer
 /// useful for sized types
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub struct Move<T>(pub T);
 
-unsafe impl<T> DataDef for Move<T> {
+unsafe impl<T> DataDef for Move<T>
+where
+    T: Traverseable,
+{
     type Value = T;
     fn size(&self) -> usize {
         mem::size_of::<T>()
@@ -484,25 +490,47 @@ pub trait CollectScope {
 /// A type implementing Traverseable must call traverse on each of its fields
 /// which in turn contains `GcPtr`
 pub trait Traverseable {
+    fn root(&self, gc: &mut Gc);
+    fn unroot(&self, gc: &mut Gc);
+
     fn traverse(&self, gc: &mut Gc) {
         let _ = gc;
     }
 }
 
-impl<T> Traverseable for Move<T>
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc)
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_traverseable {
+    ($self_: tt, $gc: ident, $body: expr) => {
+        fn root(&$self_, $gc: &mut $crate::gc::Gc) {
+            #[allow(unused)]
+            fn mark<T: ?Sized + Traverseable>(this: &T, gc: &mut $crate::gc::Gc) {
+                Traverseable::root(this, gc)
+            }
+            $body
+        }
+        fn unroot(&$self_, $gc: &mut $crate::gc::Gc) {
+            #[allow(unused)]
+            fn mark<T: ?Sized + Traverseable>(this: &T, gc: &mut $crate::gc::Gc) {
+                Traverseable::unroot(this, gc)
+            }
+            $body
+        }
+        fn traverse(&$self_, $gc: &mut $crate::gc::Gc) {
+            #[allow(unused)]
+            fn mark<T: ?Sized + Traverseable>(this: &T, gc: &mut $crate::gc::Gc) {
+                Traverseable::traverse(this, gc)
+            }
+            $body
+        }
     }
 }
 
 macro_rules! deref_traverse {
     ([$($params: tt)*] $ty: ty) => {
         impl<$($params)*> Traverseable for $ty {
-            fn traverse(&self, gc: &mut Gc) {
-                (**self).traverse(gc);
+            impl_traverseable! { self, gc,
+                mark(&**self, gc)
             }
         }
     };
@@ -522,14 +550,14 @@ macro_rules! tuple_traverse {
         impl <$first $(,$id)*> Traverseable for ($first, $($id,)*)
             where $first: Traverseable
                   $(, $id: Traverseable)* {
-            #[allow(non_snake_case)]
-            fn traverse(&self, gc: &mut Gc) {
-                let (ref $first, $(ref $id,)*) = *self;
-                $first.traverse(gc);
+            impl_traverseable! { self, gc,{
+                #[allow(non_snake_case)]
+                let ($first, $($id,)*) = self;
+                mark($first, gc);
                 $(
-                    $id.traverse(gc);
+                    mark($id, gc);
                 )*
-            }
+            } }
         }
     }
 }
@@ -539,27 +567,55 @@ tuple_traverse!(A B C D E F G H I J);
 macro_rules! empty_traverse {
     ($($id: ty)*) => {
         $(impl Traverseable for $id {
-            fn traverse(&self, _: &mut Gc) {}
+            impl_traverseable! { self, _gc, {} }
         })*
     }
 }
 
-empty_traverse! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str }
+empty_traverse! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str bool }
+
+impl<T> Traverseable for Option<T>
+where
+    T: Traverseable,
+{
+    impl_traverseable! { self, gc,
+        if let Some(x) = self {
+            mark(x, gc);
+        }
+    }
+}
+
+impl<T, E> Traverseable for StdResult<T, E>
+where
+    T: Traverseable,
+    E: Traverseable,
+{
+    impl_traverseable! { self, gc,
+        match self {
+            Ok(x) => mark(x, gc),
+            Err(x) => mark(x, gc),
+        }
+    }
+}
+
+impl<T: ?Sized> Traverseable for PhantomData<T> {
+    impl_traverseable! { self, _gc, {} }
+}
 
 impl<T: ?Sized> Traverseable for *const T {
-    fn traverse(&self, _: &mut Gc) {}
+    impl_traverseable! { self, _gc, { } }
 }
 
 impl<T: ?Sized> Traverseable for *mut T {
-    fn traverse(&self, _: &mut Gc) {}
+    impl_traverseable! { self, _gc, { } }
 }
 
 impl<T> Traverseable for Cell<T>
 where
     T: Traverseable + Copy,
 {
-    fn traverse(&self, f: &mut Gc) {
-        self.get().traverse(f);
+    impl_traverseable! { self, gc,
+        mark(&self.get(), gc)
     }
 }
 
@@ -567,9 +623,9 @@ impl<U> Traverseable for [U]
 where
     U: Traverseable,
 {
-    fn traverse(&self, f: &mut Gc) {
+    impl_traverseable! { self, gc,
         for x in self.iter() {
-            x.traverse(f);
+            mark(x, gc);
         }
     }
 }
@@ -578,8 +634,8 @@ impl<T> Traverseable for VecDeque<T>
 where
     T: Traverseable,
 {
-    fn traverse(&self, gc: &mut Gc) {
-        self.as_slices().traverse(gc);
+    impl_traverseable! { self, gc,
+        mark(&self.as_slices(), gc)
     }
 }
 
@@ -588,6 +644,12 @@ impl<T: ?Sized> Traverseable for GcPtr<T>
 where
     T: Traverseable,
 {
+    fn root(&self, _gc: &mut Gc) {
+        // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
+    }
+    fn unroot(&self, _gc: &mut Gc) {
+        // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
+    }
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {
             // Continue traversing if this ptr was not already marked
@@ -637,17 +699,9 @@ impl Gc {
         D: DataDef + Traverseable,
         D::Value: Sized + Any,
     {
+        #[derive(Traverseable)]
+        #[gluon(gluon_vm)]
         struct Scope1<A, B>(A, B);
-
-        impl<A, B> Traverseable for Scope1<A, B>
-        where
-            A: Traverseable,
-            B: Traverseable,
-        {
-            fn traverse(&self, gc: &mut Gc) {
-                (&self.0, &self.1).traverse(gc);
-            }
-        }
 
         impl<A, B> CollectScope for Scope1<A, B>
         where
@@ -770,7 +824,9 @@ impl Gc {
             // that the pointer was initialized
             assert!(ret == p);
             self.values = Some(ptr);
-            GcPtr(NonNull::new_unchecked(p))
+            let ptr = GcPtr(NonNull::new_unchecked(p));
+            D::Value::unroot(&ptr, self);
+            ptr
         }
     }
 
@@ -917,7 +973,8 @@ mod tests {
         count
     }
 
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Traverseable)]
+    #[gluon(gluon_vm)]
     struct Data_ {
         fields: GcPtr<Vec<Value>>,
     }
@@ -946,19 +1003,11 @@ mod tests {
         }
     }
 
-    #[derive(Copy, Clone, PartialEq, Debug)]
+    #[derive(Copy, Clone, PartialEq, Debug, Traverseable)]
+    #[gluon(gluon_vm)]
     enum Value {
         Int(i32),
         Data(Data_),
-    }
-
-    impl Traverseable for Value {
-        fn traverse(&self, gc: &mut Gc) {
-            match *self {
-                Data(ref data) => data.fields.traverse(gc),
-                _ => (),
-            }
-        }
     }
 
     fn new_data(p: GcPtr<Vec<Value>>) -> Value {
@@ -1003,6 +1052,8 @@ mod tests {
         assert_eq!(object_count(&gc), 0);
     }
 
+    #[derive(Traverseable)]
+    #[gluon(gluon_vm)]
     pub struct Dropable {
         dropped: Rc<Cell<bool>>,
     }

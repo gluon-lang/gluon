@@ -11,7 +11,7 @@ use crate::{
         generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
     },
     base::types::{self, ArcType},
-    gc::{Gc, GcPtr, Move, Traverseable},
+    gc::{GcPtr, Move, Traverseable},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
@@ -63,11 +63,11 @@ enum Lazy_ {
 }
 
 impl<T> Traverseable for Lazy<T> {
-    fn traverse(&self, gc: &mut Gc) {
+    impl_traverseable! { self, gc,
         match *self.value.lock().unwrap() {
             Lazy_::Blackhole(..) => (),
-            Lazy_::Thunk(ref value) => value.traverse(gc),
-            Lazy_::Value(ref value) => value.traverse(gc),
+            Lazy_::Thunk(ref value) => mark(value, gc),
+            Lazy_::Value(ref value) => mark(value, gc),
         }
     }
 }

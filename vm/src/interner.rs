@@ -12,6 +12,12 @@ use crate::value::GcStr;
 #[derive(Copy, Clone, Eq)]
 pub struct InternedStr(GcStr);
 
+// InternedStr are explicitly scanned in the intern table so we can skip them when they are
+// encountered elsewhere
+impl Traverseable for InternedStr {
+    impl_traverseable! { self, _gc, {} }
+}
+
 impl PartialEq<InternedStr> for InternedStr {
     fn eq(&self, other: &InternedStr) -> bool {
         self.as_ptr() == other.as_ptr()
@@ -86,9 +92,9 @@ pub struct Interner {
 }
 
 impl Traverseable for Interner {
-    fn traverse(&self, gc: &mut Gc) {
+    impl_traverseable! { self, gc,
         for (_, v) in self.indexes.iter() {
-            v.0.traverse(gc);
+            mark::<GcStr>(&v.0, gc);
         }
     }
 }

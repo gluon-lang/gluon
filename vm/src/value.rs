@@ -43,7 +43,8 @@ pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants
     xs.iter().map(|v| unsafe { Variants::new(v) })
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Traverseable)]
+#[gluon(gluon_vm)]
 #[repr(C)]
 pub struct ClosureData {
     pub(crate) function: GcPtr<BytecodeFunction>,
@@ -59,20 +60,9 @@ impl fmt::Debug for ClosureData {
     }
 }
 
-impl Traverseable for ClosureData {
-    fn traverse(&self, gc: &mut Gc) {
-        self.function.traverse(gc);
-        self.upvars.traverse(gc);
-    }
-}
-
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
-impl<'b> Traverseable for ClosureDataDef<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-        self.1.traverse(gc);
-    }
-}
 
 unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     type Value = ClosureData;
@@ -89,13 +79,9 @@ unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     }
 }
 
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub struct ClosureInitDef(pub GcPtr<BytecodeFunction>, pub usize);
-
-impl Traverseable for ClosureInitDef {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-    }
-}
 
 unsafe impl DataDef for ClosureInitDef {
     type Value = ClosureData;
@@ -146,22 +132,17 @@ pub struct BytecodeFunction {
 }
 
 impl Traverseable for BytecodeFunction {
-    fn traverse(&self, gc: &mut Gc) {
-        self.inner_functions.traverse(gc);
+    impl_traverseable! { self, gc,
+        mark(&self.inner_functions, gc)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Traverseable)]
+#[gluon(gluon_vm)]
 #[repr(C)]
 pub struct DataStruct {
     tag: VmTag,
     pub(crate) fields: Array<Value>,
-}
-
-impl Traverseable for DataStruct {
-    fn traverse(&self, gc: &mut Gc) {
-        self.fields.traverse(gc);
-    }
 }
 
 impl PartialEq for DataStruct {
@@ -198,6 +179,8 @@ impl GcPtr<DataStruct> {
 }
 
 /// Definition for data values in the VM
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct Def<'b> {
     pub tag: VmTag,
     pub elems: &'b [Value],
@@ -217,6 +200,8 @@ unsafe impl<'b> DataDef for Def<'b> {
     }
 }
 
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct VariantDef<'b> {
     pub tag: VmTag,
     pub poly_tag: Option<InternedStr>,
@@ -244,6 +229,8 @@ unsafe impl<'b> DataDef for VariantDef<'b> {
     }
 }
 
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct UninitializedVariantDef {
     pub tag: VmTag,
     pub elems: usize,
@@ -264,22 +251,9 @@ unsafe impl DataDef for UninitializedVariantDef {
         }
     }
 }
-impl Traverseable for UninitializedVariantDef {
-    fn traverse(&self, _gc: &mut Gc) {}
-}
 
-impl<'b> Traverseable for Def<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.elems.traverse(gc);
-    }
-}
-
-impl<'b> Traverseable for VariantDef<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.elems.traverse(gc);
-    }
-}
-
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct RecordDef<'b> {
     pub elems: &'b [Value],
     pub fields: &'b [InternedStr],
@@ -300,12 +274,6 @@ unsafe impl<'b> DataDef for RecordDef<'b> {
     }
     fn fields(&self) -> Option<&[InternedStr]> {
         Some(self.fields)
-    }
-}
-
-impl<'b> Traverseable for RecordDef<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.elems.traverse(gc);
     }
 }
 
@@ -335,7 +303,7 @@ unsafe impl<'b> DataDef for UninitializedRecord<'b> {
 }
 
 impl<'b> Traverseable for UninitializedRecord<'b> {
-    fn traverse(&self, _gc: &mut Gc) {}
+    impl_traverseable! {self, _gc, {} }
 }
 
 mod gc_str {
@@ -410,7 +378,7 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Traverseable)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -420,6 +388,7 @@ pub use self::gc_str::GcStr;
     feature = "serde_derive",
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
+#[gluon(gluon_vm)]
 pub(crate) enum ValueRepr {
     Byte(u8),
     Int(VmInt),
@@ -801,7 +770,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Traverseable)]
+#[gluon(gluon_vm)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -837,16 +807,8 @@ impl PartialEq for Callable {
     }
 }
 
-impl Traverseable for Callable {
-    fn traverse(&self, gc: &mut Gc) {
-        match *self {
-            Callable::Closure(ref closure) => closure.traverse(gc),
-            Callable::Extern(ref ext) => ext.traverse(gc),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Traverseable)]
+#[gluon(gluon_vm)]
 #[repr(C)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(
@@ -866,20 +828,9 @@ impl PartialEq for PartialApplicationData {
     }
 }
 
-impl Traverseable for PartialApplicationData {
-    fn traverse(&self, gc: &mut Gc) {
-        self.function.traverse(gc);
-        self.args.traverse(gc);
-    }
-}
-
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
-impl<'b> Traverseable for PartialApplicationDataDef<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-        self.1.traverse(gc);
-    }
-}
 unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     type Value = PartialApplicationData;
     fn size(&self) -> usize {
@@ -899,23 +850,8 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
 }
 
 impl Traverseable for Value {
-    fn traverse(&self, gc: &mut Gc) {
-        self.get_repr().traverse(gc)
-    }
-}
-impl Traverseable for ValueRepr {
-    fn traverse(&self, gc: &mut Gc) {
-        match *self {
-            String(ref data) => data.traverse(gc),
-            ValueRepr::Data(ref data) => data.traverse(gc),
-            ValueRepr::Array(ref data) => data.traverse(gc),
-            Function(ref data) => data.traverse(gc),
-            Closure(ref data) => data.traverse(gc),
-            ValueRepr::Userdata(ref data) => data.traverse(gc),
-            PartialApplication(ref data) => data.traverse(gc),
-            ValueRepr::Thread(ref thread) => thread.traverse(gc),
-            ValueRepr::Tag(_) | ValueRepr::Byte(_) | Int(_) | Float(_) => (),
-        }
+    impl_traverseable! {self,  gc,
+        mark(&self.get_repr(), gc)
     }
 }
 
@@ -1055,7 +991,7 @@ impl fmt::Debug for ExternFunction {
 }
 
 impl Traverseable for ExternFunction {
-    fn traverse(&self, _: &mut Gc) {}
+    impl_traverseable! { self, _gc, {} }
 }
 
 /// Representation of values which can be stored directly in an array
@@ -1222,8 +1158,8 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 impl Traverseable for ValueArray {
-    fn traverse(&self, gc: &mut Gc) {
-        on_array!(*self, |array: &Array<_>| array.traverse(gc))
+    impl_traverseable! { self, gc,
+        on_array!(self, |array: &Array<_>| mark(array, gc))
     }
 }
 
@@ -1341,12 +1277,9 @@ unsafe impl<'a> DataDef for &'a ValueArray {
     }
 }
 
+#[derive(Traverseable)]
+#[gluon(gluon_vm)]
 pub(crate) struct ArrayDef<'b>(pub &'b [Value]);
-impl<'b> Traverseable for ArrayDef<'b> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-    }
-}
 
 unsafe impl<'b> DataDef for ArrayDef<'b> {
     type Value = ValueArray;

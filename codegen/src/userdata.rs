@@ -61,10 +61,6 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
             #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
             {
             }
-
-            #[automatically_derived]
-            #[allow(unused_attributes, unused_variables)]
-            impl #impl_generics _gluon_gc::Traverseable for #ident #ty_generics {}
         };
     }
 }

@@ -56,13 +56,15 @@ pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + S
 pub mod serialization;
 
 #[macro_use]
+pub mod gc;
+
+#[macro_use]
 pub mod api;
 pub mod channel;
 pub mod compiler;
 pub mod core;
 pub mod debug;
 pub mod dynamic;
-pub mod gc;
 pub mod lazy;
 pub mod macros;
 pub mod primitives;
@@ -93,7 +95,8 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Traverseable)]
+#[gluon(gluon_vm)]
 #[repr(transparent)]
 pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
 
@@ -125,12 +128,6 @@ impl<'a> Variants<'a> {
     #[inline]
     pub fn as_ref(&self) -> ValueRef<'a> {
         unsafe { ValueRef::rooted_new(self.0) }
-    }
-}
-
-impl<'a> gc::Traverseable for Variants<'a> {
-    fn traverse(&self, gc: &mut gc::Gc) {
-        self.0.traverse(gc);
     }
 }
 

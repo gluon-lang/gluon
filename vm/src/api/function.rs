@@ -1,6 +1,5 @@
 use std::any::Any;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 #[cfg(feature = "serde")]
 use crate::serde::{Deserialize, Deserializer};
@@ -14,7 +13,7 @@ use crate::api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, Vm
 use crate::compiler::{CompiledFunction, CompiledModule};
 use crate::gc::Move;
 use crate::stack::{ExternState, StackFrame};
-use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
+use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot, VmRootInternal};
 use crate::types::{Instruction, VmIndex};
 use crate::value::{ExternFunction, ValueRepr};
 use crate::{Error, Result, Variants};
@@ -179,7 +178,7 @@ pub type OwnedFunction<F> = Function<RootedThread, F>;
 #[derive(Clone, Debug)]
 pub struct Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     value: RootedValue<T>,
     _marker: PhantomData<F>,
@@ -201,7 +200,7 @@ impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
 
 impl<T, F> Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     pub fn get_variant(&self) -> Variants {
         self.value.get_variant()
@@ -224,7 +223,7 @@ where
 
 impl<T, F> VmType for Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     type Type = F::Type;
@@ -235,7 +234,7 @@ where
 
 impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -399,7 +398,7 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for dyn Fn($($args),*) -> R + 's 
 
 impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: for<'vm> Pushable<'vm>,)*
-          T: Deref<Target = Thread>,
+          T: VmRootInternal,
           R: VmType + for<'x, 'value> Getable<'x, 'value>,
 {
     #[allow(non_snake_case)]
@@ -443,7 +442,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
 
 impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: for<'vm> Pushable<'vm>,)*
-          T: Deref<Target = Thread> + Clone + Send,
+          T: VmRootInternal + Clone + Send,
           R: VmType + for<'x, 'value> Getable<'x, 'value> + Send + Sync + 'static,
 {
     #[allow(non_snake_case)]
@@ -513,7 +512,7 @@ make_vm_function!(A, B, C, D, E, F, G);
 
 impl<T, F> Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     pub fn cast<F2>(self) -> Result<Function<T, F2>>

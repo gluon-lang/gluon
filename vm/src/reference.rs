@@ -2,7 +2,7 @@ use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
     api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
-    gc::{Gc, GcPtr, Move, Traverseable},
+    gc::{GcPtr, Move, Traverseable},
     thread::ThreadInternal,
     value::{Cloner, Value},
     vm::Thread,
@@ -41,8 +41,8 @@ impl<T> fmt::Debug for Reference<T> {
 }
 
 impl<T> Traverseable for Reference<T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.value.lock().unwrap().traverse(gc)
+    impl_traverseable! { self, gc,
+        mark(&*self.value.lock().unwrap(), gc)
     }
 }
 

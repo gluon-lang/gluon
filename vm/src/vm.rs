@@ -132,8 +132,8 @@ pub struct Global {
 }
 
 impl Traverseable for Global {
-    fn traverse(&self, gc: &mut Gc) {
-        self.value.traverse(gc);
+    impl_traverseable! { self, gc,
+        mark(&self.value, gc)
     }
 }
 
@@ -183,14 +183,14 @@ pub struct GlobalVmState {
 }
 
 impl Traverseable for GlobalVmState {
-    fn traverse(&self, gc: &mut Gc) {
+    impl_traverseable! { self, gc, {
         for g in self.env.read().unwrap().globals.values() {
-            g.traverse(gc);
+            mark(g, gc);
         }
         // Also need to check the interned string table
-        self.interner.read().unwrap().traverse(gc);
-        self.generation_0_threads.read().unwrap().traverse(gc);
-    }
+        mark(&*self.interner.read().unwrap(), gc);
+        mark(&*self.generation_0_threads.read().unwrap(), gc);
+    } }
 }
 
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the

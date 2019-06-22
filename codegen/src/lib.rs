@@ -140,8 +140,8 @@
 //!
 //! use std::sync::Arc;
 //!
-//! // Userdata requires Debug + Send + Sync
-//! #[derive(Userdata, Debug)]
+//! // Userdata requires Traverseable + Debug + Send + Sync
+//! #[derive(Userdata, Traverseable, Debug)]
 //! struct Ident {
 //!     group: Arc<str>,
 //!     name: Arc<str>,
@@ -192,7 +192,7 @@ pub fn vm_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(Traverseable, attributes(gluon))]
+#[proc_macro_derive(Traverseable, attributes(gluon, gluon_trace))]
 pub fn traverseable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     traverseable::derive(input.into()).into()
 }
