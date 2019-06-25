@@ -538,15 +538,6 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
 
 impl<T> Userdata for std::sync::RwLock<T> where T: Userdata {}
 
-unsafe impl<T> Trace for std::sync::RwLock<T>
-where
-    T: Trace,
-{
-    impl_trace! { self, gc,
-        mark(&*self.read().unwrap(), gc)
-    }
-}
-
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm, 'value>: Sized {
     type Proxy: 'value;
