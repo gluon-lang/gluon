@@ -11,7 +11,7 @@ use crate::base::types::ArcType;
 
 use crate::api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use crate::compiler::{CompiledFunction, CompiledModule};
-use crate::gc::Move;
+use crate::gc::{Move, Trace};
 use crate::stack::{ExternState, StackFrame};
 use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot, VmRootInternal};
 use crate::types::{Instruction, VmIndex};
@@ -182,6 +182,10 @@ where
 {
     value: RootedValue<T>,
     _marker: PhantomData<F>,
+}
+
+unsafe impl<T: VmRootInternal + Trace, F> Trace for Function<T, F> {
+    impl_trace! { self, gc, mark(&self.value, gc) }
 }
 
 #[cfg(feature = "serde")]
