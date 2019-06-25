@@ -45,7 +45,7 @@ fn derive_struct(
     let cons = match ast.fields {
         Fields::Named(FieldsNamed { named, .. }) => gen_struct_cons(&ident, &named),
         Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => gen_tuple_struct_cons(&ident, &unnamed),
-        Fields::Unit => quote! { #ident },
+        Fields::Unit => quote! {},
     };
 
     gen_impl(container, ident, generics, cons)

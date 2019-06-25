@@ -66,3 +66,7 @@ fn userdata() {
         panic!("{}", why);
     }
 }
+
+#[derive(Userdata, Traverseable, Debug, VmType)]
+#[gluon(vm_type = "Empty")]
+struct Empty;
