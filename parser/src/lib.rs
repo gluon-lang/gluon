@@ -200,7 +200,7 @@ impl Error {
         match err {
             InvalidToken { location } => pos::spanned2(location, location, Error::InvalidToken),
             UnrecognizedToken {
-                token: Some((lpos, token, rpos)),
+                token: (lpos, token, rpos),
                 mut expected,
             } => {
                 remove_extra_quotes(&mut expected);
@@ -210,16 +210,20 @@ impl Error {
                     Error::UnexpectedToken(token.to_string(), expected),
                 )
             }
-            UnrecognizedToken {
-                token: None,
+            UnrecognizedEOF {
+                location,
                 mut expected,
             } => {
+                // LALRPOP will use `Default::default()` as the location if it is unable to find
+                // one. This is not correct for codespan as that represents "nil" so we must grab
+                // the end from the current source instead
+                let location = if location == BytePos::default() {
+                    source_span.end()
+                } else {
+                    location
+                };
                 remove_extra_quotes(&mut expected);
-                pos::spanned2(
-                    source_span.end(),
-                    source_span.end(),
-                    Error::UnexpectedEof(expected),
-                )
+                pos::spanned2(location, location, Error::UnexpectedEof(expected))
             }
             ExtraToken {
                 token: (lpos, token, rpos),

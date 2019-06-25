@@ -132,7 +132,6 @@ fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
 }
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
-    use crate::base::pos::BytePos;
     use gluon::compiler_pipeline::*;
 
     let mut compiler = Compiler::new();
@@ -145,6 +144,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
             Err((None, err)) => return Err(err.into()),
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
+    eprintln!("{:?}", expr);
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = (&mut expr).typecheck(&mut compiler, thread, &name, fileinput);
@@ -155,7 +155,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
         &*thread.get_env(),
         file_map.span(),
         &expr,
-        BytePos::from(pos as u32),
+        file_map.span().start() + pos::ByteOffset::from(pos as i64),
     );
     Ok(suggestions
         .into_iter()

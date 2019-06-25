@@ -17,7 +17,7 @@ use crate::ordered_float::NotNan;
 
 use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(input: &'input crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(input: &'input dyn crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone + AsRef<str>;
 
 extern {
@@ -645,7 +645,7 @@ PlainValueBinding: Box<ValueBinding<Id>> = {
     "let" <name: Sp<Ident>> => {
         let span = pos::Span::new(name.span.end(), name.span.end());
         errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
-            token: Some((span.start(), Token::In, span.end())),
+            token: (span.start(), Token::In, span.end()),
             expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
         });
         Box::new(ValueBinding {
@@ -851,7 +851,7 @@ DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
     <id: Sp<Pattern>> "in" => {
         let span = pos::Span::new(id.span.end(), id.span.end());
         errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
-            token: Some((span.start(), Token::In, span.end())),
+            token: (span.start(), Token::In, span.end()),
             expected: ["="].iter().map(|s| s.to_string()).collect(),
         });
         Box::new((id, pos::spanned(span, Expr::Error(None))))
