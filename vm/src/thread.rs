@@ -66,7 +66,7 @@ where
         }
     }
 
-    pub fn root(&self) -> Execute<RootedThread> {
+    pub unsafe fn root(&self) -> Execute<RootedThread> {
         Execute {
             thread: self.thread.as_ref().map(|t| t.root_thread()),
         }
@@ -157,14 +157,14 @@ where
     value: Value,
 }
 
-impl<T> Trace for RootedValue<T>
+unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    fn root(&self, _: &mut Gc) {
+    unsafe fn root(&self, _: &mut Gc) {
         self.root_();
     }
-    fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self, _gc: &mut Gc) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -317,11 +317,11 @@ struct Roots<'b> {
     vm: GcPtr<Thread>,
     stack: &'b Stack,
 }
-impl<'b> Trace for Roots<'b> {
-    fn unroot(&self, _gc: &mut Gc) {
+unsafe impl<'b> Trace for Roots<'b> {
+    unsafe fn unroot(&self, _gc: &mut Gc) {
         unreachable!()
     }
-    fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self, _gc: &mut Gc) {
         unreachable!()
     }
 
@@ -450,11 +450,11 @@ impl VmType for Thread {
     type Type = Self;
 }
 
-impl Trace for Thread {
-    fn root(&self, _gc: &mut Gc) {
+unsafe impl Trace for Thread {
+    unsafe fn root(&self, _gc: &mut Gc) {
         // Thread is always behind a `GcPtr`
     }
-    fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self, _gc: &mut Gc) {
         // Ditto
     }
     fn trace(&self, gc: &mut Gc) {
@@ -574,11 +574,11 @@ impl Clone for RootedThread {
     }
 }
 
-impl Trace for RootedThread {
-    fn root(&self, _gc: &mut Gc) {
+unsafe impl Trace for RootedThread {
+    unsafe fn root(&self, _gc: &mut Gc) {
         self.root_();
     }
-    fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self, _gc: &mut Gc) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {

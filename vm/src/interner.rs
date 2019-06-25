@@ -14,7 +14,7 @@ pub struct InternedStr(GcStr);
 
 // InternedStr are explicitly scanned in the intern table so we can skip them when they are
 // encountered elsewhere
-impl Trace for InternedStr {
+unsafe impl Trace for InternedStr {
     impl_trace! { self, _gc, {} }
 }
 
@@ -91,7 +91,7 @@ pub struct Interner {
     indexes: FnvMap<&'static str, InternedStr>,
 }
 
-impl Trace for Interner {
+unsafe impl Trace for Interner {
     impl_trace! { self, gc,
         for (_, v) in self.indexes.iter() {
             mark::<GcStr>(&v.0, gc);

@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<T> Trace for Sender<T> {
+unsafe impl<T> Trace for Sender<T> {
     impl_trace! { self, _gc,
         // No need to traverse in Sender as values can only be accessed through Receiver
         {}
@@ -61,7 +61,7 @@ impl<T> Sender<T> {
     }
 }
 
-impl<T> Trace for Receiver<T> {
+unsafe impl<T> Trace for Receiver<T> {
     impl_trace! { self, gc,
         mark(&*self.queue.lock().unwrap(), gc)
     }
@@ -256,7 +256,7 @@ fn spawn_on<'vm>(
     {
     }
 
-    impl<F> Trace for SpawnFuture<F>
+    unsafe impl<F> Trace for SpawnFuture<F>
     where
         F: Future,
     {

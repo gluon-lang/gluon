@@ -103,7 +103,7 @@ pub type OpaqueRef<'a, V> = Opaque<Variants<'a>, V>;
 
 pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
 
-impl<T, V> Trace for Opaque<T, V>
+unsafe impl<T, V> Trace for Opaque<T, V>
 where
     T: Trace,
 {

@@ -278,7 +278,7 @@ pub struct Stack {
     frames: Vec<Frame<State>>,
 }
 
-impl Trace for Stack {
+unsafe impl Trace for Stack {
     impl_trace! { self, gc,
         mark(&self.values, gc)
     }

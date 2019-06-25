@@ -66,7 +66,7 @@ impl<T: fmt::Debug> fmt::Debug for Array<T> {
     }
 }
 
-impl<T: Trace> Trace for Array<T> {
+unsafe impl<T: Trace> Trace for Array<T> {
     impl_trace! { self, gc,
         mark(&**self, gc)
     }

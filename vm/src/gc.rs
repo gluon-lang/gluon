@@ -487,11 +487,11 @@ pub trait CollectScope {
 }
 
 /// Trait which must be implemented on all root types which contain `GcPtr`
-/// A type implementing Trace must call trace on each of its fields
+/// A type unsafe implementing Trace must call trace on each of its fields
 /// which in turn contains `GcPtr`
-pub trait Trace {
-    fn root(&self, gc: &mut Gc);
-    fn unroot(&self, gc: &mut Gc);
+pub unsafe trait Trace {
+    unsafe fn root(&self, gc: &mut Gc);
+    unsafe fn unroot(&self, gc: &mut Gc);
 
     fn trace(&self, gc: &mut Gc) {
         let _ = gc;
@@ -502,16 +502,16 @@ pub trait Trace {
 #[macro_export]
 macro_rules! impl_trace {
     ($self_: tt, $gc: ident, $body: expr) => {
-        fn root(&$self_, $gc: &mut $crate::gc::Gc) {
+        unsafe fn root(&$self_, $gc: &mut $crate::gc::Gc) {
             #[allow(unused)]
-            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
                 Trace::root(this, gc)
             }
             $body
         }
-        fn unroot(&$self_, $gc: &mut $crate::gc::Gc) {
+        unsafe fn unroot(&$self_, $gc: &mut $crate::gc::Gc) {
             #[allow(unused)]
-            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
                 Trace::unroot(this, gc)
             }
             $body
@@ -528,7 +528,7 @@ macro_rules! impl_trace {
 
 macro_rules! deref_trace {
     ([$($params: tt)*] $ty: ty) => {
-        impl<$($params)*> Trace for $ty {
+        unsafe impl<$($params)*> Trace for $ty {
             impl_trace! { self, gc,
                 mark(&**self, gc)
             }
@@ -547,7 +547,7 @@ macro_rules! tuple_trace {
     () => {};
     ($first: ident $($id: ident)*) => {
         tuple_trace!($($id)*);
-        impl <$first $(,$id)*> Trace for ($first, $($id,)*)
+        unsafe impl <$first $(,$id)*> Trace for ($first, $($id,)*)
             where $first: Trace
                   $(, $id: Trace)* {
             impl_trace! { self, gc,{
@@ -566,7 +566,7 @@ tuple_trace!(A B C D E F G H I J);
 
 macro_rules! empty_trace {
     ($($id: ty)*) => {
-        $(impl Trace for $id {
+        $(unsafe impl Trace for $id {
             impl_trace! { self, _gc, {} }
         })*
     }
@@ -574,7 +574,7 @@ macro_rules! empty_trace {
 
 empty_trace! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str bool }
 
-impl<T> Trace for Option<T>
+unsafe impl<T> Trace for Option<T>
 where
     T: Trace,
 {
@@ -585,7 +585,7 @@ where
     }
 }
 
-impl<T, E> Trace for StdResult<T, E>
+unsafe impl<T, E> Trace for StdResult<T, E>
 where
     T: Trace,
     E: Trace,
@@ -598,19 +598,19 @@ where
     }
 }
 
-impl<T: ?Sized> Trace for PhantomData<T> {
+unsafe impl<T: ?Sized> Trace for PhantomData<T> {
     impl_trace! { self, _gc, {} }
 }
 
-impl<T: ?Sized> Trace for *const T {
+unsafe impl<T: ?Sized> Trace for *const T {
     impl_trace! { self, _gc, { } }
 }
 
-impl<T: ?Sized> Trace for *mut T {
+unsafe impl<T: ?Sized> Trace for *mut T {
     impl_trace! { self, _gc, { } }
 }
 
-impl<T> Trace for Cell<T>
+unsafe impl<T> Trace for Cell<T>
 where
     T: Trace + Copy,
 {
@@ -619,7 +619,7 @@ where
     }
 }
 
-impl<U> Trace for [U]
+unsafe impl<U> Trace for [U]
 where
     U: Trace,
 {
@@ -630,7 +630,7 @@ where
     }
 }
 
-impl<T> Trace for VecDeque<T>
+unsafe impl<T> Trace for VecDeque<T>
 where
     T: Trace,
 {
@@ -640,14 +640,14 @@ where
 }
 
 /// When traversing a `GcPtr` we need to mark it
-impl<T: ?Sized> Trace for GcPtr<T>
+unsafe impl<T: ?Sized> Trace for GcPtr<T>
 where
     T: Trace,
 {
-    fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self, _gc: &mut Gc) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
-    fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self, _gc: &mut Gc) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
     fn trace(&self, gc: &mut Gc) {

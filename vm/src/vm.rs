@@ -131,7 +131,7 @@ pub struct Global {
     pub value: Value,
 }
 
-impl Trace for Global {
+unsafe impl Trace for Global {
     impl_trace! { self, gc,
         mark(&self.value, gc)
     }
@@ -182,7 +182,7 @@ pub struct GlobalVmState {
     debug_level: RwLock<DebugLevel>,
 }
 
-impl Trace for GlobalVmState {
+unsafe impl Trace for GlobalVmState {
     impl_trace! { self, gc, {
         for g in self.env.read().unwrap().globals.values() {
             mark(g, gc);

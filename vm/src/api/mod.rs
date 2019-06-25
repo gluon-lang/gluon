@@ -324,7 +324,7 @@ impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     }
 }
 
-impl<T> Trace for Unrooted<T> {
+unsafe impl<T> Trace for Unrooted<T> {
     impl_trace! { self, gc,
         mark(&self.0, gc)
     }
@@ -538,7 +538,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
 
 impl<T> Userdata for std::sync::RwLock<T> where T: Userdata {}
 
-impl<T> Trace for std::sync::RwLock<T>
+unsafe impl<T> Trace for std::sync::RwLock<T>
 where
     T: Trace,
 {

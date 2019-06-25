@@ -62,7 +62,7 @@ enum Lazy_ {
     Value(Value),
 }
 
-impl<T> Trace for Lazy<T> {
+unsafe impl<T> Trace for Lazy<T> {
     impl_trace! { self, gc,
         match *self.value.lock().unwrap() {
             Lazy_::Blackhole(..) => (),

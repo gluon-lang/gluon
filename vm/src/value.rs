@@ -131,7 +131,7 @@ pub struct BytecodeFunction {
     pub debug_info: DebugInfo,
 }
 
-impl Trace for BytecodeFunction {
+unsafe impl Trace for BytecodeFunction {
     impl_trace! { self, gc,
         mark(&self.inner_functions, gc)
     }
@@ -302,7 +302,7 @@ unsafe impl<'b> DataDef for UninitializedRecord<'b> {
     }
 }
 
-impl<'b> Trace for UninitializedRecord<'b> {
+unsafe impl<'b> Trace for UninitializedRecord<'b> {
     impl_trace! {self, _gc, {} }
 }
 
@@ -849,7 +849,7 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     }
 }
 
-impl Trace for Value {
+unsafe impl Trace for Value {
     impl_trace! {self,  gc,
         mark(&self.get_repr(), gc)
     }
@@ -990,7 +990,7 @@ impl fmt::Debug for ExternFunction {
     }
 }
 
-impl Trace for ExternFunction {
+unsafe impl Trace for ExternFunction {
     impl_trace! { self, _gc, {} }
 }
 
@@ -1098,6 +1098,8 @@ impl Repr {
 macro_rules! on_array {
     ($array:expr, $f:expr) => {{
         let ref array = $array;
+        #[allow(unused_unsafe)]
+        // SAFETY We check the `repr` before casting to the inner type
         unsafe {
             match array.repr() {
                 Repr::Byte => $f(array.unsafe_array::<u8>()),
@@ -1157,7 +1159,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl Trace for ValueArray {
+unsafe impl Trace for ValueArray {
     impl_trace! { self, gc,
         on_array!(self, |array: &Array<_>| mark(array, gc))
     }

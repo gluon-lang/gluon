@@ -184,11 +184,12 @@ impl<'vm, T: VmType, M> VmType for Scoped<T, M> {
     }
 }
 
-impl<T, M> Trace for Scoped<T, M>
+unsafe impl<T, M> Trace for Scoped<T, M>
 where
     T: Trace,
 {
     impl_trace! { self, gc,
+        #[allow(unused_unsafe)]
         unsafe {
             if let Some(v) = *self.ptr.read().unwrap() {
                 mark(v.as_ref(), gc);

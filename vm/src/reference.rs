@@ -40,7 +40,7 @@ impl<T> fmt::Debug for Reference<T> {
     }
 }
 
-impl<T> Trace for Reference<T> {
+unsafe impl<T> Trace for Reference<T> {
     impl_trace! { self, gc,
         mark(&*self.value.lock().unwrap(), gc)
     }

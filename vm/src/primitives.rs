@@ -585,7 +585,7 @@ pub enum Component<'a> {
 #[gluon(gluon_vm)]
 pub struct Metadata(fs::Metadata);
 
-impl Trace for Metadata {
+unsafe impl Trace for Metadata {
     impl_trace! { self, _gc, { } }
 }
 
@@ -594,7 +594,7 @@ impl Trace for Metadata {
 #[gluon(gluon_vm)]
 pub struct DirEntry(fs::DirEntry);
 
-impl Trace for DirEntry {
+unsafe impl Trace for DirEntry {
     impl_trace! { self, _gc, { } }
 }
 
