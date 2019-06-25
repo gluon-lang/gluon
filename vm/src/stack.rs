@@ -6,7 +6,7 @@ use std::{
 use crate::base::pos::Line;
 use crate::base::symbol::Symbol;
 
-use crate::gc::{GcPtr, Traverseable};
+use crate::gc::{GcPtr, Trace};
 use crate::types::VmIndex;
 use crate::value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
 use crate::Variants;
@@ -278,8 +278,8 @@ pub struct Stack {
     frames: Vec<Frame<State>>,
 }
 
-impl Traverseable for Stack {
-    impl_traverseable! { self, gc,
+impl Trace for Stack {
+    impl_trace! { self, gc,
         mark(&self.values, gc)
     }
 }

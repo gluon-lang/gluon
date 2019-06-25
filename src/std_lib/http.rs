@@ -100,7 +100,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
-#[derive(Userdata, Traverseable, VmType)]
+#[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.http.types.Body")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]
@@ -131,7 +131,7 @@ fn read_chunk(
 }
 
 // A http body that is being written
-#[derive(Userdata, Traverseable, VmType)]
+#[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.http.types.ResponseBody")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]
@@ -182,7 +182,7 @@ fn write_response(
     })
 }
 
-#[derive(Debug, Userdata, Traverseable, VmType)]
+#[derive(Debug, Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.http.types.Uri")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]

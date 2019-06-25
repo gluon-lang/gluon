@@ -112,7 +112,7 @@ fn gen_impl(
     push_impl: TokenStream,
 ) -> TokenStream {
     // generate bounds like T: Getable for every type parameter
-    let traverseable_bounds = create_traverseable_bounds(&generics);
+    let trace_bounds = create_trace_bounds(&generics);
 
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
@@ -140,24 +140,24 @@ fn gen_impl(
 
             #[automatically_derived]
             #[allow(unused_attributes, unused_variables)]
-            impl #impl_generics _gluon_gc::Traverseable for #ident #ty_generics
-                #where_clause #(#traverseable_bounds,)*
+            impl #impl_generics _gluon_gc::Trace for #ident #ty_generics
+                #where_clause #(#trace_bounds,)*
             {
                 fn root(&self, gc: &mut _gluon_gc::Gc) {
-                    fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
-                        _gluon_gc::Traverseable::root(this, gc)
+                    fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, gc: &mut _gluon_gc::Gc) {
+                        _gluon_gc::Trace::root(this, gc)
                     }
                     #push_impl
                 }
                 fn unroot(&self, gc: &mut _gluon_gc::Gc) {
-                    fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
-                        _gluon_gc::Traverseable::unroot(this, gc)
+                    fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, gc: &mut _gluon_gc::Gc) {
+                        _gluon_gc::Trace::unroot(this, gc)
                     }
                     #push_impl
                 }
-                fn traverse(&self, gc: &mut _gluon_gc:: Gc) {
-                    fn mark<T: ?Sized + _gluon_gc::Traverseable>(this: &T, gc: &mut _gluon_gc::Gc) {
-                        _gluon_gc::Traverseable::traverse(this, gc)
+                fn trace(&self, gc: &mut _gluon_gc:: Gc) {
+                    fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, gc: &mut _gluon_gc::Gc) {
+                        _gluon_gc::Trace::trace(this, gc)
                     }
                     #push_impl
                 }
@@ -184,10 +184,10 @@ fn gen_variant_match(ident: &Ident, variant: &Variant) -> TokenStream {
     }
 }
 
-fn create_traverseable_bounds(generics: &Generics) -> Vec<TokenStream> {
+fn create_trace_bounds(generics: &Generics) -> Vec<TokenStream> {
     map_type_params(generics, |ty| {
         quote! {
-            #ty: _gluon_gc::Traverseable
+            #ty: _gluon_gc::Trace
         }
     })
 }

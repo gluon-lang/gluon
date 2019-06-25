@@ -4,7 +4,7 @@ use crate::base::types::ArcType;
 
 use crate::{
     api::{ArrayRef, Getable, Pushable, ValueRef, VmType},
-    gc::Traverseable,
+    gc::Trace,
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
     value::{ArrayRepr, Value, ValueArray},
@@ -103,11 +103,11 @@ pub type OpaqueRef<'a, V> = Opaque<Variants<'a>, V>;
 
 pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
 
-impl<T, V> Traverseable for Opaque<T, V>
+impl<T, V> Trace for Opaque<T, V>
 where
-    T: Traverseable,
+    T: Trace,
 {
-    impl_traverseable! { self, gc,
+    impl_trace! { self, gc,
         mark(&self.0, gc)
     }
 }

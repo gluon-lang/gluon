@@ -190,7 +190,7 @@ macro_rules! impl_userdata {
     };
 }
 
-#[derive(Userdata, Traverseable, VmType)]
+#[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "Editor")]
 #[gluon_trace(skip)]
 struct Editor {
@@ -199,7 +199,7 @@ struct Editor {
 
 impl_userdata! { Editor }
 
-#[derive(Userdata, Traverseable, VmType)]
+#[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "CpuPool")]
 #[gluon_trace(skip)]
 struct CpuPool(self::futures_cpupool::CpuPool);

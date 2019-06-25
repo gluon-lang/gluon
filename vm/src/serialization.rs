@@ -125,7 +125,7 @@ pub mod gc {
 
     impl<'de, T> DeserializeState<'de, DeSeed> for crate::gc::Move<T>
     where
-        T: crate::gc::Traverseable,
+        T: crate::gc::Trace,
         T: DeserializeState<'de, DeSeed>,
     {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
@@ -138,7 +138,7 @@ pub mod gc {
 
     impl<'de, T> DeserializeState<'de, DeSeed> for GcPtr<T>
     where
-        T: crate::gc::Traverseable + 'static,
+        T: crate::gc::Trace + 'static,
         T: DeserializeState<'de, DeSeed>,
     {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>

@@ -6,7 +6,7 @@ use crate::base::{
 };
 use crate::{
     forget_lifetime,
-    gc::{DataDef, GcPtr, Move, Traverseable},
+    gc::{DataDef, GcPtr, Move, Trace},
     thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{
@@ -324,8 +324,8 @@ impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     }
 }
 
-impl<T> Traverseable for Unrooted<T> {
-    impl_traverseable! { self, gc,
+impl<T> Trace for Unrooted<T> {
+    impl_trace! { self, gc,
         mark(&self.0, gc)
     }
 }
@@ -538,11 +538,11 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
 
 impl<T> Userdata for std::sync::RwLock<T> where T: Userdata {}
 
-impl<T> Traverseable for std::sync::RwLock<T>
+impl<T> Trace for std::sync::RwLock<T>
 where
-    T: Traverseable,
+    T: Trace,
 {
-    impl_traverseable! { self, gc,
+    impl_trace! { self, gc,
         mark(&*self.read().unwrap(), gc)
     }
 }
@@ -1146,7 +1146,7 @@ where
 
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
 where
-    T: Traverseable + Pushable<'vm> + 's,
+    T: Trace + Pushable<'vm> + 's,
     &'s [T]: DataDef<Value = ValueArray>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {

@@ -48,7 +48,7 @@ use crate::{BoxFuture, Error, Result, Variants};
 
 use crate::value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
-pub use crate::gc::Traverseable;
+pub use crate::gc::Trace;
 
 pub type FutureValue<F> = Either<FutureResult<<F as Future>::Item, <F as Future>::Error>, F>;
 
@@ -157,7 +157,7 @@ where
     value: Value,
 }
 
-impl<T> Traverseable for RootedValue<T>
+impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
@@ -167,8 +167,8 @@ where
     fn unroot(&self, _gc: &mut Gc) {
         self.unroot_();
     }
-    fn traverse(&self, gc: &mut Gc) {
-        self.value.traverse(gc);
+    fn trace(&self, gc: &mut Gc) {
+        self.value.trace(gc);
     }
 }
 
@@ -317,7 +317,7 @@ struct Roots<'b> {
     vm: GcPtr<Thread>,
     stack: &'b Stack,
 }
-impl<'b> Traverseable for Roots<'b> {
+impl<'b> Trace for Roots<'b> {
     fn unroot(&self, _gc: &mut Gc) {
         unreachable!()
     }
@@ -325,14 +325,14 @@ impl<'b> Traverseable for Roots<'b> {
         unreachable!()
     }
 
-    fn traverse(&self, gc: &mut Gc) {
+    fn trace(&self, gc: &mut Gc) {
         // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
-        // it from being traversed normally
+        // it from being traced normally
         gc.mark(self.vm);
-        self.stack.traverse(gc);
+        self.stack.trace(gc);
 
-        // Traverse the vm's fields, avoiding the stack which is traversed above
-        self.vm.traverse_fields_except_stack(gc);
+        // Traverse the vm's fields, avoiding the stack which is traced above
+        self.vm.trace_fields_except_stack(gc);
     }
 }
 
@@ -393,7 +393,7 @@ impl<'b> Roots<'b> {
                 vm: thread_ptr,
                 stack: &context.stack,
             }
-            .traverse(gc);
+            .trace(gc);
 
             Vec::push(&mut locks, (child_threads, context, thread_ptr));
         }
@@ -450,16 +450,16 @@ impl VmType for Thread {
     type Type = Self;
 }
 
-impl Traverseable for Thread {
+impl Trace for Thread {
     fn root(&self, _gc: &mut Gc) {
         // Thread is always behind a `GcPtr`
     }
     fn unroot(&self, _gc: &mut Gc) {
         // Ditto
     }
-    fn traverse(&self, gc: &mut Gc) {
-        self.traverse_fields_except_stack(gc);
-        self.context.lock().unwrap().stack.traverse(gc);
+    fn trace(&self, gc: &mut Gc) {
+        self.trace_fields_except_stack(gc);
+        self.context.lock().unwrap().stack.trace(gc);
     }
 }
 
@@ -574,15 +574,15 @@ impl Clone for RootedThread {
     }
 }
 
-impl Traverseable for RootedThread {
+impl Trace for RootedThread {
     fn root(&self, _gc: &mut Gc) {
         self.root_();
     }
     fn unroot(&self, _gc: &mut Gc) {
         self.unroot_();
     }
-    fn traverse(&self, gc: &mut Gc) {
-        self.thread.traverse(gc);
+    fn trace(&self, gc: &mut Gc) {
+        self.thread.trace(gc);
     }
 }
 
@@ -897,10 +897,10 @@ impl Thread {
         self.context()
     }
 
-    fn traverse_fields_except_stack(&self, gc: &mut Gc) {
-        self.global_state.traverse(gc);
-        self.rooted_values.read().unwrap().traverse(gc);
-        self.child_threads.read().unwrap().traverse(gc);
+    fn trace_fields_except_stack(&self, gc: &mut Gc) {
+        self.global_state.trace(gc);
+        self.rooted_values.read().unwrap().trace(gc);
+        self.child_threads.read().unwrap().trace(gc);
     }
 
     fn parent_threads(&self) -> RwLockWriteGuard<Vec<GcPtr<Thread>>> {
@@ -1461,7 +1461,7 @@ impl Context {
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
     where
-        D: DataDef + Traverseable,
+        D: DataDef + Trace,
         D::Value: Sized + Any,
     {
         alloc(&mut self.gc, thread, &self.stack, data)
@@ -1469,7 +1469,7 @@ impl Context {
 
     pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
     where
-        D: DataDef + Traverseable,
+        D: DataDef + Trace,
         D::Value: Sized + Any,
     {
         self.gc.alloc_ignore_limit(data)
@@ -1523,7 +1523,7 @@ impl Context {
 impl<'b> OwnedContext<'b> {
     pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
     where
-        D: DataDef + Traverseable,
+        D: DataDef + Trace,
         D::Value: Sized + Any,
     {
         let thread = self.thread;
@@ -1561,7 +1561,7 @@ pub(crate) fn alloc<D>(
     def: D,
 ) -> Result<GcPtr<D::Value>>
 where
-    D: DataDef + Traverseable,
+    D: DataDef + Trace,
     D::Value: Sized + Any,
 {
     let roots = Roots {

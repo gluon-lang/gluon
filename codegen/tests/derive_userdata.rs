@@ -11,7 +11,7 @@ use gluon::{import, Compiler, Thread};
 use init::new_vm;
 use std::sync::Arc;
 
-#[derive(Userdata, Traverseable, Debug, VmType)]
+#[derive(Userdata, Trace, Debug, VmType)]
 #[gluon(vm_type = "WindowHandle")]
 struct WindowHandle {
     id: Arc<u64>,
@@ -67,6 +67,6 @@ fn userdata() {
     }
 }
 
-#[derive(Userdata, Traverseable, Debug, VmType)]
+#[derive(Userdata, Trace, Debug, VmType)]
 #[gluon(vm_type = "Empty")]
 struct Empty;

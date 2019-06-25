@@ -20,7 +20,7 @@ use crate::{
         primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef,
         OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
-    gc::{GcPtr, Traverseable},
+    gc::{GcPtr, Trace},
     stack::{ClosureState, ExternState, StackFrame, State},
     thread::{ActiveThread, ThreadInternal},
     types::{VmIndex, VmInt},
@@ -48,8 +48,8 @@ where
     }
 }
 
-impl<T> Traverseable for Sender<T> {
-    impl_traverseable! { self, _gc,
+impl<T> Trace for Sender<T> {
+    impl_trace! { self, _gc,
         // No need to traverse in Sender as values can only be accessed through Receiver
         {}
     }
@@ -61,8 +61,8 @@ impl<T> Sender<T> {
     }
 }
 
-impl<T> Traverseable for Receiver<T> {
-    impl_traverseable! { self, gc,
+impl<T> Trace for Receiver<T> {
+    impl_trace! { self, gc,
         mark(&*self.queue.lock().unwrap(), gc)
     }
 }
@@ -256,11 +256,11 @@ fn spawn_on<'vm>(
     {
     }
 
-    impl<F> Traverseable for SpawnFuture<F>
+    impl<F> Trace for SpawnFuture<F>
     where
         F: Future,
     {
-        impl_traverseable! { self, _gc, { } }
+        impl_trace! { self, _gc, { } }
     }
 
     impl<F> VmType for SpawnFuture<F>

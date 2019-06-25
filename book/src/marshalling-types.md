@@ -162,7 +162,7 @@ let val = match an_enum {
 
 Implementing `Userdata` is straight forward: there are no required methods, so we can simply
 use the default implementation. However, `Userdata` also requires the type to implement
-`VmType` and `Traverseable`. We can use the minimal `VmType` implementation, it already
+`VmType` and `Trace`. We can use the minimal `VmType` implementation, it already
 provides the correct `make_type` function for us:
 
 ```rust,ignore
@@ -174,18 +174,18 @@ where
 }
 ```
 
-In our case, the `Traverseable` implementation can also be left empty. Only if a type contains
+In our case, the `Trace` implementation can also be left empty. Only if a type contains
 types that are managed by Gluon's GC, it is necessary to implement the `traverse` method
 in order to call `traverse` on those types. This way the GC can find all the value it manages.
 
 ```rust,ignore
 // empty impl for 'normal' types
-impl<T> Traverseable for GluonUser<T> {}
+impl<T> Trace for GluonUser<T> {}
 
 // for a type that contains a Traversable type, we need to call
 // its traverse method
-impl Traverseable for ContainsGcPtr {
-    fn traverse(&self, gc: &mut Gc) {
+impl Trace for ContainsGcPtr {
+    fn trace(&self, gc: &mut Gc) {
         self.gc_ptr.traverse(gc);
     }
 }

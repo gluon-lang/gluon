@@ -16,7 +16,7 @@ use crate::{
         primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
         WithVM, IO,
     },
-    gc::{DataDef, Traverseable, WriteOnly},
+    gc::{DataDef, Trace, WriteOnly},
     stack::{ExternState, StackFrame},
     types::VmInt,
     value::{Def, GcStr, Repr, ValueArray, ValueRepr},
@@ -63,7 +63,7 @@ pub mod array {
             )));
         }
 
-        #[derive(Traverseable)]
+        #[derive(Trace)]
         #[gluon(gluon_vm)]
         struct Slice<'a> {
             start: usize,
@@ -117,7 +117,7 @@ pub mod array {
         lhs: Array<'vm, generic::A>,
         rhs: Array<'vm, generic::A>,
     ) -> RuntimeResult<Array<'vm, generic::A>, Error> {
-        #[derive(Traverseable)]
+        #[derive(Trace)]
         #[gluon(gluon_vm)]
         struct Append<'b> {
             lhs: &'b ValueArray,
@@ -177,7 +177,7 @@ mod string {
     use crate::thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
-        #[derive(Traverseable)]
+        #[derive(Trace)]
         #[gluon(gluon_vm)]
         struct StrAppend<'b> {
             lhs: &'b str,
@@ -585,8 +585,8 @@ pub enum Component<'a> {
 #[gluon(gluon_vm)]
 pub struct Metadata(fs::Metadata);
 
-impl Traverseable for Metadata {
-    impl_traverseable! { self, _gc, { } }
+impl Trace for Metadata {
+    impl_trace! { self, _gc, { } }
 }
 
 #[derive(Userdata, Debug, VmType)]
@@ -594,8 +594,8 @@ impl Traverseable for Metadata {
 #[gluon(gluon_vm)]
 pub struct DirEntry(fs::DirEntry);
 
-impl Traverseable for DirEntry {
-    impl_traverseable! { self, _gc, { } }
+impl Trace for DirEntry {
+    impl_trace! { self, _gc, { } }
 }
 
 pub fn load_fs(vm: &Thread) -> Result<ExternModule> {

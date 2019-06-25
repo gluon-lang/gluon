@@ -13,7 +13,7 @@ use crate::vm::{
     ExternModule,
 };
 
-#[derive(Clone, Debug, Userdata, Traverseable, VmType)]
+#[derive(Clone, Debug, Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.random.XorShiftRng")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]

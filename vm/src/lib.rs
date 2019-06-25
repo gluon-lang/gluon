@@ -95,7 +95,7 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Traverseable)]
+#[derive(Copy, Clone, Debug, PartialEq, Trace)]
 #[gluon(gluon_vm)]
 #[repr(transparent)]
 pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);

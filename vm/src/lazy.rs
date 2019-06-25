@@ -11,7 +11,7 @@ use crate::{
         generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
     },
     base::types::{self, ArcType},
-    gc::{GcPtr, Move, Traverseable},
+    gc::{GcPtr, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
@@ -62,8 +62,8 @@ enum Lazy_ {
     Value(Value),
 }
 
-impl<T> Traverseable for Lazy<T> {
-    impl_traverseable! { self, gc,
+impl<T> Trace for Lazy<T> {
+    impl_trace! { self, gc,
         match *self.value.lock().unwrap() {
             Lazy_::Blackhole(..) => (),
             Lazy_::Thunk(ref value) => mark(value, gc),

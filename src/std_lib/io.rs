@@ -49,7 +49,7 @@ fn eprintln(s: &str) -> IO<()> {
     IO::Value(())
 }
 
-#[derive(Userdata, Traverseable, VmType)]
+#[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.io.File")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]

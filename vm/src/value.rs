@@ -18,7 +18,7 @@ use crate::types::*;
 
 use crate::array::Array;
 use crate::compiler::DebugInfo;
-use crate::gc::{DataDef, Gc, GcPtr, Generation, Move, Traverseable, WriteOnly};
+use crate::gc::{DataDef, Gc, GcPtr, Generation, Move, Trace, WriteOnly};
 use crate::interner::InternedStr;
 use crate::thread::{Status, Thread};
 use crate::{Error, Result, Variants};
@@ -26,7 +26,7 @@ use crate::{Error, Result, Variants};
 use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
 mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
+pub trait Userdata: ::mopa::Any + Trace + fmt::Debug + Send + Sync {
     fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
         let _ = deep_cloner;
         Err(Error::Message("Userdata cannot be cloned".into()))
@@ -43,7 +43,7 @@ pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants
     xs.iter().map(|v| unsafe { Variants::new(v) })
 }
 
-#[derive(PartialEq, Traverseable)]
+#[derive(PartialEq, Trace)]
 #[gluon(gluon_vm)]
 #[repr(C)]
 pub struct ClosureData {
@@ -60,7 +60,7 @@ impl fmt::Debug for ClosureData {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
 
@@ -79,7 +79,7 @@ unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub struct ClosureInitDef(pub GcPtr<BytecodeFunction>, pub usize);
 
@@ -131,13 +131,13 @@ pub struct BytecodeFunction {
     pub debug_info: DebugInfo,
 }
 
-impl Traverseable for BytecodeFunction {
-    impl_traverseable! { self, gc,
+impl Trace for BytecodeFunction {
+    impl_trace! { self, gc,
         mark(&self.inner_functions, gc)
     }
 }
 
-#[derive(Debug, Traverseable)]
+#[derive(Debug, Trace)]
 #[gluon(gluon_vm)]
 #[repr(C)]
 pub struct DataStruct {
@@ -179,7 +179,7 @@ impl GcPtr<DataStruct> {
 }
 
 /// Definition for data values in the VM
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct Def<'b> {
     pub tag: VmTag,
@@ -200,7 +200,7 @@ unsafe impl<'b> DataDef for Def<'b> {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct VariantDef<'b> {
     pub tag: VmTag,
@@ -229,7 +229,7 @@ unsafe impl<'b> DataDef for VariantDef<'b> {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct UninitializedVariantDef {
     pub tag: VmTag,
@@ -252,7 +252,7 @@ unsafe impl DataDef for UninitializedVariantDef {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct RecordDef<'b> {
     pub elems: &'b [Value],
@@ -302,8 +302,8 @@ unsafe impl<'b> DataDef for UninitializedRecord<'b> {
     }
 }
 
-impl<'b> Traverseable for UninitializedRecord<'b> {
-    impl_traverseable! {self, _gc, {} }
+impl<'b> Trace for UninitializedRecord<'b> {
+    impl_trace! {self, _gc, {} }
 }
 
 mod gc_str {
@@ -315,7 +315,7 @@ mod gc_str {
     use std::ops::Deref;
     use std::str;
 
-    #[derive(Copy, Clone, PartialEq, Traverseable)]
+    #[derive(Copy, Clone, PartialEq, Trace)]
     #[gluon(gluon_vm)]
     pub struct GcStr(GcPtr<ValueArray>);
 
@@ -378,7 +378,7 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq, Traverseable)]
+#[derive(Copy, Clone, PartialEq, Trace)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -770,7 +770,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Traverseable)]
+#[derive(Copy, Clone, Debug, Trace)]
 #[gluon(gluon_vm)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
@@ -807,7 +807,7 @@ impl PartialEq for Callable {
     }
 }
 
-#[derive(Debug, Traverseable)]
+#[derive(Debug, Trace)]
 #[gluon(gluon_vm)]
 #[repr(C)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
@@ -828,7 +828,7 @@ impl PartialEq for PartialApplicationData {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
 unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
@@ -849,8 +849,8 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     }
 }
 
-impl Traverseable for Value {
-    impl_traverseable! {self,  gc,
+impl Trace for Value {
+    impl_trace! {self,  gc,
         mark(&self.get_repr(), gc)
     }
 }
@@ -990,8 +990,8 @@ impl fmt::Debug for ExternFunction {
     }
 }
 
-impl Traverseable for ExternFunction {
-    impl_traverseable! { self, _gc, {} }
+impl Trace for ExternFunction {
+    impl_trace! { self, _gc, {} }
 }
 
 /// Representation of values which can be stored directly in an array
@@ -1157,8 +1157,8 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl Traverseable for ValueArray {
-    impl_traverseable! { self, gc,
+impl Trace for ValueArray {
+    impl_trace! { self, gc,
         on_array!(self, |array: &Array<_>| mark(array, gc))
     }
 }
@@ -1277,7 +1277,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
     }
 }
 
-#[derive(Traverseable)]
+#[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct ArrayDef<'b>(pub &'b [Value]);
 

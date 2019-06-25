@@ -7,11 +7,11 @@ use std::sync::Mutex;
 use gluon::import::add_extern_module;
 use gluon::new_vm;
 use gluon::vm::api::{primitive_f, Userdata, VmType};
-use gluon::vm::gc::Traverseable;
+use gluon::vm::gc::Trace;
 use gluon::vm::thread::{Status, Thread};
 use gluon::vm::ExternModule;
 
-#[derive(gluon_codegen::Traverseable)]
+#[derive(gluon_codegen::Trace)]
 #[gluon_trace(skip)]
 struct Test<'vm>(Mutex<&'vm str>);
 

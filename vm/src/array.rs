@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
-use crate::gc::Traverseable;
+use crate::gc::Trace;
 
 mod internal {
     pub struct CantConstruct(());
@@ -66,8 +66,8 @@ impl<T: fmt::Debug> fmt::Debug for Array<T> {
     }
 }
 
-impl<T: Traverseable> Traverseable for Array<T> {
-    impl_traverseable! { self, gc,
+impl<T: Trace> Trace for Array<T> {
+    impl_trace! { self, gc,
         mark(&**self, gc)
     }
 }

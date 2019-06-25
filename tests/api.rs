@@ -44,7 +44,7 @@ fn make_vm() -> RootedThread {
     vm
 }
 
-#[derive(Debug, Userdata, Traverseable)]
+#[derive(Debug, Userdata, Trace)]
 struct Test(VmInt);
 impl VmType for Test {
     type Type = Test;
@@ -537,13 +537,13 @@ fn scoped_mutable_reference() {
 fn cyclic_userdata() {
     let _ = ::env_logger::try_init();
 
-    #[derive(Clone, Debug, Default, Userdata, Traverseable)]
+    #[derive(Clone, Debug, Default, Userdata, Trace)]
     struct NoisyDrop(Arc<()>);
     impl VmType for NoisyDrop {
         type Type = NoisyDrop;
     }
 
-    #[derive(Debug, Userdata, Traverseable)]
+    #[derive(Debug, Userdata, Trace)]
     struct Cyclic(OpaqueValue<RootedThread, NoisyDrop>);
     impl VmType for Cyclic {
         type Type = Cyclic;
