@@ -160,8 +160,8 @@ let val = match an_enum {
 
 #### Userdata
 
-Implementing `Userdata` is straight forward: there are no required methods, so we can simply
-use the default implementation. However, `Userdata` also requires the type to implement
+Implementing `Userdata` is straight forward: we can either `derive` the trait or use the default
+implementation since there are no required methods. However, `Userdata` also requires the type to implement
 `VmType` and `Trace`. We can use the minimal `VmType` implementation, it already
 provides the correct `make_type` function for us:
 
@@ -174,21 +174,24 @@ where
 }
 ```
 
-In our case, the `Trace` implementation can also be left empty. Only if a type contains
-types that are managed by Gluon's GC, it is necessary to implement the `traverse` method
-in order to call `traverse` on those types. This way the GC can find all the value it manages.
+The `Trace` implementation can be automatically derived in most cases as it will just call it's methods on every field
+of the type. However, this means that it expects that every field also implements `Trace`, if that is not the case you
+can opt out of tracing with the `#[gluon_trace(skip)]` attribute. This is fine in many cases but can cause reference
+cycles if your userdata stores values managed by Gluon's GC. However if it doesn't it is safe to just use `skip`.
 
 ```rust,ignore
-// empty impl for 'normal' types
-impl<T> Trace for GluonUser<T> {}
-
-// for a type that contains a Traversable type, we need to call
-// its traverse method
-impl Trace for ContainsGcPtr {
-    fn trace(&self, gc: &mut Gc) {
-        self.gc_ptr.traverse(gc);
-    }
+// Contains no gluon managed values so skipping the trace causes no issues
+#[derive(Trace)]
+#[gluon_trace(skip)]
+struct SimpleType {
+    name: String,
+    slot: Mutex<i32>,
 }
+
+// Here we store a `OpaqueValue` which is managed by gluon's GC. To avoid a reference cycle we must trace
+// the field so gluon can find it
+#[derive(Trace)]
+struct Callback(Mutex<OpaqueValue<RootedThread, fn (i32) -> String>>);
 ```
 
 ## Passing values to and from Gluon
