@@ -572,7 +572,7 @@ macro_rules! empty_trace {
     }
 }
 
-empty_trace! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str bool }
+empty_trace! { () u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str String bool }
 
 unsafe impl<T> Trace for Option<T>
 where
