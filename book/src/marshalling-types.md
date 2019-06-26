@@ -185,13 +185,13 @@ cycles if your userdata stores values managed by Gluon's GC. However if it doesn
 #[gluon_trace(skip)]
 struct SimpleType {
     name: String,
-    slot: Mutex<i32>,
+    slot: std::sync::Mutex<i32>,
 }
 
 // Here we store a `OpaqueValue` which is managed by gluon's GC. To avoid a reference cycle we must trace
-// the field so gluon can find it
+// the field so gluon can find it. `gc::Mutex` is a drop-in replacement for `std::sync::Mutex` which is GC aware.
 #[derive(Trace)]
-struct Callback(Mutex<OpaqueValue<RootedThread, fn (i32) -> String>>);
+struct Callback(gluon::vm::gc::Mutex<OpaqueValue<RootedThread, fn (i32) -> String>>);
 ```
 
 ## Passing values to and from Gluon

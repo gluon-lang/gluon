@@ -161,10 +161,10 @@ unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    unsafe fn root(&self, _: &mut Gc) {
+    unsafe fn root(&self) {
         self.root_();
     }
-    unsafe fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -318,10 +318,10 @@ struct Roots<'b> {
     stack: &'b Stack,
 }
 unsafe impl<'b> Trace for Roots<'b> {
-    unsafe fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self) {
         unreachable!()
     }
-    unsafe fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self) {
         unreachable!()
     }
 
@@ -451,10 +451,10 @@ impl VmType for Thread {
 }
 
 unsafe impl Trace for Thread {
-    unsafe fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self) {
         // Thread is always behind a `GcPtr`
     }
-    unsafe fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self) {
         // Ditto
     }
     fn trace(&self, gc: &mut Gc) {
@@ -549,7 +549,14 @@ impl Drop for RootedThread {
             if self.parent.is_none() && is_empty {
                 // The last RootedThread was dropped, there is no way to refer to the global state any
                 // longer so drop everything
-                let mut gc_ref = self.thread.global_state.gc.lock().unwrap();
+                let mut gc_ref = self
+                    .thread
+                    .global_state
+                    .gc
+                    .lock()
+                    // Ignore poisoning since we don't need to interact with the Gc values, only
+                    // drop them
+                    .unwrap_or_else(|err| err.into_inner());
                 let gc_to_drop =
                     ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
                 // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
@@ -575,10 +582,10 @@ impl Clone for RootedThread {
 }
 
 unsafe impl Trace for RootedThread {
-    unsafe fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self) {
         self.root_();
     }
-    unsafe fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {

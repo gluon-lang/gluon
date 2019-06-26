@@ -20,6 +20,8 @@ use crate::interner::InternedStr;
 use crate::types::VmIndex;
 use crate::{Error, Result};
 
+pub mod mutex;
+
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
     // Allocate an extra element if it does not fit exactly
@@ -490,8 +492,8 @@ pub trait CollectScope {
 /// A type unsafe implementing Trace must call trace on each of its fields
 /// which in turn contains `GcPtr`
 pub unsafe trait Trace {
-    unsafe fn root(&self, gc: &mut Gc);
-    unsafe fn unroot(&self, gc: &mut Gc);
+    unsafe fn root(&self);
+    unsafe fn unroot(&self);
 
     fn trace(&self, gc: &mut Gc) {
         let _ = gc;
@@ -502,18 +504,20 @@ pub unsafe trait Trace {
 #[macro_export]
 macro_rules! impl_trace {
     ($self_: tt, $gc: ident, $body: expr) => {
-        unsafe fn root(&$self_, $gc: &mut $crate::gc::Gc) {
+        unsafe fn root(&$self_) {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
-                Trace::root(this, gc)
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::root(this)
             }
+            let $gc = ();
             $body
         }
-        unsafe fn unroot(&$self_, $gc: &mut $crate::gc::Gc) {
+        unsafe fn unroot(&$self_) {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
-                Trace::unroot(this, gc)
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::unroot(this)
             }
+            let $gc = ();
             $body
         }
         fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
@@ -644,10 +648,10 @@ unsafe impl<T: ?Sized> Trace for GcPtr<T>
 where
     T: Trace,
 {
-    unsafe fn root(&self, _gc: &mut Gc) {
+    unsafe fn root(&self) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
-    unsafe fn unroot(&self, _gc: &mut Gc) {
+    unsafe fn unroot(&self) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
     fn trace(&self, gc: &mut Gc) {
@@ -825,7 +829,7 @@ impl Gc {
             assert!(ret == p);
             self.values = Some(ptr);
             let ptr = GcPtr(NonNull::new_unchecked(p));
-            D::Value::unroot(&ptr, self);
+            D::Value::unroot(&ptr);
             ptr
         }
     }

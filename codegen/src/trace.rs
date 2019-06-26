@@ -143,16 +143,18 @@ fn gen_impl(
             unsafe impl #impl_generics _gluon_gc::Trace for #ident #ty_generics
                 #where_clause #(#trace_bounds,)*
             {
-                unsafe fn root(&self, gc: &mut _gluon_gc::Gc) {
-                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, gc: &mut _gluon_gc::Gc) {
-                        _gluon_gc::Trace::root(this, gc)
+                unsafe fn root(&self) {
+                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, _: ()) {
+                        _gluon_gc::Trace::root(this)
                     }
+                    let gc = ();
                     #push_impl
                 }
-                unsafe fn unroot(&self, gc: &mut _gluon_gc::Gc) {
-                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, gc: &mut _gluon_gc::Gc) {
-                        _gluon_gc::Trace::unroot(this, gc)
+                unsafe fn unroot(&self) {
+                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, _: ()) {
+                        _gluon_gc::Trace::unroot(this)
                     }
+                    let gc = ();
                     #push_impl
                 }
                 fn trace(&self, gc: &mut _gluon_gc:: Gc) {
