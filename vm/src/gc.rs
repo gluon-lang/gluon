@@ -12,7 +12,7 @@ use std::{
     ptr::{self, NonNull},
     rc::Rc,
     result::Result as StdResult,
-    sync::{Arc, Mutex, RwLock},
+    sync::Arc,
 };
 
 use crate::base::fnv::FnvMap;
@@ -595,24 +595,6 @@ where
             Ok(x) => mark(x, gc),
             Err(x) => mark(x, gc),
         }
-    }
-}
-
-unsafe impl<T> Trace for Mutex<T>
-where
-    T: Trace,
-{
-    impl_trace! { self, gc,
-        mark(&*self.lock().unwrap(), gc)
-    }
-}
-
-unsafe impl<T> Trace for RwLock<T>
-where
-    T: Trace,
-{
-    impl_trace! { self, gc,
-        mark(&*self.read().unwrap(), gc)
     }
 }
 
