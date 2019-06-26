@@ -144,7 +144,6 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
             Err((None, err)) => return Err(err.into()),
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
-    eprintln!("{:?}", expr);
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = (&mut expr).typecheck(&mut compiler, thread, &name, fileinput);
