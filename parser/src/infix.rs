@@ -202,13 +202,13 @@ where
 
 pub struct Reparser<'s, Id: 's> {
     operators: OpTable<Id>,
-    symbols: &'s IdentEnv<Ident = Id>,
+    symbols: &'s dyn IdentEnv<Ident = Id>,
     errors: Errors<Spanned<Error, BytePos>>,
     _marker: PhantomData<Id>,
 }
 
 impl<'s, Id> Reparser<'s, Id> {
-    pub fn new(operators: OpTable<Id>, symbols: &'s IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
+    pub fn new(operators: OpTable<Id>, symbols: &'s dyn IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
         Reparser {
             operators: operators,
             symbols: symbols,
@@ -309,7 +309,7 @@ impl StdError for Error {
 /// [`Language.Haskell.Infix`]: https://hackage.haskell.org/package/infix-0.1.1/docs/src/Language-Haskell-Infix.html
 pub fn reparse<Id>(
     expr: SpannedExpr<Id>,
-    symbols: &IdentEnv<Ident = Id>,
+    symbols: &dyn IdentEnv<Ident = Id>,
     operators: &OpTable<Id>,
 ) -> Result<SpannedExpr<Id>, (Spanned<Error, BytePos>, Option<Expr<Id>>)>
 where
@@ -522,7 +522,7 @@ mod tests {
 
     fn reparse<Id>(
         expr: SpannedExpr<Id>,
-        symbols: &IdentEnv<Ident = Id>,
+        symbols: &dyn IdentEnv<Ident = Id>,
         operators: &OpTable<Id>,
     ) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
     where

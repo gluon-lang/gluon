@@ -14,18 +14,20 @@ use futures::{
 
 use crate::base::types::{ArcType, Type};
 
-use crate::api::generic::{A, B};
-use crate::api::{
-    primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef,
-    OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
+use crate::{
+    api::{
+        generic::{A, B},
+        primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef,
+        OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
+    },
+    gc::{GcPtr, Trace},
+    stack::{ClosureState, ExternState, StackFrame, State},
+    thread::{ActiveThread, ThreadInternal},
+    types::{VmIndex, VmInt},
+    value::{Callable, GcStr, Userdata, Value, ValueRepr},
+    vm::{RootedThread, Status, Thread},
+    Error, ExternModule, Result as VmResult,
 };
-use crate::gc::{Gc, GcPtr, Traverseable};
-use crate::stack::{ClosureState, ExternState, StackFrame, State};
-use crate::thread::{ActiveThread, ThreadInternal};
-use crate::types::{VmIndex, VmInt};
-use crate::value::{Callable, GcStr, Userdata, Value, ValueRepr};
-use crate::vm::{RootedThread, Status, Thread};
-use crate::{Error, ExternModule, Result as VmResult};
 
 pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`
@@ -46,9 +48,10 @@ where
     }
 }
 
-impl<T> Traverseable for Sender<T> {
-    fn traverse(&self, _gc: &mut Gc) {
+unsafe impl<T> Trace for Sender<T> {
+    impl_trace! { self, _gc,
         // No need to traverse in Sender as values can only be accessed through Receiver
+        {}
     }
 }
 
@@ -58,9 +61,9 @@ impl<T> Sender<T> {
     }
 }
 
-impl<T> Traverseable for Receiver<T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.queue.lock().unwrap().traverse(gc);
+unsafe impl<T> Trace for Receiver<T> {
+    impl_trace! { self, gc,
+        mark(&*self.queue.lock().unwrap(), gc)
     }
 }
 
@@ -253,11 +256,11 @@ fn spawn_on<'vm>(
     {
     }
 
-    impl<F> Traverseable for SpawnFuture<F>
+    unsafe impl<F> Trace for SpawnFuture<F>
     where
         F: Future,
     {
-        fn traverse(&self, _: &mut Gc) {}
+        impl_trace! { self, _gc, { } }
     }
 
     impl<F> VmType for SpawnFuture<F>

@@ -165,7 +165,7 @@ pub fn record(
     current_module: &str,
     typ: &ArcType,
     symbols: &FnvMap<&Symbol, completion::SpCompletionSymbol>,
-    source: &Source,
+    source: &dyn Source,
     meta: &Metadata,
 ) -> Record {
     let line_number = |meta: &Metadata| -> Option<u32> {
@@ -315,7 +315,7 @@ fn handlebars() -> Result<Handlebars> {
                   _: &Handlebars,
                   _context: &Context,
                   _rc: &mut RenderContext,
-                  out: &mut Output| {
+                  out: &mut dyn Output| {
                 let param = String::deserialize(h.param(0).unwrap().value())?;
                 out.write(&param.replace(".", "/"))?;
                 Ok(())
@@ -328,7 +328,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         context: &Context,
         _rc: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
@@ -343,7 +343,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         context: &Context,
         _rc: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let parent_breadcrumb = current_module.rsplit('.').nth(1);
@@ -364,7 +364,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         context: &Context,
         _rc: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = context.data()["name"].as_str().expect("name");
         let current_module_level = current_module.split('.').count();
@@ -399,7 +399,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         context: &Context,
         _: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let relative_path = current_module.split('.').map(|_| "../").format("");
@@ -417,7 +417,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         _: &Context,
         _: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let param = String::deserialize(h.param(0).unwrap().value())?;
 
@@ -449,7 +449,7 @@ fn handlebars() -> Result<Handlebars> {
         _: &Handlebars,
         _: &Context,
         _: &mut RenderContext,
-        out: &mut Output,
+        out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let param = String::deserialize(h.param(0).unwrap().value())?;
 

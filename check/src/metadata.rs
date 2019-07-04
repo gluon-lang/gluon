@@ -10,7 +10,7 @@ use crate::base::symbol::{Name, Symbol};
 use crate::base::types::{row_iter, TypeExt};
 
 struct Environment<'b> {
-    env: &'b MetadataEnv,
+    env: &'b dyn MetadataEnv,
     stack: FnvMap<Symbol, Arc<Metadata>>,
 }
 
@@ -119,7 +119,7 @@ impl MaybeMetadata {
 
 /// Queries `expr` for the metadata which it contains.
 pub fn metadata(
-    env: &MetadataEnv,
+    env: &dyn MetadataEnv,
     expr: &SpannedExpr<Symbol>,
 ) -> (Arc<Metadata>, FnvMap<Symbol, Arc<Metadata>>) {
     struct MetadataVisitor<'b> {

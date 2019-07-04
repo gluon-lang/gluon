@@ -5,12 +5,18 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use crate::gc::{Gc, Traverseable};
+use crate::gc::{Gc, Trace};
 use crate::value::GcStr;
 
 /// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq)]
 pub struct InternedStr(GcStr);
+
+// InternedStr are explicitly scanned in the intern table so we can skip them when they are
+// encountered elsewhere
+unsafe impl Trace for InternedStr {
+    impl_trace! { self, _gc, {} }
+}
 
 impl PartialEq<InternedStr> for InternedStr {
     fn eq(&self, other: &InternedStr) -> bool {
@@ -85,10 +91,10 @@ pub struct Interner {
     indexes: FnvMap<&'static str, InternedStr>,
 }
 
-impl Traverseable for Interner {
-    fn traverse(&self, gc: &mut Gc) {
+unsafe impl Trace for Interner {
+    impl_trace! { self, gc,
         for (_, v) in self.indexes.iter() {
-            v.0.traverse(gc);
+            mark::<GcStr>(&v.0, gc);
         }
     }
 }

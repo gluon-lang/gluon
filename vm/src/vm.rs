@@ -23,7 +23,7 @@ use crate::base::{
 use crate::{
     api::{ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
-    gc::{Gc, GcPtr, Generation, Move, Traverseable},
+    gc::{Gc, GcPtr, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
@@ -131,9 +131,9 @@ pub struct Global {
     pub value: Value,
 }
 
-impl Traverseable for Global {
-    fn traverse(&self, gc: &mut Gc) {
-        self.value.traverse(gc);
+unsafe impl Trace for Global {
+    impl_trace! { self, gc,
+        mark(&self.value, gc)
     }
 }
 
@@ -182,15 +182,15 @@ pub struct GlobalVmState {
     debug_level: RwLock<DebugLevel>,
 }
 
-impl Traverseable for GlobalVmState {
-    fn traverse(&self, gc: &mut Gc) {
+unsafe impl Trace for GlobalVmState {
+    impl_trace! { self, gc, {
         for g in self.env.read().unwrap().globals.values() {
-            g.traverse(gc);
+            mark(g, gc);
         }
         // Also need to check the interned string table
-        self.interner.read().unwrap().traverse(gc);
-        self.generation_0_threads.read().unwrap().traverse(gc);
-    }
+        mark(&*self.interner.read().unwrap(), gc);
+        mark(&*self.generation_0_threads.read().unwrap(), gc);
+    } }
 }
 
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the

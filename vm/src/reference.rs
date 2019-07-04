@@ -2,7 +2,7 @@ use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
     api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
-    gc::{Gc, GcPtr, Move, Traverseable},
+    gc::{GcPtr, Move, Trace},
     thread::ThreadInternal,
     value::{Cloner, Value},
     vm::Thread,
@@ -22,10 +22,10 @@ impl<T> Userdata for Reference<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
+    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = deep_cloner.deep_clone(&value)?;
-        let data: Box<Userdata> = Box::new(Reference {
+        let data: Box<dyn Userdata> = Box::new(Reference {
             value: Mutex::new(cloned_value),
             thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
             _marker: PhantomData::<A>,
@@ -40,9 +40,9 @@ impl<T> fmt::Debug for Reference<T> {
     }
 }
 
-impl<T> Traverseable for Reference<T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.value.lock().unwrap().traverse(gc)
+unsafe impl<T> Trace for Reference<T> {
+    impl_trace! { self, gc,
+        mark(&*self.value.lock().unwrap(), gc)
     }
 }
 

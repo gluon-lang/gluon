@@ -61,7 +61,7 @@ where
 {
     pub(super) fn new(
         arena: &'a Arena<'a, A>,
-        source: &'a source::Source,
+        source: &'a dyn source::Source,
         formatter: crate::Formatter,
     ) -> Self {
         Printer {

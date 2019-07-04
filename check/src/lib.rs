@@ -41,7 +41,7 @@ use crate::{substitution::Substitution, typ::RcType};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(
-    env: &TypecheckEnv<Type = ArcType>,
+    env: &dyn TypecheckEnv<Type = ArcType>,
     signature: &ArcType,
     actual: &ArcType,
 ) -> bool {
@@ -52,7 +52,7 @@ pub fn check_signature(
 }
 
 fn check_signature_(
-    env: &TypeEnv<Type = RcType>,
+    env: &dyn TypeEnv<Type = RcType>,
     interner: &SharedInterner<Symbol, RcType>,
     signature: &RcType,
     actual: &RcType,

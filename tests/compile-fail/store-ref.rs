@@ -1,14 +1,18 @@
 extern crate gluon;
+extern crate gluon_codegen;
+
 use std::fmt;
 use std::sync::Mutex;
 
-use gluon::new_vm;
 use gluon::import::add_extern_module;
-use gluon::vm::ExternModule;
-use gluon::vm::thread::{Status, Thread};
+use gluon::new_vm;
 use gluon::vm::api::{primitive_f, Userdata, VmType};
-use gluon::vm::gc::Traverseable;
+use gluon::vm::gc::Trace;
+use gluon::vm::thread::{Status, Thread};
+use gluon::vm::ExternModule;
 
+#[derive(gluon_codegen::Trace)]
+#[gluon_trace(skip)]
 struct Test<'vm>(Mutex<&'vm str>);
 
 impl Userdata for Test<'static> {}
@@ -19,7 +23,6 @@ impl<'vm> fmt::Debug for Test<'vm> {
     }
 }
 
-impl<'vm> Traverseable for Test<'vm> {}
 impl<'vm> VmType for Test<'vm> {
     type Type = Test<'static>;
 }

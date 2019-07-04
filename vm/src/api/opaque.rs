@@ -1,17 +1,15 @@
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::fmt;
-use std::marker::PhantomData;
-use std::ops::Deref;
+use std::{borrow::Borrow, cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 
 use crate::base::types::ArcType;
 
-use crate::api::{ArrayRef, Getable, Pushable, ValueRef, VmType};
-use crate::thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot};
-use crate::types::{VmIndex, VmInt};
-use crate::value::{ArrayRepr, Value, ValueArray};
-use crate::vm;
-use crate::{Result, Variants};
+use crate::{
+    api::{ArrayRef, Getable, Pushable, ValueRef, VmType},
+    gc::Trace,
+    thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
+    types::{VmIndex, VmInt},
+    value::{ArrayRepr, Value, ValueArray},
+    vm, Result, Variants,
+};
 
 #[cfg(feature = "serde")]
 use crate::thread::RootedThread;
@@ -30,7 +28,7 @@ mod private {
 
     impl<'value> Sealed for Variants<'value> {}
     impl<'s, 'value> Sealed for &'s Variants<'value> {}
-    impl<T> Sealed for RootedValue<T> where T: Deref<Target = Thread> {}
+    impl<T> Sealed for RootedValue<T> where T: VmRootInternal {}
 }
 
 pub trait AsValueRef: private::Sealed {
@@ -44,7 +42,7 @@ impl<'value> AsValueRef for Variants<'value> {
 }
 impl<T> AsValueRef for RootedValue<T>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     fn as_value_ref(&self) -> ValueRef {
         self.get_variant().as_ref()
@@ -80,7 +78,7 @@ impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
 }
 impl<'value, T> AsVariant<'value, 'value> for RootedValue<T>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     fn get_variant(&'value self) -> Variants<'value> {
         self.get_variant()
@@ -104,6 +102,15 @@ where
 pub type OpaqueRef<'a, V> = Opaque<Variants<'a>, V>;
 
 pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
+
+unsafe impl<T, V> Trace for Opaque<T, V>
+where
+    T: Trace,
+{
+    impl_trace! { self, gc,
+        mark(&self.0, gc)
+    }
+}
 
 impl<T, V> PartialEq for Opaque<T, V>
 where
@@ -278,7 +285,7 @@ where
 
 impl<T, V> OpaqueValue<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     V: ?Sized,
 {
     pub fn vm(&self) -> &Thread {
@@ -409,7 +416,7 @@ where
 
 impl<T, V> OpaqueValue<T, [V]>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     pub fn get2<'value>(&'value self, index: VmInt) -> Option<V>
     where

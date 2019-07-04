@@ -30,32 +30,33 @@ pub fn generate(
         },
     ));
 
-    let generate_and_chain =
-        |symbols: &mut Symbols,
-         iter: &mut Iterator<Item = (&(bool, TypedIdent<Symbol>), &TypedIdent<Symbol>)>| {
-            iter.fold(None, |acc, (&(self_type, ref l), r)| {
-                let equal_symbol = if self_type {
-                    eq.name.clone()
-                } else {
-                    symbols.symbol("==")
-                };
+    let generate_and_chain = |symbols: &mut Symbols,
+                              iter: &mut dyn Iterator<
+        Item = (&(bool, TypedIdent<Symbol>), &TypedIdent<Symbol>),
+    >| {
+        iter.fold(None, |acc, (&(self_type, ref l), r)| {
+            let equal_symbol = if self_type {
+                eq.name.clone()
+            } else {
+                symbols.symbol("==")
+            };
 
-                let eq_check = app(
-                    span,
-                    equal_symbol,
-                    vec![
-                        ident(span, l.name.clone()).into(),
-                        ident(span, r.name.clone()),
-                    ],
-                );
+            let eq_check = app(
+                span,
+                equal_symbol,
+                vec![
+                    ident(span, l.name.clone()).into(),
+                    ident(span, r.name.clone()),
+                ],
+            );
 
-                Some(match acc {
-                    Some(acc) => infix(span, acc, symbols.symbol("&&"), eq_check),
-                    None => eq_check,
-                })
+            Some(match acc {
+                Some(acc) => infix(span, acc, symbols.symbol("&&"), eq_check),
+                None => eq_check,
             })
-            .unwrap_or_else(|| ident(span, symbols.symbol("True")))
-        };
+        })
+        .unwrap_or_else(|| ident(span, symbols.symbol("True")))
+    };
 
     let comparison_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {

@@ -10,17 +10,19 @@ use crate::real_std::{
 
 use crate::base::types::ArcType;
 
-use crate::api::{
-    generic::{self, A},
-    primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
-    WithVM, IO,
+use crate::{
+    api::{
+        generic::{self, A},
+        primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
+        WithVM, IO,
+    },
+    gc::{DataDef, Trace, WriteOnly},
+    stack::{ExternState, StackFrame},
+    types::VmInt,
+    value::{Def, GcStr, Repr, ValueArray, ValueRepr},
+    vm::{Status, Thread},
+    Error, ExternModule, Result, Variants,
 };
-use crate::gc::{DataDef, Gc, Traverseable, WriteOnly};
-use crate::stack::{ExternState, StackFrame};
-use crate::types::VmInt;
-use crate::value::{Def, GcStr, Repr, ValueArray, ValueRepr};
-use crate::vm::{Status, Thread};
-use crate::{Error, ExternModule, Result, Variants};
 
 #[doc(hidden)]
 pub mod array {
@@ -61,16 +63,12 @@ pub mod array {
             )));
         }
 
+        #[derive(Trace)]
+        #[gluon(gluon_vm)]
         struct Slice<'a> {
             start: usize,
             end: usize,
             array: &'a ValueArray,
-        }
-
-        impl<'a> Traverseable for Slice<'a> {
-            fn traverse(&self, gc: &mut Gc) {
-                self.array.traverse(gc);
-            }
         }
 
         unsafe impl<'a> DataDef for Slice<'a> {
@@ -119,6 +117,8 @@ pub mod array {
         lhs: Array<'vm, generic::A>,
         rhs: Array<'vm, generic::A>,
     ) -> RuntimeResult<Array<'vm, generic::A>, Error> {
+        #[derive(Trace)]
+        #[gluon(gluon_vm)]
         struct Append<'b> {
             lhs: &'b ValueArray,
             rhs: &'b ValueArray,
@@ -132,13 +132,6 @@ pub mod array {
                 } else {
                     self.lhs.repr()
                 }
-            }
-        }
-
-        impl<'b> Traverseable for Append<'b> {
-            fn traverse(&self, gc: &mut Gc) {
-                self.lhs.traverse(gc);
-                self.rhs.traverse(gc);
             }
         }
 
@@ -184,12 +177,12 @@ mod string {
     use crate::thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
+        #[derive(Trace)]
+        #[gluon(gluon_vm)]
         struct StrAppend<'b> {
             lhs: &'b str,
             rhs: &'b str,
         }
-
-        impl<'b> Traverseable for StrAppend<'b> {}
 
         unsafe impl<'b> DataDef for StrAppend<'b> {
             type Value = ValueArray;
@@ -592,10 +585,18 @@ pub enum Component<'a> {
 #[gluon(gluon_vm)]
 pub struct Metadata(fs::Metadata);
 
+unsafe impl Trace for Metadata {
+    impl_trace! { self, _gc, { } }
+}
+
 #[derive(Userdata, Debug, VmType)]
 #[gluon(vm_type = "std.fs.DirEntry")]
 #[gluon(gluon_vm)]
 pub struct DirEntry(fs::DirEntry);
+
+unsafe impl Trace for DirEntry {
+    impl_trace! { self, _gc, { } }
+}
 
 pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
     vm.register_type::<Metadata>("std.fs.Metadata", &[])?;

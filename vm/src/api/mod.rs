@@ -6,8 +6,8 @@ use crate::base::{
 };
 use crate::{
     forget_lifetime,
-    gc::{DataDef, Gc, GcPtr, Move, Traverseable},
-    thread::{self, Context, RootedThread, ThreadInternal, VmRoot},
+    gc::{DataDef, GcPtr, Move, Trace},
+    thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{
         ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
@@ -89,7 +89,7 @@ pub enum ValueRef<'a> {
     String(&'a str),
     Data(Data<'a>),
     Array(ArrayRef<'a>),
-    Userdata(&'a vm::Userdata),
+    Userdata(&'a dyn vm::Userdata),
     Thread(&'a Thread),
     Closure(Closure<'a>),
     Internal,
@@ -324,9 +324,9 @@ impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     }
 }
 
-impl<T> Traverseable for Unrooted<T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
+unsafe impl<T> Trace for Unrooted<T> {
+    impl_trace! { self, gc,
+        mark(&self.0, gc)
     }
 }
 
@@ -536,17 +536,6 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     }
 }
 
-impl<T> Userdata for std::sync::RwLock<T> where T: Userdata {}
-
-impl<T> Traverseable for std::sync::RwLock<T>
-where
-    T: Traverseable,
-{
-    fn traverse(&self, gc: &mut Gc) {
-        self.read().unwrap().traverse(gc);
-    }
-}
-
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm, 'value>: Sized {
     type Proxy: 'value;
@@ -580,7 +569,7 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
         let context = context.context();
-        let data: Box<vm::Userdata> = Box::new(self);
+        let data: Box<dyn vm::Userdata> = Box::new(self);
         let userdata = context.alloc_with(thread, Move(data))?;
         context.stack.push(ValueRepr::Userdata(userdata));
         Ok(())
@@ -1146,7 +1135,7 @@ where
 
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
 where
-    T: Traverseable + Pushable<'vm> + 's,
+    T: Trace + Pushable<'vm> + 's,
     &'s [T]: DataDef<Value = ValueArray>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -1566,7 +1555,7 @@ impl<'vm> Pushable<'vm> for Variants<'vm> {
 
 impl<'vm, T> Pushable<'vm> for RootedValue<T>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let value = {

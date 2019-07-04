@@ -59,7 +59,7 @@ impl<T> AliasRemover<T> {
 
     pub fn canonical_alias<'t, F>(
         &mut self,
-        env: &TypeEnv<Type = T>,
+        env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'t T,
         mut canonical: F,
@@ -98,7 +98,7 @@ impl<T> AliasRemover<T> {
 
     pub fn remove_aliases_to_concrete<'a>(
         &mut self,
-        env: &TypeEnv<Type = T>,
+        env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
     ) -> Result<T, Error>
@@ -135,7 +135,7 @@ impl<T> AliasRemover<T> {
 
     pub fn remove_aliases(
         &mut self,
-        env: &TypeEnv<Type = T>,
+        env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
     ) -> Result<T, Error>
@@ -152,7 +152,7 @@ impl<T> AliasRemover<T> {
 
     pub fn remove_alias(
         &mut self,
-        env: &TypeEnv<Type = T>,
+        env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &T,
     ) -> Result<Option<T>, Error>
@@ -172,7 +172,7 @@ impl<T> AliasRemover<T> {
 
     pub fn remove_alias_to_concrete<'a>(
         &mut self,
-        env: &'a TypeEnv<Type = T>,
+        env: &'a dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
     ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
@@ -232,7 +232,7 @@ impl<T> AliasRemover<T> {
 
 /// Removes type aliases from `typ` until it is an actual type
 pub fn remove_aliases<T>(
-    env: &TypeEnv<Type = T>,
+    env: &dyn TypeEnv<Type = T>,
     interner: &mut impl TypeContext<Symbol, T>,
     mut typ: T,
 ) -> T
@@ -246,7 +246,7 @@ where
 }
 
 pub fn remove_aliases_cow<'t, T>(
-    env: &TypeEnv<Type = T>,
+    env: &dyn TypeEnv<Type = T>,
 
     interner: &mut impl TypeContext<Symbol, T>,
     typ: &'t T,
@@ -263,7 +263,7 @@ where
 /// Resolves aliases until `canonical` returns `true` for an alias in which case it returns the
 /// type that directly contains that alias
 pub fn canonical_alias<'t, F, T>(
-    env: &TypeEnv<Type = T>,
+    env: &dyn TypeEnv<Type = T>,
     interner: &mut impl TypeContext<Symbol, T>,
     typ: &'t T,
     mut canonical: F,
@@ -298,7 +298,7 @@ where
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias<T>(
-    env: &TypeEnv<Type = T>,
+    env: &dyn TypeEnv<Type = T>,
     interner: &mut impl TypeContext<Symbol, T>,
     typ: &T,
 ) -> Result<Option<T>, Error>
@@ -320,7 +320,7 @@ where
 }
 
 pub fn peek_alias<'t, T>(
-    env: &'t TypeEnv<Type = T>,
+    env: &'t dyn TypeEnv<Type = T>,
     typ: &'t T,
 ) -> Result<Option<&'t AliasRef<Symbol, T>>, Error>
 where

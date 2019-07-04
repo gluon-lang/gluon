@@ -16,7 +16,7 @@ use crate::base::{
     symbol::{Symbol, SymbolRef},
 };
 
-fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
+fn metadata(env: &dyn MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     Metadata::clone(&check::metadata::metadata(env, expr).0)
 }
 

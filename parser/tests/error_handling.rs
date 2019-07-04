@@ -360,7 +360,7 @@ fn missing_close_paren() {
     let (_expr, err) = result.unwrap_err();
 
     let error = Error::UnexpectedEof([")", ",", "]"].iter().map(|s| s.to_string()).collect());
-    let span = pos::span(BytePos::from(35), BytePos::from(35));
+    let span = pos::span(BytePos::from(30), BytePos::from(30));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
 

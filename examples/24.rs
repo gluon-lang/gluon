@@ -13,7 +13,7 @@ fn main() {
     }
 }
 
-fn main_() -> Result<(), Box<std::error::Error>> {
+fn main_() -> Result<(), Box<dyn std::error::Error>> {
     let thread = gluon::new_vm();
 
     let mut source = String::new();

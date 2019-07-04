@@ -1,6 +1,5 @@
 use std::any::Any;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 #[cfg(feature = "serde")]
 use crate::serde::{Deserialize, Deserializer};
@@ -12,9 +11,9 @@ use crate::base::types::ArcType;
 
 use crate::api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use crate::compiler::{CompiledFunction, CompiledModule};
-use crate::gc::Move;
+use crate::gc::{Move, Trace};
 use crate::stack::{ExternState, StackFrame};
-use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
+use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot, VmRootInternal};
 use crate::types::{Instruction, VmIndex};
 use crate::value::{ExternFunction, ValueRepr};
 use crate::{Error, Result, Variants};
@@ -179,10 +178,14 @@ pub type OwnedFunction<F> = Function<RootedThread, F>;
 #[derive(Clone, Debug)]
 pub struct Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     value: RootedValue<T>,
     _marker: PhantomData<F>,
+}
+
+unsafe impl<T: VmRootInternal + Trace, F> Trace for Function<T, F> {
+    impl_trace! { self, gc, mark(&self.value, gc) }
 }
 
 #[cfg(feature = "serde")]
@@ -201,7 +204,7 @@ impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
 
 impl<T, F> Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
 {
     pub fn get_variant(&self) -> Variants {
         self.value.get_variant()
@@ -224,7 +227,7 @@ where
 
 impl<T, F> VmType for Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     type Type = F::Type;
@@ -235,7 +238,7 @@ where
 
 impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -312,9 +315,9 @@ where
 }
 
 macro_rules! vm_function_impl {
-    ($f:tt, $($args:ident),*) => {
+    ([$($f:tt)*] $($args:ident),*) => {
 
-impl <'vm, $($args,)* R> VmFunction<'vm> for $f ($($args),*) -> R
+impl <'vm, $($args,)* R> VmFunction<'vm> for $($f)* ($($args),*) -> R
 where $($args: Getable<'vm, 'vm> + 'vm,)*
       R: AsyncPushable<'vm> + VmType + 'vm
 {
@@ -373,8 +376,8 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     }
 }
 
-vm_function_impl!(fn, $($args),*);
-vm_function_impl!(Fn, $($args),*);
+vm_function_impl!([fn] $($args),*);
+vm_function_impl!([dyn Fn] $($args),*);
 
 impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
     fn arguments() -> VmIndex {
@@ -382,13 +385,13 @@ impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
     }
 }
 
-impl <'s, $($args,)* R: VmType> FunctionType for Fn($($args),*) -> R + 's {
+impl <'s, $($args,)* R: VmType> FunctionType for dyn Fn($($args),*) -> R + 's {
     fn arguments() -> VmIndex {
         count!($($args),*) + R::extra_args()
     }
 }
 
-impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
+impl <'s, $($args: VmType,)* R: VmType> VmType for dyn Fn($($args),*) -> R + 's {
     type Type = fn ($($args::Type),*) -> R::Type;
 
     #[allow(non_snake_case)]
@@ -399,7 +402,7 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
 
 impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: for<'vm> Pushable<'vm>,)*
-          T: Deref<Target = Thread>,
+          T: VmRootInternal,
           R: VmType + for<'x, 'value> Getable<'x, 'value>,
 {
     #[allow(non_snake_case)]
@@ -443,14 +446,14 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
 
 impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: for<'vm> Pushable<'vm>,)*
-          T: Deref<Target = Thread> + Clone + Send,
+          T: VmRootInternal + Clone + Send,
           R: VmType + for<'x, 'value> Getable<'x, 'value> + Send + Sync + 'static,
 {
     #[allow(non_snake_case)]
     pub fn call_async(
         &mut self
         $(, $args: $args)*
-        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
+        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
         use crate::thread::Execute;
         use futures::IntoFuture;
@@ -477,7 +480,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     pub fn call_fast_async(
         &mut self
         $(, $args: $args)*
-        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
+        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
         use crate::thread::Execute;
 
@@ -513,7 +516,7 @@ make_vm_function!(A, B, C, D, E, F, G);
 
 impl<T, F> Function<T, F>
 where
-    T: Deref<Target = Thread>,
+    T: VmRootInternal,
     F: VmType,
 {
     pub fn cast<F2>(self) -> Result<Function<T, F2>>

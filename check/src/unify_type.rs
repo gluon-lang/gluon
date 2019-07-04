@@ -38,7 +38,7 @@ pub type Error<I, T = RcType> = UnifyError<TypeError<I, T>, T>;
 
 #[derive(Clone)]
 pub struct State<'a> {
-    env: &'a (TypeEnv<Type = RcType> + 'a),
+    env: &'a (dyn TypeEnv<Type = RcType> + 'a),
     /// A stack of which aliases are currently expanded. Used to determine when an alias is
     /// recursively expanded in which case the unification fails.
     reduced_aliases: Vec<Symbol>,
@@ -50,14 +50,14 @@ pub struct State<'a> {
 
 impl<'a> State<'a> {
     pub fn new(
-        env: &'a (TypeEnv<Type = RcType> + 'a),
+        env: &'a (dyn TypeEnv<Type = RcType> + 'a),
         subs: &'a Substitution<RcType>,
     ) -> State<'a> {
         State::with_refinement(env, subs, false)
     }
 
     pub fn with_refinement(
-        env: &'a (TypeEnv<Type = RcType> + 'a),
+        env: &'a (dyn TypeEnv<Type = RcType> + 'a),
         subs: &'a Substitution<RcType>,
         refinement: bool,
     ) -> State<'a> {
@@ -135,7 +135,7 @@ where
     }
 }
 
-pub fn similarity_filter<'a, I, T>(typ: &'a T, fields: &'a [I]) -> Box<Fn(&I) -> Filter + 'a>
+pub fn similarity_filter<'a, I, T>(typ: &'a T, fields: &'a [I]) -> Box<dyn Fn(&I) -> Filter + 'a>
 where
     T: TypeExt<Id = I>,
     I: AsRef<str>,
@@ -178,7 +178,7 @@ where
     I: fmt::Display + AsRef<str>,
     T: TypeExt<Id = I> + ast::Commented + pos::HasSpan,
 {
-    pub fn make_filter<'a>(&'a self) -> Box<Fn(&I) -> Filter + 'a> {
+    pub fn make_filter<'a>(&'a self) -> Box<dyn Fn(&I) -> Filter + 'a> {
         match *self {
             TypeError::FieldMismatch(ref l, ref r) => Box::new(move |field| {
                 if [l, r].iter().any(|f| f.as_ref() == field.as_ref()) {
@@ -195,7 +195,7 @@ where
         }
     }
 
-    pub fn filter_fmt(&self, filter: &Fn(&I) -> Filter, f: &mut fmt::Formatter) -> fmt::Result {
+    pub fn filter_fmt(&self, filter: &dyn Fn(&I) -> Filter, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TypeError::FieldMismatch(ref l, ref r) => write!(
                 f,
@@ -1124,7 +1124,7 @@ pub fn subsumes_implicit(
     state: State,
     l: &RcType,
     r: &RcType,
-    receiver: &mut FnMut(&RcType),
+    receiver: &mut dyn FnMut(&RcType),
 ) -> Result<RcType, (RcType, Errors<Error<Symbol>>)> {
     debug!("Subsume {} <=> {}", l, r);
     let mut unifier = UnifierState {
@@ -1178,7 +1178,7 @@ impl<'a, 'e> UnifierState<'a, Subsume<'e>> {
         &mut self,
         l: &RcType,
         r: &RcType,
-        receiver: &mut FnMut(&RcType),
+        receiver: &mut dyn FnMut(&RcType),
     ) -> Option<RcType> {
         debug!("Subsume implicit {} <=> {}", l, r);
 

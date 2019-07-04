@@ -42,7 +42,7 @@ fn sequence_actions(
     span: Span<BytePos>,
     field_symbols: &[TypedIdent<Symbol>],
     packed_expr: SpannedExpr<Symbol>,
-    action: &mut FnMut(&Symbol) -> SpannedExpr<Symbol>,
+    action: &mut dyn FnMut(&Symbol) -> SpannedExpr<Symbol>,
 ) -> SpannedExpr<Symbol> {
     let pack_record = pos::spanned(
         span,

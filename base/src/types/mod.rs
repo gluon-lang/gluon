@@ -2178,11 +2178,11 @@ where
     A: Clone,
 {
     fn to_doc(&'a self, arena: &'a Arena<'a, A>, _: ()) -> DocBuilder<'a, Arena<'a, A>, A> {
-        self.to_doc(arena, &() as &Source)
+        self.to_doc(arena, &() as &dyn Source)
     }
 }
 
-impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, &'a Source> for ArcType<I>
+impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, &'a dyn Source> for ArcType<I>
 where
     I: AsRef<str>,
     A: Clone,
@@ -2190,7 +2190,7 @@ where
     fn to_doc(
         &'a self,
         arena: &'a Arena<'a, A>,
-        source: &'a Source,
+        source: &'a dyn Source,
     ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let printer = Printer::new(arena, source);
         dt(Prec::Top, self).pretty(&printer)
@@ -2403,7 +2403,7 @@ where
         row: &'a T,
         printer: &Printer<'a, I, A>,
         open: &'static str,
-        pretty_field: &mut FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+        pretty_field: &mut dyn FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
         close: &'static str,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
@@ -2452,7 +2452,7 @@ where
         &self,
         open: &str,
         printer: &Printer<'a, I, A>,
-        pretty_field: &mut FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+        pretty_field: &mut dyn FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         A: Clone,

@@ -11,7 +11,7 @@ use base::types::ArcType;
 
 use crate::{
     api::{Opaque, OpaqueValue, Pushable, VmType},
-    gc::{Gc, Traverseable},
+    gc::Trace,
     thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
     value::Userdata,
     Result,
@@ -184,14 +184,15 @@ impl<'vm, T: VmType, M> VmType for Scoped<T, M> {
     }
 }
 
-impl<T, M> Traverseable for Scoped<T, M>
+unsafe impl<T, M> Trace for Scoped<T, M>
 where
-    T: Traverseable,
+    T: Trace,
 {
-    fn traverse(&self, gc: &mut Gc) {
+    impl_trace! { self, gc,
+        #[allow(unused_unsafe)]
         unsafe {
             if let Some(v) = *self.ptr.read().unwrap() {
-                v.as_ref().traverse(gc);
+                mark(v.as_ref(), gc);
             }
         }
     }

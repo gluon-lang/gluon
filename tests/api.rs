@@ -6,6 +6,10 @@ extern crate serde_derive;
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
+#[macro_use]
+extern crate gluon_codegen;
+
+use std::sync::Arc;
 
 use futures::{future::lazy, Future, IntoFuture};
 
@@ -14,10 +18,12 @@ use gluon::{
     import::{add_extern_module, Import},
     vm::{
         api::{
-            de::De, scoped::{Ref, RefMut}, FunctionRef, FutureResult, OpaqueValue, OwnedFunction,
-            RuntimeResult, Userdata, VmType, IO,
+            de::De,
+            scoped::{Ref, RefMut},
+            FunctionRef, FutureResult, Hole, OpaqueValue, OwnedFunction, RuntimeResult, VmType, IO,
         },
-        thread::{RootedThread, Thread, Traverseable},
+        gc,
+        thread::{RootedThread, Thread},
         types::VmInt,
         Error, ExternModule,
     },
@@ -39,10 +45,8 @@ fn make_vm() -> RootedThread {
     vm
 }
 
-#[derive(Debug)]
+#[derive(Debug, Userdata, Trace)]
 struct Test(VmInt);
-impl Userdata for Test {}
-impl Traverseable for Test {}
 impl VmType for Test {
     type Type = Test;
 }
@@ -509,10 +513,13 @@ fn scoped_mutable_reference() {
     vm.register_type::<Test>("Test", &[])
         .unwrap_or_else(|_| panic!("Could not add type"));
     add_extern_module(&vm, "function", |thread| {
-        ExternModule::new(thread, record! {
-            write => primitive!(2, write),
-            read => primitive!(1, read)
-        })
+        ExternModule::new(
+            thread,
+            record! {
+                write => primitive!(2, write),
+                read => primitive!(1, read)
+            },
+        )
     });
 
     let (mut result, _) = Compiler::new()
@@ -527,3 +534,108 @@ fn scoped_mutable_reference() {
     );
 }
 
+#[derive(Clone, Debug, Default, Userdata, Trace)]
+struct NoisyDrop(Arc<()>);
+impl VmType for NoisyDrop {
+    type Type = NoisyDrop;
+}
+
+#[test]
+fn cyclic_userdata() {
+    let _ = ::env_logger::try_init();
+
+    #[derive(Debug, Userdata, Trace)]
+    struct Cyclic(OpaqueValue<RootedThread, NoisyDrop>);
+    impl VmType for Cyclic {
+        type Type = Cyclic;
+    }
+
+    let mut noisy_drop = NoisyDrop::default();
+    {
+        let vm = make_vm();
+
+        vm.register_type::<NoisyDrop>("NoisyDrop", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+        vm.register_type::<Cyclic>("Cyclic", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+
+        add_extern_module(&vm, "function", |thread| {
+            ExternModule::new(
+                thread,
+                record! {
+                    mk_cyclic => primitive!(1, Cyclic)
+                },
+            )
+        });
+        Compiler::new()
+            .run_expr::<OpaqueValue<RootedThread, Hole>>(&vm, "<top>", "import! function")
+            .unwrap();
+
+        // Allocate a `Cyclic` value in the vm
+        let mut f: FunctionRef<fn(NoisyDrop) -> OpaqueValue<RootedThread, Cyclic>> = vm
+            .get_global("function.mk_cyclic")
+            .unwrap_or_else(|err| panic!("{}", err));
+        f.call(noisy_drop.clone()).unwrap();
+
+        // When dropping the vm here, the `OpaqueValue<RootedThread, NoisyDrop>` field should not
+        // keep the vm alive
+    }
+
+    assert!(
+        Arc::get_mut(&mut noisy_drop.0).is_some(),
+        "The virtual machine and its values were not dropped"
+    );
+}
+
+#[test]
+fn cyclic_userdata_mutable() {
+    let _ = ::env_logger::try_init();
+
+    #[derive(Debug, Default, Userdata, Trace)]
+    struct Cyclic(gc::mutex::Mutex<Option<OpaqueValue<RootedThread, NoisyDrop>>>);
+    impl VmType for Cyclic {
+        type Type = Cyclic;
+    }
+
+    let mut noisy_drop = NoisyDrop::default();
+    {
+        let vm = make_vm();
+
+        vm.register_type::<NoisyDrop>("NoisyDrop", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+        vm.register_type::<Cyclic>("Cyclic", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+
+        add_extern_module(&vm, "function", |thread| {
+            ExternModule::new(
+                thread,
+                record! {
+                    mk_cyclic => primitive!(1, |()| Cyclic::default()),
+                    set => primitive!(2, |cyclic: &Cyclic, noisy| *cyclic.0.lock().unwrap() = Some(noisy))
+                },
+            )
+        });
+
+        let expr = r#"
+            let f = import! function
+            \noisy ->
+                let cyclic = f.mk_cyclic ()
+                f.set cyclic noisy
+        "#;
+        Compiler::new().load_script(&vm, "test", expr).unwrap();
+
+        // Allocate a `Cyclic` value in the vm
+        let mut f: FunctionRef<fn(NoisyDrop)> = vm
+            .get_global("test")
+            .unwrap_or_else(|err| panic!("{}", err));
+        f.call(noisy_drop.clone()).unwrap();
+
+        // When dropping the vm here, the `OpaqueValue<RootedThread, NoisyDrop>` field should not
+        // keep the vm alive
+    }
+
+    assert!(
+        Arc::get_mut(&mut noisy_drop.0).is_some(),
+        "The virtual machine and its values were not dropped"
+    );
+}

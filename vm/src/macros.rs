@@ -17,10 +17,10 @@ use crate::base::{
 
 use crate::thread::Thread;
 
-pub type Error = Box<StdError + Send + Sync>;
+pub type Error = Box<dyn StdError + Send + Sync>;
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
-pub type MacroFuture = Box<Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
+pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
 
 /// A trait which abstracts over macros.
 ///
@@ -36,13 +36,13 @@ where
     F: Fn(
         &mut MacroExpander,
         Vec<SpannedExpr<Symbol>>,
-    ) -> Box<Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
+    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
 {
     fn expand(
         &self,
         env: &mut MacroExpander,
         args: Vec<SpannedExpr<Symbol>>,
-    ) -> Box<Future<Item = SpannedExpr<Symbol>, Error = Error> + Send> {
+    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send> {
         self(env, args)
     }
 }
@@ -51,7 +51,7 @@ where
 /// it.
 #[derive(Default)]
 pub struct MacroEnv {
-    macros: RwLock<FnvMap<String, Arc<Macro>>>,
+    macros: RwLock<FnvMap<String, Arc<dyn Macro>>>,
 }
 
 impl MacroEnv {
@@ -71,7 +71,7 @@ impl MacroEnv {
     }
 
     /// Retrieves the macro bound to `symbol`
-    pub fn get(&self, name: &str) -> Option<Arc<Macro>> {
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Macro>> {
         self.macros.read().unwrap().get(name).cloned()
     }
 
@@ -89,7 +89,7 @@ impl MacroEnv {
 }
 
 pub struct MacroExpander<'a> {
-    pub state: FnvMap<String, Box<Any>>,
+    pub state: FnvMap<String, Box<dyn Any>>,
     pub vm: &'a Thread,
     pub errors: Errors,
     pub error_in_expr: bool,

@@ -200,7 +200,7 @@ impl Error {
         match err {
             InvalidToken { location } => pos::spanned2(location, location, Error::InvalidToken),
             UnrecognizedToken {
-                token: Some((lpos, token, rpos)),
+                token: (lpos, token, rpos),
                 mut expected,
             } => {
                 remove_extra_quotes(&mut expected);
@@ -210,16 +210,20 @@ impl Error {
                     Error::UnexpectedToken(token.to_string(), expected),
                 )
             }
-            UnrecognizedToken {
-                token: None,
+            UnrecognizedEOF {
+                location,
                 mut expected,
             } => {
+                // LALRPOP will use `Default::default()` as the location if it is unable to find
+                // one. This is not correct for codespan as that represents "nil" so we must grab
+                // the end from the current source instead
+                let location = if location == BytePos::default() {
+                    source_span.end()
+                } else {
+                    location
+                };
                 remove_extra_quotes(&mut expected);
-                pos::spanned2(
-                    source_span.end(),
-                    source_span.end(),
-                    Error::UnexpectedEof(expected),
-                )
+                pos::spanned2(location, location, Error::UnexpectedEof(expected))
             }
             ExtraToken {
                 token: (lpos, token, rpos),
@@ -315,7 +319,7 @@ pub enum Variant<Id> {
 }
 
 // Hack around LALRPOP's limited type syntax
-type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
+type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
@@ -385,7 +389,7 @@ impl ParserSource for codespan::FileMap {
 }
 
 pub fn parse_partial_expr<Id, S>(
-    symbols: &mut IdentEnv<Ident = Id>,
+    symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
@@ -431,7 +435,7 @@ where
 }
 
 pub fn parse_expr(
-    symbols: &mut IdentEnv<Ident = Symbol>,
+    symbols: &mut dyn IdentEnv<Ident = Symbol>,
     type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
 ) -> Result<SpannedExpr<Symbol>, ParseErrors> {
@@ -445,7 +449,7 @@ pub enum ReplLine<Id> {
 }
 
 pub fn parse_partial_repl_line<Id, S>(
-    symbols: &mut IdentEnv<Ident = Id>,
+    symbols: &mut dyn IdentEnv<Ident = Id>,
     input: &S,
 ) -> Result<Option<ReplLine<Id>>, (Option<ReplLine<Id>>, ParseErrors)>
 where
@@ -499,7 +503,7 @@ where
 
 pub fn reparse_infix<Id>(
     metadata: &FnvMap<Id, Arc<Metadata>>,
-    symbols: &IdentEnv<Ident = Id>,
+    symbols: &dyn IdentEnv<Ident = Id>,
     expr: &mut SpannedExpr<Id>,
 ) -> Result<(), ParseErrors>
 where

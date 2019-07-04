@@ -1,15 +1,14 @@
 use std::borrow::Cow;
-use std::ops::Deref;
 
 use crate::base::resolve;
 use crate::base::types::{ArcType, NullInterner, Type};
 
-use crate::thread::{RootedValue, Thread, VmRoot};
+use crate::thread::{RootedValue, Thread, VmRoot, VmRootInternal};
 
 #[derive(Debug)]
 pub struct FieldIter<'a, T>
 where
-    T: Deref<Target = Thread> + 'a,
+    T: VmRootInternal,
 {
     value: &'a RootedValue<T>,
     index: usize,

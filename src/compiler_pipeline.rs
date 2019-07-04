@@ -9,7 +9,6 @@
 
 use std::borrow::{Borrow, BorrowMut};
 use std::mem;
-use std::ops::Deref;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
@@ -36,7 +35,7 @@ use crate::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoo
 
 use crate::{Compiler, Error, Result};
 
-pub type BoxFuture<'vm, T, E> = Box<Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> = Box<dyn Future<Item = T, Error = E> + Send + 'vm>;
 
 macro_rules! try_future {
     ($e:expr) => {
@@ -655,7 +654,7 @@ where
 /// Result of successful execution
 pub struct ExecuteValue<T, E>
 where
-    T: Deref<Target = Thread>,
+    T: for<'a> VmRoot<'a>,
 {
     pub id: Symbol,
     pub expr: E,

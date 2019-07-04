@@ -77,7 +77,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     /// type variable in the `id 2` call.
     pub(crate) fn generalize_variables<'i>(
         &mut self,
-        args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
+        args: &mut dyn Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
         self.tc.environment.skolem_variables.enter_scope();

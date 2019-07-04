@@ -278,7 +278,7 @@ pub type GlobalBinding<'a> = Binding<CExpr<'a>, ClosureRef<'a>>;
 
 pub struct Compiler<'a, 'e> {
     allocator: &'e Allocator<'e>,
-    globals: &'a Fn(&Symbol) -> Option<GlobalBinding<'a>>,
+    globals: &'a dyn Fn(&Symbol) -> Option<GlobalBinding<'a>>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
     bindings: Vec<LetBinding<'e>>,
@@ -305,7 +305,7 @@ impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
 impl<'a, 'e> Compiler<'a, 'e> {
     pub fn new(
         allocator: &'e Allocator<'e>,
-        globals: &'a Fn(&Symbol) -> Option<GlobalBinding<'a>>,
+        globals: &'a dyn Fn(&Symbol) -> Option<GlobalBinding<'a>>,
     ) -> Compiler<'a, 'e> {
         Compiler {
             allocator,

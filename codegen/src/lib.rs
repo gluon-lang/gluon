@@ -125,7 +125,7 @@
 //!
 //! ### Userdata
 //!
-//! Derives `Userdata` and the required `Traverseable` and `VmType` for a rust type.
+//! Derives `Userdata` and the required `Trace` and `VmType` for a rust type.
 //! Note that you will still have to use `Thread::register_type` to register the
 //! rust type with the vm before it is used.
 //!
@@ -140,8 +140,8 @@
 //!
 //! use std::sync::Arc;
 //!
-//! // Userdata requires Debug + Send + Sync
-//! #[derive(Userdata, Debug)]
+//! // Userdata requires Trace + Debug + Send + Sync
+//! #[derive(Userdata, Trace, Debug)]
 //! struct Ident {
 //!     group: Arc<str>,
 //!     name: Arc<str>,
@@ -163,6 +163,7 @@ mod functor;
 mod getable;
 mod pushable;
 mod shared;
+mod trace;
 mod userdata;
 mod vm_type;
 
@@ -188,6 +189,12 @@ pub fn userdata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(VmType, attributes(gluon))]
 pub fn vm_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     vm_type::derive(input.into()).into()
+}
+
+#[doc(hidden)]
+#[proc_macro_derive(Trace, attributes(gluon, gluon_trace))]
+pub fn trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    trace::derive(input.into()).into()
 }
 
 #[doc(hidden)]

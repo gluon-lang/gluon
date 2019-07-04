@@ -796,7 +796,7 @@ pub trait Extract<'a>: Sized {
 
 #[derive(Clone, Copy)]
 pub struct TypeAt<'a> {
-    pub env: &'a TypeEnv<Type = ArcType>,
+    pub env: &'a dyn TypeEnv<Type = ArcType>,
 }
 impl<'a> Extract<'a> for TypeAt<'a> {
     type Output = Either<ArcKind, ArcType>;
@@ -1552,7 +1552,7 @@ pub struct SignatureHelp {
 }
 
 pub fn signature_help(
-    env: &TypeEnv<Type = ArcType>,
+    env: &dyn TypeEnv<Type = ArcType>,
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
