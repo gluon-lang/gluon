@@ -116,7 +116,7 @@ let parse : String -> Result String Expr =
     let lex x = x <* spaces
 
     let integer =
-        // `do` expression provide a way to write monads in a way similiar to procedural code
+        // `do` expression provide a way to write monads in a way similar to procedural code
         do i = lex (recognize (skip_many1 digit))
         match int.parse i with
         | Ok x -> wrap x
