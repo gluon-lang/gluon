@@ -1,6 +1,6 @@
 [package]
 name = "gluon_repl"
-version = "0.11.2" # GLUON
+version = "0.12.0" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -21,12 +21,12 @@ doc = false
 
 [dependencies]
 
-gluon = { version = "0.11.2", path = "..", features = ["serialization"] } # GLUON
-gluon_vm = { version = "0.11.2", path = "../vm", features = ["serialization"] } # GLUON
-gluon_completion = { path = "../completion", version = "0.11.2" } # GLUON
-gluon_codegen = { path = "../codegen", version = "0.11.2" } # GLUON
-gluon_format = { version = "0.11.2", path = "../format" } # GLUON
-gluon_doc = { version = "0.11.2", path = "../doc" } # GLUON
+gluon = { version = "0.12.0", path = "..", features = ["serialization"] } # GLUON
+gluon_vm = { version = "0.12.0", path = "../vm", features = ["serialization"] } # GLUON
+gluon_completion = { path = "../completion", version = "0.12.0" } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.12.0" } # GLUON
+gluon_format = { version = "0.12.0", path = "../format" } # GLUON
+gluon_doc = { version = "0.12.0", path = "../doc" } # GLUON
 
 app_dirs = "1.0.0"
 futures = "0.1.11"
