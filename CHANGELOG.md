@@ -1,3 +1,64 @@
+<a name="v0.12.0"></a>
+## v0.12.0 (2019-07-06)
+
+
+#### Bug Fixes
+
+*   Remove Userdata and Trace impls for RwLock and Mutex ([e90f02b5](https://github.com/gluon-lang/gluon/commit/e90f02b56afd40e00b6e9fba58dd5421cd91a6d2))
+*   Add missing negate function from the prelude ([0091f475](https://github.com/gluon-lang/gluon/commit/0091f475355b2bc1562dc6e257826ff71e7faf7c))
+*   Refer to registered types by their full name ([a2daace6](https://github.com/gluon-lang/gluon/commit/a2daace6e914157391b8453c97ddd675b86a7165), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Handle newtypes with a public field ([d1fef968](https://github.com/gluon-lang/gluon/commit/d1fef9688a3c8d379df0837ee18a4ff8f79c91ae), closes [#713](https://github.com/gluon-lang/gluon/issues/713))
+*   Don't ICE on unapplied, aliased constructors ([2a44a0db](https://github.com/gluon-lang/gluon/commit/2a44a0db2180ec4f25550a9672b0f24a1e45ab90))
+* **check:**
+  *  Propagate metadata through parens ([bd767c07](https://github.com/gluon-lang/gluon/commit/bd767c07cb0506943a26c22e8d1c46e97f6f4ed3))
+  *  Bring nested implicit instances into scope ([ad82bde6](https://github.com/gluon-lang/gluon/commit/ad82bde69b886f44dafcb094d9b4ef7eb87daa17))
+  *  Don't lose type information in catch-all ([d2a3fbf0](https://github.com/gluon-lang/gluon/commit/d2a3fbf0e86ab605d5944f6ed3d61cad037469dd), closes [#702](https://github.com/gluon-lang/gluon/issues/702), [#703](https://github.com/gluon-lang/gluon/issues/703), [#704](https://github.com/gluon-lang/gluon/issues/704), [#705](https://github.com/gluon-lang/gluon/issues/705))
+* **codegen:**  Return exactly the same type on VmType derive on enum ([375d3e9a](https://github.com/gluon-lang/gluon/commit/375d3e9a84e9f61464652eab268bac7185011be4))
+* **compiler:**  Don't panic when matching a tuple against an alias ([777bd310](https://github.com/gluon-lang/gluon/commit/777bd310c69793a1453bc335af9e5ee4cd500dac), closes [#749](https://github.com/gluon-lang/gluon/issues/749))
+* **std:**
+  *  cleaned up statet.glu exports ([5d8864f9](https://github.com/gluon-lang/gluon/commit/5d8864f99fc25c606816bab7584f55a71e755648))
+  *  export wrap_monad from transformer.glu ([0e9d7bc4](https://github.com/gluon-lang/gluon/commit/0e9d7bc43845338e966eca5115378ddc46e0803e))
+* **vm:**
+  *  Check if a collection is needed when creating a child thread ([86e4b9f7](https://github.com/gluon-lang/gluon/commit/86e4b9f7b4485cd57e144ec5bd3b2961a5d92183))
+  *  Automatically remove the elements added to pushed data ([8cd5152b](https://github.com/gluon-lang/gluon/commit/8cd5152b5e0fef90eb663c96c99e3cbb2cdbc03a), closes [#719](https://github.com/gluon-lang/gluon/issues/719))
+
+#### Performance
+
+*   Use NonNull for garbage collected pointers ([9c66eded](https://github.com/gluon-lang/gluon/commit/9c66eded918d495057d31ced0096cb07835bda7d))
+*   Don't recurse into already visited records to find implicits ([b50061f5](https://github.com/gluon-lang/gluon/commit/b50061f509d53105b3ca886c9cdbf6e54f2677eb))
+*   Avoid recursing into non-implicit types ([c35b29e6](https://github.com/gluon-lang/gluon/commit/c35b29e65ec4791fec7ac24d2d500adc4651c1aa))
+*   Use SmallVec in Partition ([d8c549bf](https://github.com/gluon-lang/gluon/commit/d8c549bff709bbf398b1a456878f0cb60a16a14e))
+*   Use a scoped collections over a persistent in implicit resolution ([d13097e2](https://github.com/gluon-lang/gluon/commit/d13097e2ad91f6774299cdc09be6876eb438ecbf))
+*   Memoize implicit attribute lookups (-3%) ([254af75e](https://github.com/gluon-lang/gluon/commit/254af75e544056262613a84b9cdc7907af1838e4))
+*   Speedup Symbol::module ([9566a377](https://github.com/gluon-lang/gluon/commit/9566a37740dd70730bf9db510e11693e780fe5ae))
+*   Avoid creating function types unnecessarily ([170f4673](https://github.com/gluon-lang/gluon/commit/170f4673a225f1e50d6e4ea84d020c563e3f1fc8))
+* **compiler:**
+  *  Shrink the core::Expr type to 40 bytes (from 72) ([779d1b65](https://github.com/gluon-lang/gluon/commit/779d1b65fbe61e27df49ccc3a0dc22cf98bacb56))
+  *  Copy elements directly into arena ([cd2dd366](https://github.com/gluon-lang/gluon/commit/cd2dd366a4dc6a12d4a2b57144ef271355d2f765))
+
+#### Features
+
+*   Add gc::Mutex ([d6e12460](https://github.com/gluon-lang/gluon/commit/d6e124605c115b709ecbda34c104d20e71d281bb))
+*   Automatically unroot values stored in `Gc` allocated values ([6ebc398f](https://github.com/gluon-lang/gluon/commit/6ebc398ff5e0343076b64b319c07eeb0c5ad8294), closes [#746](https://github.com/gluon-lang/gluon/issues/746))
+*   Add derive for Traverseable ([844418df](https://github.com/gluon-lang/gluon/commit/844418dfc1d0cb37a4ddfdb82e79380887e9da7b))
+*   Allow mutable references to be passed to gluon ([602220b5](https://github.com/gluon-lang/gluon/commit/602220b5f0af4a7b889cb7657ea491aaee85a50c))
+*   Add std.env ([b561c8d6](https://github.com/gluon-lang/gluon/commit/b561c8d61dda20ca71fb03cc36ca317cc139c458))
+*   Implement woobly type propagation ([a0b84525](https://github.com/gluon-lang/gluon/commit/a0b84525d8cbf7b1ba34542a9a173c0843c1bbc3))
+* **codegen:**  Add the newtype attribute ([40854638](https://github.com/gluon-lang/gluon/commit/40854638263d96adcde77f9631ae0daab7bccf26))
+* **completion:**
+  *  Match on the symbols in type declarations ([9d28ba10](https://github.com/gluon-lang/gluon/commit/9d28ba102029e3c593f4fda9bc1acd167c445cb9))
+  *  Return scoped symbols in the all_symbols query ([94a385af](https://github.com/gluon-lang/gluon/commit/94a385afd3b23bf6b54208858fd8c3736c758696))
+  *  Match on the symbols in type declarations ([8fe083af](https://github.com/gluon-lang/gluon/commit/8fe083afe0a85e8a9db45b32dacd630cd87b8559))
+  *  Return scoped symbols in the all_symbols query ([1ad302b0](https://github.com/gluon-lang/gluon/commit/1ad302b08a501ccb589ed97f427321d753d5ca59))
+* **doc:**  Link to the github source ([da75875b](https://github.com/gluon-lang/gluon/commit/da75875bc0ee032c2b38a94982a7e08001d6a090))
+* **vm:**  Allow references to be passed through ([3a92b176](https://github.com/gluon-lang/gluon/commit/3a92b1768a73ee3bf94fab22c9d10d33bd0fe50e))
+
+#### Breaking Changes
+
+*   Refer to registered types by their full name ([a2daace6](https://github.com/gluon-lang/gluon/commit/a2daace6e914157391b8453c97ddd675b86a7165), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+
+
 <a name="v0.11.2"></a>
 ### v0.11.2 (2019-03-26)
 
