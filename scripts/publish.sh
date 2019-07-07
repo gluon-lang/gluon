@@ -2,11 +2,11 @@
 set -ex
 
 declare -a PROJECTS=(
+    codegen
     base
     parser
     check
     completion
-    codegen
     vm
     .
     format
