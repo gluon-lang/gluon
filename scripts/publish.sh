@@ -4,6 +4,7 @@ set -ex
 declare -a PROJECTS=(
     codegen
     base
+    codegen
     parser
     check
     completion
