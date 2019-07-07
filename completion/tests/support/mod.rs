@@ -129,7 +129,11 @@ pub fn typecheck_expr_expected(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
+    let mut code_map = codespan::CodeMap::new();
+    let source = code_map.add_filemap("test".into(), text.into());
+
     rename::rename(
+        &*source,
         &mut SymbolModule::new("test".into(), &mut interner),
         &mut expr,
     );
@@ -145,14 +149,7 @@ pub fn typecheck_expr_expected(
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
-    (
-        expr,
-        result.map_err(|err| {
-            let mut source = codespan::CodeMap::new();
-            source.add_filemap(codespan::FileName::virtual_("test"), text.into());
-            InFile::new(source, err)
-        }),
-    )
+    (expr, result.map_err(|err| InFile::new(code_map, err)))
 }
 
 pub fn typecheck_expr(
@@ -179,7 +176,11 @@ pub fn typecheck_partial_expr(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
+    let mut code_map = codespan::CodeMap::new();
+    let source = code_map.add_filemap("test".into(), text.into());
+
     rename::rename(
+        &*source,
         &mut SymbolModule::new("test".into(), &mut interner),
         &mut expr,
     );
@@ -196,14 +197,7 @@ pub fn typecheck_partial_expr(
 
     let result = tc.typecheck_expr(&mut expr);
 
-    (
-        expr,
-        result.map_err(|err| {
-            let mut source = codespan::CodeMap::new();
-            source.add_filemap("test".into(), text.into());
-            InFile::new(source, err)
-        }),
-    )
+    (expr, result.map_err(|err| InFile::new(code_map, err)))
 }
 
 pub fn typ(s: &str) -> ArcType {

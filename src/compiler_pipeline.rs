@@ -256,10 +256,11 @@ where
         compiler: &mut Compiler,
         _thread: &Thread,
         file: &str,
-        _expr_str: &str,
+        expr_str: &str,
     ) -> SalvageResult<Renamed<Self::Expr>> {
+        let source = compiler.get_or_insert_filemap(file, expr_str);
         let mut symbols = SymbolModule::new(String::from(file), &mut compiler.symbols);
-        rename::rename(&mut symbols, &mut self.expr.borrow_mut());
+        rename::rename(&*source, &mut symbols, &mut self.expr.borrow_mut());
         Ok(Renamed { expr: self.expr })
     }
 }

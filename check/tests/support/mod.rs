@@ -201,7 +201,9 @@ pub fn typecheck_expr_expected(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
+    let source = codespan::FileMap::new("test".into(), text.to_string());
     rename::rename(
+        &source,
         &mut SymbolModule::new("test".into(), &mut interner),
         &mut expr,
     );
@@ -242,7 +244,9 @@ pub fn typecheck_partial_expr(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
+    let source = codespan::FileMap::new("test".into(), text.to_string());
     rename::rename(
+        &source,
         &mut SymbolModule::new("test".into(), &mut interner),
         &mut expr,
     );

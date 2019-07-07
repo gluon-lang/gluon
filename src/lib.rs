@@ -218,6 +218,16 @@ impl State {
             })
     }
 
+    fn get_or_insert_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
+    where
+        S: AsRef<str> + Into<String>,
+    {
+        if let Some(i) = self.index_map.get(file) {
+            return self.code_map.find_file(*i).unwrap().clone();
+        }
+        self.add_filemap(file, source)
+    }
+
     pub fn get_filemap(&self, file: &str) -> Option<&Arc<codespan::FileMap>> {
         self.index_map
             .get(file)
@@ -350,6 +360,13 @@ impl Compiler {
         S: Into<String>,
     {
         self.state().update_filemap(file, source)
+    }
+
+    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
+    where
+        S: AsRef<str> + Into<String>,
+    {
+        self.state().get_or_insert_filemap(file, source)
     }
 
     pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {

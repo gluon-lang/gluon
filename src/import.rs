@@ -495,9 +495,10 @@ where
                     format!("@{}", filename_to_module(filename))
                 }
                 _ => {
-                    return Err(
-                        Error::String("Expected a string literal or path to import".into()).into(),
-                    );
+                    return Err(Error::String(
+                        "Expected a string literal or path to import".into(),
+                    )
+                    .into());
                 }
             };
             Ok(modulename)
