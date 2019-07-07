@@ -2,6 +2,16 @@
 set -ex
 
 declare -a PROJECTS=(
+    base
+    parser
+    check
+    completion
+    codegen
+    vm
+    .
+    format
+    c-api
+    doc
     repl
 )
 
