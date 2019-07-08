@@ -16,7 +16,7 @@ use crate::base::types::ArcType;
 
 use crate::array::Array;
 use crate::gc::{DataDef, GcPtr, WriteOnly};
-use crate::thread::{RootedThread, Thread, ThreadInternal};
+use crate::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use crate::types::VmIndex;
 use crate::value::{
     BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
@@ -114,6 +114,28 @@ pub mod gc {
     use crate::types::VmTag;
     use crate::value::{DataStruct, GcStr, ValueArray};
 
+    pub trait PostDeserialize {
+        fn init(ptr: GcPtr<Self>);
+    }
+
+    impl PostDeserialize for ExternFunction {
+        fn init(_: GcPtr<Self>) {}
+    }
+
+    impl PostDeserialize for BytecodeFunction {
+        fn init(_: GcPtr<Self>) {}
+    }
+
+    impl PostDeserialize for Thread {
+        fn init(mut ptr: GcPtr<Self>) {
+            // FIXME return an owned pointer from gc allocation so we don't need unsafe
+            unsafe {
+                let thread_index = ptr.parent_threads().insert((ptr, 0));
+                ptr.as_mut().thread_index = thread_index;
+            }
+        }
+    }
+
     impl Serialize for GcStr {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -125,7 +147,7 @@ pub mod gc {
 
     impl<'de, T> DeserializeState<'de, DeSeed> for crate::gc::Move<T>
     where
-        T: crate::gc::Trace,
+        T: crate::gc::Trace + PostDeserialize,
         T: DeserializeState<'de, DeSeed>,
     {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
@@ -138,7 +160,7 @@ pub mod gc {
 
     impl<'de, T> DeserializeState<'de, DeSeed> for GcPtr<T>
     where
-        T: crate::gc::Trace + 'static,
+        T: crate::gc::Trace + PostDeserialize + 'static,
         T: DeserializeState<'de, DeSeed>,
     {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
@@ -146,10 +168,12 @@ pub mod gc {
             D: Deserializer<'de>,
         {
             use crate::gc::Move;
-            DeserializeSeed::deserialize(
+            let ptr = DeserializeSeed::deserialize(
                 Seed::<DataDefSeed<Move<T>>>::from(seed.clone()),
                 deserializer,
-            )
+            )?;
+
+            Ok(ptr)
         }
     }
 
@@ -785,6 +809,24 @@ impl<'a> crate::serde::ser::SerializeState<crate::serialization::SeSeed> for Var
         S: crate::serde::ser::Serializer,
     {
         self.0.serialize_state(serializer, seed)
+    }
+}
+
+impl<'de> DeserializeState<'de, DeSeed> for RootedValue<RootedThread> {
+    fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        eprintln!("before value ");
+        let value = Value::deserialize_state(seed, deserializer)?;
+        // TODO Prevent Value from being deserialized directly so we don't need to have this unsafe
+        eprintln!("after value ");
+        unsafe {
+            let x = Ok(seed.thread.root_value(Variants::new(&value)));
+
+            eprintln!("after value 2");
+            x
+        }
     }
 }
 

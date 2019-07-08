@@ -37,6 +37,16 @@ pub use crate::{
     value::Userdata,
 };
 
+pub(crate) type ThreadSlab = slab::Slab<(GcPtr<Thread>, usize)>;
+
+unsafe impl Trace for ThreadSlab {
+    impl_trace! { self, gc,
+        for x in self {
+            mark(&x, gc);
+        }
+    }
+}
+
 fn new_bytecode(
     env: &VmEnv,
     interner: &mut Interner,
@@ -175,8 +185,8 @@ pub struct GlobalVmState {
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    pub generation_0_threads: RwLock<ThreadSlab>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     debug_level: RwLock<DebugLevel>,
@@ -427,7 +437,7 @@ impl GlobalVmStateBuilder {
             gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
             macros: MacroEnv::new(),
             type_cache: TypeCache::default(),
-            generation_0_threads: RwLock::new(Vec::new()),
+            generation_0_threads: Default::default(),
             debug_level: RwLock::new(DebugLevel::default()),
         };
         vm.add_types().unwrap();
