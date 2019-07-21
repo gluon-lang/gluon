@@ -21,7 +21,7 @@ bitflags = "1.0.0"
 codespan = "0.3"
 collect-mac = "0.1.0"
 crossbeam-utils = "0.6"
-frunk_core = "0.2"
+frunk_core = "0.3"
 futures = "0.1.0"
 itertools = "0.8"
 log = "0.4"
@@ -48,7 +48,7 @@ lalrpop = { version = "0.17", optional = true }
 
 [dev-dependencies]
 env_logger = "0.6"
-pretty_assertions = "0.5"
+pretty_assertions = "0.6"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)

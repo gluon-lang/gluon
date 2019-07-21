@@ -167,8 +167,21 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
 struct Completer(RootedThread);
 
+impl rustyline::Helper for Completer {}
+
+impl rustyline::hint::Hinter for Completer {}
+
+impl rustyline::highlight::Highlighter for Completer {}
+
 impl rustyline::completion::Completer for Completer {
-    fn complete(&self, line: &str, pos: usize) -> rustyline::Result<(usize, Vec<String>)> {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _: &rustyline::Context,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
         let result = complete(&self.0, "<repl>", line, pos);
 
         // Get the start of the completed identifier
@@ -249,7 +262,7 @@ fn new_editor(vm: WithVM<()>) -> IO<Editor> {
     if let Err(err) = history_result {
         warn!("Unable to load history: {}", err);
     }
-    editor.set_completer(Some(Completer(vm.vm.root_thread())));
+    editor.set_helper(Some(Completer(vm.vm.root_thread())));
     IO::Value(Editor {
         editor: Mutex::new(editor),
     })

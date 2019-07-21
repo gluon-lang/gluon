@@ -38,8 +38,8 @@ structopt = "0.2"
 structopt-derive = "0.2"
 log = "0.4"
 env_logger = { version = "0.6", optional = true }
-lazy_static = "0.2.0"
-rustyline = "1.0.0"
+lazy_static = "1"
+rustyline = "5"
 walkdir = "2"
 codespan = "0.3"
 codespan-reporting = "0.3"
@@ -49,7 +49,7 @@ serde = "1"
 serde_derive = "1"
 
 [dev-dependencies]
-pretty_assertions = "0.5"
+pretty_assertions = "0.6"
 
 [target.'cfg(unix)'.dev-dependencies]
 rexpect = "0.3.0"
