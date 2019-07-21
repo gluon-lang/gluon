@@ -1008,8 +1008,6 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(ModType::wobbly(array_type)))
             }
             Expr::Lambda(ref mut lambda) => {
-                let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start());
-                lambda.id.name = self.symbols.symbol(loc);
                 let level = self.subs.var_id();
                 let function_type = expected_type
                     .take()
@@ -1912,11 +1910,6 @@ impl<'a> Typecheck<'a> {
                     resolved_types[i].concrete.clone()
                 };
                 self.typecheck_let_pattern(&mut bind.name, typ);
-                if let Expr::Lambda(ref mut lambda) = bind.expr.value {
-                    if let Pattern::Ident(ref name) = bind.name.value {
-                        lambda.id.name = name.name.clone();
-                    }
-                }
             }
         }
 

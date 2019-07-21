@@ -6,6 +6,7 @@ use crate::base::{
     fnv::FnvMap,
     pos::{self, ByteOffset, BytePos, Span},
     scoped_map::ScopedMap,
+    source::Source,
     symbol::{Symbol, SymbolModule},
     types::Type,
 };
@@ -14,19 +15,24 @@ struct Environment {
     stack: ScopedMap<Symbol, (Symbol, Span<BytePos>)>,
 }
 
-pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
+pub fn rename<'s>(
+    source: &'s (dyn Source + 's),
+    symbols: &mut SymbolModule,
+    expr: &mut SpannedExpr<Symbol>,
+) {
     enum TailCall {
         TailCall,
         Return,
     }
 
-    struct RenameVisitor<'a: 'b, 'b> {
+    struct RenameVisitor<'a: 'b, 'b, 's> {
+        source: &'s (dyn Source + 's),
         symbols: &'b mut SymbolModule<'a>,
         seen_symbols: FnvMap<Symbol, u32>,
         env: Environment,
     }
 
-    impl<'a, 'b> RenameVisitor<'a, 'b> {
+    impl<'a, 'b, 's> RenameVisitor<'a, 'b, 's> {
         fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record {
@@ -205,6 +211,10 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     return TailCall::TailCall;
                 }
                 Expr::Lambda(ref mut lambda) => {
+                    let location = self.source.location(expr.span.start()).unwrap_or_else(|| ice!("Lambda without source location"));
+                    let name = format!("{}.lambda:{}_{}", self.symbols.module(), location.line.number(), location.column.number());
+                    lambda.id.name = self.symbols.symbol(name);
+
                     self.env.stack.enter_scope();
 
                     for arg in &mut lambda.args {
@@ -264,7 +274,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
         }
     }
 
-    impl<'a, 'b, 'c> MutVisitor<'c> for RenameVisitor<'a, 'b> {
+    impl<'a, 'b, 'c, 's> MutVisitor<'c> for RenameVisitor<'a, 'b, 's> {
         type Ident = Symbol;
 
         fn visit_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
@@ -325,6 +335,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
     }
 
     let mut visitor = RenameVisitor {
+        source,
         symbols: symbols,
         seen_symbols: Default::default(),
         env: Environment {

@@ -857,7 +857,10 @@ pub trait Typed {
         self.try_type_of(env).unwrap()
     }
 
-    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Self::Ident>, String>;
+    fn try_type_of(
+        &self,
+        env: &dyn TypeEnv<Type = ArcType>,
+    ) -> Result<ArcType<Self::Ident>, String>;
 }
 
 impl<Id: Clone> Typed for TypedIdent<Id> {
