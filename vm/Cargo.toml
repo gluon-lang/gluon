@@ -30,6 +30,7 @@ ordered-float = "1"
 pretty = "0.5"
 quick-error = "1.1.0"
 smallvec = "0.6"
+slab = "0.4"
 typed-arena = "1.2.0"
 
 serde = { version = "1.0.0", optional = true }

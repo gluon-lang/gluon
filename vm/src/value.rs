@@ -1637,6 +1637,8 @@ mod tests {
             ),
             "Cons 0 (Cons 123 Nil)"
         );
+
+        unsafe { gc.clear() }
     }
 
     #[test]
@@ -1660,6 +1662,8 @@ mod tests {
             ),
             "[1, 2, 3]"
         );
+
+        unsafe { gc.clear() }
     }
 
     #[test]

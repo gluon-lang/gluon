@@ -279,6 +279,15 @@ pub enum IO<T> {
     Exception(String),
 }
 
+impl<T> Into<StdResult<T, String>> for IO<T> {
+    fn into(self) -> StdResult<T, String> {
+        match self {
+            IO::Value(x) => Ok(x),
+            IO::Exception(x) => Err(x),
+        }
+    }
+}
+
 impl<T, E> From<StdResult<T, E>> for IO<T>
 where
     E: fmt::Display,

@@ -541,7 +541,7 @@ impl VmType for NoisyDrop {
 }
 
 #[test]
-fn cyclic_userdata() {
+fn cyclic_userdata_simple() {
     let _ = ::env_logger::try_init();
 
     #[derive(Debug, Userdata, Trace)]
@@ -632,6 +632,72 @@ fn cyclic_userdata_mutable() {
 
         // When dropping the vm here, the `OpaqueValue<RootedThread, NoisyDrop>` field should not
         // keep the vm alive
+    }
+
+    assert!(
+        Arc::get_mut(&mut noisy_drop.0).is_some(),
+        "The virtual machine and its values were not dropped"
+    );
+}
+
+#[test]
+fn child_vm_do_not_cause_undroppable_cycle_normal_drop_order() {
+    let _ = ::env_logger::try_init();
+
+    let mut noisy_drop = NoisyDrop::default();
+    {
+        let vm = make_vm();
+        let child_vm = vm.new_thread().unwrap();
+
+        vm.register_type::<NoisyDrop>("NoisyDrop", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+
+        Compiler::new()
+            .load_script(&vm, "function", "\\x -> ()")
+            .unwrap();
+
+        {
+            let mut f: FunctionRef<fn(NoisyDrop)> = vm
+                .get_global("function")
+                .unwrap_or_else(|err| panic!("{}", err));
+            f.call(noisy_drop.clone()).unwrap();
+        }
+
+        drop(child_vm);
+        drop(vm);
+    }
+
+    assert!(
+        Arc::get_mut(&mut noisy_drop.0).is_some(),
+        "The virtual machine and its values were not dropped"
+    );
+}
+
+#[test]
+fn child_vm_do_not_cause_undroppable_cycle_reverse_drop_order() {
+    let _ = ::env_logger::try_init();
+
+    let mut noisy_drop = NoisyDrop::default();
+    {
+        let vm = make_vm();
+        let child_vm = vm.new_thread().unwrap();
+
+        vm.register_type::<NoisyDrop>("NoisyDrop", &[])
+            .unwrap_or_else(|_| panic!("Could not add type"));
+
+        Compiler::new()
+            .load_script(&vm, "function", "\\x -> ()")
+            .unwrap();
+
+        {
+            let mut f: FunctionRef<fn(NoisyDrop)> = vm
+                .get_global("function")
+                .unwrap_or_else(|err| panic!("{}", err));
+            f.call(noisy_drop.clone()).unwrap();
+        }
+
+        drop(vm);
+        drop(child_vm);
     }
 
     assert!(
