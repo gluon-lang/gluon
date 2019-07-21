@@ -190,7 +190,11 @@ impl Drop for Gc {
     fn drop(&mut self) {
         if let Some(values) = self.values.take() {
             mem::forget(values);
-            panic!("Gc values were not dropped explicitly. Leaking the allocatons!");
+            if std::thread::panicking() {
+                eprintln!("Gc values were not dropped explicitly. Leaking the allocatons!");
+            } else {
+                panic!("Gc values were not dropped explicitly. Leaking the allocatons!");
+            }
         }
     }
 }
@@ -357,12 +361,35 @@ impl GcHeader {
     }
 }
 
+pub struct OwnedPtr<T: ?Sized>(NonNull<T>);
+
+impl<T: ?Sized> Deref for OwnedPtr<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl<T: ?Sized> DerefMut for OwnedPtr<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { self.0.as_mut() }
+    }
+}
+
+impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
+    /// Freezes `self` into a shared pointer
+    fn from(ptr: OwnedPtr<T>) -> GcPtr<T> {
+        GcPtr(ptr.0)
+    }
+}
+
 /// A pointer to a garbage collected value.
 ///
 /// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
 /// where the garbage collector will find it during the mark phase).
 pub struct GcPtr<T: ?Sized>(NonNull<T>);
 
+// SAFETY Copied from `Arc`
 unsafe impl<T: ?Sized + Send + Sync> Send for GcPtr<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for GcPtr<T> {}
 
@@ -706,7 +733,7 @@ impl Gc {
     /// will occur.
     ///
     /// Unsafe since `roots` must be able to trace all accesible `GcPtr` values.
-    pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<GcPtr<D::Value>>
+    pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<OwnedPtr<D::Value>>
     where
         R: Trace + CollectScope,
         D: DataDef + Trace,
@@ -729,11 +756,19 @@ impl Gc {
         }
 
         self.check_collect(Scope1(roots, &def));
-        self.alloc(def)
+        self.alloc_owned(def)
     }
 
     /// Allocates a new object.
     pub fn alloc<D>(&mut self, def: D) -> Result<GcPtr<D::Value>>
+    where
+        D: DataDef,
+        D::Value: Sized + Any,
+    {
+        self.alloc_owned(def).map(GcPtr::from)
+    }
+
+    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedPtr<D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -754,7 +789,7 @@ impl Gc {
         D: DataDef,
         D::Value: Sized + Any,
     {
-        self.alloc_ignore_limit_(def.size(), def)
+        GcPtr::from(self.alloc_ignore_limit_(def.size(), def))
     }
 
     fn get_type_info(
@@ -811,7 +846,7 @@ impl Gc {
         }
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> GcPtr<D::Value>
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedPtr<D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -837,7 +872,7 @@ impl Gc {
             // that the pointer was initialized
             assert!(ret == p);
             self.values = Some(ptr);
-            let ptr = GcPtr(NonNull::new_unchecked(p));
+            let ptr = OwnedPtr(NonNull::new_unchecked(p));
             D::Value::unroot(&ptr);
             ptr
         }
@@ -1042,6 +1077,8 @@ mod tests {
         let other: &mut GcHeader = gc.values.as_mut().unwrap();
         assert_eq!(&*ptr as *const _ as *const (), other.value());
         assert_eq!(header, other as *const _);
+
+        unsafe { gc.clear() }
     }
 
     #[test]
@@ -1070,6 +1107,8 @@ mod tests {
             gc.collect(&mut *stack);
         }
         assert_eq!(object_count(&gc), 0);
+
+        unsafe { gc.clear() }
     }
 
     #[derive(Trace)]
@@ -1101,5 +1140,7 @@ mod tests {
             gc.collect(());
         }
         assert_eq!(true, dropped.get());
+
+        unsafe { gc.clear() }
     }
 }

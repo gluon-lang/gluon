@@ -33,6 +33,7 @@ use crate::base::{
 use crate::{
     api::{Getable, Pushable, ValueRef, VmType},
     compiler::UpvarInfo,
+    gc,
     gc::{DataDef, Gc, GcPtr, Generation, Move},
     interner::InternedStr,
     macros::MacroEnv,
@@ -429,21 +430,24 @@ pub struct Thread {
     // thread can refer to any value in the parent thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
     parent: Option<GcPtr<Thread>>,
+
     #[cfg_attr(feature = "serde_derive", serde(state))]
     rooted_values: RwLock<Vec<Value>>,
+
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    child_threads: RwLock<ThreadSlab>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    context: Mutex<Context>,
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    interrupt: AtomicBool,
-
+    pub(crate) child_threads: RwLock<ThreadSlab>,
     // Default to an invalid index so we panic reliably if it is not filled in when deserializing
     #[cfg_attr(feature = "serde_derive", serde(skip, default = "usize::max_value"))]
     pub(crate) thread_index: usize,
+
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    context: Mutex<Context>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    interrupt: AtomicBool,
 }
 
 impl fmt::Debug for Thread {
@@ -628,12 +632,14 @@ impl RootedThread {
     }
 
     pub fn with_global_state(mut global_state: GlobalVmState) -> RootedThread {
+        let context = Mutex::new(Context::new(
+            global_state.gc.get_mut().unwrap().new_child_gc(),
+        ));
+        let global_state = Arc::new(global_state);
         let thread = Thread {
             parent: None,
-            context: Mutex::new(Context::new(
-                global_state.gc.get_mut().unwrap().new_child_gc(),
-            )),
-            global_state: Arc::new(global_state),
+            context,
+            global_state: global_state.clone(),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: Default::default(),
             interrupt: AtomicBool::new(false),
@@ -641,15 +647,18 @@ impl RootedThread {
         };
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         let mut ptr = gc
-            .alloc(Move(thread))
+            .alloc_owned(Move(thread))
             .expect("Not enough memory to allocate thread");
         *ptr.global_state.gc.lock().unwrap() = gc;
 
-        // FIXME return an owned pointer from gc allocation so we don't need unsafe
-        unsafe {
-            let thread_index = ptr.parent_threads().insert((ptr, 0));
-            ptr.as_mut().thread_index = thread_index;
-        }
+        let ptr = {
+            let mut parent_threads = global_state.generation_0_threads.write().unwrap();
+            let entry = parent_threads.vacant_entry();
+            ptr.thread_index = entry.key();
+            let ptr = ptr.into();
+            entry.insert((ptr, 0));
+            ptr
+        };
 
         let vm = ptr.root_thread();
 
@@ -739,13 +748,16 @@ impl Thread {
             let mut context = vm.owned_context();
             StackFrame::<State>::frame(&mut context.stack, 0, State::Unknown);
         }
-        let mut ptr = self.context().alloc(Move(vm))?;
+        let mut ptr = self.context().alloc_owned(Move(vm))?;
 
-        // FIXME return an owned pointer from gc allocation so we don't need unsafe
-        unsafe {
-            let thread_index = ptr.parent_threads().insert((ptr, 0));
-            ptr.as_mut().thread_index = thread_index;
-        }
+        let ptr = {
+            let mut parent_threads = self.child_threads.write().unwrap();
+            let entry = parent_threads.vacant_entry();
+            ptr.thread_index = entry.key();
+            let ptr = ptr.into();
+            entry.insert((ptr, 0));
+            ptr
+        };
 
         Ok(ptr.root_thread())
     }
@@ -1610,13 +1622,21 @@ impl<'b> OwnedContext<'b> {
         D: DataDef + Trace,
         D::Value: Sized + Any,
     {
+        self.alloc_owned(data).map(GcPtr::from)
+    }
+
+    pub fn alloc_owned<D>(&mut self, data: D) -> Result<gc::OwnedPtr<D::Value>>
+    where
+        D: DataDef + Trace,
+        D::Value: Sized + Any,
+    {
         let thread = self.thread;
         let Context {
             ref mut gc,
             ref stack,
             ..
         } = **self;
-        alloc(gc, thread, &stack, data)
+        alloc_owned(gc, thread, &stack, data)
     }
 
     pub fn debug_info(&self) -> DebugInfo {
@@ -1644,6 +1664,19 @@ pub(crate) fn alloc<D>(
     stack: &Stack,
     def: D,
 ) -> Result<GcPtr<D::Value>>
+where
+    D: DataDef + Trace,
+    D::Value: Sized + Any,
+{
+    alloc_owned(gc, thread, stack, def).map(GcPtr::from)
+}
+
+pub(crate) fn alloc_owned<D>(
+    gc: &mut Gc,
+    thread: &Thread,
+    stack: &Stack,
+    def: D,
+) -> Result<gc::OwnedPtr<D::Value>>
 where
     D: DataDef + Trace,
     D::Value: Sized + Any,
@@ -2094,20 +2127,16 @@ impl<'b> ExecuteContext<'b> {
                             ValueRepr::Tag(0)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
-                            unsafe {
-                                let roots = Roots {
-                                    vm: GcPtr::from_raw(self.thread),
-                                    stack: &self.stack.stack,
-                                };
-                                let field_names = &function.records[record as usize];
-                                Data(self.gc.alloc_and_collect(
-                                    roots,
-                                    RecordDef {
-                                        elems: fields,
-                                        fields: field_names,
-                                    },
-                                )?)
-                            }
+                            let field_names = &function.records[record as usize];
+                            Data(alloc(
+                                self.gc,
+                                self.thread,
+                                &self.stack.stack,
+                                RecordDef {
+                                    elems: fields,
+                                    fields: field_names,
+                                },
+                            )?)
                         }
                     };
                     self.stack.pop_many(args);
@@ -2136,20 +2165,16 @@ impl<'b> ExecuteContext<'b> {
                         if args == 0 {
                             ValueRepr::Tag(0)
                         } else {
-                            unsafe {
-                                let roots = Roots {
-                                    vm: GcPtr::from_raw(self.thread),
-                                    stack: &self.stack.stack,
-                                };
-                                let field_names = &function.records[record as usize];
-                                Data(self.gc.alloc_and_collect(
-                                    roots,
-                                    UninitializedRecord {
-                                        elems: args as usize,
-                                        fields: field_names,
-                                    },
-                                )?)
-                            }
+                            let field_names = &function.records[record as usize];
+                            Data(alloc(
+                                &mut self.gc,
+                                self.thread,
+                                &self.stack.stack,
+                                UninitializedRecord {
+                                    elems: args as usize,
+                                    fields: field_names,
+                                },
+                            )?)
                         }
                     };
                     self.stack.push(d);
