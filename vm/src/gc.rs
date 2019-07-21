@@ -186,6 +186,15 @@ pub struct Gc {
     generation: Generation,
 }
 
+impl Drop for Gc {
+    fn drop(&mut self) {
+        if let Some(values) = self.values.take() {
+            mem::forget(values);
+            panic!("Gc values were not dropped explicitly. Leaking the allocatons!");
+        }
+    }
+}
+
 /// Trait which creates a typed pointer from a *mut () pointer.
 /// For `Sized` types this is just a cast but for unsized types some more metadata must be taken
 /// from the provided `D` value to make it initialize correctly.
@@ -919,6 +928,13 @@ impl Gc {
         }
         info!("GC: Freed {} / Traversed {}", free_count, count);
         self.values = first;
+    }
+
+    // Drop all values.
+    //
+    // SAFETY: No `GcPtr` allocated from this Gc must be reachable after calling this
+    pub unsafe fn clear(&mut self) {
+        self.values = None;
     }
 
     fn free(&mut self, header: Option<AllocPtr>) {

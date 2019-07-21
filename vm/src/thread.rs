@@ -550,11 +550,17 @@ impl Drop for Thread {
             // drop them
             err.into_inner()
         });
-        let gc_to_drop = ::std::mem::replace(&mut context.gc, Gc::new(Generation::default(), 0));
+        let mut gc_to_drop =
+            ::std::mem::replace(&mut context.gc, Gc::new(Generation::default(), 0));
         // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
         // when the Gc is dropped
         drop(context);
-        drop(gc_to_drop);
+
+        // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
+        // droppting the thread
+        unsafe {
+            gc_to_drop.clear();
+        }
 
         let mut parent_threads = self.parent_threads();
         debug_assert!(parent_threads[self.thread_index].1 == 0);
@@ -574,12 +580,17 @@ impl Drop for RootedThread {
                     // drop them
                     err.into_inner()
                 });
-                let gc_to_drop =
+                let mut gc_to_drop =
                     ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
                 // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
                 // when the Gc is dropped
                 drop(gc_ref);
-                drop(gc_to_drop);
+
+                // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
+                // droppting the thread
+                unsafe {
+                    gc_to_drop.clear();
+                }
             }
         }
     }
