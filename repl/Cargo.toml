@@ -20,7 +20,6 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-
 gluon = { version = "0.12.0", path = "..", features = ["serialization"] } # GLUON
 gluon_vm = { version = "0.12.0", path = "../vm", features = ["serialization"] } # GLUON
 gluon_completion = { path = "../completion", version = "0.12.0" } # GLUON
@@ -28,6 +27,7 @@ gluon_codegen = { path = "../codegen", version = "0.12.0" } # GLUON
 gluon_format = { version = "0.12.0", path = "../format" } # GLUON
 gluon_doc = { version = "0.12.0", path = "../doc" } # GLUON
 
+ansi_term = "0.12"
 app_dirs = "1.0.0"
 futures = "0.1.11"
 futures-cpupool = "0.1"

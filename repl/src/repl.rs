@@ -1,10 +1,6 @@
-extern crate codespan_reporting;
-extern crate futures_cpupool;
-extern crate rustyline;
-
 extern crate gluon_completion as completion;
 
-use std::{error::Error as StdError, path::PathBuf, str::FromStr, sync::Mutex};
+use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sync::Mutex};
 
 use futures::{
     future::{self, Either},
@@ -165,13 +161,55 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
         .collect())
 }
 
-struct Completer(RootedThread);
+struct Completer {
+    thread: RootedThread,
+    hinter: rustyline::hint::HistoryHinter,
+    highlighter: rustyline::highlight::MatchingBracketHighlighter,
+}
 
 impl rustyline::Helper for Completer {}
 
-impl rustyline::hint::Hinter for Completer {}
+impl rustyline::hint::Hinter for Completer {
+    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
+        self.hinter.hint(line, pos, ctx)
+    }
+}
 
-impl rustyline::highlight::Highlighter for Completer {}
+impl rustyline::highlight::Highlighter for Completer {
+    fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
+        self.highlighter.highlight(line, pos)
+    }
+
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        default: bool,
+    ) -> Cow<'b, str> {
+        self.highlighter.highlight_prompt(prompt, default)
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        // TODO Detect when windows supports ANSI escapes
+        if cfg!(windows) {
+            Cow::Borrowed(hint)
+        } else {
+            use ansi_term::Style;
+            Cow::Owned(Style::new().dimmed().paint(hint).to_string())
+        }
+    }
+
+    fn highlight_candidate<'c>(
+        &self,
+        candidate: &'c str,
+        completion: rustyline::CompletionType,
+    ) -> Cow<'c, str> {
+        self.highlighter.highlight_candidate(candidate, completion)
+    }
+
+    fn highlight_char(&self, line: &str, pos: usize) -> bool {
+        self.highlighter.highlight_char(line, pos)
+    }
+}
 
 impl rustyline::completion::Completer for Completer {
     type Candidate = String;
@@ -182,7 +220,7 @@ impl rustyline::completion::Completer for Completer {
         pos: usize,
         _: &rustyline::Context,
     ) -> rustyline::Result<(usize, Vec<String>)> {
-        let result = complete(&self.0, "<repl>", line, pos);
+        let result = complete(&self.thread, "<repl>", line, pos);
 
         // Get the start of the completed identifier
         let ident_start = line[..pos]
@@ -214,7 +252,7 @@ impl_userdata! { Editor }
 #[derive(Userdata, Trace, VmType)]
 #[gluon(vm_type = "CpuPool")]
 #[gluon_trace(skip)]
-struct CpuPool(self::futures_cpupool::CpuPool);
+struct CpuPool(futures_cpupool::CpuPool);
 
 impl_userdata! { CpuPool }
 
@@ -262,7 +300,11 @@ fn new_editor(vm: WithVM<()>) -> IO<Editor> {
     if let Err(err) = history_result {
         warn!("Unable to load history: {}", err);
     }
-    editor.set_helper(Some(Completer(vm.vm.root_thread())));
+    editor.set_helper(Some(Completer {
+        thread: vm.vm.root_thread(),
+        hinter: rustyline::hint::HistoryHinter {},
+        highlighter: rustyline::highlight::MatchingBracketHighlighter::default(),
+    }));
     IO::Value(Editor {
         editor: Mutex::new(editor),
     })
@@ -286,7 +328,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
 }
 
 fn new_cpu_pool(size: usize) -> IO<CpuPool> {
-    IO::Value(CpuPool(self::futures_cpupool::CpuPool::new(size)))
+    IO::Value(CpuPool(futures_cpupool::CpuPool::new(size)))
 }
 
 fn eval_line(
