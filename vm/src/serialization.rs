@@ -432,7 +432,7 @@ pub mod typ {
 pub mod atomic_cell {
     use super::*;
 
-    use crossbeam::atomic::AtomicCell;
+    use crossbeam_utils::atomic::AtomicCell;
 
     pub fn deserialize<'de, D, T>(deserializer: D) -> Result<AtomicCell<T>, D::Error>
     where

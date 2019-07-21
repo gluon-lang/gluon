@@ -14,7 +14,7 @@ use std::{
 };
 
 use {
-    crossbeam::atomic::AtomicCell,
+    crossbeam_utils::atomic::AtomicCell,
     futures::{
         future::{self, Either, FutureResult},
         try_ready, Async, Future, Poll,
