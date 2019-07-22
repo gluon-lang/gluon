@@ -1217,7 +1217,7 @@ impl ThreadInternal for Thread {
 
     /// Calls a module, allowed to to run IO expressions
     fn execute_io<'vm>(&'vm self, value: Variants) -> FutureValue<Execute<RootedThread>> {
-        debug!("Run IO {:?}", value);
+        trace!("Run IO {:?}", value);
         let mut context = self.context();
         // Dummy value to fill the place of the function for TailCall
         context
@@ -1727,7 +1727,7 @@ impl<'b> OwnedContext<'b> {
             if context.thread.interrupted() {
                 return Err(Error::Interrupted);
             }
-            debug!("STACK\n{:?}", context.stack.get_frames());
+            trace!("STACK\n{:?}", context.stack.get_frames());
             let state = StackFrame::<State>::current(&mut context.stack).frame.state;
 
             if context.hook.flags.contains(HookFlags::CALL_FLAG) {
@@ -1809,7 +1809,7 @@ impl<'b> OwnedContext<'b> {
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
-                            info!(
+                            debug!(
                                 "Continue with {}\nAt: {}/{}\n{:?}",
                                 closure.function.name,
                                 instruction_index,
@@ -1845,7 +1845,7 @@ impl<'b> OwnedContext<'b> {
         call_state: ExternCallState,
         function: &ExternFunction,
     ) -> Result<Async<OwnedContext<'b>>> {
-        info!(
+        debug!(
             "CALL EXTERN {} {:?} {} {:?}",
             function.id,
             call_state,
@@ -1898,14 +1898,14 @@ impl<'b> OwnedContext<'b> {
                     let thread = self.thread;
                     drop(self);
                     // Poll the future that was returned from the initial call to this extern function
-                    info!("POLL EXTERN {}", function.id);
+                    debug!("POLL EXTERN {}", function.id);
                     match (poll_fn.poll_fn)(thread) {
                         Ok(Async::Ready(context)) => {
-                            info!("READY EXTERN {}", function.id);
+                            debug!("READY EXTERN {}", function.id);
                             self = context;
                         }
                         Ok(Async::NotReady) => {
-                            info!("NOT READY EXTERN {}", function.id);
+                            debug!("NOT READY EXTERN {}", function.id);
                             self = thread.owned_context();
                             match self.stack.get_frames_mut()[frame_offset].state {
                                 State::Extern(ref mut e) => e.call_state = ExternCallState::Poll,
@@ -1929,7 +1929,7 @@ impl<'b> OwnedContext<'b> {
         {
             let mut stack = self.stack.current_frame();
             while stack.len() > 0 {
-                debug!("{} {:?}", stack.len(), &*stack);
+                trace!("{} {:?}", stack.len(), &*stack);
                 stack.pop();
             }
             debug_assert!(
@@ -1948,7 +1948,7 @@ impl<'b> OwnedContext<'b> {
         self.stack.pop(); // Pop function
         self.stack.push(result);
 
-        info!(
+        debug!(
             "EXIT EXTERN {} {:?}",
             function.id,
             &self.stack.current_frame::<State>()[..]
@@ -1994,7 +1994,7 @@ impl<'b> ExecuteContext<'b> {
         function: &BytecodeFunction,
     ) -> Result<Async<Option<()>>> {
         {
-            debug!(
+            trace!(
                 ">>>\nEnter frame {}: {:?}\n{:?}",
                 function.name,
                 &self.stack[..],
@@ -2058,7 +2058,7 @@ impl<'b> ExecuteContext<'b> {
                         amount += 1;
                         match self.stack.excess_args() {
                             Some(excess) => {
-                                debug!("TailCall: Push excess args {:?}", excess.fields);
+                                trace!("TailCall: Push excess args {:?}", excess.fields);
                                 self.stack.extend(&excess.fields);
                                 args += excess.fields.len() as VmIndex;
                             }
@@ -2072,7 +2072,7 @@ impl<'b> ExecuteContext<'b> {
                         function.name
                     );
                     let mut context = self.exit_scope().unwrap_or_else(|x| x);
-                    info!(
+                    debug!(
                         "Clearing {} {} {:?}",
                         context.stack.len(),
                         amount,
@@ -2080,7 +2080,7 @@ impl<'b> ExecuteContext<'b> {
                     );
                     let end = context.stack.len() - args - 1;
                     context.stack.remove_range(end - amount, end);
-                    debug!("{:?}", &context.stack[..]);
+                    trace!("{:?}", &context.stack[..]);
                     return context.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 ConstructVariant { tag, args } => {
@@ -2295,7 +2295,7 @@ impl<'b> ExecuteContext<'b> {
                 },
                 Pop(n) => self.stack.pop_many(n),
                 Slide(n) => {
-                    debug!("{:?}", &self.stack[..]);
+                    trace!("{:?}", &self.stack[..]);
                     self.stack.slide(n);
                 }
                 MakeClosure {
@@ -2376,7 +2376,7 @@ impl<'b> ExecuteContext<'b> {
             index += 1;
         }
         let result = self.stack.top().clone();
-        debug!("Return {} {:?}", function.name, result);
+        trace!("Return {} {:?}", function.name, result);
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
 
@@ -2404,7 +2404,7 @@ impl<'b> ExecuteContext<'b> {
             // the call with the extra arguments
             match context.stack.pop().get_repr() {
                 Data(excess) => {
-                    debug!("Push excess args {:?}", &excess.fields);
+                    trace!("Push excess args {:?}", &excess.fields);
                     context.stack.push(result);
                     context.stack.extend(&excess.fields);
                     context
@@ -2495,7 +2495,7 @@ where
             Callable::Extern(ref ext) => {
                 assert!(self.stack.len() >= ext.args + 1);
                 let function_index = self.stack.len() - ext.args - 1;
-                debug!("------- {} {:?}", function_index, &self.stack[..]);
+                trace!("------- {} {:?}", function_index, &self.stack[..]);
                 self.enter_scope(ext.args, ExternState::new(*ext));
                 Ok(())
             }
@@ -2508,7 +2508,7 @@ where
         required_args: VmIndex,
         callable: Callable,
     ) -> Result<()> {
-        debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
+        trace!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
             &(*self.stack)[(function_index + 1) as usize..]
         });
@@ -2543,7 +2543,7 @@ where
                 // collected
                 let offset = self.stack.len() - required_args - 1;
                 self.stack.insert_slice(offset, &[Value::from(Data(d))]);
-                debug!(
+                trace!(
                     "xxxxxx {:?}\n{:?}",
                     &(*self.stack)[..],
                     self.stack.stack.get_frames()
@@ -2555,7 +2555,7 @@ where
 
     fn do_call(mut self, args: VmIndex) -> Result<()> {
         let function_index = self.stack.len() - 1 - args;
-        info!(
+        debug!(
             "Do call {:?} {:?}",
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
@@ -2662,7 +2662,7 @@ where
 }
 
 fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Instruction) {
-    debug!(
+    trace!(
         "{:?}: {:?} -> {:?} {:?}",
         index,
         instr,
@@ -2671,7 +2671,7 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
             Push(i) => {
                 let x = stack.get(i as usize).cloned();
                 if x.is_none() {
-                    debug!("{:?}", &stack[..])
+                    trace!("{:?}", &stack[..])
                 }
                 x
             }
