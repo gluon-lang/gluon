@@ -293,7 +293,7 @@ impl Stack {
         }
     }
 
-    pub fn pop(&mut self) -> Value {
+    fn assert_pop(&self) {
         if let Some(&frame) = self.frames.last() {
             assert!(
                 self.len() > frame.offset,
@@ -309,7 +309,17 @@ impl Stack {
                 );
             }
         }
+    }
+
+    pub fn pop(&mut self) -> Value {
+        self.assert_pop();
         self.values.pop().expect("pop on empty stack")
+    }
+
+    pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
+        self.assert_pop();
+        let value = self.last().unwrap().get_value();
+        PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
@@ -565,6 +575,10 @@ where
 
     pub fn pop(&mut self) -> Value {
         self.stack.pop()
+    }
+
+    pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
+        self.stack.pop_value()
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
@@ -893,6 +907,21 @@ impl fmt::Display for Stacktrace {
             }?
         }
         Ok(())
+    }
+}
+
+pub struct PopValue<'a>(&'a mut Stack, Variants<'a>);
+
+impl<'a> Drop for PopValue<'a> {
+    fn drop(&mut self) {
+        self.0.pop();
+    }
+}
+
+impl<'a> Deref for PopValue<'a> {
+    type Target = Variants<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.1
     }
 }
 

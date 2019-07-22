@@ -53,7 +53,7 @@ use crate::{
     BoxFuture, Error, Result, Variants,
 };
 
-pub use crate::gc::Trace;
+pub use crate::{gc::Trace, stack::PopValue};
 
 pub type FutureValue<F> = Either<FutureResult<<F as Future>::Item, <F as Future>::Error>, F>;
 
@@ -71,7 +71,7 @@ where
         }
     }
 
-    pub unsafe fn root(&self) -> Execute<RootedThread> {
+    pub fn root(&self) -> Execute<RootedThread> {
         Execute {
             thread: self.thread.as_ref().map(|t| t.root_thread()),
         }
@@ -94,17 +94,12 @@ where
                 .as_ref()
                 .expect("cannot poll Execute future after it has succeded");
             let mut context = try_ready!(thread.resume());
-            context.stack.pop()
+            let value = context.stack.pop_value();
+            self.thread.clone().unwrap().root_value_with_self(*value)
         };
+        self.thread.take();
 
-        unsafe {
-            Ok(Async::Ready(
-                self.thread
-                    .take()
-                    .unwrap()
-                    .root_value_with_self(Variants::new(&value)),
-            ))
-        }
+        Ok(Async::Ready(value))
     }
 }
 
@@ -1681,14 +1676,14 @@ where
     D: DataDef + Trace,
     D::Value: Sized + Any,
 {
-    let roots = Roots {
-        vm: unsafe {
+    unsafe {
+        let roots = Roots {
             // Threads must only be on the garbage collectors heap which makes this safe
-            GcPtr::from_raw(thread)
-        },
-        stack: stack,
-    };
-    unsafe { gc.alloc_and_collect(roots, def) }
+            vm: GcPtr::from_raw(thread),
+            stack: stack,
+        };
+        gc.alloc_and_collect(roots, def)
+    }
 }
 
 pub struct OwnedContext<'b> {
@@ -2687,21 +2682,6 @@ pub struct ActiveThread<'vm> {
     context: Option<MutexGuard<'vm, Context>>,
 }
 
-pub struct PopValue<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>, Variants<'a>);
-
-impl<'a, 'vm> Drop for PopValue<'a, 'vm> {
-    fn drop(&mut self) {
-        self.0.stack().pop();
-    }
-}
-
-impl<'a, 'vm> Deref for PopValue<'a, 'vm> {
-    type Target = Variants<'a>;
-    fn deref(&self) -> &Self::Target {
-        &self.1
-    }
-}
-
 impl<'vm> ActiveThread<'vm> {
     pub fn drop(&mut self) {
         self.context = None;
@@ -2729,13 +2709,8 @@ impl<'vm> ActiveThread<'vm> {
         }
     }
 
-    pub fn pop<'a>(&'a mut self) -> PopValue<'a, 'vm> {
-        let value = {
-            let stack = &self.context.as_ref().unwrap().stack;
-            let last = stack.len() - 1;
-            stack.get_variant(last).unwrap().get_value()
-        };
-        PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
+    pub fn pop<'a>(&'a mut self) -> PopValue<'a> {
+        self.context.as_mut().unwrap().stack.pop_value()
     }
 
     pub(crate) fn last<'a>(&'a self) -> Option<Variants<'a>> {
