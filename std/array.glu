@@ -122,6 +122,7 @@ let is_empty array = prim.len array == 0
     foldable,
     traversable,
     semigroup,
+    monoid,
     is_empty,
     ..
     prim
