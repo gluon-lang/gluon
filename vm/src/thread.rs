@@ -1720,19 +1720,14 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn execute(self) -> Result<Async<Option<OwnedContext<'b>>>> {
-        let mut maybe_context = Some(self);
-        while let Some(mut context) = maybe_context {
+    fn execute(mut self) -> Result<Async<Option<OwnedContext<'b>>>> {
+        let mut context = self.borrow_mut();
+        loop {
             if context.thread.interrupted() {
                 return Err(Error::Interrupted);
             }
-            trace!("STACK\n{:?}", context.stack.get_frames());
-            let state = unsafe {
-                StackFrame::<State>::current(&mut context.stack)
-                    .frame_mut()
-                    .state
-                    .clone_unrooted()
-            };
+            trace!("STACK\n{:?}", context.stack.stack.get_frames());
+            let state = context.stack.frame().state;
 
             if context.hook.flags.contains(HookFlags::CALL_FLAG) {
                 match state {
@@ -1745,10 +1740,9 @@ impl<'b> OwnedContext<'b> {
                         ..
                     }) => {
                         let thread = context.thread;
-                        let context = &mut *context;
                         if let Some(ref mut hook) = context.hook.function {
                             let info = DebugInfo {
-                                stack: &context.stack,
+                                stack: &context.stack.stack,
                                 state: HookFlags::CALL_FLAG,
                             };
                             try_ready!(hook(thread, info))
@@ -1758,35 +1752,38 @@ impl<'b> OwnedContext<'b> {
                 }
             }
 
-            maybe_context = match state {
-                State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Extern(ref ext) if ext.is_locked() => {
-                    return Ok(Async::Ready(Some(context)))
+            match state {
+                State::Unknown => {
+                    return Ok(Async::Ready(Some(self)));
+                }
+                State::Extern(ext) if ext.is_locked() => {
+                    return Ok(Async::Ready(Some(self)));
                 }
 
-                State::Extern(mut ext) => {
+                State::Extern(ext) => {
+                    let mut ext = unsafe { ext.clone_unrooted() };
                     // We are currently in the poll call of this extern function.
                     // Return control to the caller.
                     if ext.call_state == ExternCallState::InPoll {
-                        return Ok(Async::Ready(Some(context)));
+                        return Ok(Async::Ready(Some(self)));
                     }
                     if ext.call_state == ExternCallState::Poll {
                         if let Some(frame_index) = context.poll_fns.last().map(|f| f.frame_index) {
-                            ext = unsafe {
-                                ExternState::from_state(
-                                    &context.stack.get_frames()[frame_index as usize].state,
+                            unsafe {
+                                ext = ExternState::from_state(
+                                    &context.stack.stack.get_frames()[frame_index as usize].state,
                                 )
-                                .clone_unrooted()
-                            };
+                                .clone_unrooted();
+                            }
                         }
                     }
-                    StackFrame::<ExternState>::current(&mut context.stack)
-                        .frame_mut()
-                        .state
-                        .call_state = ExternCallState::Poll;
-                    Some(try_ready!(
-                        context.execute_function(ext.call_state, &ext.function,)
-                    ))
+                    match &mut context.stack.frame_mut().state {
+                        State::Extern(ext) => ext.call_state = ExternCallState::Poll,
+                        _ => unreachable!(),
+                    }
+
+                    self = try_ready!(self.execute_function(ext.call_state, &ext.function));
+                    context = self.borrow_mut();
                 }
 
                 State::Closure(ClosureState {
@@ -1794,6 +1791,7 @@ impl<'b> OwnedContext<'b> {
                     instruction_index,
                 }) => {
                     let max_stack_size = context.max_stack_size;
+                    let instruction_index = *instruction_index;
                     // Tail calls into extern functions at the top level will drop the last
                     // stackframe so just return immedietly
                     enum State {
@@ -1802,8 +1800,6 @@ impl<'b> OwnedContext<'b> {
                         ReturnContext,
                     }
                     let state = {
-                        let context = context.borrow_mut();
-
                         let function_size = closure.function.max_stack_size;
 
                         // Before entering a function check that the stack cannot exceed `max_stack_size`
@@ -1824,11 +1820,9 @@ impl<'b> OwnedContext<'b> {
                                 &context.stack[..]
                             );
 
-                            let new_context = try_ready!(context.from_state().execute_(
-                                instruction_index,
-                                &closure.function.instructions,
-                                &closure.function,
-                            ));
+                            let closure_context = context.from_state();
+                            let new_context = try_ready!(closure_context.execute_());
+                            context = self.borrow_mut();
                             if new_context.is_some() {
                                 State::Exists
                             } else {
@@ -1837,14 +1831,15 @@ impl<'b> OwnedContext<'b> {
                         }
                     };
                     match state {
-                        State::Exists => Some(context),
-                        State::DoesNotExist => None,
-                        State::ReturnContext => return Ok(Async::Ready(Some(context))),
+                        State::Exists => (),
+                        State::DoesNotExist => return Ok(None.into()),
+                        State::ReturnContext => {
+                            return Ok(Async::Ready(Some(self)));
+                        }
                     }
                 }
             };
         }
-        Ok(Async::Ready(maybe_context))
     }
 
     fn execute_function(
@@ -1982,6 +1977,8 @@ impl<'b> OwnedContext<'b> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             hook: &mut context.hook,
+            max_stack_size: context.max_stack_size,
+            poll_fns: &context.poll_fns,
         }
     }
 }
@@ -1991,6 +1988,8 @@ pub struct ExecuteContext<'b, 'gc, S: StackState = ClosureState> {
     pub stack: StackFrame<'b, S>,
     pub gc: &'gc mut Gc,
     hook: &'b mut Hook,
+    max_stack_size: VmIndex,
+    poll_fns: &'b [PollFn],
 }
 
 impl<'b, 'gc, S> ExecuteContext<'b, 'gc, S>
@@ -2058,12 +2057,7 @@ where
 }
 
 impl<'b, 'gc> ExecuteContext<'b, 'gc> {
-    fn execute_(
-        mut self,
-        mut index: usize,
-        instructions: &[Instruction],
-        function: &BytecodeFunction,
-    ) -> Result<Async<Option<()>>> {
+    fn execute_(mut self) -> Result<Async<Option<()>>> {
         unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
             Variants::with_root(value, gc)
         }
@@ -2092,6 +2086,9 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             };
         }
 
+        let state = self.stack.frame().state;
+        let mut instruction_index = state.instruction_index;
+        let function = unsafe { state.closure.function.clone_unrooted() };
         {
             trace!(
                 ">>>\nEnter frame {}: {:?}\n{:?}",
@@ -2100,26 +2097,13 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 self.stack.frame()
             );
         }
-        while let Some(&instr) = instructions.get(index) {
-            debug_instruction(&self.stack, index, instr);
+
+        let instructions = &function.instructions[..];
+        while let Some(&instr) = instructions.get(instruction_index) {
+            debug_instruction(&self.stack, instruction_index, instr);
 
             if self.hook.flags.contains(HookFlags::LINE_FLAG) {
-                if let Some(ref mut hook) = self.hook.function {
-                    let current_line = function.debug_info.source_map.line(index);
-                    let previous_line = function
-                        .debug_info
-                        .source_map
-                        .line(self.hook.previous_instruction_index);
-                    self.hook.previous_instruction_index = index;
-                    if current_line != previous_line {
-                        self.stack.frame_mut().state.instruction_index = index;
-                        let info = DebugInfo {
-                            stack: &self.stack.stack,
-                            state: HookFlags::LINE_FLAG,
-                        };
-                        try_ready!(hook(self.thread, info))
-                    }
-                }
+                try_ready!(self.run_hook(&function, instruction_index));
             }
 
             match instr {
@@ -2146,9 +2130,11 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         &*construct_gc!(String(@function.strings[string_index as usize].inner())),
                     );
                 }
-                PushFloat(f) => self.stack.push(Float(f)),
+                PushFloat(f) => {
+                    self.stack.push(Float(f));
+                }
                 Call(args) => {
-                    self.stack.frame_mut().state.instruction_index = index + 1;
+                    self.stack.frame_mut().state.instruction_index = instruction_index + 1;
                     return self.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 TailCall(mut args) => {
@@ -2381,13 +2367,13 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     }
                 }
                 Jump(i) => {
-                    index = i as usize;
+                    instruction_index = i as usize;
                     continue;
                 }
                 CJump(i) => match self.stack.pop().get_repr() {
                     ValueRepr::Tag(0) => (),
                     _ => {
-                        index = i as usize;
+                        instruction_index = i as usize;
                         continue;
                     }
                 },
@@ -2472,7 +2458,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r)?,
                 FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r)?,
             }
-            index += 1;
+
+            instruction_index += 1;
         }
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame().excess;
@@ -2516,6 +2503,26 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             Ok(Async::Ready(if stack_exists { Some(()) } else { None }))
         }
     }
+
+    fn run_hook(&mut self, function: &BytecodeFunction, index: usize) -> Result<Async<()>> {
+        if let Some(ref mut hook) = self.hook.function {
+            let current_line = function.debug_info.source_map.line(index);
+            let previous_line = function
+                .debug_info
+                .source_map
+                .line(self.hook.previous_instruction_index);
+            self.hook.previous_instruction_index = index;
+            if current_line != previous_line {
+                self.stack.frame_mut().state.instruction_index = index;
+                let info = DebugInfo {
+                    stack: &self.stack.stack,
+                    state: HookFlags::LINE_FLAG,
+                };
+                try_ready!(hook(self.thread, info))
+            }
+        }
+        Ok(().into())
+    }
 }
 
 impl<'b, 'gc> ExecuteContext<'b, 'gc, State> {
@@ -2528,6 +2535,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc, State> {
             stack: self.stack.from_state(),
             gc: self.gc,
             hook: self.hook,
+            max_stack_size: self.max_stack_size,
+            poll_fns: self.poll_fns,
         }
     }
 }
@@ -2547,6 +2556,8 @@ where
             stack,
             gc: self.gc,
             hook: self.hook,
+            max_stack_size: self.max_stack_size,
+            poll_fns: self.poll_fns,
         }
     }
 
@@ -2568,6 +2579,8 @@ where
                     stack,
                     gc: self.gc,
                     hook: self.hook,
+                    max_stack_size: self.max_stack_size,
+                    poll_fns: self.poll_fns,
                 })
             }
             Err(stack) => Err(ExecuteContext {
@@ -2575,6 +2588,8 @@ where
                 stack: StackFrame::current(stack),
                 gc: self.gc,
                 hook: self.hook,
+                max_stack_size: self.max_stack_size,
+                poll_fns: self.poll_fns,
             }),
         }
     }
@@ -2682,7 +2697,7 @@ where
     }
 }
 
-#[inline]
+#[inline(always)]
 fn binop_int<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2699,7 +2714,7 @@ where
     })
 }
 
-#[inline]
+#[inline(always)]
 fn binop_f64<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2712,7 +2727,7 @@ where
     binop(vm, stack, |l, r| Ok(ValueRepr::Float(f(l, r))))
 }
 
-#[inline]
+#[inline(always)]
 fn binop_byte<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2729,7 +2744,7 @@ where
     })
 }
 
-#[inline]
+#[inline(always)]
 fn binop_bool<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2744,7 +2759,7 @@ where
     })
 }
 
-#[inline]
+#[inline(always)]
 fn binop<'b, 'c, F, T>(
     vm: &'b Thread,
     stack: &'b mut StackFrame<'c, ClosureState>,
@@ -2835,6 +2850,8 @@ impl<'vm> ActiveThread<'vm> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             hook: &mut context.hook,
+            max_stack_size: context.max_stack_size,
+            poll_fns: &context.poll_fns,
         }
     }
 
