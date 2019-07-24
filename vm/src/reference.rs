@@ -47,7 +47,7 @@ unsafe impl<T> Trace for Reference<T> {
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    match r.thread.deep_clone_value(&r.thread, a.get_variant()) {
+    match r.thread.deep_clone_value(&r.thread, a.get_value()) {
         Ok(a) => {
             *r.value.lock().unwrap() = a;
             RuntimeResult::Return(())
@@ -57,13 +57,15 @@ fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
 }
 
 fn get(r: &Reference<A>) -> Unrooted<A> {
-    Unrooted::from(r.value.lock().unwrap().clone())
+    // SAFETY The returned, unrooted value gets pushed immediately to the stack
+    unsafe { Unrooted::from(r.value.lock().unwrap().clone_unrooted()) }
 }
 
 fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
+    // SAFETY The returned, unrooted value gets pushed immediately to the stack
     unsafe {
         Reference {
-            value: Mutex::new(a.value.get_variant().get_value()),
+            value: Mutex::new(a.value.get_value().clone_unrooted()),
             thread: GcPtr::from_raw(a.vm),
             _marker: PhantomData,
         }

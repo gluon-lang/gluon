@@ -784,17 +784,13 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
             .thread
             .get_global::<OpaqueValue<RootedThread, Hole>>(&escaped_id)
             .map_err(|err| D::Error::custom(err))?;
-        unsafe {
-            match function.get_value().get_repr() {
-                ValueRepr::Function(function) if partial.args == function.args => {
-                    Ok(ExternFunction {
-                        id: function.id.clone(),
-                        args: function.args,
-                        function: function.function,
-                    })
-                }
-                _ => Err(D::Error::custom("Invalid type for extern function")),
-            }
+        match function.get_value().get_repr() {
+            ValueRepr::Function(function) if partial.args == function.args => Ok(ExternFunction {
+                id: function.id.clone(),
+                args: function.args,
+                function: function.function,
+            }),
+            _ => Err(D::Error::custom("Invalid type for extern function")),
         }
     }
 }
@@ -853,11 +849,8 @@ impl<'de> DeserializeState<'de, DeSeed> for RootedValue<RootedThread> {
 
 #[cfg(test)]
 mod tests {
-    extern crate serde_json;
-
     use super::*;
-    use crate::thread::RootedThread;
-    use crate::value::Value;
+    use crate::{thread::RootedThread, value::Value};
 
     #[test]
     fn str_value() {
@@ -890,8 +883,8 @@ mod tests {
         let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
         match value.get_repr() {
             ValueRepr::Array(s) => assert_eq!(
-                s.iter().map(|v| v.get_value()).collect::<Vec<_>>(),
-                [Value::int(1), Value::int(2), Value::int(3)]
+                s.iter().collect::<Vec<_>>(),
+                [Variants::int(1), Variants::int(2), Variants::int(3)]
             ),
             _ => ice!(),
         }

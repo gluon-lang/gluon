@@ -335,9 +335,17 @@ impl Stack {
     }
 
     pub fn slide(&mut self, count: VmIndex) {
-        let i = self.len() - 1 - count;
-        self[i] = self.last().unwrap().get_value();
+        let last = self.len() - 1;
+        let i = last - count;
+        self.copy_value(last, i);
         self.pop_many(count);
+    }
+
+    fn copy_value(&mut self, from: VmIndex, to: VmIndex) {
+        // SAFETY The value is stored in the stack, rooting it
+        unsafe {
+            self[to] = self[from].clone_unrooted();
+        }
     }
 
     #[inline(always)]
@@ -615,17 +623,12 @@ where
     }
 
     pub fn insert_slice(&mut self, index: VmIndex, values: &[Value]) {
-        self.stack.values.reserve(values.len());
+        let index = (self.frame.offset + index) as usize;
+        // SAFETY the values get inserted to the stack
         unsafe {
-            let old_len = self.len();
-            for i in (index..old_len).rev() {
-                *self.get_unchecked_mut(i as usize + values.len()) = self[i].clone();
-            }
-            for (i, val) in (index..).zip(values) {
-                *self.get_unchecked_mut(i as usize) = val.clone();
-            }
-            let new_len = self.stack.values.len() + values.len();
-            self.stack.values.set_len(new_len);
+            self.stack
+                .values
+                .splice(index..index, values.iter().map(|v| v.clone_unrooted()));
         }
     }
 
@@ -746,8 +749,8 @@ where
 }
 
 impl<'b> StackFrame<'b, ClosureState> {
-    pub fn get_upvar(&self, index: VmIndex) -> &Value {
-        &self.frame.upvars()[index as usize]
+    pub fn get_upvar(&self, index: VmIndex) -> Variants {
+        unsafe { Variants::new(&self.frame.upvars()[index as usize]) }
     }
 }
 

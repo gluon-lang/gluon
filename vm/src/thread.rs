@@ -94,11 +94,12 @@ where
                 .as_ref()
                 .expect("cannot poll Execute future after it has succeded");
             let mut context = try_ready!(thread.resume());
-            let value = context.stack.pop_value();
-            self.thread.clone().unwrap().root_value_with_self(*value)
+            context.stack.pop()
         };
 
-        Ok(Async::Ready(value))
+        Ok(Async::Ready(
+            self.thread.take().unwrap().root_value_with_self(&value)?,
+        ))
     }
 }
 
@@ -176,19 +177,8 @@ where
     T: VmRootInternal + Clone,
 {
     fn clone(&self) -> Self {
-        let value = RootedValue {
-            vm: self.vm.clone(),
-            rooted: AtomicCell::new(true),
-            value: self.value.clone(),
-        };
-        value
-            .vm
-            .rooted_values
-            .write()
-            .unwrap()
-            .push(self.value.clone());
-
-        value
+        // SAFETY `self.vm` owns the value already, we just create another root
+        unsafe { RootedValue::new(self.vm.clone(), &self.value) }
     }
 }
 
@@ -230,21 +220,30 @@ where
     where
         U: VmRoot<'vm>,
     {
-        let value = vm.deep_clone_value(&self.vm, self.value.get_variants())?;
-        vm.rooted_values.write().unwrap().push(value.clone());
-        Ok(RootedValue {
+        let value = vm.deep_clone_value(&self.vm, &self.value)?;
+        // SAFETY deep cloning ensures that `vm` owns the value
+        unsafe { Ok(RootedValue::new(vm, &value)) }
+    }
+
+    // SAFETY The value must be owned by `vm`'s GC
+    unsafe fn new(vm: T, value: &Value) -> Self {
+        vm.rooted_values
+            .write()
+            .unwrap()
+            .push(value.clone_unrooted());
+        RootedValue {
             vm,
             rooted: AtomicCell::new(true),
-            value,
-        })
+            value: value.clone_unrooted(),
+        }
+    }
+
+    pub fn get_value(&self) -> &Value {
+        &self.value
     }
 
     pub fn get_variant(&self) -> Variants {
         unsafe { Variants::new(&self.value) }
-    }
-
-    pub fn get_value(&self) -> Value {
-        self.value.clone()
     }
 
     pub fn vm(&self) -> &Thread {
@@ -286,12 +285,12 @@ where
         self.vm.root_value(self.get_variant())
     }
 
-    fn root_(&self) {
+    unsafe fn root_(&self) {
         self.vm.root_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
         assert!(!self.rooted.load());
         self.rooted.store(true);
-        rooted_values.push(self.value.clone());
+        rooted_values.push(self.value.clone_unrooted());
     }
 
     fn unroot_(&self) {
@@ -818,7 +817,7 @@ impl Thread {
                 Symbol::from(format!("@{}", name)),
                 T::make_forall_type(self),
                 Metadata::default(),
-                value,
+                &value,
             )
         }
     }
@@ -1035,14 +1034,9 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     fn unroot_vm(&self);
 
     /// Roots a value
-    fn root_value_with_self(self, value: Variants) -> RootedValue<Self> {
-        let value = value.get_value();
-        self.rooted_values.write().unwrap().push(value.clone());
-        RootedValue {
-            vm: self,
-            rooted: AtomicCell::new(true),
-            value: value,
-        }
+    fn root_value_with_self(self, value: &Value) -> Result<RootedValue<Self>> {
+        // FIXME value must be owned by self
+        Ok(unsafe { RootedValue::new(self, &value) })
     }
 }
 
@@ -1154,11 +1148,11 @@ where
         name: Symbol,
         typ: ArcType,
         metadata: Metadata,
-        value: Value,
+        value: &Value,
     ) -> Result<()>;
 
     /// `owner` is theread that owns `value` which is not necessarily the same as `self`
-    fn deep_clone_value(&self, owner: &Thread, value: Variants) -> Result<Value>;
+    fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<Value>;
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 }
@@ -1176,13 +1170,9 @@ impl ThreadInternal for Thread {
     where
         T: VmRoot<'vm>,
     {
-        let value = value.get_value();
-        self.rooted_values.write().unwrap().push(value.clone());
-        RootedValue {
-            vm: T::new_root(self),
-            rooted: AtomicCell::new(true),
-            value: value,
-        }
+        T::new_root(self)
+            .root_value_with_self(value.get_value())
+            .unwrap() // TODO Handle failure
     }
 
     fn call_thunk<'vm>(
@@ -1260,21 +1250,21 @@ impl ThreadInternal for Thread {
         name: Symbol,
         typ: ArcType,
         metadata: Metadata,
-        value: Value,
+        value: &Value,
     ) -> Result<()> {
         let value = crate::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
             .deep_clone(&value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
-    fn deep_clone_value(&self, owner: &Thread, value: Variants) -> Result<Value> {
+    fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<Value> {
         let mut context = self.owned_context();
         let full_clone = !self.can_share_values_with(&mut context.gc, owner);
         let mut cloner = crate::value::Cloner::new(self, &mut context.gc);
         if full_clone {
             cloner.force_full_clone();
         }
-        cloner.deep_clone(&value.get_value())
+        cloner.deep_clone(value)
     }
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool {
@@ -1482,23 +1472,6 @@ impl Context {
             max_stack_size: VmIndex::max_value(),
             poll_fns: Vec::new(),
         }
-    }
-
-    pub(crate) fn new_data(
-        &mut self,
-        thread: &Thread,
-        tag: VmTag,
-        fields: &[Value],
-    ) -> Result<Value> {
-        self.alloc_with(
-            thread,
-            Def {
-                tag: tag,
-                elems: fields,
-            },
-        )
-        .map(ValueRepr::Data)
-        .map(Value::from)
     }
 
     pub fn push_new_data(
@@ -1987,6 +1960,20 @@ impl<'b> ExecuteContext<'b> {
         instructions: &[Instruction],
         function: &BytecodeFunction,
     ) -> Result<Async<Option<()>>> {
+        unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
+            Variants::with_root(value, gc)
+        }
+
+        // SAFETY By branding the variant with the gc lifetime we prevent mutation in the gc
+        // Since that implies that no collection can occur while the variant is alive alive it is
+        // safe to keep clone the value (to disconnect the previous lifetime from the stack)
+        // and store the value unrooted
+        macro_rules! transfer {
+            ($value: expr) => {
+                unsafe { lock_gc(&self.gc, $value) }
+            };
+        }
+
         {
             trace!(
                 ">>>\nEnter frame {}: {:?}\n{:?}",
@@ -2020,8 +2007,8 @@ impl<'b> ExecuteContext<'b> {
 
             match instr {
                 Push(i) => {
-                    let v = match self.stack.get(i as usize).cloned() {
-                        Some(v) => v,
+                    let v = match self.stack.get(i as usize) {
+                        Some(v) => transfer!(v),
                         None => {
                             return Err(Error::Panic(
                                 format!("ICE: Stack push out of bounds in {}", function.name),
@@ -2303,7 +2290,7 @@ impl<'b> ExecuteContext<'b> {
                             &mut self.gc,
                             self.thread,
                             &self.stack.stack,
-                            ClosureDataDef(func, args),
+                            ClosureDataDef(func, args.iter()),
                         )?)
                     };
                     self.stack.pop_many(upvars);
@@ -2343,7 +2330,7 @@ impl<'b> ExecuteContext<'b> {
                     }
                 }
                 PushUpVar(i) => {
-                    let v = self.stack.get_upvar(i).clone();
+                    let v = transfer!(self.stack.get_upvar(i).get_value());
                     self.stack.push(v);
                 }
                 AddInt => binop_int(self.thread, &mut self.stack, VmInt::checked_add)?,
@@ -2369,8 +2356,6 @@ impl<'b> ExecuteContext<'b> {
             }
             index += 1;
         }
-        let result = self.stack.top().clone();
-        trace!("Return {} {:?}", function.name, result);
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
 
@@ -2391,15 +2376,16 @@ impl<'b> ExecuteContext<'b> {
                 },
             )
         };
+        debug!("Return {} {:?}", function.name, context.stack.top());
 
-        context.stack.pop_many(len + 1);
+        context.stack.slide(len);
         if frame_has_excess {
             // If the function that just finished had extra arguments we need to call the result of
             // the call with the extra arguments
-            match context.stack.pop().get_repr() {
+            match context.stack[context.stack.len() - 2].get_repr() {
                 Data(excess) => {
                     trace!("Push excess args {:?}", &excess.fields);
-                    context.stack.push(result);
+                    context.stack.slide(1);
                     context.stack.extend(&excess.fields);
                     context
                         .do_call(excess.fields.len() as VmIndex)
@@ -2408,7 +2394,6 @@ impl<'b> ExecuteContext<'b> {
                 x => ice!("Expected excess arguments found {:?}", x),
             }
         } else {
-            context.stack.push(result);
             Ok(Async::Ready(if stack_exists { Some(()) } else { None }))
         }
     }
@@ -2554,7 +2539,7 @@ where
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
         );
-        match self.stack[function_index].clone().get_repr() {
+        match self.stack[function_index].get_repr() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
                 self.call_function_with_upvars(args, f.args, callable)
@@ -2663,14 +2648,14 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
         stack.len(),
         match instr {
             Push(i) => {
-                let x = stack.get(i as usize).cloned();
+                let x = stack.get_variant(i);
                 if x.is_none() {
                     trace!("{:?}", &stack[..])
                 }
                 x
             }
-            PushUpVar(i) => Some(stack.get_upvar(i).clone()),
-            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as VmInt))),
+            PushUpVar(i) => Some(stack.get_upvar(i)),
+            NewClosure { .. } | MakeClosure { .. } => Some(Variants::int(stack.len() as VmInt)),
             _ => None,
         }
     );
@@ -2708,8 +2693,17 @@ impl<'vm> ActiveThread<'vm> {
         }
     }
 
-    pub fn pop<'a>(&'a mut self) -> PopValue<'a> {
-        self.context.as_mut().unwrap().stack.pop_value()
+    pub(crate) fn pop_many(&mut self, i: VmIndex) {
+        self.context.as_mut().unwrap().stack.pop_many(i)
+    }
+
+    pub fn pop<'a>(&'a mut self) -> PopValue<'a, 'vm> {
+        let value = {
+            let stack = &self.context.as_ref().unwrap().stack;
+            let last = stack.len() - 1;
+            stack.get_variant(last).unwrap().get_value().get_repr()
+        };
+        PopValue(self, Variants(value, ::std::marker::PhantomData))
     }
 
     pub(crate) fn last<'a>(&'a self) -> Option<Variants<'a>> {

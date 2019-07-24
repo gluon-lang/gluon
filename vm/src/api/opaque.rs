@@ -56,15 +56,15 @@ where
 /// self (and as such as its own lifetime already)
 pub trait AsVariant<'s, 'value>: private::Sealed {
     fn get_variant(&'s self) -> Variants<'value>;
-    fn get_value(self) -> Value;
+    fn get_value(&self) -> &Value;
 }
 
 impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
     fn get_variant(&'v self) -> Self {
         *self
     }
-    fn get_value(self) -> Value {
-        Value::from(self.0)
+    fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
     }
 }
 
@@ -72,8 +72,8 @@ impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
     fn get_variant(&'v self) -> Variants<'value> {
         **self
     }
-    fn get_value(self) -> Value {
-        Value::from(self.0)
+    fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
     }
 }
 impl<'value, T> AsVariant<'value, 'value> for RootedValue<T>
@@ -83,7 +83,7 @@ where
     fn get_variant(&'value self) -> Variants<'value> {
         self.get_variant()
     }
-    fn get_value(self) -> Value {
+    fn get_value(&self) -> &Value {
         RootedValue::get_value(&self)
     }
 }
@@ -319,9 +319,8 @@ where
     T: AsVariant<'s, 'value>,
     V: ?Sized,
 {
-    /// Unsafe as `Value` are not rooted
-    pub unsafe fn get_value(&'s self) -> Value {
-        self.0.get_variant().get_value()
+    pub fn get_value(&'s self) -> &'s Value {
+        self.0.get_value()
     }
 
     pub fn get_variant(&'s self) -> Variants<'value> {

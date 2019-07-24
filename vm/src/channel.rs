@@ -149,7 +149,7 @@ fn recv(receiver: &Receiver<A>) -> Result<Unrooted<A>, ()> {
 fn send(sender: &Sender<A>, value: Generic<A>) -> Result<(), ()> {
     let value = sender
         .thread
-        .deep_clone_value(&sender.thread, value.get_variant())
+        .deep_clone_value(&sender.thread, value.get_value())
         .map_err(|_| ())?;
     Ok(sender.send(value))
 }
@@ -288,13 +288,15 @@ fn spawn_on<'vm>(
     };
 
     SpawnFuture(future.shared()).push(&mut context).unwrap();
-    let context = context.context();
-    let fields = [context.stack.get_values()[..].last().unwrap().clone()];
-    let def = PartialApplicationDataDef(callable, &fields);
-    let value = ValueRepr::PartialApplication(context.alloc_with(vm, def).unwrap());
+    // SAFETY The value we call clone_unrooted on lives on the stack for the duration of the block
+    unsafe {
+        let fields = [context.last().unwrap().get_value().clone_unrooted()];
+        let def = PartialApplicationDataDef(callable, &fields);
+        let value = ValueRepr::PartialApplication(context.context().alloc_with(vm, def).unwrap());
 
-    context.stack.pop_many(2);
-    context.stack.push(value);
+        context.pop_many(2);
+        context.push(value);
+    }
 
     IO::Value(Pushed::default())
 }

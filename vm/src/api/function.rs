@@ -332,7 +332,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
 
             let stack = StackFrame::<ExternState>::current(context.stack());
             $(
-                let variants = Variants::with_root(stack[i].clone(), vm);
+                let variants = Variants::with_root(&stack[i], vm);
                 let mut proxy = match $args::to_proxy(vm, variants) {
                     Ok(x) => x,
                     Err(err) => {

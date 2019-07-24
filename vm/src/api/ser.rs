@@ -576,22 +576,14 @@ impl<'s, 'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'s, 'a, 'vm> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thread::RootedThread;
-    use crate::value::Value;
-
-    fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
-    where
-        T: ?Sized + Serialize,
-    {
-        let mut context = thread.current_context();
-        Ser(value).push(&mut context)?;
-        let variants = context.pop();
-        Ok(variants.get_value())
-    }
+    use crate::{thread::RootedThread, value::Value};
 
     #[test]
     fn bool() {
         let thread = RootedThread::new();
-        assert_eq!(to_value(&thread, &true).unwrap(), Value::tag(1));
+        assert_eq!(
+            true.marshal::<&Thread>(&thread).unwrap().get_value(),
+            &Value::tag(1)
+        );
     }
 }

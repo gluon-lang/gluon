@@ -105,11 +105,11 @@ impl<'a> Variants<'a> {
     /// value
     #[inline]
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(value.clone(), value)
+        Variants::with_root(value, value)
     }
 
     #[inline]
-    pub(crate) unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+    pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> {
         Variants(value.get_repr(), PhantomData)
     }
 
@@ -119,8 +119,8 @@ impl<'a> Variants<'a> {
     }
 
     #[inline]
-    pub fn get_value(&self) -> Value {
-        self.0.into()
+    pub fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a

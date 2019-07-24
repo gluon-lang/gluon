@@ -62,10 +62,9 @@ fn new_bytecode(
 
     let globals = module_globals
         .into_iter()
-        .map(|index| env.globals[index.definition_name()].value.clone())
-        .collect::<Vec<_>>();
+        .map(|index| &env.globals[index.definition_name()].value);
 
-    gc.alloc(ClosureDataDef(bytecode_function, &globals))
+    gc.alloc(ClosureDataDef(bytecode_function, globals))
 }
 
 fn new_bytecode_function(

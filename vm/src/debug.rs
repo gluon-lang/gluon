@@ -14,11 +14,9 @@ fn show(a: Generic<A>) -> String {
 }
 
 fn tag(a: OpaqueRef<A>) -> Option<String> {
-    unsafe {
-        match a.get_value().get_repr() {
-            ValueRepr::Data(data) => data.poly_tag().map(|s| s.to_string()),
-            _ => None,
-        }
+    match a.get_value().get_repr() {
+        ValueRepr::Data(data) => data.poly_tag().map(|s| s.to_string()),
+        _ => None,
     }
 }
 

@@ -9,10 +9,7 @@ use crate::{
     gc::{DataDef, GcPtr, Move, Trace},
     thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
-    value::{
-        ArrayDef, ArrayRepr, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
-        ValueRepr,
-    },
+    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, GcStr, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
     Error, Result, Variants,
 };
@@ -38,7 +35,7 @@ pub use self::{
     opaque::{Opaque, OpaqueRef, OpaqueValue},
     record::Record,
 };
-pub use crate::{thread::ActiveThread, value::Userdata, value::Cloner};
+pub use crate::{thread::ActiveThread, value::Cloner, value::Userdata};
 
 macro_rules! count {
     () => { 0 };
@@ -529,7 +526,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     {
         let mut context = vm.current_context();
         self.push(&mut context)?;
-        let value = context.pop().get_value();
+        let value = context.pop().get_value().clone_unrooted();
         Ok(value)
     }
 
@@ -1347,13 +1344,9 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
             Some(value) => {
-                let len = context.stack().len();
                 value.push(context)?;
-                let arg = [context.pop().get_value()];
                 let thread = context.thread();
-                let value = context.context().new_data(thread, 1, &arg)?;
-                assert!(context.stack().len() == len);
-                context.push(value);
+                context.context().push_new_data(thread, 1, 1)?;
             }
             None => context.push(ValueRepr::Tag(0)),
         }
@@ -1405,18 +1398,8 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
                 0
             }
         };
-        let data = {
-            let value = context.pop().get_value();
-            let thread = context.thread();
-            context.context().alloc_with(
-                thread,
-                Def {
-                    tag: tag,
-                    elems: &[value],
-                },
-            )?
-        };
-        context.push(ValueRepr::Data(data));
+        let thread = context.thread();
+        context.context().push_new_data(thread, tag, 1)?;
         Ok(())
     }
 }
@@ -1701,19 +1684,7 @@ macro_rules! define_tuple {
                 )+
                 let len = count!($($id),+);
                 let thread = context.thread();
-                let context = context.context();
-                let offset = context.stack.len() - len;
-                let value = thread::alloc(&mut context.gc,
-                                          thread,
-                                          &context.stack,
-                                          Def {
-                                              tag: 0,
-                                              elems: &context.stack[offset..],
-                                          })?;
-                for _ in 0..len {
-                    context.stack.pop();
-                }
-                context.stack.push(ValueRepr::Data(value));
+                context.context().push_new_data(thread, 0, len)?;
                 Ok(())
             }
         }

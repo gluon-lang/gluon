@@ -60,20 +60,28 @@ impl fmt::Debug for ClosureData {
     }
 }
 
-#[derive(Trace)]
-#[gluon(gluon_vm)]
-pub(crate) struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
+pub(crate) struct ClosureDataDef<I>(pub GcPtr<BytecodeFunction>, pub I);
 
-unsafe impl<'b> DataDef for ClosureDataDef<'b> {
+// FIXME `DataDef` should not require tracing
+unsafe impl<I> Trace for ClosureDataDef<I> {
+    impl_trace! { self, gc,
+        mark(&self.0, gc)
+    }
+}
+
+unsafe impl<'b, I> DataDef for ClosureDataDef<I>
+where
+    I: Iterator<Item = &'b Value>,
+{
     type Value = ClosureData;
     fn size(&self) -> usize {
-        size_of::<ClosureData>() + self.1.len() * size_of::<Value>()
+        size_of::<ClosureData>() + self.1.size_hint().0 * size_of::<Value>()
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
-            result.upvars.initialize(self.1.iter().cloned());
+            result.upvars.initialize(self.1.map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -194,7 +202,9 @@ unsafe impl<'b> DataDef for Def<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = self.tag;
-            result.fields.initialize(self.elems.iter().cloned());
+            result
+                .fields
+                .initialize(self.elems.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -268,7 +278,9 @@ unsafe impl<'b> DataDef for RecordDef<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
-            result.fields.initialize(self.elems.iter().cloned());
+            result
+                .fields
+                .initialize(self.elems.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -293,7 +305,7 @@ unsafe impl<'b> DataDef for UninitializedRecord<'b> {
             result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
             result
                 .fields
-                .initialize(iter::repeat(Value::int(0)).take(self.elems));
+                .initialize((0..self.elems).map(|_| Value::int(0)));
             result
         }
     }
@@ -441,8 +453,7 @@ pub(crate) enum ValueRepr {
     Thread(#[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcPtr<Thread>),
 }
 
-// FIXME Remove Clone to make it harder to create unrooted values
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -463,6 +474,10 @@ impl From<ValueRepr> for Value {
 }
 
 impl Value {
+    pub(crate) fn from_ref(v: &ValueRepr) -> &Value {
+        unsafe { mem::transmute(v) }
+    }
+
     pub fn int(i: VmInt) -> Value {
         Value(ValueRepr::Int(i))
     }
@@ -474,10 +489,20 @@ impl Value {
         Value(ValueRepr::Tag(tag))
     }
 
+    // Alias to let `on_array!` work with cloning
+    unsafe fn clone(&self) -> Value {
+        self.clone_unrooted()
+    }
+
+    pub unsafe fn clone_unrooted(&self) -> Value {
+        Value(self.0)
+    }
+
     pub fn get_variants(&self) -> Variants {
         unsafe { Variants::new(self) }
     }
 
+    // FIXME unsafe
     pub(crate) fn get_repr(&self) -> ValueRepr {
         self.0
     }
@@ -498,7 +523,7 @@ impl Value {
 
     pub fn obj_eq(&self, other: &Self) -> bool {
         let (self_, other) = (self.get_repr(), other.get_repr());
-        if mem::discriminant(&self_) != mem::discriminant(&other) {
+        if mem::discriminant(self_) != mem::discriminant(other) {
             return false;
         }
         use self::ValueRepr::*;
@@ -843,7 +868,9 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
-            result.args.initialize(self.1.iter().cloned());
+            result
+                .args
+                .initialize(self.1.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -1027,7 +1054,7 @@ macro_rules! impl_repr {
                 unsafe {
                     let result = &mut *result.as_mut_ptr();
                     result.set_repr($repr);
-                    result.unsafe_array_mut::<$id>().initialize(self.iter().cloned());
+                    result.unsafe_array_mut::<$id>().initialize(self.iter().map(|v| v.clone()));
                     result
                 }
             }
@@ -1095,6 +1122,11 @@ impl Repr {
     }
 }
 
+#[inline(always)]
+fn cast<T, R>(array: T, f: impl FnOnce(T) -> R) -> R {
+    f(array)
+}
+
 macro_rules! on_array {
     ($array:expr, $f:expr) => {{
         let ref array = $array;
@@ -1102,14 +1134,14 @@ macro_rules! on_array {
         // SAFETY We check the `repr` before casting to the inner type
         unsafe {
             match array.repr() {
-                Repr::Byte => $f(array.unsafe_array::<u8>()),
-                Repr::Int => $f(array.unsafe_array::<VmInt>()),
-                Repr::Float => $f(array.unsafe_array::<f64>()),
-                Repr::String => $f(array.unsafe_array::<GcStr>()),
-                Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
-                Repr::Unknown => $f(array.unsafe_array::<Value>()),
-                Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<dyn Userdata>>>()),
-                Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
+                Repr::Byte => cast(array.unsafe_array::<u8>(), $f),
+                Repr::Int => cast(array.unsafe_array::<VmInt>(), $f),
+                Repr::Float => cast(array.unsafe_array::<f64>(), $f),
+                Repr::String => cast(array.unsafe_array::<GcStr>(), $f),
+                Repr::Array => cast(array.unsafe_array::<GcPtr<ValueArray>>(), $f),
+                Repr::Unknown => cast(array.unsafe_array::<Value>(), $f),
+                Repr::Userdata => cast(array.unsafe_array::<GcPtr<Box<dyn Userdata>>>(), $f),
+                Repr::Thread => cast(array.unsafe_array::<GcPtr<Thread>>(), $f),
             }
         }
     }};
@@ -1178,7 +1210,7 @@ impl ValueArray {
                 Repr::Userdata => ValueRepr::Userdata(self.unsafe_get(index)),
                 Repr::Thread => ValueRepr::Thread(self.unsafe_get(index)),
             };
-            Variants::with_root(value.into(), self)
+            Variants::with_root(&Value::from(value), self)
         }
     }
 
@@ -1273,7 +1305,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
             result.repr = self.repr;
             on_array!(self, |array: &Array<_>| result
                 .unsafe_array_mut()
-                .initialize(array.iter().cloned()));
+                .initialize(array.iter().map(|v| v.clone())));
             result
         }
     }
@@ -1348,7 +1380,7 @@ impl<'t> Cloner<'t> {
             .receiver_generation
             .can_contain_values_from(value.generation())
         {
-            return Ok(value.clone());
+            return Ok(unsafe { value.clone_unrooted() }); // FIXME
         }
         let result = match value.0 {
             String(data) => self.deep_clone_str(data),
@@ -1485,7 +1517,7 @@ impl<'t> Cloner<'t> {
         let result = self.deep_clone_ptr(data, |gc, data| {
             debug_assert!(data.function.generation().is_root());
 
-            let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
+            let ptr = gc.alloc(ClosureDataDef(data.function, data.upvars.iter()))?;
             Ok((Closure(ptr), ptr))
         })?;
         match result {

@@ -916,7 +916,7 @@ where
             id,
             typ,
             mem::replace(Arc::make_mut(&mut metadata), Default::default()),
-            value,
+            &value,
         ));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))
