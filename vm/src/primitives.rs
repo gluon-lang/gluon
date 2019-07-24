@@ -105,12 +105,10 @@ pub mod array {
             Err(err) => return RuntimeResult::Panic(err),
         };
 
-        unsafe {
-            RuntimeResult::Return(Getable::from_value(
-                array.vm_(),
-                Variants::new(&ValueRepr::Array(value).into()),
-            ))
-        }
+        RuntimeResult::Return(Getable::from_value(
+            array.vm_(),
+            Variants::new(&ValueRepr::Array(value).into()),
+        ))
     }
 
     pub(crate) fn append<'vm>(
@@ -162,12 +160,10 @@ pub mod array {
                 Err(err) => return RuntimeResult::Panic(err),
             }
         };
-        unsafe {
-            RuntimeResult::Return(Getable::from_value(
-                lhs.vm_(),
-                Variants::new(&ValueRepr::Array(value).into()),
-            ))
-        }
+        RuntimeResult::Return(Getable::from_value(
+            lhs.vm_(),
+            Variants::new(&ValueRepr::Array(value).into()),
+        ))
     }
 }
 
@@ -216,12 +212,10 @@ mod string {
                 Err(err) => return RuntimeResult::Panic(err),
             }
         };
-        unsafe {
-            RuntimeResult::Return(Getable::from_value(
-                vm,
-                Variants::new(&ValueRepr::String(value).into()),
-            ))
-        }
+        RuntimeResult::Return(Getable::from_value(
+            vm,
+            Variants::new(&ValueRepr::String(value).into()),
+        ))
     }
 
     pub fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
@@ -243,7 +237,12 @@ mod string {
 
     pub extern "C" fn from_utf8(thread: &Thread) -> Status {
         let mut context = thread.current_context();
-        let value = StackFrame::<ExternState>::current(context.stack())[0].get_repr();
+        // SAFETY `array` is rooted on the stack for the duration of this extern call
+        let value = unsafe {
+            StackFrame::<ExternState>::current(context.stack())[0]
+                .get_repr()
+                .clone_unrooted()
+        };
         match value {
             ValueRepr::Array(array) => match GcStr::from_utf8(array) {
                 Ok(string) => {

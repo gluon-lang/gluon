@@ -40,7 +40,7 @@ impl PartialEq for dyn Userdata {
 }
 
 pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants<'a>> + Clone {
-    xs.iter().map(|v| unsafe { Variants::new(v) })
+    xs.iter().map(Variants::new)
 }
 
 #[derive(PartialEq, Trace)]
@@ -182,7 +182,7 @@ impl GcPtr<DataStruct> {
     pub(crate) fn get_field(&self, field: InternedStr) -> Option<Variants> {
         self.field_map()
             .get(&field)
-            .map(|offset| unsafe { Variants::new(&self.fields[*offset as usize]) })
+            .map(|offset| Variants::new(&self.fields[*offset as usize]))
     }
 }
 
@@ -367,6 +367,10 @@ mod gc_str {
             GcStr(array)
         }
 
+        pub unsafe fn clone_unrooted(&self) -> Self {
+            GcStr(self.0.clone_unrooted())
+        }
+
         pub fn into_inner(self) -> GcPtr<ValueArray> {
             self.0
         }
@@ -375,8 +379,8 @@ mod gc_str {
             self.0.generation()
         }
 
-        pub fn ptr_eq(self, other: Self) -> bool {
-            self.into_inner().ptr_eq(other.into_inner())
+        pub fn ptr_eq(&self, other: &Self) -> bool {
+            self.0.ptr_eq(&other.0)
         }
     }
 
@@ -390,7 +394,7 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq, Trace)]
+#[derive(PartialEq, Trace)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -495,16 +499,15 @@ impl Value {
     }
 
     pub unsafe fn clone_unrooted(&self) -> Value {
-        Value(self.0)
+        Value(self.0.clone_unrooted())
     }
 
     pub fn get_variants(&self) -> Variants {
-        unsafe { Variants::new(self) }
+        Variants::new(self)
     }
 
-    // FIXME unsafe
-    pub(crate) fn get_repr(&self) -> ValueRepr {
-        self.0
+    pub(crate) fn get_repr(&self) -> &ValueRepr {
+        &self.0
     }
 
     pub fn generation(&self) -> Generation {
@@ -541,6 +544,30 @@ impl Value {
             (Int(l), Int(r)) => l == r,
             (Float(l), Float(r)) => l == r,
             _ => unreachable!(),
+        }
+    }
+}
+
+impl ValueRepr {
+    pub fn get_variants(&self) -> Variants {
+        Variants::new(Value::from_ref(self))
+    }
+
+    pub(crate) unsafe fn clone_unrooted(&self) -> Self {
+        use self::ValueRepr::*;
+        match self {
+            String(p) => String(p.clone_unrooted()),
+            Data(p) => Data(p.clone_unrooted()),
+            Function(p) => Function(p.clone_unrooted()),
+            Closure(p) => Closure(p.clone_unrooted()),
+            Array(p) => Array(p.clone_unrooted()),
+            PartialApplication(p) => PartialApplication(p.clone_unrooted()),
+            Userdata(p) => Userdata(p.clone_unrooted()),
+            Thread(p) => Thread(p.clone_unrooted()),
+            Tag(p) => Tag(*p),
+            Byte(p) => Byte(*p),
+            Int(p) => Int(*p),
+            Float(p) => Float(*p),
         }
     }
 }
@@ -612,7 +639,7 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
             level: self.max_level,
             debug_level: self.debug_level,
         }
-        .pretty(self.value)
+        .pretty(self.value.clone())
         .group()
         .1
         .render(self.width, &mut s)
@@ -795,7 +822,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Trace)]
+#[derive(Debug, Trace)]
 #[gluon(gluon_vm)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
@@ -806,7 +833,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     feature = "serde_derive",
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
-pub enum Callable {
+pub(crate) enum Callable {
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
@@ -818,6 +845,13 @@ pub enum Callable {
 }
 
 impl Callable {
+    pub unsafe fn clone_unrooted(&self) -> Self {
+        match self {
+            Callable::Closure(closure) => Callable::Closure(closure.clone_unrooted()),
+            Callable::Extern(ext) => Callable::Extern(ext.clone_unrooted()),
+        }
+    }
+
     pub fn args(&self) -> VmIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
@@ -856,10 +890,17 @@ impl PartialEq for PartialApplicationData {
 #[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
+
+impl PartialApplicationDataDef<'_> {
+    pub(crate) fn size_of(args: usize) -> usize {
+        size_of::<PartialApplicationData>() + size_of::<Value>() * args
+    }
+}
+
 unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     type Value = PartialApplicationData;
     fn size(&self) -> usize {
-        size_of::<PartialApplicationData>() + size_of::<Value>() * self.1.len()
+        Self::size_of(self.1.len())
     }
     fn initialize<'w>(
         self,
@@ -971,7 +1012,7 @@ impl fmt::Debug for ValueRepr {
                 }
             }
         }
-        unsafe { write!(f, "{:?}", Level(7, Variants::new(&Value(*self)))) }
+        write!(f, "{:?}", Level(7, self.get_variants()))
     }
 }
 
@@ -1199,16 +1240,24 @@ unsafe impl Trace for ValueArray {
 
 impl ValueArray {
     pub fn get(&self, index: usize) -> Variants {
+        // SAFETY the representation is checked before calling any unsafe
         unsafe {
             let value = match self.repr {
-                Repr::Byte => ValueRepr::Byte(self.unsafe_get(index)),
-                Repr::Int => ValueRepr::Int(self.unsafe_get(index)),
-                Repr::Float => ValueRepr::Float(self.unsafe_get(index)),
-                Repr::String => ValueRepr::String(self.unsafe_get(index)),
-                Repr::Array => ValueRepr::Array(self.unsafe_get(index)),
-                Repr::Unknown => self.unsafe_get(index),
-                Repr::Userdata => ValueRepr::Userdata(self.unsafe_get(index)),
-                Repr::Thread => ValueRepr::Thread(self.unsafe_get(index)),
+                Repr::Byte => ValueRepr::Byte(self.unsafe_get::<u8>(index).clone()),
+                Repr::Int => ValueRepr::Int(self.unsafe_get::<VmInt>(index).clone()),
+                Repr::Float => ValueRepr::Float(self.unsafe_get::<f64>(index).clone()),
+                Repr::String => ValueRepr::String(self.unsafe_get::<GcStr>(index).clone_unrooted()),
+                Repr::Array => {
+                    ValueRepr::Array(self.unsafe_get::<GcPtr<ValueArray>>(index).clone_unrooted())
+                }
+                Repr::Unknown => self.unsafe_get::<Value>(index).clone_unrooted().0,
+                Repr::Userdata => ValueRepr::Userdata(
+                    self.unsafe_get::<GcPtr<Box<dyn Userdata>>>(index)
+                        .clone_unrooted(),
+                ),
+                Repr::Thread => {
+                    ValueRepr::Thread(self.unsafe_get::<GcPtr<Thread>>(index).clone_unrooted())
+                }
             };
             Variants::with_root(&Value::from(value), self)
         }
@@ -1279,8 +1328,8 @@ impl ValueArray {
         }
     }
 
-    unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
-        self.unsafe_array()[index]
+    unsafe fn unsafe_get<T>(&self, index: usize) -> &T {
+        &self.unsafe_array()[index]
     }
 
     unsafe fn unsafe_array<T>(&self) -> &Array<T> {
@@ -1414,7 +1463,7 @@ impl<'t> Cloner<'t> {
     {
         let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
-            Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
+            Entry::Occupied(entry) => return unsafe { Ok(Ok(entry.get().clone_unrooted())) }, // FIXME
             Entry::Vacant(entry) => {
                 // FIXME Should allocate the real `Value` and possibly fill it later
                 let (value, new_ptr) = alloc(self.gc, &value)?;

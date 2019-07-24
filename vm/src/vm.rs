@@ -354,14 +354,11 @@ impl VmEnv {
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((
-                unsafe { Variants::new(&global.value) },
-                Cow::Borrowed(&global.typ),
-            ));
+            return Ok((Variants::new(&global.value), Cow::Borrowed(&global.typ)));
         }
 
         let mut typ = Cow::Borrowed(&global.typ);
-        let mut value = unsafe { Variants::new(&global.value) };
+        let mut value = Variants::new(&global.value);
 
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {

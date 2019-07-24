@@ -242,7 +242,7 @@ impl<'de, 't> Deserializer<'de, 't> {
     {
         let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         if expected(&typ) {
-            visit(T::from_value(self.state.thread, self.input))
+            visit(T::from_value(self.state.thread, self.input.clone()))
         } else {
             Err(VmError::Message(format!(
                 "Unable to deserialize `{}`",
@@ -538,7 +538,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             VALUE_TRANSFER.with(|t| {
                 let mut store = t.borrow_mut();
                 assert!(store.is_none());
-                *store = Some(self.state.thread.root_value(self.input));
+                *store = Some(self.state.thread.root_value(self.input.clone()));
             });
             visitor.visit_unit()
         } else {

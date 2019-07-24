@@ -182,7 +182,7 @@ where
     T: GetableFieldList<'vm, 'value>,
 {
     fn from_value(vm: &'vm Thread, values: &'value [Value]) -> Option<Self> {
-        let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
+        let head = H::from_value(vm, Variants::new(&values[0]));
         T::from_value(vm, &values[1..]).map(move |tail| h_cons((F::default(), head), tail))
     }
 }

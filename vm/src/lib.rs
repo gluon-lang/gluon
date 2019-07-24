@@ -95,22 +95,31 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Trace)]
+#[derive(Debug, PartialEq, Trace)]
 #[gluon(gluon_vm)]
 #[repr(transparent)]
 pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
+
+impl Clone for Variants<'_> {
+    fn clone(&self) -> Self {
+        // SAFETY Cloning keeps the same lifetime as `self`
+        unsafe { Variants(self.0.clone_unrooted(), self.1) }
+    }
+}
 
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     #[inline]
-    pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(value, value)
+    pub fn new(value: &Value) -> Variants {
+        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
+        // variant is also rooted
+        unsafe { Variants::with_root(value, value) }
     }
 
     #[inline]
     pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> {
-        Variants(value.get_repr(), PhantomData)
+        Variants(value.get_repr().clone_unrooted(), PhantomData)
     }
 
     #[inline]
@@ -123,11 +132,16 @@ impl<'a> Variants<'a> {
         Value::from_ref(&self.0)
     }
 
+    #[inline]
+    pub(crate) fn get_repr(&self) -> &ValueRepr {
+        &self.0
+    }
+
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
     #[inline]
     pub fn as_ref(&self) -> ValueRef<'a> {
-        unsafe { ValueRef::rooted_new(self.0) }
+        unsafe { ValueRef::rooted_new(&self.0) }
     }
 }
 

@@ -17,8 +17,8 @@ use crate::base::types::{ArcType, Type};
 use crate::{
     api::{
         generic::{A, B},
-        primitive, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef, OpaqueValue,
-        OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
+        primitive, Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction,
+        Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
     gc::{GcPtr, Trace},
     stack::{ClosureState, ExternState, StackFrame, State},
@@ -282,9 +282,12 @@ fn spawn_on<'vm>(
 
     push_future_wrapper(&mut context, &future);
 
-    let callable = match context.stack()[..].last().unwrap().get_repr() {
-        ValueRepr::Function(ext) => Callable::Extern(ext),
-        _ => unreachable!(),
+    // SAFETY The value we call clone_unrooted on lives on the stack for the duration of the block
+    let callable = unsafe {
+        match context.stack()[..].last().unwrap().get_repr() {
+            ValueRepr::Function(ext) => Callable::Extern(ext.clone_unrooted()),
+            _ => unreachable!(),
+        }
     };
 
     SpawnFuture(future.shared()).push(&mut context).unwrap();

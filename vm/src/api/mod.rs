@@ -57,7 +57,7 @@ macro_rules! impl_getable_simple {
         }
         #[inline(always)]
         fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
-            <Self as Getable<'vm, 'value>>::from_value(vm, *proxy)
+            <Self as Getable<'vm, 'value>>::from_value(vm, proxy.clone())
         }
     };
 }
@@ -117,22 +117,24 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
 impl<'a> ValueRef<'a> {
     #[inline]
     pub(crate) fn new(value: &'a Value) -> ValueRef<'a> {
-        unsafe { ValueRef::rooted_new(value.get_repr()) }
+        Variants::new(value).as_ref()
     }
 
     #[inline]
-    pub(crate) unsafe fn rooted_new(value: ValueRepr) -> ValueRef<'a> {
+    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> {
         match value {
-            ValueRepr::Byte(i) => ValueRef::Byte(i),
-            ValueRepr::Int(i) => ValueRef::Int(i),
-            ValueRepr::Float(f) => ValueRef::Float(f),
+            ValueRepr::Byte(i) => ValueRef::Byte(*i),
+            ValueRepr::Int(i) => ValueRef::Int(*i),
+            ValueRepr::Float(f) => ValueRef::Float(*f),
             ValueRepr::String(s) => ValueRef::String(forget_lifetime(&*s)),
-            ValueRepr::Data(data) => ValueRef::Data(Data(DataInner::Data(forget_lifetime(&*data)))),
-            ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
-            ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
-            ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&*thread)),
-            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&*c))),
+            ValueRepr::Data(data) => {
+                ValueRef::Data(Data(DataInner::Data(forget_lifetime(&**data))))
+            }
+            ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
+            ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&**array))),
+            ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&***data)),
+            ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&**thread)),
+            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
             ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
         }
     }
@@ -229,7 +231,7 @@ impl<'a> Data<'a> {
     pub fn get_variant(&self, index: usize) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+            DataInner::Data(data) => data.fields.get(index).map(Variants::new),
         }
     }
 
@@ -242,7 +244,7 @@ impl<'a> Data<'a> {
                     .get(thread, name)
                     .ok()
                     .and_then(|x| x)
-                    .map(|v| Variants(v.get_value().get_repr(), PhantomData))
+                    .map(|v| Variants::with_root(v.get_value(), data))
             },
         }
     }
@@ -538,7 +540,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         let mut context = vm.current_context();
         self.push(&mut context)?;
         let variants = context.pop();
-        Ok(vm.root_value(*variants))
+        Ok(vm.root_value(variants.clone()))
     }
 }
 
@@ -568,7 +570,7 @@ where
     t.push(context)?;
     let thread = context.thread();
     let value = context.pop();
-    Ok(U::from_value(thread, *value))
+    Ok(U::from_value(thread, (*value).clone()))
 }
 
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {

@@ -51,32 +51,31 @@ impl<'a> StackPrimitive for Variants<'a> {
         I: IntoIterator<Item = &'b Self>,
         Self: 'b,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(i.0)))
+        Value::extend_to(iter.into_iter().map(|i| i.get_value()), stack)
     }
 }
 
 impl StackPrimitive for ValueRepr {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
-        stack.values.push(Value::from(*self))
+        Value::from_ref(self).push_to(stack)
     }
 
     fn extend_to<'b, I>(iter: I, stack: &mut Stack)
     where
         I: IntoIterator<Item = &'b Self>,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(*i)))
+        Value::extend_to(iter.into_iter().map(Value::from_ref), stack)
     }
 }
 
 impl StackPrimitive for Value {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
-        stack.values.push(Value::from(self.get_repr()))
+        // SAFETY The value is rooted by pushing it on the stack
+        unsafe {
+            stack.values.push(self.clone_unrooted());
+        }
     }
 
     #[inline(always)]
@@ -84,9 +83,12 @@ impl StackPrimitive for Value {
     where
         I: IntoIterator<Item = &'b Self>,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(i.get_repr())))
+        // SAFETY The value is rooted by pushing it on the stack
+        unsafe {
+            stack
+                .values
+                .extend(iter.into_iter().map(|i| i.clone_unrooted()));
+        }
     }
 }
 
@@ -362,9 +364,11 @@ impl Stack {
 
     #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
-        self.values
-            .get(index as usize)
-            .map(|value| unsafe { Variants::new(value) })
+        if index < self.len() {
+            Some(Variants::new(&self.values[index as usize]))
+        } else {
+            None
+        }
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
@@ -637,7 +641,7 @@ where
             .remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
-    pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
+    pub fn excess_args(&self) -> Option<&GcPtr<DataStruct>> {
         let i = self.stack.values.len() - self.len() as usize - 2;
         match self.stack.values[i].get_repr() {
             ValueRepr::Data(data) => Some(data),
@@ -750,7 +754,7 @@ where
 
 impl<'b> StackFrame<'b, ClosureState> {
     pub fn get_upvar(&self, index: VmIndex) -> Variants {
-        unsafe { Variants::new(&self.frame.upvars()[index as usize]) }
+        Variants::new(&self.frame.upvars()[index as usize])
     }
 }
 

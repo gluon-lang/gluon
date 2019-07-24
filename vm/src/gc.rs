@@ -383,6 +383,29 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
+pub struct GcRef<'a, T: ?Sized>(GcPtr<T>, PhantomData<&'a T>);
+
+impl<T: ?Sized> Deref for GcRef<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<'a, T: ?Sized> GcRef<'a, T> {
+    #[inline]
+    pub fn new(value: &GcPtr<T>) -> GcRef<T> {
+        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
+        // GcRef is also rooted
+        unsafe { GcRef::with_root(value, value) }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn with_root<U: ?Sized>(value: &GcPtr<T>, _root: &'a U) -> GcRef<'a, T> {
+        GcRef(value.clone_unrooted(), PhantomData)
+    }
+}
+
 /// A pointer to a garbage collected value.
 ///
 /// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
@@ -483,8 +506,12 @@ impl<T: ?Sized> GcPtr<T> {
         unsafe { &*self.header().type_info }
     }
 
-    pub fn ptr_eq(self, other: GcPtr<T>) -> bool {
-        ptr::eq(&*self, &*other)
+    pub fn ptr_eq(&self, other: &GcPtr<T>) -> bool {
+        ptr::eq::<T>(&**self, &**other)
+    }
+
+    pub unsafe fn clone_unrooted(&self) -> Self {
+        GcPtr(self.0)
     }
 
     fn header(&self) -> &GcHeader {

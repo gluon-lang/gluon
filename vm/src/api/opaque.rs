@@ -61,7 +61,7 @@ pub trait AsVariant<'s, 'value>: private::Sealed {
 
 impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
     fn get_variant(&'v self) -> Self {
-        *self
+        self.clone()
     }
     fn get_value(&self) -> &Value {
         Value::from_ref(&self.0)
@@ -70,7 +70,7 @@ impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
 
 impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
     fn get_variant(&'v self) -> Variants<'value> {
-        **self
+        (*self).clone()
     }
     fn get_value(&self) -> &Value {
         Value::from_ref(&self.0)

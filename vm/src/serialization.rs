@@ -631,7 +631,7 @@ unsafe impl DataDef for PartialApplicationModel {
     type Value = PartialApplicationData;
 
     fn size(&self) -> usize {
-        PartialApplicationDataDef(self.function, &self.args).size()
+        PartialApplicationDataDef::size_of(self.args.len())
     }
 
     fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
@@ -834,16 +834,8 @@ impl<'de> DeserializeState<'de, DeSeed> for RootedValue<RootedThread> {
     where
         D: Deserializer<'de>,
     {
-        eprintln!("before value ");
         let value = Value::deserialize_state(seed, deserializer)?;
-        // TODO Prevent Value from being deserialized directly so we don't need to have this unsafe
-        eprintln!("after value ");
-        unsafe {
-            let x = Ok(seed.thread.root_value(Variants::new(&value)));
-
-            eprintln!("after value 2");
-            x
-        }
+        Ok(seed.thread.root_value(Variants::new(&value)))
     }
 }
 

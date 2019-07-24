@@ -243,7 +243,7 @@ where
     }
 
     pub fn get_variant(&self) -> Variants {
-        unsafe { Variants::new(&self.value) }
+        Variants::new(&self.value)
     }
 
     pub fn vm(&self) -> &Thread {
@@ -1946,14 +1946,14 @@ impl<'b> OwnedContext<'b> {
     }
 }
 
-struct ExecuteContext<'b, S: StackState = ClosureState> {
+struct ExecuteContext<'b, 'gc, S: StackState = ClosureState> {
     thread: &'b Thread,
     stack: StackFrame<'b, S>,
-    gc: &'b mut Gc,
+    gc: &'gc mut Gc,
     hook: &'b mut Hook,
 }
 
-impl<'b> ExecuteContext<'b> {
+impl<'b, 'gc> ExecuteContext<'b, 'gc> {
     fn execute_(
         mut self,
         mut index: usize,
@@ -1970,7 +1970,21 @@ impl<'b> ExecuteContext<'b> {
         // and store the value unrooted
         macro_rules! transfer {
             ($value: expr) => {
-                unsafe { lock_gc(&self.gc, $value) }
+                transfer!(self, $value)
+            };
+
+            ($context: expr, $value: expr) => {
+                unsafe { lock_gc(&$context.gc, $value) }
+            };
+        }
+
+        unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> gc::GcRef<'gc, T> {
+            gc::GcRef::with_root(value, gc)
+        }
+
+        macro_rules! transfer_ptr {
+            ($value: expr) => {
+                unsafe { lock_gc_ptr(&self.gc, $value) }
             };
         }
 
@@ -2039,6 +2053,7 @@ impl<'b> ExecuteContext<'b> {
                         amount += 1;
                         match self.stack.excess_args() {
                             Some(excess) => {
+                                let excess = transfer_ptr!(excess);
                                 trace!("TailCall: Push excess args {:?}", excess.fields);
                                 self.stack.extend(&excess.fields);
                                 args += excess.fields.len() as VmIndex;
@@ -2212,8 +2227,8 @@ impl<'b> ExecuteContext<'b> {
                 }
                 TestTag(tag) => {
                     let data_tag = match self.stack.top().get_repr() {
-                        Data(ref data) => data.tag(),
-                        ValueRepr::Tag(tag) => tag,
+                        Data(data) => data.tag(),
+                        ValueRepr::Tag(tag) => *tag,
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
@@ -2382,13 +2397,14 @@ impl<'b> ExecuteContext<'b> {
         if frame_has_excess {
             // If the function that just finished had extra arguments we need to call the result of
             // the call with the extra arguments
-            match context.stack[context.stack.len() - 2].get_repr() {
+            match transfer!(context, &context.stack[context.stack.len() - 2]).get_repr() {
                 Data(excess) => {
                     trace!("Push excess args {:?}", &excess.fields);
                     context.stack.slide(1);
                     context.stack.extend(&excess.fields);
+                    let excess_fields_len = excess.fields.len() as VmIndex;
                     context
-                        .do_call(excess.fields.len() as VmIndex)
+                        .do_call(excess_fields_len)
                         .map(|x| Async::Ready(Some(x)))
                 }
                 x => ice!("Expected excess arguments found {:?}", x),
@@ -2399,8 +2415,8 @@ impl<'b> ExecuteContext<'b> {
     }
 }
 
-impl<'b> ExecuteContext<'b, State> {
-    fn from_state<T>(self) -> ExecuteContext<'b, T>
+impl<'b, 'gc> ExecuteContext<'b, 'gc, State> {
+    fn from_state<T>(self) -> ExecuteContext<'b, 'gc, T>
     where
         T: StackState,
     {
@@ -2413,11 +2429,11 @@ impl<'b> ExecuteContext<'b, State> {
     }
 }
 
-impl<'b, S> ExecuteContext<'b, S>
+impl<'b, 'gc, S> ExecuteContext<'b, 'gc, S>
 where
     S: StackState,
 {
-    fn enter_scope<T>(self, args: VmIndex, state: T) -> ExecuteContext<'b, T>
+    fn enter_scope<T>(self, args: VmIndex, state: T) -> ExecuteContext<'b, 'gc, T>
     where
         T: StackState,
     {
@@ -2431,7 +2447,9 @@ where
         }
     }
 
-    fn exit_scope(self) -> StdResult<ExecuteContext<'b, State>, ExecuteContext<'b, State>> {
+    fn exit_scope(
+        self,
+    ) -> StdResult<ExecuteContext<'b, 'gc, State>, ExecuteContext<'b, 'gc, State>> {
         match self.stack.exit_scope() {
             Ok(stack) => {
                 if self.hook.flags.bits() != 0 {
@@ -2458,7 +2476,7 @@ where
         }
     }
 
-    fn execute_callable(self, function: &Callable, excess: bool) -> Result<()> {
+    fn execute_callable(self, function: &'gc Callable, excess: bool) -> Result<()> {
         match *function {
             Callable::Closure(closure) => {
                 let mut next = self.enter_scope(
@@ -2539,7 +2557,8 @@ where
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
         );
-        match self.stack[function_index].get_repr() {
+        // FIXME unsafe
+        match unsafe { self.stack[function_index].get_repr().clone_unrooted() } {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
                 self.call_function_with_upvars(args, f.args, callable)
@@ -2552,7 +2571,10 @@ where
                 let total_args = app.args.len() as VmIndex + args;
                 let offset = self.stack.len() - args;
                 self.stack.insert_slice(offset, &app.args);
-                self.call_function_with_upvars(total_args, app.function.args(), app.function)
+                // FIXME unsafe
+                self.call_function_with_upvars(total_args, app.function.args(), unsafe {
+                    app.function.clone_unrooted()
+                })
             }
             x => Err(Error::Message(format!("Cannot call {:?}", x))),
         }
@@ -2701,9 +2723,9 @@ impl<'vm> ActiveThread<'vm> {
         let value = {
             let stack = &self.context.as_ref().unwrap().stack;
             let last = stack.len() - 1;
-            stack.get_variant(last).unwrap().get_value().get_repr()
+            unsafe { stack[last].get_repr().clone_unrooted() }
         };
-        PopValue(self, Variants(value, ::std::marker::PhantomData))
+        PopValue(self, Variants(value, PhantomData))
     }
 
     pub(crate) fn last<'a>(&'a self) -> Option<Variants<'a>> {
