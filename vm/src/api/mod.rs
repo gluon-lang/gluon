@@ -683,7 +683,7 @@ where
                 },
                 |x| Ok(RefProxy::Ref(x)),
             ),
-            _ => ice!("ValueRef is not an Userdata"),
+            x => ice!("ValueRef is not an Userdata: {:?}", x),
         }
     }
     fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {

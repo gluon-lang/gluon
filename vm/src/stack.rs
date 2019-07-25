@@ -293,10 +293,10 @@ impl Stack {
         }
     }
 
-    fn assert_pop(&self) {
+    fn assert_pop(&self, count: VmIndex) {
         if let Some(&frame) = self.frames.last() {
             assert!(
-                self.len() > frame.offset,
+                self.len() >= frame.offset + count,
                 "Attempted to pop value which did not belong to the current frame"
             );
             if let State::Extern(ExternState {
@@ -304,7 +304,7 @@ impl Stack {
             }) = frame.state.to_state()
             {
                 assert!(
-                    self.len() > frame.offset + args,
+                    self.len() >= frame.offset + args + count,
                     "Attempt to pop locked value"
                 );
             }
@@ -312,17 +312,20 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Value {
-        self.assert_pop();
+        self.assert_pop(1);
         self.values.pop().expect("pop on empty stack")
     }
 
     pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
-        self.assert_pop();
-        let value = self.last().unwrap().get_value();
-        PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
+        self.assert_pop(1);
+        unsafe {
+            let value = self.last().unwrap().get_repr().clone_unrooted();
+            PopValue(self, Variants(value, ::std::marker::PhantomData))
+        }
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
+        self.assert_pop(count);
         let len = self.values.len();
         self.values.truncate(len - count as usize);
     }

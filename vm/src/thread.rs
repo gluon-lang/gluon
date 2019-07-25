@@ -97,7 +97,6 @@ where
             let value = context.stack.pop_value();
             self.thread.clone().unwrap().root_value_with_self(*value)
         };
-        self.thread.take();
 
         Ok(Async::Ready(value))
     }

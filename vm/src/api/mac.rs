@@ -1,29 +1,29 @@
 #[doc(hidden)]
 #[macro_export]
 macro_rules! primitive_cast {
-    (0, $name:expr) => {
-        $name as fn() -> _
+    (0) => {
+        fn() -> _
     };
-    (1, $name:expr) => {
-        $name as fn(_) -> _
+    (1) => {
+        fn(_) -> _
     };
-    (2, $name:expr) => {
-        $name as fn(_, _) -> _
+    (2) => {
+        fn(_, _) -> _
     };
-    (3, $name:expr) => {
-        $name as fn(_, _, _) -> _
+    (3) => {
+        fn(_, _, _) -> _
     };
-    (4, $name:expr) => {
-        $name as fn(_, _, _, _) -> _
+    (4) => {
+        fn(_, _, _, _) -> _
     };
-    (5, $name:expr) => {
-        $name as fn(_, _, _, _, _) -> _
+    (5) => {
+        fn(_, _, _, _, _) -> _
     };
-    (6, $name:expr) => {
-        $name as fn(_, _, _, _, _, _) -> _
+    (6) => {
+        fn(_, _, _, _, _, _) -> _
     };
-    (7, $name:expr) => {
-        $name as fn(_, _, _, _, _, _, _) -> _
+    (7) => {
+        fn(_, _, _, _, _, _, _) -> _
     };
 }
 
@@ -76,20 +76,36 @@ macro_rules! primitive {
     };
 
     ($arg_count:tt, $name:expr) => {
-        primitive!($arg_count, stringify_inner!($name), $name)
+        primitive!(impl primitive_cast!($arg_count), stringify_inner!($name), $name)
     };
-    ($arg_count:tt, $name:expr, async fn $func:expr) => {
-        primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
+
+    ($arg_count:tt, $name:expr, async fn $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
+        primitive!(
+            impl primitive_cast!($arg_count),
+            $name,
+            closure_wrapper!($arg_count, $func)
+            $(, [$($params)*] [$($where_)*])?
+        )
     };
     ($arg_count:tt, $name:expr, $func:expr) => {
+        $crate::primitive!(impl primitive_cast!($arg_count), $name, $func)
+    };
+
+    (impl $func_type:ty, $name:expr, $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
         unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
+            extern "C" fn wrapper$(<$($params)*>)?(thread: &$crate::thread::Thread) -> $crate::thread::Status
+                $(where $($where_)*)?
+            {
                 $crate::api::VmFunction::unpack_and_call(
-                    &primitive_cast!($arg_count, $func),
+                    &($func as $func_type),
                     thread,
                 )
             }
-            $crate::api::primitive_f($name, wrapper, primitive_cast!($arg_count, $func))
+            $crate::api::primitive_f(
+                $name,
+                wrapper $( ::<$($params)*> )?,
+                $func as $func_type,
+            )
         }
     };
 }
