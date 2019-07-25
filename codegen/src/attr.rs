@@ -9,7 +9,10 @@ use syn::{
 
 fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
     if attr.path.segments.len() == 1
-        && (attr.path.segments[0].ident == "gluon" || attr.path.segments[0].ident == "gluon_trace")
+        && (   attr.path.segments[0].ident == "gluon"
+            || attr.path.segments[0].ident == "gluon_trace"
+            || attr.path.segments[0].ident == "gluon_userdata"
+        )
     {
         match attr.interpret_meta() {
             Some(List(ref meta)) => Some(meta.nested.iter().cloned().collect()),
@@ -31,6 +34,7 @@ pub struct Container {
     pub vm_type: Option<String>,
     pub newtype: bool,
     pub skip: bool,
+    pub clone: bool,
 }
 
 impl Container {
@@ -41,6 +45,7 @@ impl Container {
         let mut vm_type = None;
         let mut newtype = false;
         let mut skip = false;
+        let mut clone = false;
 
         for meta_items in item.attrs.iter().filter_map(get_gluon_meta_items) {
             for meta_item in meta_items {
@@ -69,6 +74,10 @@ impl Container {
                         skip = true;
                     }
 
+                    Meta(Word(ref w)) if w == "clone" => {
+                        clone = true;
+                    }
+
                     _ => panic!("unexpected gluon container attribute: {:?}", meta_item),
                 }
             }
@@ -79,6 +88,7 @@ impl Container {
             vm_type,
             newtype,
             skip,
+            clone,
         }
     }
 }

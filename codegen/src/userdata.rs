@@ -37,18 +37,35 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
         CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
             use #ident::gc as _gluon_gc;
+            use #ident::Result as _gluon_Result;
         },
         CrateName::GluonVm => quote! {
             use api as _gluon_api;
             use thread as _gluon_gc;
+            use self::Result as _gluon_Result;
         },
         CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;
             use gluon::vm::gc as _gluon_gc;
+            use gluon::vm::Result as _gluon_Result;
         },
     };
 
     let dummy_const = Ident::new(&format!("_IMPL_USERDATA_FOR_{}", ident), Span::call_site());
+
+    let deep_clone = if container.clone {
+        quote! {
+            fn deep_clone(
+                &self,
+                deep_cloner: &mut _gluon_api::Cloner
+            ) -> _gluon_Result<_gluon_gc::GcPtr<Box<dyn _gluon_api::Userdata>>> {
+                let data: Box<dyn _gluon_api::Userdata> = Box::new(self.clone());
+                deep_cloner.gc().alloc(_gluon_gc::Move(data))
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     quote! {
         #[allow(non_upper_case_globals)]
@@ -60,6 +77,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
             impl #impl_generics _gluon_api::Userdata for #ident #ty_generics
             #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
             {
+                #deep_clone
             }
         };
     }

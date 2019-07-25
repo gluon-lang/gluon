@@ -10,7 +10,7 @@ use crate::{
     thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{
-        ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
+        ArrayDef, ArrayRepr, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
         ValueRepr,
     },
     vm::{self, RootedValue, Status, Thread},
@@ -38,7 +38,7 @@ pub use self::{
     opaque::{Opaque, OpaqueRef, OpaqueValue},
     record::Record,
 };
-pub use crate::{thread::ActiveThread, value::Userdata};
+pub use crate::{thread::ActiveThread, value::Userdata, value::Cloner};
 
 macro_rules! count {
     () => { 0 };
