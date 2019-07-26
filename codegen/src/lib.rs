@@ -192,7 +192,7 @@ pub fn vm_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(Trace, attributes(gluon, gluon_trace))]
+#[proc_macro_derive(Trace, attributes(gluon, gluon_trace, gluon_userdata))]
 pub fn trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     trace::derive(input.into()).into()
 }
