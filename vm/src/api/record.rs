@@ -2,16 +2,14 @@ use std::any::Any;
 
 use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
-use crate::base::symbol::Symbol;
-use crate::base::types::{self, Alias, AliasData, ArcType, Type};
+use crate::base::{
+    symbol::Symbol,
+    types::{self, Alias, AliasData, ArcType, Type},
+};
 
 use super::{ActiveThread, Getable, Pushable, ValueRef, VmType};
-use crate::interner::InternedStr;
-use crate::thread;
-use crate::types::VmIndex;
-use crate::value::{RecordDef, Value, ValueRepr};
-use crate::vm::Thread;
-use crate::{Result, Variants};
+
+use crate::{interner::InternedStr, value::Value, vm::Thread, Result, Variants};
 
 pub struct Record<T, U> {
     pub type_fields: T,
@@ -206,24 +204,9 @@ where
         let mut field_names = Vec::new();
         self.fields.push(context, &mut field_names)?;
 
-        let thread = context.thread();
-        let context = context.context();
-        let len = U::LEN as VmIndex;
-        let offset = context.stack.len() - len;
+        let mut context = context.context();
 
-        let value = thread::alloc(
-            &mut context.gc,
-            thread,
-            &context.stack,
-            RecordDef {
-                fields: &field_names,
-                elems: &context.stack[offset..],
-            },
-        )?;
-        for _ in 0..len {
-            context.stack.pop();
-        }
-        context.stack.push(ValueRepr::Data(value));
+        context.push_new_record(U::LEN, &field_names)?;
         Ok(())
     }
 }

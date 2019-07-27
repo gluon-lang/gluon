@@ -15,7 +15,7 @@ use crate::base::symbol::{Symbol, Symbols};
 use crate::base::types::ArcType;
 
 use crate::array::Array;
-use crate::gc::{DataDef, GcPtr, OwnedPtr, WriteOnly};
+use crate::gc::{DataDef, GcPtr, GcRef, OwnedGcRef, WriteOnly};
 use crate::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use crate::types::VmIndex;
 use crate::value::{
@@ -266,25 +266,29 @@ pub mod gc {
                     deserializer,
                 )?;
                 use crate::value::{Def, RecordDef};
-                match def.tag {
-                    DataTag::Record(fields) => seed
-                        .thread
-                        .context()
-                        .gc
-                        .alloc(RecordDef {
-                            elems: &def.fields,
-                            fields: &fields[..],
-                        })
-                        .map_err(D::Error::custom),
-                    DataTag::Data(tag) => seed
-                        .thread
-                        .context()
-                        .gc
-                        .alloc(Def {
-                            tag: tag,
-                            elems: &def.fields,
-                        })
-                        .map_err(D::Error::custom),
+                unsafe {
+                    Ok(match def.tag {
+                        DataTag::Record(fields) => seed
+                            .thread
+                            .context()
+                            .gc
+                            .alloc(RecordDef {
+                                elems: &def.fields,
+                                fields: &fields[..],
+                            })
+                            .map_err(D::Error::custom)?
+                            .unrooted(),
+                        DataTag::Data(tag) => seed
+                            .thread
+                            .context()
+                            .gc
+                            .alloc(Def {
+                                tag: tag,
+                                elems: &def.fields,
+                            })
+                            .map_err(D::Error::custom)?
+                            .unrooted(),
+                    })
                 }
             }
         }
@@ -299,9 +303,14 @@ pub mod gc {
         where
             D: Deserializer<'de>,
         {
-            Cow::<str>::deserialize(deserializer).and_then(|s| {
-                GcStr::alloc(&mut seed.thread.context().gc, &s).map_err(D::Error::custom)
-            })
+            // FIXME
+            unsafe {
+                Ok(Cow::<str>::deserialize(deserializer).and_then(|s| {
+                    GcStr::alloc(&mut seed.thread.context().gc, &s)
+                        .map(|v| v.unrooted())
+                        .map_err(D::Error::custom)
+                })?)
+            }
         }
     }
 
@@ -571,7 +580,8 @@ pub mod closure {
                                             function: function,
                                             upvars: upvars,
                                         })
-                                        .map_err(V::Error::custom)?;
+                                        .map_err(V::Error::custom)?
+                                        .unrooted();
                                     self.state.gc_map.insert(id, closure);
 
                                     for i in 0..upvars {
@@ -653,40 +663,42 @@ where
 }
 
 pub trait PostDeserialize {
-    fn init(parent: &Thread, ptr: OwnedPtr<Self>) -> GcPtr<Self>;
+    fn init<'gc>(parent: &Thread, ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self>;
 }
 
 impl PostDeserialize for PartialApplicationData {
-    fn init(_parent: &Thread, ptr: OwnedPtr<Self>) -> GcPtr<Self> {
+    fn init<'gc>(_parent: &Thread, ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self> {
         ptr.into()
     }
 }
 
 impl PostDeserialize for ValueArray {
-    fn init(_parent: &Thread, ptr: OwnedPtr<Self>) -> GcPtr<Self> {
+    fn init<'gc>(_parent: &Thread, ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self> {
         ptr.into()
     }
 }
 
 impl PostDeserialize for ExternFunction {
-    fn init(_parent: &Thread, ptr: OwnedPtr<Self>) -> GcPtr<Self> {
+    fn init<'gc>(_parent: &Thread, ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self> {
         ptr.into()
     }
 }
 
 impl PostDeserialize for BytecodeFunction {
-    fn init(_parent: &Thread, ptr: OwnedPtr<Self>) -> GcPtr<Self> {
+    fn init<'gc>(_parent: &Thread, ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self> {
         ptr.into()
     }
 }
 
 impl PostDeserialize for Thread {
-    fn init(parent: &Thread, mut ptr: OwnedPtr<Self>) -> GcPtr<Self> {
+    fn init<'gc>(parent: &Thread, mut ptr: OwnedGcRef<'gc, Self>) -> GcRef<'gc, Self> {
         let mut parent_threads = parent.child_threads.write().unwrap();
         let entry = parent_threads.vacant_entry();
         ptr.thread_index = entry.key();
-        let ptr = ptr.into();
-        entry.insert((ptr, 0));
+        let ptr = GcRef::from(ptr);
+        unsafe {
+            entry.insert((ptr.clone().unrooted(), 0));
+        }
         ptr
     }
 }
@@ -728,14 +740,9 @@ where
                 D: Deserializer<'de>,
             {
                 let def = T::deserialize_state(&mut seed.state, deserializer)?;
-                let ptr = seed
-                    .state
-                    .thread
-                    .context()
-                    .gc
-                    .alloc_owned(def)
-                    .map_err(D::Error::custom)?;
-                Ok(T::Value::init(&seed.state.thread, ptr))
+                let mut context = seed.state.thread.context();
+                let ptr = context.gc.alloc_owned(def).map_err(D::Error::custom)?;
+                unsafe { Ok(T::Value::init(&seed.state.thread, ptr).unrooted()) }
             }
         }
 

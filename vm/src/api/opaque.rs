@@ -4,10 +4,10 @@ use crate::base::types::ArcType;
 
 use crate::{
     api::{ArrayRef, Getable, Pushable, ValueRef, VmType},
-    gc::Trace,
+    gc::{GcRef, Trace},
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
-    value::{ArrayRepr, Value, ValueArray},
+    value::{ArrayRepr, Value, ValueArray, ValueRepr},
     vm, Result, Variants,
 };
 
@@ -387,6 +387,16 @@ where
 {
     pub fn len(&'s self) -> usize {
         self.get_value_array().len()
+    }
+
+    pub fn raw(&self) -> GcRef<'value, ValueArray> {
+        match self.0.get_value().get_repr() {
+            // SAFETY The `GcRef` only cares about the value being rooted, since `'value` is the
+            // guaranteed for how long we are root we can return a reference with the `'value`
+            // lifetime
+            ValueRepr::Array(data) => unsafe { GcRef::with_root(data, &()) },
+            _ => ice!("Value is not an array"),
+        }
     }
 
     fn get_array(&'s self) -> ArrayRef<'value> {

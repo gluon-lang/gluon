@@ -169,7 +169,7 @@ impl StackState for ClosureState {
     fn from_state(state: State) -> Self {
         match state {
             State::Closure(state) => state,
-            _ => ice!("Expected closure: {:?}", state),
+            _ => ice!("Expected closure state, got {:?}", state),
         }
     }
     fn to_state(self) -> State {

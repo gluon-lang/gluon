@@ -11,7 +11,7 @@ use crate::{
         generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
     },
     base::types::{self, ArcType},
-    gc::{GcPtr, Move, Trace},
+    gc::{GcPtr, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
@@ -30,19 +30,26 @@ impl<T> Userdata for Lazy<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
+    fn deep_clone<'gc>(
+        &self,
+        deep_cloner: &'gc mut Cloner,
+    ) -> Result<GcRef<'gc, Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
-        let cloned_value = match *value {
-            Lazy_::Blackhole(..) => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
-            Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
-        };
-        let data: Box<dyn Userdata> = Box::new(Lazy {
-            value: Mutex::new(cloned_value),
-            thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
-            _marker: PhantomData::<A>,
-        });
-        deep_cloner.gc().alloc(Move(data))
+
+        // SAFETY During the `alloc` call the unrooted values are scanned through the `DataDef`
+        unsafe {
+            let cloned_value = match *value {
+                Lazy_::Blackhole(..) => return Err(Error::Message("<<loop>>".into())),
+                Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?.unrooted()),
+                Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?.unrooted()),
+            };
+            let data: Box<dyn Userdata> = Box::new(Lazy {
+                value: Mutex::new(cloned_value),
+                thread: GcPtr::from_raw(deep_cloner.thread()),
+                _marker: PhantomData::<A>,
+            });
+            deep_cloner.gc().alloc(Move(data))
+        }
     }
 }
 
@@ -125,7 +132,10 @@ fn force(
                                 }
                                 _ => unreachable!(),
                             }
-                            *lazy_lock = Lazy_::Value(value);
+                            // SAFETY Rooted by being stored in the lazy value
+                            unsafe {
+                                *lazy_lock = Lazy_::Value(value.get_variant().unrooted());
+                            }
                         }
                         value.push(&mut vm.current_context()).unwrap();
                         Ok(Pushed::default())

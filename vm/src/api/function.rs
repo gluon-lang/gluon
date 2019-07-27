@@ -74,7 +74,6 @@ where
     F: FunctionType + VmType,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
         // Map rust modules into gluon modules
         let name = if let Some(i) = self.name.rfind("::<") {
             &self.name[..i]
@@ -82,15 +81,11 @@ where
             self.name
         };
         let id = Symbol::from(name.replace("::", "."));
-        let value = ValueRepr::Function(context.context().alloc_with(
-            thread,
-            Move(ExternFunction {
-                id: id,
-                args: F::arguments(),
-                function: self.function,
-            }),
-        )?);
-        context.push(value);
+        context.context().push_new_alloc(Move(ExternFunction {
+            id: id,
+            args: F::arguments(),
+            function: self.function,
+        }))?;
         Ok(())
     }
 }
@@ -144,7 +139,6 @@ impl<'vm> Pushable<'vm> for CPrimitive {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         use std::mem::transmute;
 
-        let thread = context.thread();
         let function = self.function;
         let extern_function = unsafe {
             // The VM guarantess that it only ever calls this function with itself which should
@@ -153,15 +147,11 @@ impl<'vm> Pushable<'vm> for CPrimitive {
                 function,
             )
         };
-        let value = context.context().alloc_with(
-            thread,
-            Move(ExternFunction {
-                id: self.id,
-                args: self.args,
-                function: extern_function,
-            }),
-        )?;
-        context.push(ValueRepr::Function(value));
+        context.context().push_new_alloc(Move(ExternFunction {
+            id: self.id,
+            args: self.args,
+            function: extern_function,
+        }))?;
         Ok(())
     }
 }
@@ -575,7 +565,7 @@ impl<T: VmType> VmType for TypedBytecode<T> {
 impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
-        let context = context.context();
+        let mut context = context.context();
         let mut compiled_module = CompiledModule::from(CompiledFunction::new(
             self.args,
             self.id,

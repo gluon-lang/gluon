@@ -51,6 +51,12 @@ macro_rules! try_future {
 
 pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'vm>;
 
+macro_rules! alloc {
+    ($context: ident, $data: expr) => {
+        $crate::thread::alloc($context.gc, $context.thread, &$context.stack.stack, $data)
+    };
+}
+
 #[macro_use]
 #[cfg(feature = "serde")]
 pub mod serialization;
@@ -128,6 +134,11 @@ impl<'a> Variants<'a> {
     }
 
     #[inline]
+    pub(crate) fn tag(i: VmIndex) -> Self {
+        Variants(ValueRepr::Tag(i), PhantomData)
+    }
+
+    #[inline]
     pub fn get_value(&self) -> &Value {
         Value::from_ref(&self.0)
     }
@@ -135,6 +146,10 @@ impl<'a> Variants<'a> {
     #[inline]
     pub(crate) fn get_repr(&self) -> &ValueRepr {
         &self.0
+    }
+
+    pub(crate) unsafe fn unrooted(&self) -> Value {
+        Value::from(self.0.clone_unrooted())
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a

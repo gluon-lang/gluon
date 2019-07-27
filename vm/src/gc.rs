@@ -383,12 +383,42 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
-pub struct GcRef<'a, T: ?Sized>(GcPtr<T>, PhantomData<&'a T>);
+pub struct Borrow<'a, T>(T, PhantomData<&'a T>);
 
-impl<T: ?Sized> Deref for GcRef<'_, T> {
+pub type GcRef<'a, T> = Borrow<'a, GcPtr<T>>;
+pub type OwnedGcRef<'a, T> = Borrow<'a, OwnedPtr<T>>;
+
+impl<T> Deref for Borrow<'_, T> {
     type Target = T;
     fn deref(&self) -> &T {
         &self.0
+    }
+}
+
+impl<T> DerefMut for Borrow<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+impl<'gc, T> Borrow<'gc, T> {
+    pub fn map<U>(&self, f: impl FnOnce(&T) -> U) -> Borrow<'gc, U> {
+        Borrow(f(&self.0), PhantomData)
+    }
+
+    pub unsafe fn map_unrooted<U>(self, f: impl FnOnce(T) -> U) -> Borrow<'gc, U> {
+        Borrow(f(self.0), PhantomData)
+    }
+
+    pub unsafe fn unrooted(self) -> T {
+        self.0
+    }
+}
+
+impl<'gc, T: ?Sized> From<OwnedGcRef<'gc, T>> for GcRef<'gc, T> {
+    /// Freezes `self` into a shared pointer
+    fn from(ptr: OwnedGcRef<'gc, T>) -> Self {
+        Borrow(ptr.0.into(), PhantomData)
     }
 }
 
@@ -402,7 +432,20 @@ impl<'a, T: ?Sized> GcRef<'a, T> {
 
     #[inline]
     pub(crate) unsafe fn with_root<U: ?Sized>(value: &GcPtr<T>, _root: &'a U) -> GcRef<'a, T> {
-        GcRef(value.clone_unrooted(), PhantomData)
+        Borrow(value.clone_unrooted(), PhantomData)
+    }
+
+    pub fn clone(&self) -> Self {
+        // SAFETY The lifetime of the new value is the same which just means that both values need
+        // to be dropped before any gc collection
+        unsafe { Borrow(self.0.clone_unrooted(), self.1) }
+    }
+}
+
+impl<'a, T: ?Sized> OwnedGcRef<'a, T> {
+    #[inline]
+    pub(crate) unsafe fn with_root<U: ?Sized>(value: OwnedPtr<T>, _root: &'a U) -> Self {
+        Borrow(value, PhantomData)
     }
 }
 
@@ -760,7 +803,11 @@ impl Gc {
     /// will occur.
     ///
     /// Unsafe since `roots` must be able to trace all accesible `GcPtr` values.
-    pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<OwnedPtr<D::Value>>
+    pub unsafe fn alloc_and_collect<R, D>(
+        &mut self,
+        roots: R,
+        def: D,
+    ) -> Result<OwnedGcRef<D::Value>>
     where
         R: Trace + CollectScope,
         D: DataDef + Trace,
@@ -787,15 +834,15 @@ impl Gc {
     }
 
     /// Allocates a new object.
-    pub fn alloc<D>(&mut self, def: D) -> Result<GcPtr<D::Value>>
+    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
     {
-        self.alloc_owned(def).map(GcPtr::from)
+        self.alloc_owned(def).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedPtr<D::Value>>
+    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -811,12 +858,12 @@ impl Gc {
         Ok(self.alloc_ignore_limit_(size, def))
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcPtr<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
     {
-        GcPtr::from(self.alloc_ignore_limit_(def.size(), def))
+        GcRef::from(self.alloc_ignore_limit_(def.size(), def))
     }
 
     fn get_type_info(
@@ -873,7 +920,7 @@ impl Gc {
         }
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedPtr<D::Value>
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -901,7 +948,7 @@ impl Gc {
             self.values = Some(ptr);
             let ptr = OwnedPtr(NonNull::new_unchecked(p));
             D::Value::unroot(&ptr);
-            ptr
+            OwnedGcRef::with_root(ptr, self)
         }
     }
 

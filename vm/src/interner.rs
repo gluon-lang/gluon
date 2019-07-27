@@ -111,7 +111,8 @@ impl Interner {
             Some(interned_str) => return Ok(*interned_str),
             None => (),
         }
-        let gc_str = InternedStr(GcStr::alloc(gc, s)?);
+        // SAFETY The interner is scanned
+        let gc_str = unsafe { InternedStr(GcStr::alloc(gc, s)?.unrooted()) };
         // The key will live as long as the value it refers to and the static str never escapes
         // outside interner so this is safe
         let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };

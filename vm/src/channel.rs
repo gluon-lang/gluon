@@ -3,6 +3,7 @@ use crate::real_std::{
     collections::VecDeque,
     fmt,
     marker::PhantomData,
+    slice,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -21,12 +22,12 @@ use crate::{
         Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
     gc::{GcPtr, Trace},
-    stack::{ClosureState, ExternState, StackFrame, State},
+    stack::{ClosureState, ExternState, State},
     thread::{ActiveThread, ThreadInternal},
     types::VmInt,
     value::{Callable, Userdata, Value, ValueRepr},
     vm::{RootedThread, Status, Thread},
-    Error, ExternModule, Result as VmResult,
+    Error, ExternModule, Result as VmResult, Variants,
 };
 
 pub struct Sender<T> {
@@ -56,8 +57,11 @@ unsafe impl<T> Trace for Sender<T> {
 }
 
 impl<T> Sender<T> {
-    fn send(&self, value: Value) {
-        self.queue.lock().unwrap().push_back(value);
+    fn send(&self, value: &Value) {
+        // SAFETY Rooted when stored in `queue`
+        unsafe {
+            self.queue.lock().unwrap().push_back(value.clone_unrooted());
+        }
     }
 }
 
@@ -151,7 +155,7 @@ fn send(sender: &Sender<A>, value: Generic<A>) -> Result<(), ()> {
         .thread
         .deep_clone_value(&sender.thread, value.get_value())
         .map_err(|_| ())?;
-    Ok(sender.send(value))
+    Ok(sender.send(value.get_value()))
 }
 
 fn resume(child: RootedThread) -> RuntimeResult<Result<(), String>, String> {
@@ -189,7 +193,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
         };
         value.value.push(&mut context)?;
         context.push(ValueRepr::Int(0));
-        StackFrame::<State>::current(&mut context.context().stack).enter_scope(1, callable);
+        context.context().stack.enter_scope(1, callable);
     }
     Ok(thread)
 }
@@ -291,15 +295,13 @@ fn spawn_on<'vm>(
     };
 
     SpawnFuture(future.shared()).push(&mut context).unwrap();
-    // SAFETY The value we call clone_unrooted on lives on the stack for the duration of the block
-    unsafe {
-        let fields = [context.last().unwrap().get_value().clone_unrooted()];
-        let def = PartialApplicationDataDef(callable, &fields);
-        let value = ValueRepr::PartialApplication(context.context().alloc_with(vm, def).unwrap());
+    let mut context = context.context();
+    let fields = slice::from_ref(context.stack.last().unwrap());
+    let def = PartialApplicationDataDef(callable, fields);
+    let value = Variants::from(context.gc.alloc(def).unwrap());
 
-        context.pop_many(2);
-        context.push(value);
-    }
+    context.stack.pop_many(2);
+    context.stack.push(value);
 
     IO::Value(Pushed::default())
 }

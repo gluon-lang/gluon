@@ -23,7 +23,7 @@ use crate::base::{
 use crate::{
     api::{ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
-    gc::{Gc, GcPtr, Generation, Move, Trace},
+    gc::{Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
@@ -47,13 +47,13 @@ unsafe impl Trace for ThreadSlab {
     }
 }
 
-fn new_bytecode(
+fn new_bytecode<'gc>(
     env: &VmEnv,
     interner: &mut Interner,
-    gc: &mut Gc,
+    gc: &'gc mut Gc,
     vm: &GlobalVmState,
     m: CompiledModule,
-) -> Result<GcPtr<ClosureData>> {
+) -> Result<GcRef<'gc, ClosureData>> {
     let CompiledModule {
         module_globals,
         function,
@@ -64,15 +64,19 @@ fn new_bytecode(
         .into_iter()
         .map(|index| &env.globals[index.definition_name()].value);
 
-    gc.alloc(ClosureDataDef(bytecode_function, globals))
+    // SAFETY No collection are done while we create these functions
+    unsafe {
+        let bytecode_function = bytecode_function.unrooted();
+        gc.alloc(ClosureDataDef(&bytecode_function, globals))
+    }
 }
 
-fn new_bytecode_function(
+fn new_bytecode_function<'gc>(
     interner: &mut Interner,
-    gc: &mut Gc,
+    gc: &'gc mut Gc,
     vm: &GlobalVmState,
     f: CompiledFunction,
-) -> Result<GcPtr<BytecodeFunction>> {
+) -> Result<GcRef<'gc, BytecodeFunction>> {
     let CompiledFunction {
         id,
         args,
@@ -85,9 +89,10 @@ fn new_bytecode_function(
         ..
     } = f;
 
-    let fs: StdResult<_, _> = inner_functions
+    let fs: Result<_> = inner_functions
         .into_iter()
-        .map(|inner| new_bytecode_function(interner, gc, vm, inner))
+        // SAFETY No collection are done while we create these functions
+        .map(|inner| unsafe { Ok(new_bytecode_function(interner, gc, vm, inner)?.unrooted()) })
         .collect();
 
     let records: StdResult<_, _> = records
@@ -499,7 +504,8 @@ impl GlobalVmState {
         let env = self.env.read().unwrap();
         let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        new_bytecode(&env, &mut interner, &mut gc, self, f)
+        // FIXME
+        unsafe { Ok(new_bytecode(&env, &mut interner, &mut gc, self, f)?.unrooted()) }
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
@@ -517,7 +523,7 @@ impl GlobalVmState {
         id: Symbol,
         typ: ArcType,
         metadata: Metadata,
-        value: Value,
+        value: &Value,
     ) -> Result<()> {
         assert!(value.generation().is_root());
         assert!(
@@ -530,7 +536,8 @@ impl GlobalVmState {
             id: id.clone(),
             typ,
             metadata: Arc::new(metadata),
-            value,
+            // SAFETY The global table are scanned
+            value: unsafe { value.clone_unrooted() },
         };
         globals.insert(StdString::from(id.definition_name()), global);
         Ok(())
@@ -543,7 +550,7 @@ impl GlobalVmState {
             Symbol::from(format!("@{}", id)),
             typ,
             metadata,
-            Value::int(0),
+            &Value::int(0),
         )
     }
 

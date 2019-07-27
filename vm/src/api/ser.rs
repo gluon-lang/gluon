@@ -2,17 +2,21 @@
 //!
 //! _This module requires Gluon to be built with the `serde` feature._
 
-use std::fmt;
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
-use crate::api::{Pushable, VmType};
-use crate::base::types::ArcType;
-use crate::interner::InternedStr;
-use crate::serde::ser::{self, Serialize};
-use crate::thread::{ActiveThread, Thread};
-use crate::types::{VmIndex, VmTag};
-use crate::value::{Def, RecordDef, ValueRepr};
-use crate::{Error, Result};
+use crate::{
+    api::{Pushable, VmType},
+    base::types::ArcType,
+    interner::InternedStr,
+    serde::ser::{self, Serialize},
+    thread::{ActiveThread, Thread},
+    types::{VmIndex, VmTag},
+    value::{Def, RecordDef, ValueRepr},
+    Error, Result, Variants,
+};
 
 /**
 `Pushable` wrapper which pushes `T` by serializing it.
@@ -186,28 +190,24 @@ impl<'a, 't> Serializer<'a, 't> {
     }
 
     fn alloc(&mut self, tag: VmTag, values: VmIndex) -> Result<()> {
-        let context = self.context.context();
+        let mut context = self.context.context();
         let value = context.gc.alloc(Def {
             tag: tag,
             elems: &context.stack[context.stack.len() - values..],
         })?;
-        for _ in 0..values {
-            context.stack.pop();
-        }
-        context.stack.push(ValueRepr::Data(value));
+        context.stack.pop_many(values);
+        context.stack.push(Variants::from(value));
         Ok(())
     }
 
     fn alloc_record(&mut self, fields: &[InternedStr], values: VmIndex) -> Result<()> {
-        let context = self.context.context();
+        let mut context = self.context.context();
         let value = context.gc.alloc(RecordDef {
             elems: &context.stack[context.stack.len() - values..],
             fields,
         })?;
-        for _ in 0..values {
-            context.stack.pop();
-        }
-        context.stack.push(ValueRepr::Data(value));
+        context.stack.pop_many(values);
+        context.stack.push(Variants::from(value));
         Ok(())
     }
 }

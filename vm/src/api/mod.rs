@@ -7,7 +7,7 @@ use crate::base::{
 use crate::{
     forget_lifetime,
     gc::{DataDef, GcPtr, Move, Trace},
-    thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
+    thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, GcStr, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
@@ -472,14 +472,9 @@ pub trait AsyncPushable<'vm> {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
-                let msg = unsafe {
-                    GcStr::from_utf8_unchecked(
-                        context
-                            .context()
-                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
-                    )
-                };
-                context.push(ValueRepr::String(msg));
+                let mut context = context.context();
+                let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
+                context.stack.push(Variants::from(msg));
                 Status::Error
             }
         }
@@ -509,14 +504,9 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         match self.push(context) {
             Ok(()) => Status::Ok,
             Err(err) => {
-                let msg = unsafe {
-                    GcStr::from_utf8_unchecked(
-                        context
-                            .context()
-                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
-                    )
-                };
-                context.push(ValueRepr::String(msg));
+                let mut context = context.context();
+                let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
+                context.stack.push(Variants::from(msg));
                 Status::Error
             }
         }
@@ -575,11 +565,10 @@ where
 
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let context = context.context();
+        let mut context = context.context();
         let data: Box<dyn vm::Userdata> = Box::new(self);
-        let userdata = context.alloc_with(thread, Move(data))?;
-        context.stack.push(ValueRepr::Userdata(userdata));
+        let userdata = alloc!(context, Move(data))?;
+        context.stack.push(Variants::from(userdata));
         Ok(())
     }
 }
@@ -998,11 +987,9 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let s = unsafe {
-            GcStr::from_utf8_unchecked(context.context().alloc_with(thread, self.as_bytes())?)
-        };
-        context.push(ValueRepr::String(s));
+        let mut context = context.context();
+        let s = unsafe { alloc!(context, self)?.map_unrooted(|v| GcStr::from_utf8_unchecked(v)) };
+        context.stack.push(Variants::from(s));
         Ok(())
     }
 }
@@ -1147,9 +1134,9 @@ where
     &'s [T]: DataDef<Value = ValueArray>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let result = context.context().alloc_with(thread, self)?;
-        context.push(ValueRepr::Array(result));
+        let mut context = context.context();
+        let result = alloc!(context, self)?;
+        context.stack.push(Variants::from(result));
         Ok(())
     }
 }
@@ -1347,8 +1334,7 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
         match self {
             Some(value) => {
                 value.push(context)?;
-                let thread = context.thread();
-                context.context().push_new_data(thread, 1, 1)?;
+                context.context().push_new_data(1, 1)?;
             }
             None => context.push(ValueRepr::Tag(0)),
         }
@@ -1400,8 +1386,7 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
                 0
             }
         };
-        let thread = context.thread();
-        context.context().push_new_data(thread, tag, 1)?;
+        context.context().push_new_data(tag, 1)?;
         Ok(())
     }
 }
@@ -1463,7 +1448,7 @@ where
         frame_index: VmIndex,
     ) -> Result<Async<()>> {
         unsafe {
-            context.context().return_future(self.0, frame_index);
+            context.return_future(self.0, frame_index);
         }
         Ok(Async::Ready(()))
     }
@@ -1552,16 +1537,14 @@ where
     T: VmRootInternal,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let value = {
-            let thread = context.thread();
-            let full_clone = !thread.can_share_values_with(context.gc(), self.vm());
-            let mut cloner = Cloner::new(thread, context.gc());
-            if full_clone {
-                cloner.force_full_clone();
-            }
-            cloner.deep_clone(&self.get_value())?
-        };
-        context.push(value);
+        let mut context = context.context();
+        let full_clone = !context.thread.can_share_values_with(context.gc, self.vm());
+        let mut cloner = Cloner::new(context.thread, context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        let value = cloner.deep_clone(&self.get_value())?;
+        context.stack.push(value);
         Ok(())
     }
 }
@@ -1685,8 +1668,7 @@ macro_rules! define_tuple {
                     $id.push(context)?;
                 )+
                 let len = count!($($id),+);
-                let thread = context.thread();
-                context.context().push_new_data(thread, 0, len)?;
+                context.context().push_new_data(0, len)?;
                 Ok(())
             }
         }
@@ -1787,20 +1769,13 @@ where
             v.push(context)?;
             len += 1;
         }
-        let thread = context.thread();
+        let mut context = context.context();
         let result = {
-            let Context {
-                ref mut gc,
-                ref stack,
-                ..
-            } = *context.context();
-            let values = &stack[stack.len() - len..];
-            thread::alloc(gc, thread, stack, ArrayDef(values))?
+            let values = &context.stack[context.stack.len() - len..];
+            alloc!(context, ArrayDef(values))?
         };
-        for _ in 0..len {
-            context.pop();
-        }
-        context.push(ValueRepr::Array(result));
+        context.stack.pop_many(len);
+        context.stack.push(Variants::from(result));
         Ok(())
     }
 }

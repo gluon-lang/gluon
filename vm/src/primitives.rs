@@ -13,13 +13,13 @@ use crate::base::types::ArcType;
 use crate::{
     api::{
         generic::{self, A},
-        primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
-        WithVM, IO,
+        primitive, Array, Getable, Opaque, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
+        VmType, WithVM, IO,
     },
     gc::{DataDef, Trace, WriteOnly},
     stack::{ExternState, StackFrame},
     types::VmInt,
-    value::{Def, GcStr, Repr, ValueArray, ValueRepr},
+    value::{GcStr, Repr, ValueArray},
     vm::{Status, Thread},
     Error, ExternModule, Result, Variants,
 };
@@ -105,10 +105,7 @@ pub mod array {
             Err(err) => return RuntimeResult::Panic(err),
         };
 
-        RuntimeResult::Return(Getable::from_value(
-            array.vm_(),
-            Variants::new(&ValueRepr::Array(value).into()),
-        ))
+        RuntimeResult::Return(Getable::from_value(array.vm_(), Variants::from(value)))
     }
 
     pub(crate) fn append<'vm>(
@@ -149,8 +146,8 @@ pub mod array {
             }
         }
         let vm = lhs.vm();
+        let mut context = vm.context();
         let value = {
-            let mut context = vm.context();
             let result = context.alloc(Append {
                 lhs: lhs.get_value_array(),
                 rhs: rhs.get_value_array(),
@@ -160,16 +157,12 @@ pub mod array {
                 Err(err) => return RuntimeResult::Panic(err),
             }
         };
-        RuntimeResult::Return(Getable::from_value(
-            lhs.vm_(),
-            Variants::new(&ValueRepr::Array(value).into()),
-        ))
+        RuntimeResult::Return(Getable::from_value(lhs.vm_(), Variants::from(value)))
     }
 }
 
 mod string {
     use super::*;
-    use crate::api::Pushable;
     use crate::thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
@@ -204,18 +197,14 @@ mod string {
 
         let vm = lhs.vm;
         let lhs = lhs.value;
-        let value = unsafe {
-            let mut context = vm.context();
-            let result = context.alloc(StrAppend { lhs: lhs, rhs: rhs });
-            match result {
-                Ok(x) => GcStr::from_utf8_unchecked(x),
-                Err(err) => return RuntimeResult::Panic(err),
-            }
+
+        let mut context = vm.context();
+        let value = match context.alloc(StrAppend { lhs: lhs, rhs: rhs }) {
+            // SAFETY We don't leak `v` outside of the `GcRef` which preserves the gc lock
+            Ok(x) => unsafe { x.map_unrooted(|v| GcStr::from_utf8_unchecked(v)) },
+            Err(err) => return RuntimeResult::Panic(err),
         };
-        RuntimeResult::Return(Getable::from_value(
-            vm,
-            Variants::new(&ValueRepr::String(value).into()),
-        ))
+        RuntimeResult::Return(Getable::from_value(vm, Variants::from(value)))
     }
 
     pub fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
@@ -235,43 +224,10 @@ mod string {
         }
     }
 
-    pub extern "C" fn from_utf8(thread: &Thread) -> Status {
-        let mut context = thread.current_context();
-        // SAFETY `array` is rooted on the stack for the duration of this extern call
-        let value = unsafe {
-            StackFrame::<ExternState>::current(context.stack())[0]
-                .get_repr()
-                .clone_unrooted()
-        };
-        match value {
-            ValueRepr::Array(array) => match GcStr::from_utf8(array) {
-                Ok(string) => {
-                    let value = ValueRepr::String(string).into();
-                    let result = context.context().alloc_with(
-                        thread,
-                        Def {
-                            tag: 1,
-                            elems: &[value],
-                        },
-                    );
-                    match result {
-                        Ok(data) => {
-                            context.stack().push(ValueRepr::Data(data));
-                            Status::Ok
-                        }
-                        Err(err) => {
-                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
-                            result.status_push(&mut context)
-                        }
-                    }
-                }
-                Err(()) => {
-                    let err: StdResult<&str, ()> = Err(());
-                    err.status_push(&mut context)
-                }
-            },
-            _ => unreachable!(),
-        }
+    pub fn from_utf8(array: Array<u8>) -> StdResult<OpaqueRef<str>, ()> {
+        Ok(Opaque::from_value(Variants::from(GcStr::from_utf8(
+            array.raw(),
+        )?)))
     }
 
     pub fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
@@ -552,7 +508,8 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             trim_end_matches => primitive!(2, std::string::prim::trim_end_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
-            from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(
+            from_utf8 => primitive!(
+                1,
                 "std.string.prim.from_utf8",
                 string::from_utf8
             ),
