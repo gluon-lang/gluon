@@ -98,9 +98,9 @@ where
             context.stack.pop()
         };
 
-        Ok(Async::Ready(
-            self.thread.take().unwrap().root_value_with_self(&value)?,
-        ))
+        let thread = self.thread.take().unwrap();
+        // SAFETY `value` is produced (and owned) by `thread`
+        unsafe { Ok(Async::Ready(thread.root_value_with_self(&value))) }
     }
 }
 
@@ -1056,9 +1056,8 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     fn unroot_vm(&self);
 
     /// Roots a value
-    fn root_value_with_self(self, value: &Value) -> Result<RootedValue<Self>> {
-        // FIXME value must be owned by self
-        Ok(unsafe { RootedValue::new(self, &value) })
+    unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self> {
+        RootedValue::new(self, value)
     }
 }
 
@@ -1192,9 +1191,7 @@ impl ThreadInternal for Thread {
     where
         T: VmRoot<'vm>,
     {
-        T::new_root(self)
-            .root_value_with_self(value.get_value())
-            .unwrap() // TODO Handle failure
+        unsafe { T::new_root(self).root_value_with_self(value.get_value()) }
     }
 
     fn call_thunk<'vm>(
@@ -1289,7 +1286,8 @@ impl ThreadInternal for Thread {
             cloner.force_full_clone();
         }
         let value = cloner.deep_clone(value)?;
-        self.root_value_with_self(value.get_value())
+        // SAFETY `value` is just cloned and therefore tied to `self`
+        unsafe { Ok(self.root_value_with_self(value.get_value())) }
     }
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool {
@@ -1470,7 +1468,6 @@ struct PollFn {
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Context {
-    // FIXME It is dangerous to write to gc and stack
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub(crate) stack: Stack,
     #[cfg_attr(feature = "serde_derive", serde(state))]
