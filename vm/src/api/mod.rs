@@ -9,7 +9,7 @@ use crate::{
     gc::{DataDef, GcPtr, Move, Trace},
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
-    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, GcStr, Value, ValueArray, ValueRepr},
+    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
     Error, Result, Variants,
 };
@@ -988,7 +988,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut context = context.context();
-        let s = unsafe { alloc!(context, self)?.map_unrooted(|v| GcStr::from_utf8_unchecked(v)) };
+        let s = alloc!(context, self)?;
         context.stack.push(Variants::from(s));
         Ok(())
     }

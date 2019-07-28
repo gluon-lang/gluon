@@ -306,7 +306,10 @@ pub mod gc {
             // FIXME
             unsafe {
                 Ok(Cow::<str>::deserialize(deserializer).and_then(|s| {
-                    GcStr::alloc(&mut seed.thread.context().gc, &s)
+                    seed.thread
+                        .context()
+                        .gc
+                        .alloc(&s[..])
                         .map(|v| v.unrooted())
                         .map_err(D::Error::custom)
                 })?)

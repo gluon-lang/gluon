@@ -326,43 +326,22 @@ unsafe impl<'b> Trace for UninitializedRecord<'b> {
 }
 
 mod gc_str {
-    use super::ValueArray;
+    use super::{ValueArray, ValueStr};
 
     use std::{fmt, ops::Deref, str};
 
-    use crate::{
-        gc::{Borrow, Gc, GcPtr, GcRef, Generation},
-        Error,
-    };
+    use crate::gc::{GcPtr, GcRef};
 
-    #[derive(Copy, Clone, PartialEq, Trace)]
-    #[gluon(gluon_vm)]
-    pub struct GcStr(GcPtr<ValueArray>);
+    pub type GcStr = GcPtr<ValueStr>;
 
-    // Needed due to https://github.com/rust-lang/rust/pull/60444, unsure if that is due to a bug
-    // or not
-    unsafe impl Send for GcStr {}
-    unsafe impl Sync for GcStr {}
-
-    impl fmt::Debug for GcStr {
+    impl fmt::Debug for ValueStr {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.debug_tuple("GcStr").field(&&**self).finish()
+            write!(f, "{}", &**self)
         }
     }
 
-    impl Eq for GcStr {}
-
     impl GcStr {
-        pub fn alloc<'gc>(gc: &'gc mut Gc, data: &str) -> Result<Borrow<'gc, GcStr>, Error> {
-            // SAFETY Allocates the `&str` on the gc which preserves the UTF-8 ness
-            unsafe {
-                Ok(gc
-                    .alloc(data)?
-                    .map_unrooted(|v| GcStr::from_utf8_unchecked(v)))
-            }
-        }
-
-        pub fn from_utf8(array: GcRef<ValueArray>) -> Result<Borrow<GcStr>, ()> {
+        pub fn from_utf8(array: GcRef<ValueArray>) -> Result<GcRef<ValueStr>, ()> {
             unsafe {
                 if array
                     .as_slice::<u8>()
@@ -377,31 +356,15 @@ mod gc_str {
         }
 
         pub unsafe fn from_utf8_unchecked(array: GcPtr<ValueArray>) -> GcStr {
-            GcStr(array)
-        }
-
-        pub unsafe fn clone_unrooted(&self) -> Self {
-            GcStr(self.0.clone_unrooted())
-        }
-
-        pub fn into_inner(self) -> GcPtr<ValueArray> {
-            self.0
-        }
-
-        pub fn generation(&self) -> Generation {
-            self.0.generation()
-        }
-
-        pub fn ptr_eq(&self, other: &Self) -> bool {
-            self.0.ptr_eq(&other.0)
+            GcPtr::cast(array)
         }
     }
 
-    impl Deref for GcStr {
+    impl Deref for ValueStr {
         type Target = str;
 
         fn deref(&self) -> &str {
-            unsafe { str::from_utf8_unchecked(self.0.as_slice::<u8>().unwrap()) }
+            unsafe { str::from_utf8_unchecked(self.0.unsafe_array::<u8>()) }
         }
     }
 }
@@ -589,6 +552,7 @@ macro_rules! value_from {
     ($($typ: ty, $ident: ident),*) => {
         $(
             impl From<$typ> for Value {
+                #[inline]
                 fn from(v: $typ) -> Value {
                     Value(ValueRepr::$ident(v))
                 }
@@ -603,6 +567,7 @@ macro_rules! value_from_gc {
             value_from!(GcPtr<$typ>, $ident);
 
             impl<'gc> From<&'gc GcPtr<$typ>> for Variants<'gc> {
+                #[inline]
                 fn from(v: &'gc GcPtr<$typ>) -> Self {
                     // SAFETY The 'gc lifetimme is preserved in the returned value
                     unsafe {
@@ -612,6 +577,7 @@ macro_rules! value_from_gc {
             }
 
             impl<'gc> From<gc::GcRef<'gc, $typ>> for Variants<'gc> {
+                #[inline]
                 fn from(v: gc::GcRef<'gc, $typ>) -> Self {
                     // SAFETY The 'gc lifetimme is preserved in the returned value
                     unsafe {
@@ -626,11 +592,11 @@ macro_rules! value_from_gc {
 value_from! {
     u8, Byte,
     VmInt, Int,
-    f64, Float,
-    GcStr, String
+    f64, Float
 }
 
 value_from_gc! {
+    ValueStr, String,
     ExternFunction, Function,
     ClosureData, Closure,
     PartialApplicationData, PartialApplication,
@@ -638,20 +604,6 @@ value_from_gc! {
     ValueArray, Array,
     Box<dyn Userdata>, Userdata,
     Thread, Thread
-}
-
-impl<'gc> From<&'gc GcStr> for Variants<'gc> {
-    fn from(v: &'gc GcStr) -> Self {
-        // SAFETY The 'gc lifetimme is preserved in the returned value
-        unsafe { Variants(ValueRepr::String(v.clone_unrooted()), PhantomData) }
-    }
-}
-
-impl<'gc> From<gc::Borrow<'gc, GcStr>> for Variants<'gc> {
-    fn from(v: gc::Borrow<'gc, GcStr>) -> Self {
-        // SAFETY The 'gc lifetimme is preserved in the returned value
-        unsafe { Variants(ValueRepr::String(v.unrooted()), PhantomData) }
-    }
 }
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
@@ -1217,12 +1169,17 @@ impl_repr! {
 }
 
 unsafe impl<'a> DataDef for &'a str {
-    type Value = ValueArray;
+    type Value = ValueStr;
     fn size(&self) -> usize {
         self.as_bytes().size()
     }
-    fn initialize<'w>(self, result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-        self.as_bytes().initialize(result)
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueStr>) -> &'w mut ValueStr {
+        unsafe {
+            let ptr = self
+                .as_bytes()
+                .initialize(WriteOnly::new(result.as_mut_ptr() as *mut ValueArray));
+            &mut *(ptr as *mut ValueArray as *mut ValueStr)
+        }
     }
 }
 
@@ -1380,18 +1337,18 @@ impl ValueArray {
 
         macro_rules! initialize_variants {
             ($($id: ident)+) => {
-        match self.repr {
+                match self.repr {
                     $(Repr::$id => {
-                let iter = iter.map(|v| match v {
-                            ValueRepr::$id(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
+                        let iter = iter.map(|v| match v {
+                                    ValueRepr::$id(x) => x,
+                            _ => unreachable!(),
+                        });
+                        self.unsafe_array_mut().initialize(iter);
                     })+
-            Repr::Unknown => {
-                self.unsafe_array_mut().initialize(iter);
-            }
-            }
+                    Repr::Unknown => {
+                        self.unsafe_array_mut().initialize(iter);
+                    }
+                }
             }
         }
 
@@ -1472,6 +1429,13 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
         }
     }
 }
+
+#[derive(PartialEq, Trace)]
+#[gluon(gluon_vm)]
+#[repr(transparent)]
+pub struct ValueStr(ValueArray);
+
+impl Eq for ValueStr {}
 
 pub struct Cloner<'gc> {
     visited: FnvMap<*const (), ValueRepr>,
@@ -1568,8 +1532,8 @@ impl<'t> Cloner<'t> {
 
     unsafe fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
         Ok(self
-            .deep_clone_ptr(data.into_inner(), |gc, _| {
-                let ptr = GcStr::alloc(gc, &data[..])?.unrooted();
+            .deep_clone_ptr(data, |gc, _| {
+                let ptr = gc.alloc(&data[..])?.unrooted();
                 Ok((String(ptr), ptr))
             })?
             .unwrap_or_else(String))

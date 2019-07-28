@@ -58,7 +58,7 @@ pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
 
 impl<'s, T: ?Sized> WriteOnly<'s, T> {
     /// Unsafe as the lifetime must not be longer than the liftime of `t`
-    unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
+    pub unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
         WriteOnly(t, PhantomData)
     }
 
@@ -563,6 +563,10 @@ impl<T: ?Sized> GcPtr<T> {
             let header = p.offset(-(GcHeader::value_offset() as isize));
             &*(header as *const GcHeader)
         }
+    }
+
+    pub unsafe fn cast<U>(ptr: Self) -> GcPtr<U> {
+        GcPtr(ptr.0.cast())
     }
 }
 
