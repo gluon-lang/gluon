@@ -95,7 +95,7 @@ macro_rules! primitive {
 
     (impl $func_type:ty, $name:expr, $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
         {
-            extern "C" fn wrapper$(<$($params)*>)?(thread: &$crate::thread::Thread) -> $crate::thread::Status
+            extern "C" fn wrapper<'thread $(, $($params)*)?>(thread: &'thread $crate::thread::Thread) -> $crate::thread::Status
                 $(where $($where_)*)?
             {
                 $crate::api::VmFunction::unpack_and_call(
