@@ -183,16 +183,16 @@ impl DataStruct {
     }
 }
 
-impl GcPtr<DataStruct> {
-    pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants>> {
+impl<'gc> GcRef<'gc, DataStruct> {
+    pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants<'gc>>> {
         let field = vm.global_env().intern(field)?;
         Ok(self.get_field(field))
     }
 
-    pub(crate) fn get_field(&self, field: InternedStr) -> Option<Variants> {
+    pub(crate) fn get_field(&self, field: InternedStr) -> Option<Variants<'gc>> {
         self.field_map()
             .get(&field)
-            .map(|offset| Variants::new(&self.fields[*offset as usize]))
+            .map(|offset| Variants::new(&self.as_ref().fields[*offset as usize]))
     }
 }
 

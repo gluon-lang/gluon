@@ -6,7 +6,7 @@ use crate::base::{
 };
 use crate::{
     forget_lifetime,
-    gc::{DataDef, GcPtr, Move, Trace},
+    gc::{DataDef, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
@@ -78,7 +78,7 @@ pub mod ser;
 #[cfg(feature = "serde")]
 pub mod typ;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum ValueRef<'a> {
     Byte(u8),
     Int(VmInt),
@@ -98,11 +98,11 @@ impl<'a, 'b> PartialEq<ValueRef<'b>> for ValueRef<'a> {
         use self::ValueRef::*;
 
         match (self, other) {
-            (&Byte(l), &Byte(r)) => l == r,
-            (&Int(l), &Int(r)) => l == r,
-            (&Float(l), &Float(r)) => l == r,
-            (&String(l), &String(r)) => l == r,
-            (&Data(l), &Data(r)) => l == r,
+            (Byte(l), Byte(r)) => l == r,
+            (Int(l), Int(r)) => l == r,
+            (Float(l), Float(r)) => l == r,
+            (String(l), String(r)) => l == r,
+            (Data(l), Data(r)) => l == r,
             _ => false,
         }
     }
@@ -128,7 +128,7 @@ impl<'a> ValueRef<'a> {
             ValueRepr::Float(f) => ValueRef::Float(*f),
             ValueRepr::String(s) => ValueRef::String(forget_lifetime(&*s)),
             ValueRepr::Data(data) => {
-                ValueRef::Data(Data(DataInner::Data(forget_lifetime(&**data))))
+                ValueRef::Data(Data(DataInner::Data(GcRef::new(forget_lifetime(data)))))
             }
             ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
             ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&**array))),
@@ -160,14 +160,14 @@ impl<'a> Closure<'a> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum DataInner<'a> {
     Tag(VmTag),
-    Data(&'a DataStruct),
+    Data(GcRef<'a, DataStruct>),
 }
 
 /// Stores values of variants and records.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
@@ -190,15 +190,15 @@ impl<'a> Data<'a> {
     /// let val = Fourth // has the tag '3'
     /// ```
     pub fn tag(&self) -> VmTag {
-        match self.0 {
-            DataInner::Tag(tag) => tag,
+        match &self.0 {
+            DataInner::Tag(tag) => *tag,
             DataInner::Data(data) => data.tag(),
         }
     }
 
     /// Returns the number of fields of this value.
     pub fn len(&self) -> usize {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => 0,
             DataInner::Data(data) => data.fields.len(),
         }
@@ -207,9 +207,9 @@ impl<'a> Data<'a> {
     /// Retrieves the value of the field at `index`, like `get_variant`, but does not
     /// wrap it in a `Variants` struct.
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => data.fields.get(index).map(ValueRef::new),
+            DataInner::Data(data) => data.as_ref().fields.get(index).map(ValueRef::new),
         }
     }
 
@@ -219,9 +219,9 @@ impl<'a> Data<'a> {
     }
 
     fn fields(&self) -> &'a [Value] {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => &[][..],
-            DataInner::Data(data) => &data.fields,
+            DataInner::Data(data) => &data.as_ref().fields,
         }
     }
 
@@ -229,33 +229,25 @@ impl<'a> Data<'a> {
     /// name the field (like in a variant). If the value is a record, use
     /// `lookup_field` instead.
     pub fn get_variant(&self, index: usize) -> Option<Variants<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => data.fields.get(index).map(Variants::new),
+            DataInner::Data(data) => data.as_ref().fields.get(index).map(Variants::new),
         }
     }
 
     /// Retrieves the field `name` from this record.
     pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe {
-                GcPtr::from_raw(data)
-                    .get(thread, name)
-                    .ok()
-                    .and_then(|x| x)
-                    .map(|v| Variants::with_root(v.get_value(), data))
-            },
+            DataInner::Data(data) => data.get(thread, name).ok().and_then(|x| x),
         }
     }
 
     #[doc(hidden)]
     pub fn field_names(&self) -> Vec<crate::interner::InternedStr> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => Vec::new(),
-            DataInner::Data(data) => unsafe {
-                GcPtr::from_raw(data).field_map().keys().cloned().collect()
-            },
+            DataInner::Data(data) => data.field_map().keys().cloned().collect(),
         }
     }
 }

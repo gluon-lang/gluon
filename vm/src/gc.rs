@@ -15,10 +15,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::base::fnv::FnvMap;
-use crate::interner::InternedStr;
-use crate::types::VmIndex;
-use crate::{Error, Result};
+use crate::{
+    base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex, Error, Result,
+};
 
 pub mod mutex;
 
@@ -386,6 +385,7 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct Borrow<'a, T>(T, PhantomData<&'a T>);
 
 pub type GcRef<'a, T> = Borrow<'a, GcPtr<T>>;
@@ -425,6 +425,14 @@ impl<'gc, T: ?Sized> From<OwnedGcRef<'gc, T>> for GcRef<'gc, T> {
     }
 }
 
+impl<'a, T: ?Sized> Clone for GcRef<'a, T> {
+    fn clone(&self) -> Self {
+        // SAFETY The lifetime of the new value is the same which just means that both values need
+        // to be dropped before any gc collection
+        unsafe { Borrow(self.0.clone_unrooted(), self.1) }
+    }
+}
+
 impl<'a, T: ?Sized> GcRef<'a, T> {
     #[inline]
     pub fn new(value: &GcPtr<T>) -> GcRef<T> {
@@ -438,10 +446,10 @@ impl<'a, T: ?Sized> GcRef<'a, T> {
         Borrow(value.clone_unrooted(), PhantomData)
     }
 
-    pub fn clone(&self) -> Self {
-        // SAFETY The lifetime of the new value is the same which just means that both values need
-        // to be dropped before any gc collection
-        unsafe { Borrow(self.0.clone_unrooted(), self.1) }
+    pub fn as_ref(&self) -> &'a T {
+        // SAFETY 'a is the lifetime that the value actually lives. Since `T` is behind a pointer
+        // we can make that pointer have that lifetime
+        unsafe { forget_lifetime(&*self.0) }
     }
 }
 

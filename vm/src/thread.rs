@@ -2309,7 +2309,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     let field = function.strings[i as usize];
                     match self.stack.pop().get_repr() {
                         Data(data) => {
-                            let v = data.get_field(field).unwrap_or_else(|| {
+                            let v = GcRef::new(data).get_field(field).unwrap_or_else(|| {
                                 error!("{}", self.stack.stack.stacktrace(0));
                                 ice!("Field `{}` does not exist", field)
                             });
