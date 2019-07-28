@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! primitive_cast {
@@ -92,7 +94,7 @@ macro_rules! primitive {
     };
 
     (impl $func_type:ty, $name:expr, $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
-        unsafe {
+        {
             extern "C" fn wrapper$(<$($params)*>)?(thread: &$crate::thread::Thread) -> $crate::thread::Status
                 $(where $($where_)*)?
             {
@@ -101,13 +103,19 @@ macro_rules! primitive {
                     thread,
                 )
             }
-            $crate::api::primitive_f(
-                $name,
-                wrapper $( ::<$($params)*> )?,
-                $func as $func_type,
-            )
+
+            $crate::api::Primitive::<$func_type> {
+                name: $name,
+                function: wrapper $( ::<$($params)*> )?,
+                _typ: $crate::api::mac::phantom($func as $func_type),
+            }
         }
     };
+}
+
+#[doc(hidden)]
+pub fn phantom<F>(_: F) -> PhantomData<F> {
+    PhantomData
 }
 
 #[doc(hidden)]
