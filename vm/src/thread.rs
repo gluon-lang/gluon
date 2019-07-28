@@ -208,7 +208,7 @@ where
     T: VmRootInternal,
 {
     fn drop(&mut self) {
-        if *self.rooted.get_mut() {
+        if self.rooted.load() {
             self.unroot_();
         }
     }
@@ -592,7 +592,7 @@ impl Drop for Thread {
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
-        if *self.rooted.get_mut() {
+        if self.rooted.load() {
             let is_empty = self.unroot_();
             if is_empty {
                 // The last RootedThread was dropped, there is no way to refer to the global state any
