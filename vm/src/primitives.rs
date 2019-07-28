@@ -97,7 +97,7 @@ pub mod array {
         let result = context.alloc(Slice {
             start,
             end,
-            array: array.get_value_array(),
+            array: &array.get_array(),
         });
 
         let value = match result {
@@ -149,8 +149,8 @@ pub mod array {
         let mut context = vm.context();
         let value = {
             let result = context.alloc(Append {
-                lhs: lhs.get_value_array(),
-                rhs: rhs.get_value_array(),
+                lhs: &lhs.get_array(),
+                rhs: &rhs.get_array(),
             });
             match result {
                 Ok(x) => x,
@@ -163,7 +163,7 @@ pub mod array {
 
 mod string {
     use super::*;
-    use crate::thread::ThreadInternal;
+    use crate::{thread::ThreadInternal, value::ValueStr};
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         #[derive(Trace)]
@@ -174,16 +174,16 @@ mod string {
         }
 
         unsafe impl<'b> DataDef for StrAppend<'b> {
-            type Value = ValueArray;
+            type Value = ValueStr;
             fn size(&self) -> usize {
                 use crate::real_std::mem::size_of;
-                size_of::<ValueArray>() + (self.lhs.len() + self.rhs.len()) * size_of::<u8>()
+                size_of::<ValueStr>() + (self.lhs.len() + self.rhs.len()) * size_of::<u8>()
             }
-            fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+            fn initialize<'w>(self, mut result: WriteOnly<'w, ValueStr>) -> &'w mut ValueStr {
                 unsafe {
                     let result = &mut *result.as_mut_ptr();
-                    result.set_repr(Repr::Byte);
-                    result.unsafe_array_mut::<u8>().initialize(
+                    result.as_mut_array().set_repr(Repr::Byte);
+                    result.as_mut_array().unsafe_array_mut::<u8>().initialize(
                         self.lhs
                             .as_bytes()
                             .iter()
@@ -200,8 +200,7 @@ mod string {
 
         let mut context = vm.context();
         let value = match context.alloc(StrAppend { lhs: lhs, rhs: rhs }) {
-            // SAFETY We don't leak `v` outside of the `GcRef` which preserves the gc lock
-            Ok(x) => unsafe { x.map_unrooted(|v| GcStr::from_utf8_unchecked(v)) },
+            Ok(x) => x,
             Err(err) => return RuntimeResult::Panic(err),
         };
         RuntimeResult::Return(Getable::from_value(vm, Variants::from(value)))
@@ -224,9 +223,9 @@ mod string {
         }
     }
 
-    pub fn from_utf8(array: Array<u8>) -> StdResult<OpaqueRef<str>, ()> {
+    pub fn from_utf8<'a>(array: OpaqueRef<'a, [u8]>) -> StdResult<OpaqueRef<'a, str>, ()> {
         Ok(Opaque::from_value(Variants::from(GcStr::from_utf8(
-            array.raw(),
+            array.get_array(),
         )?)))
     }
 

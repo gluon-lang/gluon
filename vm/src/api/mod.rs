@@ -85,7 +85,7 @@ pub enum ValueRef<'a> {
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
-    Array(ArrayRef<'a>),
+    Array(GcRef<'a, ValueArray>),
     Userdata(&'a dyn vm::Userdata),
     Thread(&'a Thread),
     Closure(Closure<'a>),
@@ -131,7 +131,7 @@ impl<'a> ValueRef<'a> {
                 ValueRef::Data(Data(DataInner::Data(GcRef::new(forget_lifetime(data)))))
             }
             ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
-            ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&**array))),
+            ValueRepr::Array(array) => ValueRef::Array(GcRef::new(forget_lifetime(array))),
             ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&***data)),
             ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&**thread)),
             ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
@@ -1137,7 +1137,7 @@ impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
 
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
-            ValueRef::Array(ptr) => ptr.as_slice().unwrap(),
+            ValueRef::Array(ptr) => ptr.as_ref().as_slice().unwrap(),
             _ => ice!("ValueRef is not an Array"),
         }
     }
@@ -1552,34 +1552,6 @@ where
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct ArrayRef<'vm>(&'vm ValueArray);
-
-impl<'vm> ArrayRef<'vm> {
-    pub fn get(&self, index: usize) -> Option<Variants<'vm>> {
-        if index < self.0.len() {
-            Some(self.0.get(index))
-        } else {
-            None
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn as_slice<T>(&self) -> Option<&'vm [T]>
-    where
-        T: ArrayRepr + Copy,
-    {
-        self.0.as_slice()
-    }
-
-    pub fn iter(&self) -> crate::value::Iter<'vm> {
-        self.0.iter()
-    }
-}
-
 pub type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
 /// Newtype which can be used to push types implementating `AsRef`
@@ -1809,7 +1781,7 @@ where
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Array(data) => Collect::new(GetableIter {
-                iter: data.iter(),
+                iter: data.as_ref().iter(),
                 vm,
                 _marker: PhantomData,
             }),

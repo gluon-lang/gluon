@@ -562,7 +562,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             (ValueRef::Array(values), &Type::App(_, ref args)) if args.len() == 1 => visitor
                 .visit_seq(SeqDeserializer::new(
                     self.state.clone(),
-                    values.iter().map(|variant| (variant, &args[0])),
+                    values.as_ref().iter().map(|variant| (variant, &args[0])),
                 )),
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {

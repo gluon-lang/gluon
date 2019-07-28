@@ -1268,8 +1268,7 @@ pub struct Iter<'a> {
 impl<'a> Iterator for Iter<'a> {
     type Item = Variants<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.array.len() {
-            let value = self.array.get(self.index);
+        if let Some(value) = self.array.get(self.index) {
             self.index += 1;
             Some(value)
         } else {
@@ -1290,27 +1289,33 @@ unsafe impl Trace for ValueArray {
 }
 
 impl ValueArray {
-    pub fn get(&self, index: usize) -> Variants {
-        // SAFETY the representation is checked before calling any unsafe
-        unsafe {
-            let value = match self.repr {
-                Repr::Byte => ValueRepr::Byte(self.unsafe_get::<u8>(index).clone()),
-                Repr::Int => ValueRepr::Int(self.unsafe_get::<VmInt>(index).clone()),
-                Repr::Float => ValueRepr::Float(self.unsafe_get::<f64>(index).clone()),
-                Repr::String => ValueRepr::String(self.unsafe_get::<GcStr>(index).clone_unrooted()),
-                Repr::Array => {
-                    ValueRepr::Array(self.unsafe_get::<GcPtr<ValueArray>>(index).clone_unrooted())
-                }
-                Repr::Unknown => self.unsafe_get::<Value>(index).clone_unrooted().0,
-                Repr::Userdata => ValueRepr::Userdata(
-                    self.unsafe_get::<GcPtr<Box<dyn Userdata>>>(index)
-                        .clone_unrooted(),
-                ),
-                Repr::Thread => {
-                    ValueRepr::Thread(self.unsafe_get::<GcPtr<Thread>>(index).clone_unrooted())
-                }
-            };
-            Variants::with_root(&Value::from(value), self)
+    pub fn get(&self, index: usize) -> Option<Variants> {
+        if index < self.len() {
+            // SAFETY the representation is checked before calling any unsafe
+            unsafe {
+                let value = match self.repr {
+                    Repr::Byte => ValueRepr::Byte(self.unsafe_get::<u8>(index).clone()),
+                    Repr::Int => ValueRepr::Int(self.unsafe_get::<VmInt>(index).clone()),
+                    Repr::Float => ValueRepr::Float(self.unsafe_get::<f64>(index).clone()),
+                    Repr::String => {
+                        ValueRepr::String(self.unsafe_get::<GcStr>(index).clone_unrooted())
+                    }
+                    Repr::Array => ValueRepr::Array(
+                        self.unsafe_get::<GcPtr<ValueArray>>(index).clone_unrooted(),
+                    ),
+                    Repr::Unknown => self.unsafe_get::<Value>(index).clone_unrooted().0,
+                    Repr::Userdata => ValueRepr::Userdata(
+                        self.unsafe_get::<GcPtr<Box<dyn Userdata>>>(index)
+                            .clone_unrooted(),
+                    ),
+                    Repr::Thread => {
+                        ValueRepr::Thread(self.unsafe_get::<GcPtr<Thread>>(index).clone_unrooted())
+                    }
+                };
+                Some(Variants::with_root(&Value::from(value), self))
+            }
+        } else {
+            None
         }
     }
 
@@ -1448,6 +1453,12 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
 pub struct ValueStr(ValueArray);
 
 impl Eq for ValueStr {}
+
+impl ValueStr {
+    pub unsafe fn as_mut_array(&mut self) -> &mut ValueArray {
+        &mut self.0
+    }
+}
 
 pub struct Cloner<'gc> {
     visited: FnvMap<*const (), ValueRepr>,
