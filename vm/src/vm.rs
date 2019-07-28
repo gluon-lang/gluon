@@ -123,7 +123,10 @@ fn new_bytecode_function<'gc>(
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -154,7 +157,10 @@ unsafe impl Trace for Global {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -213,7 +219,10 @@ unsafe impl Trace for GlobalVmState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",

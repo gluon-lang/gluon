@@ -40,7 +40,10 @@ enum FieldAccess {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -59,7 +62,10 @@ pub struct UpvarInfo {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -79,7 +85,10 @@ pub struct DebugInfo {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -103,7 +112,10 @@ pub struct CompiledModule {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",

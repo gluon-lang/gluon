@@ -424,7 +424,10 @@ impl<'b> Roots<'b> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -533,16 +536,21 @@ impl std::panic::RefUnwindSafe for RootedThread {}
 impl std::panic::UnwindSafe for RootedThread {}
 
 #[cfg(feature = "serde_derive")]
-impl<'de> serde::de::DeserializeState<'de, crate::serialization::DeSeed> for RootedThread {
+impl<'de, 'gc> serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc>>
+    for RootedThread
+{
     fn deserialize_state<D>(
-        seed: &mut crate::serialization::DeSeed,
+        seed: &mut crate::serialization::DeSeed<'gc>,
         deserializer: D,
     ) -> StdResult<Self, <D as serde::Deserializer<'de>>::Error>
     where
         D: serde::Deserializer<'de>,
     {
         #[derive(DeserializeState)]
-        #[serde(deserialize_state = "crate::serialization::DeSeed")]
+        #[serde(
+            deserialize_state = "crate::serialization::DeSeed<'gc>",
+            de_parameters = "'gc"
+        )]
         pub struct RootedThreadProxy {
             #[serde(state)]
             thread: GcPtr<Thread>,
@@ -1461,7 +1469,10 @@ struct PollFn {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",

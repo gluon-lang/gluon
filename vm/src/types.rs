@@ -179,7 +179,10 @@ impl Instruction {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",

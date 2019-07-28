@@ -96,7 +96,10 @@ impl StackPrimitive for Value {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -123,7 +126,10 @@ pub(crate) enum ExternCallState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -193,7 +199,10 @@ impl StackState for ExternState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -209,12 +218,15 @@ pub enum State {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(
-        deserialize = "S: ::serde::de::DeserializeState<'de, crate::serialization::DeSeed>"
+        deserialize = "S: ::serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc>>"
     ))
 )]
 #[cfg_attr(
@@ -268,7 +280,10 @@ pub struct Lock(VmIndex);
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",

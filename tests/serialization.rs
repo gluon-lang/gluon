@@ -52,7 +52,7 @@ fn roundtrip(
 
     let mut de = serde_json::Deserializer::from_str(buffer);
 
-    let deserialize_value = DeSeed::new(thread)
+    let deserialize_value = DeSeed::new(thread, &mut thread.current_context())
         .deserialize(&mut de)
         .unwrap_or_else(|err| panic!("{}\n{}", err, buffer));
 
