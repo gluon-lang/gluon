@@ -79,6 +79,7 @@ impl StackPrimitive for Value {
         stack.values.push(Value::from(self.get_repr()))
     }
 
+    #[inline(always)]
     fn extend_to<'b, I>(iter: I, stack: &mut Stack)
     where
         I: IntoIterator<Item = &'b Self>,
@@ -292,7 +293,7 @@ impl Stack {
         }
     }
 
-    pub fn pop(&mut self) -> Value {
+    fn assert_pop(&self) {
         if let Some(&frame) = self.frames.last() {
             assert!(
                 self.len() > frame.offset,
@@ -308,7 +309,17 @@ impl Stack {
                 );
             }
         }
+    }
+
+    pub fn pop(&mut self) -> Value {
+        self.assert_pop();
         self.values.pop().expect("pop on empty stack")
+    }
+
+    pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
+        self.assert_pop();
+        let value = self.last().unwrap().get_value();
+        PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
@@ -326,6 +337,7 @@ impl Stack {
         self.pop_many(count);
     }
 
+    #[inline(always)]
     pub fn push<T>(&mut self, v: T)
     where
         T: StackPrimitive,
@@ -339,13 +351,9 @@ impl Stack {
 
     #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
-        unsafe {
-            if index < self.len() {
-                Some(Variants::new(&self.values[index as usize]))
-            } else {
-                None
-            }
-        }
+        self.values
+            .get(index as usize)
+            .map(|value| unsafe { Variants::new(value) })
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
@@ -553,6 +561,7 @@ where
         self.stack.len() - self.frame.offset
     }
 
+    #[inline(always)]
     pub fn push<T>(&mut self, v: T)
     where
         T: StackPrimitive,
@@ -566,6 +575,10 @@ where
 
     pub fn pop(&mut self) -> Value {
         self.stack.pop()
+    }
+
+    pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
+        self.stack.pop_value()
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
@@ -894,6 +907,21 @@ impl fmt::Display for Stacktrace {
             }?
         }
         Ok(())
+    }
+}
+
+pub struct PopValue<'a>(&'a mut Stack, Variants<'a>);
+
+impl<'a> Drop for PopValue<'a> {
+    fn drop(&mut self) {
+        self.0.pop();
+    }
+}
+
+impl<'a> Deref for PopValue<'a> {
+    type Target = Variants<'a>;
+    fn deref(&self) -> &Self::Target {
+        &self.1
     }
 }
 

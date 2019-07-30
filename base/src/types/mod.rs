@@ -16,8 +16,6 @@ use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
-use stable_deref_trait::StableDeref;
-
 use itertools::Itertools;
 
 use crate::{
@@ -1352,9 +1350,6 @@ impl<Id> fmt::Pointer for ArcType<Id> {
         write!(f, "{:p}", &**self)
     }
 }
-
-// Safe since `Arc` implements it
-unsafe impl<Id> StableDeref for ArcType<Id> {}
 
 impl<Id> Borrow<Type<Id, ArcType<Id>>> for ArcType<Id> {
     fn borrow(&self) -> &Type<Id, ArcType<Id>> {

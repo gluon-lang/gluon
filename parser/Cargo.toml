@@ -32,7 +32,7 @@ codespan-reporting = "0.3"
 [dev-dependencies]
 env_logger = "0.6"
 difference = "2"
-pretty_assertions = "0.5"
+pretty_assertions = "0.6"
 
 [build-dependencies]
 lalrpop = "0.17"
