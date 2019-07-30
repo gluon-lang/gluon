@@ -21,7 +21,7 @@ use crate::{
         primitive, Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction,
         Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
-    gc::{GcPtr, Trace},
+    gc::{self, GcPtr, Trace},
     stack::{ClosureState, ExternState, State},
     thread::{ActiveThread, ThreadInternal},
     types::VmInt,
@@ -183,17 +183,22 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     let thread = value.vm.new_thread()?;
     {
         let mut context = thread.current_context();
-        let callable = match value.value.get_variant().0 {
-            ValueRepr::Closure(closure) => State::Closure(ClosureState {
-                closure,
-                instruction_index: 0,
-            }),
-            ValueRepr::Function(function) => State::Extern(ExternState::new(function)),
-            _ => State::Unknown,
+        let value_variant = value.value.get_variant();
+        let callable = match value_variant.get_repr() {
+            ValueRepr::Closure(closure) => {
+                construct_gc!(State::Closure(@ construct_gc!(ClosureState {
+                    @ closure,
+                    instruction_index: 0,
+                })))
+            }
+            ValueRepr::Function(function) => {
+                construct_gc!(State::Extern(@ ExternState::new(function)))
+            }
+            _ => gc::Borrow::from_static(State::Unknown),
         };
-        value.value.push(&mut context)?;
+        value_variant.clone().push(&mut context)?;
         context.push(ValueRepr::Int(0));
-        context.context().stack.enter_scope(1, callable);
+        context.context().stack.enter_scope(1, &*callable);
     }
     Ok(thread)
 }
@@ -286,18 +291,16 @@ fn spawn_on<'vm>(
 
     push_future_wrapper(&mut context, &future);
 
-    // SAFETY The value we call clone_unrooted on lives on the stack for the duration of the block
-    let callable = unsafe {
-        match context.stack()[..].last().unwrap().get_repr() {
-            ValueRepr::Function(ext) => Callable::Extern(ext.clone_unrooted()),
-            _ => unreachable!(),
-        }
+    SpawnFuture(future.shared()).push(&mut context).unwrap();
+
+    let mut context = context.context();
+    let callable = match context.stack[context.stack.len() - 2].get_repr() {
+        ValueRepr::Function(ext) => construct_gc!(Callable::Extern(@ ext)),
+        _ => unreachable!(),
     };
 
-    SpawnFuture(future.shared()).push(&mut context).unwrap();
-    let mut context = context.context();
     let fields = slice::from_ref(context.stack.last().unwrap());
-    let def = PartialApplicationDataDef(callable, fields);
+    let def = construct_gc!(PartialApplicationDataDef(@callable, fields));
     let value = Variants::from(context.gc.alloc(def).unwrap());
 
     context.stack.pop_many(2);

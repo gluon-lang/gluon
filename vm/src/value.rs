@@ -20,7 +20,7 @@ use crate::base::{
 use crate::{
     array::Array,
     compiler::DebugInfo,
-    gc::{self, DataDef, Gc, GcPtr, GcRef, Generation, Move, Trace, WriteOnly},
+    gc::{self, CloneUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move, Trace, WriteOnly},
     interner::InternedStr,
     thread::{Status, Thread},
     types::*,
@@ -890,14 +890,17 @@ pub(crate) enum Callable {
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
 }
 
-impl Callable {
-    pub unsafe fn clone_unrooted(&self) -> Self {
+impl CloneUnrooted for Callable {
+    type Value = Self;
+    unsafe fn clone_unrooted(&self) -> Self {
         match self {
             Callable::Closure(closure) => Callable::Closure(closure.clone_unrooted()),
             Callable::Extern(ext) => Callable::Extern(ext.clone_unrooted()),
         }
     }
+}
 
+impl Callable {
     pub fn args(&self) -> VmIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
@@ -1783,13 +1786,13 @@ mod tests {
             ),
             "Cons 123 Nil"
         );
-        let list2 = Value::from(ValueRepr::Data(
+        let list2 = Value::from(
             gc.alloc(Def {
                 tag: 0,
                 elems: &[ValueRepr::Int(0).into(), list1],
             })
             .unwrap(),
-        ));
+        );
         assert_eq!(
             format!(
                 "{}",
@@ -1814,7 +1817,7 @@ mod tests {
 
         let env = MockEnv(None);
 
-        let nil = Value::array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
+        let nil = Value::from(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
         assert_eq!(
             format!(
                 "{}",

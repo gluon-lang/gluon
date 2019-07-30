@@ -385,6 +385,18 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
+pub trait CloneUnrooted {
+    type Value;
+    unsafe fn clone_unrooted(&self) -> Self::Value;
+}
+
+impl<T: ?Sized + CloneUnrooted> CloneUnrooted for &'_ T {
+    type Value = T::Value;
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        (**self).clone_unrooted()
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct Borrow<'a, T>(T, PhantomData<&'a T>);
 
@@ -404,9 +416,61 @@ impl<T> DerefMut for Borrow<'_, T> {
     }
 }
 
+impl<T> CloneUnrooted for Borrow<'_, T>
+where
+    T: CloneUnrooted,
+{
+    type Value = T::Value;
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        self.0.clone_unrooted()
+    }
+}
+
+unsafe impl<'a, T> DataDef for Borrow<'a, T>
+where
+    T: DataDef,
+    T::Value: Sized,
+{
+    type Value = T::Value;
+    fn size(&self) -> usize {
+        (**self).size()
+    }
+    fn initialize(self, result: WriteOnly<Self::Value>) -> &mut Self::Value {
+        self.0.initialize(result)
+    }
+}
+
 impl<'gc, T> Borrow<'gc, T> {
-    pub fn map<U>(&self, f: impl FnOnce(&T) -> U) -> Borrow<'gc, U> {
-        Borrow(f(&self.0), PhantomData)
+    #[inline]
+    pub fn new(value: &'gc T) -> Borrow<'gc, T::Value>
+    where
+        T: CloneUnrooted,
+    {
+        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
+        // GcRef is also rooted
+        unsafe { Borrow::with_root(value.clone_unrooted(), value) }
+    }
+
+    #[inline]
+    pub fn from_static(value: T) -> Self
+    where
+        T: 'static, // TODO Necessary?
+    {
+        Borrow(value, PhantomData)
+    }
+
+    #[inline]
+    pub(crate) unsafe fn with_root<U: ?Sized>(value: T, _root: &'gc U) -> Self {
+        Borrow(value, PhantomData)
+    }
+
+    pub fn map<U>(&self, f: impl FnOnce(&T) -> &U) -> Borrow<'gc, U::Value>
+    where
+        U: CloneUnrooted,
+    {
+        let v = f(&self.0);
+        // SAFETY We can create a new root since the `'gc` lifetime is preserved
+        unsafe { Borrow(v.clone_unrooted(), PhantomData) }
     }
 
     pub unsafe fn map_unrooted<U>(self, f: impl FnOnce(T) -> U) -> Borrow<'gc, U> {
@@ -415,6 +479,10 @@ impl<'gc, T> Borrow<'gc, T> {
 
     pub unsafe fn unrooted(self) -> T {
         self.0
+    }
+
+    pub fn as_lifetime(&self) -> &'gc () {
+        &()
     }
 }
 
@@ -434,29 +502,10 @@ impl<'a, T: ?Sized> Clone for GcRef<'a, T> {
 }
 
 impl<'a, T: ?Sized> GcRef<'a, T> {
-    #[inline]
-    pub fn new(value: &GcPtr<T>) -> GcRef<T> {
-        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
-        // GcRef is also rooted
-        unsafe { GcRef::with_root(value, value) }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn with_root<U: ?Sized>(value: &GcPtr<T>, _root: &'a U) -> GcRef<'a, T> {
-        Borrow(value.clone_unrooted(), PhantomData)
-    }
-
     pub fn as_ref(&self) -> &'a T {
         // SAFETY 'a is the lifetime that the value actually lives. Since `T` is behind a pointer
         // we can make that pointer have that lifetime
         unsafe { forget_lifetime(&*self.0) }
-    }
-}
-
-impl<'a, T: ?Sized> OwnedGcRef<'a, T> {
-    #[inline]
-    pub(crate) unsafe fn with_root<U: ?Sized>(value: OwnedPtr<T>, _root: &'a U) -> Self {
-        Borrow(value, PhantomData)
     }
 }
 
@@ -528,6 +577,13 @@ impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
+impl<T: ?Sized> CloneUnrooted for GcPtr<T> {
+    type Value = Self;
+    unsafe fn clone_unrooted(&self) -> Self {
+        GcPtr(self.0)
+    }
+}
+
 impl<T: ?Sized> GcPtr<T> {
     /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
     /// else
@@ -564,8 +620,12 @@ impl<T: ?Sized> GcPtr<T> {
         ptr::eq::<T>(&**self, &**other)
     }
 
-    pub unsafe fn clone_unrooted(&self) -> Self {
+    pub unsafe fn unrooted(&self) -> Self {
         GcPtr(self.0)
+    }
+
+    pub fn as_lifetime(&self) -> &() {
+        &()
     }
 
     fn header(&self) -> &GcHeader {
@@ -649,6 +709,99 @@ macro_rules! impl_trace {
             $body
         }
     }
+}
+
+#[macro_export]
+macro_rules! construct_enum_gc {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr, $($rest: tt)*) => { {
+        let ptr = $expr;
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&ptr) },]
+                      [$($ptr)* ptr]
+                      $($rest)*
+        )
+    } };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr, $($rest: tt)*) => {
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* $expr,]
+                      [$($ptr)*]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr) => { {
+        let ptr = $expr;
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&ptr) },]
+                      [$($ptr)* ptr]
+        )
+    } };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr) => {
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* $expr,]
+                      [$($ptr)*]
+        )
+    };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] ) => { {
+        let root = [$( $ptr.as_lifetime() )*].first().map_or(&(), |v| *v);
+        #[allow(unused_unsafe)]
+        let v = $typ $(:: $variant)? ( $($acc)* );
+        // Make sure that we constructed something and didn't call a function which could leak the
+        // pointers
+        match &v {
+            $typ $(:: $variant)? (..) if true => (),
+            _ => unreachable!(),
+        }
+        #[allow(unused_unsafe)]
+        unsafe { $crate::gc::Borrow::with_root(v, root) }
+    } };
+}
+
+#[macro_export]
+macro_rules! construct_gc {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr, $($rest: tt)*) => { {
+        let $field = $expr;
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
+                      [$($ptr)* $field]
+                      $($rest)*
+        )
+    } };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident, $($rest: tt)*) => {
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
+                      [$($ptr)* $field]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr)?, $($rest: tt)*) => {
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field $(: $expr)?,]
+                      [$($ptr)*]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] ) => { {
+        let root = [$( $ptr.as_lifetime() )*].first().map_or(&(), |v| *v);
+        #[allow(unused_unsafe)]
+        let v = $typ { $($acc)* };
+        #[allow(unused_unsafe)]
+        unsafe { $crate::gc::Borrow::with_root(v, root) }
+    } };
+
+    ($typ: ident { $( $tt: tt )* } ) => {
+        $crate::construct_gc!{impl $typ [] [] $( $tt )* }
+    };
+
+    ($typ: ident $(:: $variant: ident)? ( $( $tt: tt )* ) ) => {
+        $crate::construct_enum_gc!{impl $typ $(:: $variant)? [] [] $( $tt )* }
+    };
 }
 
 macro_rules! deref_trace {
