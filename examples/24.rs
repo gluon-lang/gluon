@@ -1,12 +1,12 @@
 #![cfg(feature = "rand")]
-extern crate gluon;
 
-use std::fs::File;
-use std::io::Read;
+use std::{fs::File, io::Read};
 
 use gluon::vm::api::IO;
 
 fn main() {
+    env_logger::init();
+
     if let Err(err) = main_() {
         eprintln!("{}", err);
         std::process::exit(1);

@@ -503,7 +503,7 @@ macro_rules! assert_multi_unify_err {
                                     Some(&$id) => (),
                                     Some(error2) => {
                                         assert!(false,
-                                            "Found errors at {}:\n{}\nExpected:\n{}\nFound\n:{:?}",
+                                            "Found errors at {}:\n{}\nExpected:\n{}\nFound:\n{:?}",
                                             i,
                                             error,
                                             stringify!($id),
