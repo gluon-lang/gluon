@@ -401,6 +401,33 @@ fn marshal_userdata() -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, VmType, Getable)]
+// Deriving `VmType` won't work for a recursive type at the moment so we need to point to a type
+// specified in gluon itself
+#[gluon(vm_type = "std.list.List")]
+enum List<T> {
+    Nil,
+    Cons(T, Box<List<T>>),
+}
+
+fn marshal_recursive() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = gluon::Compiler::new();
+
+    // Load std.list before we try to use it in `VmType for List`
+    compiler.run_expr::<OpaqueValue<RootedThread, Hole>>(&vm, "example", "import! std.list")?;
+
+    let source = r#"
+        let list = import! std.list
+        list.of [1, 2]
+        "#;
+    let (list, _) = compiler.run_expr::<List<i32>>(&vm, "example", source)?;
+
+    assert_eq!(list, List::Cons(1, List::Cons(2, List::Nil.into()).into()));
+    println!("The list {:?}", list);
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -428,6 +455,11 @@ fn main() {
     }
 
     if let Err(err) = marshal_userdata() {
+        eprintln!("{}", err);
+        ::std::process::exit(1);
+    }
+
+    if let Err(err) = marshal_recursive() {
         eprintln!("{}", err);
         ::std::process::exit(1);
     }
