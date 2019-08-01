@@ -180,8 +180,12 @@ impl rustyline::highlight::Highlighter for Completer {
         self.highlighter.highlight(line, pos)
     }
 
-    fn highlight_prompt<'p>(&self, prompt: &'p str) -> Cow<'p, str> {
-        self.highlighter.highlight_prompt(prompt)
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        default: bool,
+    ) -> Cow<'b, str> {
+        self.highlighter.highlight_prompt(prompt, default)
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
