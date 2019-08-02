@@ -491,9 +491,10 @@ impl Stack {
     where
         S: StackState,
     {
-        let _: &Frame<S> = &*self.get_frames().last().expect("Frame").from_state();
+        let frame: &Frame<S> = &*self.get_frames().last().expect("Frame").from_state();
         StackFrame {
             _frame: PhantomData,
+            offset: frame.offset,
             stack: self,
         }
     }
@@ -592,6 +593,9 @@ where
     S: StackState,
 {
     pub stack: &'b mut Stack,
+    // Offset is needed for indexing which is frequent enough to warrant explicit caching. It
+    // should never change as well while mutating a frame
+    offset: VmIndex,
     _frame: PhantomData<Frame<S>>,
 }
 
@@ -612,18 +616,19 @@ impl<'a: 'b, 'b> StackFrame<'b, State> {
     where
         T: StackState,
     {
-        Frame::from_state::<T>(self.stack.frames.last().unwrap());
-        let stack = self.take_stack();
+        let frame = Frame::from_state::<T>(self.stack.frames.last().unwrap());
         StackFrame {
-            stack,
+            offset: frame.offset,
+            stack: self.stack,
             _frame: PhantomData,
         }
     }
 
     pub fn new_frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
-        Self::add_new_frame(stack, args, gc::Borrow::new(&state));
+        let frame = Self::add_new_frame(stack, args, gc::Borrow::new(&state));
         StackFrame {
             stack,
+            offset: frame.offset,
             _frame: PhantomData,
         }
     }
@@ -636,7 +641,6 @@ impl<'a: 'b, 'b> StackFrame<'b, ExternState> {
         let frame = self.frame_mut();
         frame.state.locked = Some(len);
         let lock = Lock(*frame.offset);
-        self.take_stack();
         lock
     }
 }
@@ -646,7 +650,7 @@ where
     S: StackState,
 {
     fn offset(&self) -> VmIndex {
-        self.frame().offset
+        self.offset
     }
 
     pub fn frame(&self) -> FrameView<S> {
@@ -673,10 +677,6 @@ where
             state: S::from_state_mut(state),
             excess,
         }
-    }
-
-    pub fn take_stack(self) -> &'b mut Stack {
-        self.stack
     }
 
     pub fn len(&self) -> VmIndex {
@@ -760,10 +760,11 @@ where
     where
         T: StackState,
     {
-        let stack = self.take_stack();
-        Self::add_new_frame(stack, args, T::to_state(state));
+        let stack = self.stack;
+        let frame = Self::add_new_frame(stack, args, T::to_state(state));
         StackFrame {
             stack,
+            offset: frame.offset,
             _frame: PhantomData,
         }
     }
@@ -774,14 +775,15 @@ where
     {
         if let State::Extern(ref ext) = *S::to_state(self.frame().state) {
             if ext.is_locked() {
-                return Err(self.take_stack());
+                return Err(self.stack);
             }
         }
-        let stack = self.take_stack();
+        let stack = self.stack;
         stack.frames.pop().expect("Expected frame");
         match stack.frames.last() {
-            Some(_frame) => {
+            Some(frame) => {
                 let stack = StackFrame {
+                    offset: frame.offset,
                     stack,
                     _frame: PhantomData,
                 };
