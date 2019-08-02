@@ -1726,7 +1726,7 @@ impl<'b> OwnedContext<'b> {
             if context.thread.interrupted() {
                 return Err(Error::Interrupted);
             }
-            trace!("STACK\n{:?}", context.stack.stack.get_frames());
+            trace!("STACK\n{:?}", context.stack.stack().get_frames());
             let state = context.stack.frame().state;
 
             if context.hook.flags.contains(HookFlags::CALL_FLAG) {
@@ -1742,7 +1742,7 @@ impl<'b> OwnedContext<'b> {
                         let thread = context.thread;
                         if let Some(ref mut hook) = context.hook.function {
                             let info = DebugInfo {
-                                stack: &context.stack.stack,
+                                stack: &context.stack.stack(),
                                 state: HookFlags::CALL_FLAG,
                             };
                             try_ready!(hook(thread, info))
@@ -1771,7 +1771,7 @@ impl<'b> OwnedContext<'b> {
                         if let Some(frame_index) = context.poll_fns.last().map(|f| f.frame_index) {
                             unsafe {
                                 ext = ExternState::from_state(
-                                    &context.stack.stack.get_frames()[frame_index as usize].state,
+                                    &context.stack.stack().get_frames()[frame_index as usize].state,
                                 )
                                 .clone_unrooted();
                             }
@@ -1804,12 +1804,12 @@ impl<'b> OwnedContext<'b> {
 
                         // Before entering a function check that the stack cannot exceed `max_stack_size`
                         if instruction_index == 0
-                            && context.stack.stack.len() + function_size > max_stack_size
+                            && context.stack.stack().len() + function_size > max_stack_size
                         {
                             return Err(Error::StackOverflow(max_stack_size));
                         }
 
-                        if context.stack.stack.get_frames().len() == 0 {
+                        if context.stack.stack().get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
                             debug!(
@@ -2001,7 +2001,7 @@ where
         D: DataDef + Trace,
         D::Value: Sized + Any,
     {
-        alloc(&mut self.gc, self.thread, &self.stack.stack, data)
+        alloc(&mut self.gc, self.thread, &self.stack.stack(), data)
     }
 
     pub fn push_new_data(&mut self, tag: VmTag, fields: usize) -> Result<Variants> {
@@ -2010,7 +2010,7 @@ where
             Variants::from(alloc(
                 &mut self.gc,
                 self.thread,
-                &self.stack.stack,
+                &self.stack.stack(),
                 Def {
                     tag: tag,
                     elems: fields,
@@ -2032,7 +2032,7 @@ where
             Variants::from(alloc(
                 &mut self.gc,
                 self.thread,
-                &self.stack.stack,
+                &self.stack.stack(),
                 RecordDef {
                     elems: fields,
                     fields: field_names,
@@ -2050,7 +2050,7 @@ where
         D::Value: Sized + Any,
         for<'a> Variants<'a>: From<GcRef<'a, D::Value>>,
     {
-        let value = Variants::from(alloc(&mut self.gc, self.thread, &self.stack.stack, def)?);
+        let value = Variants::from(alloc(&mut self.gc, self.thread, &self.stack.stack(), def)?);
         self.stack.push(value.clone());
         Ok(value)
     }
@@ -2113,7 +2113,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         None => {
                             return Err(Error::Panic(
                                 format!("ICE: Stack push out of bounds in {}", function.name),
-                                Some(self.stack.stack.stacktrace(0)),
+                                Some(self.stack.stack().stacktrace(0)),
                             ));
                         }
                     };
@@ -2178,7 +2178,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             Variants::from(alloc(
                                 &mut self.gc,
                                 self.thread,
-                                &self.stack.stack,
+                                &self.stack.stack(),
                                 Def {
                                     tag: tag,
                                     elems: fields,
@@ -2196,7 +2196,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         Variants::from(alloc(
                             &mut self.gc,
                             self.thread,
-                            &self.stack.stack,
+                            &self.stack.stack(),
                             VariantDef {
                                 tag: 10_000_000,
                                 poly_tag: Some(tag),
@@ -2217,7 +2217,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             Variants::from(alloc(
                                 self.gc,
                                 self.thread,
-                                &self.stack.stack,
+                                &self.stack.stack(),
                                 RecordDef {
                                     elems: fields,
                                     fields: field_names,
@@ -2236,7 +2236,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             Variants::from(alloc(
                                 &mut self.gc,
                                 self.thread,
-                                &self.stack.stack,
+                                &self.stack.stack(),
                                 UninitializedVariantDef {
                                     tag: tag,
                                     elems: args as usize,
@@ -2255,7 +2255,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             Variants::from(alloc(
                                 &mut self.gc,
                                 self.thread,
-                                &self.stack.stack,
+                                &self.stack.stack(),
                                 UninitializedRecord {
                                     elems: args as usize,
                                     fields: field_names,
@@ -2273,9 +2273,13 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             // closed it
                             unsafe {
                                 let mut data = data.unrooted();
-                                for var in data.as_mut().fields.iter_mut().rev() {
-                                    *var = self.stack.pop();
+                                let start = self.stack.len() - data.fields.len() as VmIndex;
+                                for (var, value) in
+                                    data.as_mut().fields.iter_mut().zip(&self.stack[start..])
+                                {
+                                    *var = value.clone_unrooted();
                                 }
+                                self.stack.pop_many(data.fields.len() as VmIndex);
                             }
                         }
                         x => ice!("Expected closure, got {:?}", x),
@@ -2287,7 +2291,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         alloc(
                             &mut self.gc,
                             self.thread,
-                            &self.stack.stack,
+                            &self.stack.stack(),
                             crate::value::ArrayDef(fields),
                         )?
                     };
@@ -2306,7 +2310,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     match self.stack.pop().get_repr() {
                         Data(data) => {
                             let v = GcRef::new(data).get_field(field).unwrap_or_else(|| {
-                                error!("{}", self.stack.stack.stacktrace(0));
+                                error!("{}", self.stack.stack().stacktrace(0));
                                 ice!("Field `{}` does not exist", field)
                             });
                             self.stack.push(v);
@@ -2392,7 +2396,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         Variants::from(alloc(
                             &mut self.gc,
                             self.thread,
-                            &self.stack.stack,
+                            &self.stack.stack(),
                             ClosureDataDef(func, args.iter()),
                         )?)
                     };
@@ -2409,7 +2413,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         Variants::from(alloc(
                             &mut self.gc,
                             self.thread,
-                            &self.stack.stack,
+                            &self.stack.stack(),
                             construct_gc!(ClosureInitDef(@func, upvars as usize)),
                         )?)
                     };
@@ -2424,11 +2428,15 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             // (which is done here).
                             unsafe {
                                 let mut closure = closure.clone_unrooted();
-                                for var in closure.as_mut().upvars.iter_mut().rev() {
-                                    *var = self.stack.pop();
+                                let start = self.stack.len() - closure.upvars.len() as VmIndex;
+                                for (var, value) in
+                                    closure.as_mut().upvars.iter_mut().zip(&self.stack[start..])
+                                {
+                                    *var = value.clone_unrooted();
                                 }
                             }
-                            self.stack.pop(); //Remove the closure
+                            let pop = closure.upvars.len() as VmIndex + 1;
+                            self.stack.pop_many(pop); //Remove the closure
                         }
                         x => ice!("Expected closure, got {:?}", x),
                     }
@@ -2515,7 +2523,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             if current_line != previous_line {
                 self.stack.frame_mut().state.instruction_index = index;
                 let info = DebugInfo {
-                    stack: &self.stack.stack,
+                    stack: &self.stack.stack(),
                     state: HookFlags::LINE_FLAG,
                 };
                 try_ready!(hook(self.thread, info))
@@ -2633,7 +2641,7 @@ where
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
                     let def = construct_gc!(PartialApplicationDataDef(@gc::Borrow::new(callable), fields));
-                    Variants::from(alloc(&mut self.gc, self.thread, &self.stack.stack, def)?)
+                    Variants::from(alloc(&mut self.gc, self.thread, &self.stack.stack(), def)?)
                 };
                 self.stack.pop_many(args + 1);
                 self.stack.push(app);
@@ -2646,7 +2654,7 @@ where
                     alloc(
                         &mut self.gc,
                         self.thread,
-                        &self.stack.stack,
+                        &self.stack.stack(),
                         Def {
                             tag: 0,
                             elems: fields,
@@ -2662,7 +2670,7 @@ where
                 trace!(
                     "xxxxxx {:?}\n{:?}",
                     &(*self.stack)[..],
-                    self.stack.stack.get_frames()
+                    self.stack.stack().get_frames()
                 );
                 self.execute_callable(&callable, true)
             }
@@ -2874,8 +2882,8 @@ impl<'vm> ActiveThread<'vm> {
 }
 #[doc(hidden)]
 pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<crate::stack::Stacktrace> {
-    let trace = stack.stack.stacktrace(level);
-    while stack.stack.get_frames().len() > level {
+    let trace = stack.stack().stacktrace(level);
+    while stack.stack().get_frames().len() > level {
         stack = match stack.exit_scope() {
             Ok(s) => s,
             Err(_) => return Err(format!("Attempted to exit scope above current").into()),

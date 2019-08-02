@@ -592,7 +592,7 @@ pub struct StackFrame<'b, S = State>
 where
     S: StackState,
 {
-    pub stack: &'b mut Stack,
+    stack: &'b mut Stack,
     // Offset is needed for indexing which is frequent enough to warrant explicit caching. It
     // should never change as well while mutating a frame
     offset: VmIndex,
@@ -651,6 +651,10 @@ where
 {
     fn offset(&self) -> VmIndex {
         self.offset
+    }
+
+    pub(crate) fn stack(&self) -> &Stack {
+        &self.stack
     }
 
     pub fn frame(&self) -> FrameView<S> {

@@ -53,7 +53,7 @@ pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + S
 
 macro_rules! alloc {
     ($context: ident, $data: expr) => {
-        $crate::thread::alloc($context.gc, $context.thread, &$context.stack.stack, $data)
+        $crate::thread::alloc($context.gc, $context.thread, &$context.stack.stack(), $data)
     };
 }
 
