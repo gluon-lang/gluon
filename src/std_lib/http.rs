@@ -1,4 +1,3 @@
-
 use crate::real_std::{
     fmt, fs,
     path::Path,
@@ -6,17 +5,17 @@ use crate::real_std::{
 };
 
 use {
-    
-collect_mac::collect,
-futures::{
-    future::{self, Either},
-    Async, Future, Stream,
-}
-    http::StatusCode, hyper::service::Service, hyper::Chunk, hyper::Server};
-
-
-
-use self::http::header::{HeaderMap, HeaderName, HeaderValue};
+    collect_mac::collect,
+    futures::{
+        future::{self, Either},
+        Async, Future, Stream,
+    },
+    http::{
+        header::{HeaderMap, HeaderName, HeaderValue},
+        StatusCode,
+    },
+    hyper::{service::Service, Chunk, Server},
+};
 
 use crate::base::types::{ArcType, Type};
 
