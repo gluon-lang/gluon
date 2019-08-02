@@ -1541,7 +1541,7 @@ impl<'t> Cloner<'t> {
         alloc: A,
     ) -> Result<StdResult<ValueRepr, R>>
     where
-        A: FnOnce(&mut Gc, &T) -> Result<(ValueRepr, R)>,
+        A: for<'s> FnOnce(&'s mut Gc, &T) -> Result<(gc::Borrow<'s, ValueRepr>, gc::Borrow<'s, R>)>,
     {
         let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
@@ -1549,8 +1549,8 @@ impl<'t> Cloner<'t> {
             Entry::Vacant(entry) => {
                 // FIXME Should allocate the real `Value` and possibly fill it later
                 let (value, new_ptr) = alloc(self.gc, &value)?;
-                entry.insert(value);
-                new_ptr
+                entry.insert(value.unrooted());
+                new_ptr.unrooted()
             }
         };
         Ok(Err(new_ptr))
@@ -1559,8 +1559,8 @@ impl<'t> Cloner<'t> {
     unsafe fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
         Ok(self
             .deep_clone_ptr(data, |gc, _| {
-                let ptr = gc.alloc(&data[..])?.unrooted();
-                Ok((String(ptr), ptr))
+                let ptr = gc.alloc(&data[..])?;
+                Ok((construct_gc!(String(@ptr)), ptr))
             })?
             .unwrap_or_else(String))
     }
@@ -1572,16 +1572,14 @@ impl<'t> Cloner<'t> {
                     fields: data_ptr.field_names(),
                     elems: &data.fields,
                 })?
-                .unrooted()
             } else {
                 gc.alloc(VariantDef {
                     tag: data.tag,
                     poly_tag: data_ptr.poly_tag(),
                     elems: &data.fields,
                 })?
-                .unrooted()
             };
-            Ok((ValueRepr::Data(ptr), ptr))
+            Ok((construct_gc!(ValueRepr::Data(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Data(ptr)) => Ok(ptr),
@@ -1621,8 +1619,8 @@ impl<'t> Cloner<'t> {
         }
 
         let result = self.deep_clone_ptr(array, |gc, array| {
-            let ptr = gc.alloc(array)?.unrooted();
-            Ok((ValueRepr::Array(ptr), ptr))
+            let ptr = gc.alloc(array)?;
+            Ok((construct_gc!(ValueRepr::Array(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Array(ptr)) => Ok(ptr),
@@ -1649,10 +1647,8 @@ impl<'t> Cloner<'t> {
         let result = self.deep_clone_ptr(data, |gc, data| {
             debug_assert!(data.function.generation().is_root());
 
-            let ptr = gc
-                .alloc(ClosureDataDef(&data.function, data.upvars.iter()))?
-                .unrooted();
-            Ok((Closure(ptr), ptr))
+            let ptr = gc.alloc(ClosureDataDef(&data.function, data.upvars.iter()))?;
+            Ok((construct_gc!(Closure(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Closure(ptr)) => Ok(ptr),
@@ -1680,10 +1676,8 @@ impl<'t> Cloner<'t> {
         };
 
         let result = self.deep_clone_ptr(data, |gc, data| {
-            let ptr = gc
-                .alloc(PartialApplicationDataDef(function, &data.args))?
-                .unrooted();
-            Ok((ValueRepr::PartialApplication(ptr), ptr))
+            let ptr = gc.alloc(PartialApplicationDataDef(function, &data.args))?;
+            Ok((construct_gc!(ValueRepr::PartialApplication(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::PartialApplication(ptr)) => Ok(ptr),

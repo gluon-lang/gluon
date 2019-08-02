@@ -728,9 +728,9 @@ macro_rules! impl_trace {
 #[macro_export]
 macro_rules! construct_enum_gc {
     (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr, $($rest: tt)*) => { {
-        let ptr = $expr;
+        let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
-                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&ptr) },]
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
                       [$($ptr)* ptr]
                       $($rest)*
         )
@@ -745,9 +745,9 @@ macro_rules! construct_enum_gc {
     };
 
     (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr) => { {
-        let ptr = $expr;
+        let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
-                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&ptr) },]
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
                       [$($ptr)* ptr]
         )
     } };
