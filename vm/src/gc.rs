@@ -21,6 +21,36 @@ use crate::{
 
 pub mod mutex;
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_trace {
+    ($self_: tt, $gc: ident, $body: expr) => {
+        unsafe fn root(&$self_) {
+            #[allow(unused)]
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::root(this)
+            }
+            let $gc = ();
+            $body
+        }
+        unsafe fn unroot(&$self_) {
+            #[allow(unused)]
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::unroot(this)
+            }
+            let $gc = ();
+            $body
+        }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+            #[allow(unused)]
+            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
+                Trace::trace(this, gc)
+            }
+            $body
+        }
+    }
+}
+
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
     // Allocate an extra element if it does not fit exactly
@@ -163,7 +193,7 @@ pub struct Gc {
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     type_infos: FnvMap<TypeId, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    record_infos: FnvMap<Vec<InternedStr>, Box<TypeInfo>>,
+    record_infos: FnvMap<Arc<[InternedStr]>, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     tag_infos: FnvMap<InternedStr, Box<TypeInfo>>,
     /// The generation of a gc determines what values it needs to copy and what values it can
@@ -234,7 +264,7 @@ pub unsafe trait DataDef {
         None
     }
 
-    fn tag(&self) -> Option<InternedStr> {
+    fn tag(&self) -> Option<&InternedStr> {
         None
     }
 }
@@ -264,7 +294,7 @@ struct TypeInfo {
     generation: Generation,
     tag: Option<InternedStr>,
     fields: FnvMap<InternedStr, VmIndex>,
-    fields_key: Arc<Vec<InternedStr>>,
+    fields_key: Arc<[InternedStr]>,
 }
 
 #[derive(Debug)]
@@ -437,6 +467,13 @@ where
     }
 }
 
+unsafe impl<T> Trace for Borrow<'_, T>
+where
+    T: Trace,
+{
+    impl_trace! { self, gc, mark(&**self, gc) }
+}
+
 unsafe impl<'a, T> DataDef for Borrow<'a, T>
 where
     T: DataDef,
@@ -531,14 +568,6 @@ pub struct GcPtr<T: ?Sized>(NonNull<T>);
 unsafe impl<T: ?Sized + Send + Sync> Send for GcPtr<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for GcPtr<T> {}
 
-impl<T: ?Sized> Copy for GcPtr<T> {}
-
-impl<T: ?Sized> Clone for GcPtr<T> {
-    fn clone(&self) -> GcPtr<T> {
-        GcPtr(self.0)
-    }
-}
-
 impl<T: ?Sized> Deref for GcPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
@@ -614,15 +643,15 @@ impl<T: ?Sized> GcPtr<T> {
         self.header().generation()
     }
 
-    pub fn poly_tag(&self) -> Option<InternedStr> {
-        self.type_info().tag
+    pub fn poly_tag(&self) -> Option<&InternedStr> {
+        self.type_info().tag.as_ref()
     }
 
     pub fn field_map(&self) -> &FnvMap<InternedStr, VmIndex> {
         &self.type_info().fields
     }
 
-    pub fn field_names(&self) -> &Arc<Vec<InternedStr>> {
+    pub fn field_names(&self) -> &Arc<[InternedStr]> {
         &self.type_info().fields_key
     }
 
@@ -632,6 +661,11 @@ impl<T: ?Sized> GcPtr<T> {
 
     pub fn ptr_eq(&self, other: &GcPtr<T>) -> bool {
         ptr::eq::<T>(&**self, &**other)
+    }
+
+    #[doc(hidden)]
+    pub(crate) unsafe fn clone(&self) -> Self {
+        GcPtr(self.0)
     }
 
     pub unsafe fn unrooted(&self) -> Self {
@@ -692,36 +726,6 @@ pub unsafe trait Trace {
 
     fn trace(&self, gc: &mut Gc) {
         let _ = gc;
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! impl_trace {
-    ($self_: tt, $gc: ident, $body: expr) => {
-        unsafe fn root(&$self_) {
-            #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
-                Trace::root(this)
-            }
-            let $gc = ();
-            $body
-        }
-        unsafe fn unroot(&$self_) {
-            #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
-                Trace::unroot(this)
-            }
-            let $gc = ();
-            $body
-        }
-        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
-            #[allow(unused)]
-            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
-                Trace::trace(this, gc)
-            }
-            $body
-        }
     }
 }
 
@@ -943,7 +947,7 @@ where
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
     fn trace(&self, gc: &mut Gc) {
-        if !gc.mark(*self) {
+        if !gc.mark(self) {
             // Continue traversing if this ptr was not already marked
             (**self).trace(gc);
         }
@@ -1050,7 +1054,7 @@ impl Gc {
 
     fn get_type_info(
         &mut self,
-        tag: Option<InternedStr>,
+        tag: Option<&InternedStr>,
         fields: Option<&[InternedStr]>,
         type_id: TypeId,
         drop: unsafe fn(*mut ()),
@@ -1062,30 +1066,40 @@ impl Gc {
                 .map(|info| &**info as *const _)
             {
                 Some(info) => info,
-                None => &**self
-                    .record_infos
-                    .entry(fields.to_owned())
-                    .or_insert(Box::new(TypeInfo {
-                        drop,
-                        generation: self.generation,
-                        tag,
-                        fields: fields
+                None => {
+                    let owned_fields: Arc<[InternedStr]> = Arc::from(
+                        fields
                             .iter()
-                            .enumerate()
-                            .map(|(i, s)| (*s, i as VmIndex))
-                            .collect(),
-                        fields_key: Arc::new(fields.to_owned()),
-                    })),
+                            .map(|v| unsafe { v.clone_unrooted() })
+                            .collect::<Vec<_>>(),
+                    );
+                    &**self
+                        .record_infos
+                        .entry(owned_fields.clone())
+                        .or_insert(Box::new(TypeInfo {
+                            drop,
+                            generation: self.generation,
+                            tag: unsafe { tag.map(|tag| tag.clone_unrooted()) },
+                            fields: unsafe {
+                                fields
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, ref s)| (s.clone_unrooted(), i as VmIndex))
+                                    .collect()
+                            },
+                            fields_key: owned_fields,
+                        }))
+                }
             },
             None => match tag {
-                Some(tag) => match self.tag_infos.entry(tag) {
+                Some(tag) => match self.tag_infos.entry(unsafe { tag.clone_unrooted() }) {
                     Entry::Occupied(entry) => &**entry.get(),
                     Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
                         drop,
                         generation: self.generation,
-                        tag: Some(tag),
+                        tag: Some(unsafe { tag.clone_unrooted() }),
                         fields: FnvMap::default(),
-                        fields_key: Arc::new(Vec::new()),
+                        fields_key: Arc::from(Vec::new()),
                     })),
                 },
                 None => match self.type_infos.entry(type_id) {
@@ -1093,9 +1107,9 @@ impl Gc {
                     Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
                         drop,
                         generation: self.generation,
-                        tag,
+                        tag: None,
                         fields: FnvMap::default(),
-                        fields_key: Arc::new(Vec::new()),
+                        fields_key: Arc::from(Vec::new()),
                     })),
                 },
             },
@@ -1162,7 +1176,7 @@ impl Gc {
 
     /// Marks the GcPtr
     /// Returns true if the pointer was already marked
-    pub fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
+    pub fn mark<T: ?Sized>(&mut self, value: &GcPtr<T>) -> bool {
         let header = value.header();
         // We only need to mark and trace values from this garbage collectors generation
         if header.generation().is_parent_of(self.generation()) || header.marked.get() {

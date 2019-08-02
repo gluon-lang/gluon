@@ -176,24 +176,53 @@ impl NodeMap {
     where
         T: Any + Clone,
     {
+        self.get_with(id, T::clone)
+    }
+
+    pub fn get_with<T, F>(&self, id: Id, clone: F) -> Option<T>
+    where
+        T: Any,
+        F: FnOnce(&T) -> T,
+    {
         self.0
             .borrow()
             .get::<IdToShared<T>>()
-            .and_then(|map| map.get(&id).cloned())
+            .and_then(|map| map.get(&id).map(clone))
     }
 }
 
-pub struct SharedSeed<'seed, T, S: 'seed>(pub &'seed mut S, PhantomData<T>);
+pub struct SharedSeed<'seed, T, S: 'seed> {
+    pub seed: &'seed mut S,
+    cloner: fn(&T) -> T,
+    _marker: PhantomData<T>,
+}
 
 impl<'seed, T, S> SharedSeed<'seed, T, S> {
-    pub fn new(s: &'seed mut S) -> Self {
-        SharedSeed(s, PhantomData)
+    pub fn with_cloner(seed: &'seed mut S, cloner: fn(&T) -> T) -> Self {
+        SharedSeed {
+            seed,
+            cloner,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'seed, T, S> SharedSeed<'seed, T, S>
+where
+    T: Clone,
+{
+    pub fn new(seed: &'seed mut S) -> SharedSeed<'seed, T, S> {
+        SharedSeed {
+            seed,
+            cloner: T::clone,
+            _marker: PhantomData,
+        }
     }
 }
 
 impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
     fn as_mut(&mut self) -> &mut S {
-        self.0
+        self.seed
     }
 }
 
@@ -220,7 +249,7 @@ impl<'de, 'seed, T, S> DeserializeSeed<'de> for SharedSeed<'seed, T, S>
 where
     T: DeserializeState<'de, S>,
     S: AsMut<NodeMap>,
-    T: Any + Clone,
+    T: Any,
 {
     type Value = T;
 
@@ -228,13 +257,13 @@ where
     where
         D: Deserializer<'de>,
     {
-        match Variant::<T>::deserialize_state(self.0, deserializer)? {
+        match Variant::<T>::deserialize_state(self.seed, deserializer)? {
             Variant::Marked(id, node) => {
-                self.0.as_mut().insert(id, node.clone());
+                self.seed.as_mut().insert(id, (self.cloner)(&node));
                 Ok(node)
             }
             Variant::Plain(value) => Ok(value),
-            Variant::Reference(id) => match self.0.as_mut().get(id) {
+            Variant::Reference(id) => match self.seed.as_mut().get_with(id, self.cloner) {
                 Some(rc) => Ok(rc),
                 None => Err(D::Error::custom(format_args!("missing id {}", id))),
             },

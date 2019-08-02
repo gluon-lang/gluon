@@ -1,16 +1,28 @@
-use crate::base::fnv::FnvMap;
-use crate::Result;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use crate::gc::{Gc, Trace};
-use crate::value::GcStr;
+use crate::base::fnv::FnvMap;
+
+use crate::{
+    forget_lifetime,
+    gc::{CloneUnrooted, CopyUnrooted, Gc, Trace},
+    value::GcStr,
+    Result,
+};
 
 /// Interned strings which allow for fast equality checks and hashing
-#[derive(Copy, Clone, Eq)]
+#[derive(Eq)]
 pub struct InternedStr(GcStr);
+
+unsafe impl CopyUnrooted for InternedStr {}
+impl CloneUnrooted for InternedStr {
+    type Value = Self;
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        self.copy_unrooted()
+    }
+}
 
 // InternedStr are explicitly scanned in the intern table so we can skip them when they are
 // encountered elsewhere
@@ -67,8 +79,8 @@ impl AsRef<str> for InternedStr {
 }
 
 impl InternedStr {
-    pub fn inner(&self) -> GcStr {
-        self.0
+    pub fn inner(&self) -> &GcStr {
+        &self.0
     }
 }
 
@@ -110,17 +122,21 @@ impl Interner {
     }
 
     pub fn intern(&mut self, gc: &mut Gc, s: &str) -> Result<InternedStr> {
-        match self.indexes.get(s) {
-            Some(interned_str) => return Ok(*interned_str),
-            None => (),
-        }
         // SAFETY The interner is scanned
-        let gc_str = unsafe { InternedStr(gc.alloc(s)?.unrooted()) };
-        // The key will live as long as the value it refers to and the static str never escapes
-        // outside interner so this is safe
-        let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
-        self.indexes.insert(key, gc_str);
-        Ok(gc_str)
+        unsafe {
+            match self.indexes.get(s) {
+                Some(interned_str) => return Ok(interned_str.clone_unrooted()),
+                None => (),
+            }
+
+            let gc_str = InternedStr(gc.alloc(s)?.unrooted());
+
+            // The key will live as long as the value it refers to and the static str never escapes
+            // outside interner so this is safe
+            let key: &'static str = forget_lifetime(&gc_str);
+            self.indexes.insert(key, gc_str.clone_unrooted());
+            Ok(gc_str)
+        }
     }
 }
 

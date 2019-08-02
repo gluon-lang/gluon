@@ -1,22 +1,22 @@
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
 
 use itertools::Itertools;
 
-use crate::serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
-use crate::serde::ser::{Seeded, Serialize, SerializeSeq, SerializeState, Serializer};
-use crate::serde::Deserializer;
+use crate::serde::{
+    de::{Deserialize, DeserializeSeed, DeserializeState, Error},
+    ser::{Seeded, Serialize, SerializeSeq, SerializeState, Serializer},
+    Deserializer,
+};
 
-use crate::base::serialization::{NodeMap, NodeToId};
-use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::ArcType;
+use crate::base::{
+    serialization::{NodeMap, NodeToId, SharedSeed},
+    symbol::{Symbol, Symbols},
+    types::ArcType,
+};
 
 use crate::{
     array::Array,
-    gc::{DataDef, GcPtr, GcRef, OwnedGcRef, WriteOnly},
+    gc::{CloneUnrooted, DataDef, GcPtr, GcRef, OwnedGcRef, WriteOnly},
     stack::State,
     thread::{ActiveThread, ExecuteContext, RootedThread, RootedValue, Thread, ThreadInternal},
     types::VmIndex,
@@ -77,6 +77,10 @@ impl SeSeed {
             node_to_id: Default::default(),
         }
     }
+}
+
+fn gc_seed<S, T>(seed: &mut S) -> SharedSeed<GcPtr<T>, S> {
+    SharedSeed::with_cloner(seed, |p| unsafe { p.clone_unrooted() })
 }
 
 pub struct Seed<'a, 'gc, T> {
@@ -235,8 +239,6 @@ pub mod gc {
     where
         D: Deserializer<'de>,
     {
-        use crate::base::serialization::SharedSeed;
-
         struct GcSeed<'a, 'gc> {
             state: &'a mut DeSeed<'gc>,
         }
@@ -287,7 +289,7 @@ pub mod gc {
 
         let mut seed = GcSeed { state: seed };
 
-        DeserializeSeed::deserialize(SharedSeed::new(&mut seed), deserializer)
+        DeserializeSeed::deserialize(gc_seed(&mut seed), deserializer)
     }
 
     impl<'de, 'gc> DeserializeState<'de, DeSeed<'gc>> for GcStr {
@@ -514,7 +516,7 @@ impl SerializeState<SeSeed> for ClosureData {
             serializer.serialize_element(&GraphVariant::Marked(len))?;
             node_to_id.insert(self_id, len);
         }
-        serializer.serialize_element(&Seeded::new(seed, self.function))?;
+        serializer.serialize_element(&Seeded::new(seed, &self.function))?;
         serializer.serialize_element(&self.upvars.len())?;
         for item in self.upvars.iter() {
             serializer.serialize_element(&Seeded::new(seed, item))?;
@@ -580,7 +582,7 @@ pub mod closure {
                                         })
                                         .map_err(V::Error::custom)?
                                         .unrooted();
-                                    self.state.gc_map.insert(id, closure);
+                                    self.state.gc_map.insert(id, closure.clone_unrooted());
 
                                     for i in 0..upvars {
                                         let value = seq
@@ -595,7 +597,12 @@ pub mod closure {
                                     Ok(closure)
                                 }
                                 GraphVariant::Reference(id) => {
-                                    match self.state.gc_map.get::<GcPtr<ClosureData>>(id) {
+                                    match self
+                                        .state
+                                        .gc_map
+                                        .get_with::<GcPtr<ClosureData>, _>(id, |p| {
+                                            p.clone_unrooted()
+                                        }) {
                                         Some(rc) => Ok(rc),
                                         None => {
                                             Err(V::Error::custom(format_args!("missing id {}", id)))
@@ -718,8 +725,6 @@ where
     where
         D: Deserializer<'de>,
     {
-        use crate::base::serialization::SharedSeed;
-
         struct GcSeed<'a, 'gc, T> {
             _marker: PhantomData<T>,
             state: &'a mut DeSeed<'gc>,
@@ -759,7 +764,7 @@ where
             state: self.state,
         };
 
-        DeserializeSeed::deserialize(SharedSeed::new(&mut seed), deserializer)
+        DeserializeSeed::deserialize(gc_seed(&mut seed), deserializer)
     }
 }
 

@@ -328,7 +328,7 @@ impl<'vm> RootedValue<&'vm Thread> {
 }
 
 struct Roots<'b> {
-    vm: GcPtr<Thread>,
+    vm: &'b GcPtr<Thread>,
     stack: &'b Stack,
 }
 unsafe impl<'b> Trace for Roots<'b> {
@@ -342,7 +342,7 @@ unsafe impl<'b> Trace for Roots<'b> {
     fn trace(&self, gc: &mut Gc) {
         // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
         // it from being traced normally
-        gc.mark(self.vm);
+        gc.mark(&self.vm);
         self.stack.trace(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traced above
@@ -389,8 +389,8 @@ impl<'b> Roots<'b> {
         stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
 
         while let Some(thread_ptr) = stack.pop() {
-            if locks.iter().any(|&(_, _, lock_thread)| {
-                &*thread_ptr as *const Thread == &*lock_thread as *const Thread
+            if locks.iter().any(|&(_, _, ref lock_thread)| {
+                &*thread_ptr as *const Thread == &**lock_thread as *const Thread
             }) {
                 continue;
             }
@@ -404,7 +404,7 @@ impl<'b> Roots<'b> {
             // Since we locked the context we need to scan the thread using `Roots` rather than
             // letting it be scanned normally
             Roots {
-                vm: thread_ptr,
+                vm: &thread_ptr,
                 stack: &context.stack,
             }
             .trace(gc);
@@ -499,7 +499,7 @@ impl VmType for RootedThread {
 
 impl<'vm> Pushable<'vm> for RootedThread {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(ValueRepr::Thread(self.thread));
+        context.push(construct_gc!(ValueRepr::Thread(@&self.thread)));
         Ok(())
     }
 }
@@ -675,7 +675,7 @@ impl RootedThread {
             let entry = parent_threads.vacant_entry();
             ptr.thread_index = entry.key();
             let ptr = GcPtr::from(ptr);
-            entry.insert((ptr, 0));
+            entry.insert((ptr.unrooted(), 0));
             ptr
         };
 
@@ -776,7 +776,7 @@ impl Thread {
                 let entry = parent_threads.vacant_entry();
                 ptr.thread_index = entry.key();
                 let ptr = GcRef::from(ptr).unrooted();
-                entry.insert((ptr, 0));
+                entry.insert((ptr.clone_unrooted(), 0));
                 ptr
             }
         };
@@ -1042,11 +1042,12 @@ impl Thread {
                     && context as usize <= self_context.offset(1) as usize
             });
         }
+        let ptr = unsafe {
+            // Threads must only be on the garbage collectors heap which makes this safe
+            GcPtr::from_raw(self)
+        };
         let roots = Roots {
-            vm: unsafe {
-                // Threads must only be on the garbage collectors heap which makes this safe
-                GcPtr::from_raw(self)
-            },
+            vm: &ptr,
             stack: &context.stack,
         };
         f(&mut context.gc, roots)
@@ -1206,7 +1207,7 @@ impl ThreadInternal for Thread {
         closure: GcPtr<ClosureData>,
     ) -> FutureValue<Execute<RootedThread>> {
         let mut context = self.owned_context();
-        context.stack.push(Closure(closure));
+        context.stack.push(construct_gc!(Closure(@&closure)));
         StackFrame::<State>::current(&mut context.stack).enter_scope(
             0,
             &ClosureState {
@@ -1679,9 +1680,10 @@ where
     D::Value: Sized + Any,
 {
     unsafe {
+        let ptr = GcPtr::from_raw(thread);
         let roots = Roots {
             // Threads must only be on the garbage collectors heap which makes this safe
-            vm: GcPtr::from_raw(thread),
+            vm: &ptr,
             stack: stack,
         };
         gc.alloc_and_collect(roots, def)
@@ -2140,8 +2142,9 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     self.stack.push(ValueRepr::Byte(b));
                 }
                 PushString(string_index) => {
-                    self.stack
-                        .push(String(function.strings[string_index as usize].inner()));
+                    self.stack.push(
+                        &*construct_gc!(String(@function.strings[string_index as usize].inner())),
+                    );
                 }
                 PushFloat(f) => self.stack.push(Float(f)),
                 Call(args) => {
@@ -2202,7 +2205,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 }
                 ConstructPolyVariant { tag, args } => {
                     let d = {
-                        let tag = function.strings[tag as usize];
+                        let tag = &function.strings[tag as usize];
                         let fields = &self.stack[self.stack.len() - args..];
                         Variants::from(alloc(
                             &mut self.gc,
@@ -2278,11 +2281,12 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 }
                 CloseData { index } => {
                     match self.stack[index].get_repr() {
-                        Data(mut data) => {
+                        Data(data) => {
                             // Unique access is safe as the record is only reachable from this
                             // thread and none of those places will use it until after we have
                             // closed it
                             unsafe {
+                                let mut data = data.unrooted();
                                 for var in data.as_mut().fields.iter_mut().rev() {
                                     *var = self.stack.pop();
                                 }
@@ -2312,7 +2316,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
                 },
                 GetField(i) => {
-                    let field = function.strings[i as usize];
+                    let field = &function.strings[i as usize];
                     match self.stack.pop().get_repr() {
                         Data(data) => {
                             let v = GcRef::new(data).get_field(field).unwrap_or_else(|| {
@@ -2340,7 +2344,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         .push(ValueRepr::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 TestPolyTag(string_index) => {
-                    let expected_tag = function.strings[string_index as usize];
+                    let expected_tag = &function.strings[string_index as usize];
                     let data_tag = match self.stack.top().get_repr() {
                         Data(ref data) => data.poly_tag(),
                         _ => {
@@ -2358,12 +2362,9 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             _ => unreachable!(),
                         }
                     );
-                    self.stack
-                        .push(ValueRepr::Tag(if data_tag == Some(expected_tag) {
-                            1
-                        } else {
-                            0
-                        }));
+
+                    let value = ValueRepr::Tag(if data_tag == Some(expected_tag) { 1 } else { 0 });
+                    self.stack.push(value);
                 }
                 Split => {
                     match self.stack.pop().get_repr() {
@@ -2418,12 +2419,12 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 } => {
                     let closure = {
                         // Use dummy variables until it is filled
-                        let func = function.inner_functions[function_index as usize];
+                        let func = &function.inner_functions[function_index as usize];
                         Variants::from(alloc(
                             &mut self.gc,
                             self.thread,
                             &self.stack.stack,
-                            ClosureInitDef(func, upvars as usize),
+                            construct_gc!(ClosureInitDef(@func, upvars as usize)),
                         )?)
                     };
                     self.stack.push(closure);
@@ -2431,11 +2432,12 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 CloseClosure(n) => {
                     let i = self.stack.len() - n - 1;
                     match self.stack[i].get_repr() {
-                        Closure(mut closure) => {
+                        Closure(closure) => {
                             // Unique access should be safe as this closure should not be shared as
                             // it has just been allocated and havent even had its upvars set yet
                             // (which is done here).
                             unsafe {
+                                let mut closure = closure.clone_unrooted();
                                 for var in closure.as_mut().upvars.iter_mut().rev() {
                                     *var = self.stack.pop();
                                 }
@@ -2578,19 +2580,19 @@ where
     }
 
     fn execute_callable(self, function: &'gc Callable, excess: bool) -> Result<()> {
-        match *function {
+        match function {
             Callable::Closure(closure) => {
                 let mut next = self.enter_scope(
                     closure.function.args,
-                    &ClosureState {
-                        closure,
+                    &*construct_gc!(ClosureState {
+                        @closure,
                         instruction_index: 0,
-                    },
+                    }),
                 );
                 *next.stack.frame_mut().excess = excess;
                 Ok(())
             }
-            Callable::Extern(ref ext) => {
+            Callable::Extern(ext) => {
                 assert!(self.stack.len() >= ext.args + 1);
                 let function_index = self.stack.len() - ext.args - 1;
                 trace!("------- {} {:?}", function_index, &self.stack[..]);
@@ -2604,7 +2606,7 @@ where
         mut self,
         args: VmIndex,
         required_args: VmIndex,
-        callable: Callable,
+        callable: &Callable,
     ) -> Result<()> {
         trace!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
@@ -2615,7 +2617,7 @@ where
             Ordering::Less => {
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
-                    let def = PartialApplicationDataDef(callable, fields);
+                    let def = construct_gc!(PartialApplicationDataDef(@gc::Borrow::new(callable), fields));
                     Variants::from(alloc(&mut self.gc, self.thread, &self.stack.stack, def)?)
                 };
                 self.stack.pop_many(args + 1);
@@ -2659,24 +2661,21 @@ where
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
         );
-        // FIXME unsafe
-        match unsafe { self.stack[function_index].get_repr().clone_unrooted() } {
-            Function(ref f) => {
-                let callable = Callable::Extern(f.clone());
-                self.call_function_with_upvars(args, f.args, callable)
+        let value = unsafe { self.stack[function_index].get_repr().clone_unrooted() };
+        match &value {
+            Function(f) => {
+                let callable = construct_gc!(Callable::Extern(@gc::Borrow::new(f)));
+                self.call_function_with_upvars(args, f.args, &callable)
             }
-            Closure(ref closure) => {
-                let callable = Callable::Closure(closure.clone());
-                self.call_function_with_upvars(args, closure.function.args, callable)
+            Closure(closure) => {
+                let callable = construct_gc!(Callable::Closure(@gc::Borrow::new(closure)));
+                self.call_function_with_upvars(args, closure.function.args, &callable)
             }
             PartialApplication(app) => {
                 let total_args = app.args.len() as VmIndex + args;
                 let offset = self.stack.len() - args;
                 self.stack.insert_slice(offset, &app.args);
-                // FIXME unsafe
-                self.call_function_with_upvars(total_args, app.function.args(), unsafe {
-                    app.function.clone_unrooted()
-                })
+                self.call_function_with_upvars(total_args, app.function.args(), &app.function)
             }
             x => Err(Error::Message(format!("Cannot call {:?}", x))),
         }

@@ -42,6 +42,21 @@ impl<'a, T: StackPrimitive + 'a> StackPrimitive for &'a T {
     }
 }
 
+impl<'a, T: StackPrimitive + 'a> StackPrimitive for gc::Borrow<'a, T> {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        (**self).push_to(stack)
+    }
+
+    fn extend_to<'b, I>(iter: I, stack: &mut Stack)
+    where
+        I: IntoIterator<Item = &'b Self>,
+        Self: 'b,
+    {
+        StackPrimitive::extend_to(iter.into_iter().map(|i| &**i), stack)
+    }
+}
+
 impl<'a> StackPrimitive for Variants<'a> {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
@@ -94,7 +109,7 @@ impl StackPrimitive for Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -125,7 +140,7 @@ impl CloneUnrooted for ClosureState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub(crate) enum ExternCallState {
     Start,
@@ -133,7 +148,7 @@ pub(crate) enum ExternCallState {
     Poll,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -233,7 +248,7 @@ impl StackState for ExternState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -261,7 +276,7 @@ impl CloneUnrooted for State {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -794,7 +809,6 @@ where
         state: gc::Borrow<'gc, State>,
     ) -> gc::Borrow<'gc, Frame> {
         assert!(stack.len() >= args);
-        let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
         let frame = construct_gc!(Frame {
             offset,
@@ -820,12 +834,7 @@ where
         unsafe {
             stack.frames.push(frame.clone_unrooted());
         }
-        debug!(
-            "----> Store {} {:?}\n||| {:?}",
-            stack.frames.len(),
-            frame,
-            prev
-        );
+        debug!("----> Store {} {:?}", stack.frames.len(), frame,);
         frame
     }
 }

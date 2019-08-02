@@ -244,10 +244,10 @@ impl<'a> Data<'a> {
     }
 
     #[doc(hidden)]
-    pub fn field_names(&self) -> Vec<crate::interner::InternedStr> {
+    pub fn field_names(&self) -> impl Iterator<Item = &crate::interner::InternedStr> {
         match &self.0 {
-            DataInner::Tag(_) => Vec::new(),
-            DataInner::Data(data) => data.field_map().keys().cloned().collect(),
+            DataInner::Tag(_) => itertools::Either::Left(None.into_iter()),
+            DataInner::Data(data) => itertools::Either::Right(data.field_map().keys()),
         }
     }
 }
