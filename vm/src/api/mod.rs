@@ -6,7 +6,7 @@ use crate::base::{
 };
 use crate::{
     forget_lifetime,
-    gc::{DataDef, GcRef, Move, Trace},
+    gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},

@@ -7,7 +7,7 @@ use std::{
 use crate::base::{pos::Line, symbol::Symbol};
 
 use crate::{
-    gc::{self, CloneUnrooted, GcPtr, Trace},
+    gc::{self, CloneUnrooted, CopyUnrooted, GcPtr, Trace},
     types::VmIndex,
     value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr},
     Variants,
@@ -116,13 +116,12 @@ pub struct ClosureState {
     pub(crate) instruction_index: usize,
 }
 
+unsafe impl CopyUnrooted for ClosureState {}
 impl CloneUnrooted for ClosureState {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
-        ClosureState {
-            closure: self.closure.clone_unrooted(),
-            instruction_index: self.instruction_index,
-        }
+        self.copy_unrooted()
     }
 }
 
@@ -155,14 +154,12 @@ pub struct ExternState {
     locked: Option<VmIndex>,
 }
 
+unsafe impl CopyUnrooted for ExternState {}
 impl CloneUnrooted for ExternState {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
-        ExternState {
-            function: self.function.clone_unrooted(),
-            call_state: self.call_state.clone(),
-            locked: self.locked.clone(),
-        }
+        self.copy_unrooted()
     }
 }
 
@@ -182,7 +179,7 @@ impl ExternState {
     }
 }
 
-pub trait StackState: CloneUnrooted<Value = Self> + Sized {
+pub trait StackState: CopyUnrooted + Sized {
     fn from_state(state: &State) -> &Self;
     fn from_state_mut(state: &mut State) -> &mut Self;
     fn to_state(&self) -> gc::Borrow<State>;
@@ -255,14 +252,12 @@ pub enum State {
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] ExternState),
 }
 
+unsafe impl CopyUnrooted for State {}
 impl CloneUnrooted for State {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
-        match self {
-            State::Unknown => State::Unknown,
-            State::Closure(x) => State::Closure(x.clone_unrooted()),
-            State::Extern(x) => State::Extern(x.clone_unrooted()),
-        }
+        self.copy_unrooted()
     }
 }
 
@@ -292,17 +287,15 @@ pub struct Frame<S = State> {
     pub excess: bool,
 }
 
+unsafe impl<S> CopyUnrooted for Frame<S> where S: CopyUnrooted {}
 impl<S> CloneUnrooted for Frame<S>
 where
-    S: CloneUnrooted<Value = S>,
+    S: CopyUnrooted,
 {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
-        Frame {
-            offset: self.offset,
-            state: self.state.clone_unrooted(),
-            excess: self.excess,
-        }
+        self.copy_unrooted()
     }
 }
 

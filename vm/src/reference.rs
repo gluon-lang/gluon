@@ -2,7 +2,7 @@ use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
     api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
-    gc::{GcPtr, GcRef, Move, Trace},
+    gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::ThreadInternal,
     value::{Cloner, Value},
     vm::Thread,

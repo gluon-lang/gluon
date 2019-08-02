@@ -11,7 +11,7 @@ use crate::{
         generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
     },
     base::types::{self, ArcType},
-    gc::{GcPtr, GcRef, Move, Trace},
+    gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,

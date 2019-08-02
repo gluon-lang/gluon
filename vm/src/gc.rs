@@ -385,13 +385,23 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
+/// SAFETY The only unsafety from copying the type is the creation of an unrooted value
+pub unsafe trait CopyUnrooted: CloneUnrooted<Value = Self> + Sized {
+    unsafe fn copy_unrooted(&self) -> Self {
+        ptr::read(self)
+    }
+}
+
 pub trait CloneUnrooted {
     type Value;
+    /// Creates a clone of the value that is not rooted. To ensure safety the value must be
+    /// forgotten or rooted before the next garbage collection
     unsafe fn clone_unrooted(&self) -> Self::Value;
 }
 
 impl<T: ?Sized + CloneUnrooted> CloneUnrooted for &'_ T {
     type Value = T::Value;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self::Value {
         (**self).clone_unrooted()
     }
@@ -421,6 +431,7 @@ where
     T: CloneUnrooted,
 {
     type Value = T::Value;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self::Value {
         self.0.clone_unrooted()
     }
@@ -494,6 +505,7 @@ impl<'gc, T: ?Sized> From<OwnedGcRef<'gc, T>> for GcRef<'gc, T> {
 }
 
 impl<'a, T: ?Sized> Clone for GcRef<'a, T> {
+    #[inline]
     fn clone(&self) -> Self {
         // SAFETY The lifetime of the new value is the same which just means that both values need
         // to be dropped before any gc collection
@@ -577,8 +589,10 @@ impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
+unsafe impl<T: ?Sized> CopyUnrooted for GcPtr<T> {}
 impl<T: ?Sized> CloneUnrooted for GcPtr<T> {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
         GcPtr(self.0)
     }

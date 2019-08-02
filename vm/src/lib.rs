@@ -88,14 +88,15 @@ mod value;
 
 use std::{self as real_std, fmt, marker::PhantomData};
 
-use crate::api::{ValueRef, VmType};
-use crate::base::metadata::Metadata;
-use crate::base::symbol::Symbol;
-use crate::base::types::ArcType;
-use crate::stack::Stacktrace;
-use crate::thread::{RootedThread, RootedValue, Thread};
-use crate::types::{VmIndex, VmInt};
-use crate::value::{Value, ValueRepr};
+use crate::{
+    api::{ValueRef, VmType},
+    gc::CloneUnrooted,
+    stack::Stacktrace,
+    thread::{RootedThread, RootedValue, Thread},
+    types::{VmIndex, VmInt},
+    value::{Value, ValueRepr},
+};
+use crate::{base::metadata::Metadata, base::symbol::Symbol, base::types::ArcType};
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)

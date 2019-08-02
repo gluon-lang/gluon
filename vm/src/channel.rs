@@ -21,7 +21,7 @@ use crate::{
         primitive, Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction,
         Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
-    gc::{self, GcPtr, Trace},
+    gc::{self, CloneUnrooted, GcPtr, Trace},
     stack::{ClosureState, ExternState, State},
     thread::{ActiveThread, ThreadInternal},
     types::VmInt,

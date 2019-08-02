@@ -20,7 +20,10 @@ use crate::base::{
 use crate::{
     array::Array,
     compiler::DebugInfo,
-    gc::{self, CloneUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move, Trace, WriteOnly},
+    gc::{
+        self, CloneUnrooted, CopyUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move, Trace,
+        WriteOnly,
+    },
     interner::InternedStr,
     thread::{Status, Thread},
     types::*,
@@ -462,6 +465,16 @@ impl From<ValueRepr> for Value {
     }
 }
 
+unsafe impl CopyUnrooted for Value {}
+
+impl CloneUnrooted for Value {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
 impl Value {
     pub(crate) fn from_ref(v: &ValueRepr) -> &Value {
         unsafe { mem::transmute(v) }
@@ -481,10 +494,6 @@ impl Value {
     // Alias to let `on_array!` work with cloning
     unsafe fn clone(&self) -> Value {
         self.clone_unrooted()
-    }
-
-    pub unsafe fn clone_unrooted(&self) -> Value {
-        Value(self.0.clone_unrooted())
     }
 
     pub fn get_variants(&self) -> Variants {
@@ -537,23 +546,15 @@ impl ValueRepr {
     pub fn get_variants(&self) -> Variants {
         Variants::new(Value::from_ref(self))
     }
+}
 
-    pub(crate) unsafe fn clone_unrooted(&self) -> Self {
-        use self::ValueRepr::*;
-        match self {
-            String(p) => String(p.clone_unrooted()),
-            Data(p) => Data(p.clone_unrooted()),
-            Function(p) => Function(p.clone_unrooted()),
-            Closure(p) => Closure(p.clone_unrooted()),
-            Array(p) => Array(p.clone_unrooted()),
-            PartialApplication(p) => PartialApplication(p.clone_unrooted()),
-            Userdata(p) => Userdata(p.clone_unrooted()),
-            Thread(p) => Thread(p.clone_unrooted()),
-            Tag(p) => Tag(*p),
-            Byte(p) => Byte(*p),
-            Int(p) => Int(*p),
-            Float(p) => Float(*p),
-        }
+unsafe impl CopyUnrooted for ValueRepr {}
+
+impl CloneUnrooted for ValueRepr {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
     }
 }
 
@@ -890,13 +891,12 @@ pub(crate) enum Callable {
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
 }
 
+unsafe impl CopyUnrooted for Callable {}
 impl CloneUnrooted for Callable {
     type Value = Self;
+    #[inline]
     unsafe fn clone_unrooted(&self) -> Self {
-        match self {
-            Callable::Closure(closure) => Callable::Closure(closure.clone_unrooted()),
-            Callable::Extern(ext) => Callable::Extern(ext.clone_unrooted()),
-        }
+        self.copy_unrooted()
     }
 }
 

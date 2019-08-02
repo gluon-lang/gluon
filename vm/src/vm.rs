@@ -23,7 +23,7 @@ use crate::base::{
 use crate::{
     api::{ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
-    gc::{Gc, GcPtr, GcRef, Generation, Move, Trace},
+    gc::{CloneUnrooted, Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
