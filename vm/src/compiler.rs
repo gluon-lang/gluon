@@ -234,6 +234,7 @@ impl FunctionEnvs {
 
     fn end_function(&mut self, compiler: &mut Compiler, current_line: Option<Line>) -> FunctionEnv {
         compiler.stack_types.exit_scope();
+        self.function.instructions.push(Instruction::Return);
         let instructions = self.function.instructions.len();
 
         if compiler.emit_debug_info {

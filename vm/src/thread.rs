@@ -2087,7 +2087,6 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
         }
 
         let state = &self.stack.frame().state;
-        let mut instruction_index = state.instruction_index;
         let function = unsafe { state.closure.function.clone_unrooted() };
         {
             trace!(
@@ -2099,12 +2098,18 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
         }
 
         let instructions = &function.instructions[..];
-        while let Some(&instr) = instructions.get(instruction_index) {
-            debug_instruction(&self.stack, instruction_index, instr);
+        let mut program_counter = ProgramCounter::new(state.instruction_index, instructions);
+        loop {
+            // SAFETY Safe since we exit the loop when encountring the Return instruction
+            let instr = unsafe { program_counter.instruction() };
+            let instruction_index = program_counter.instruction_index;
+            program_counter.step();
 
-            if self.hook.flags.contains(HookFlags::LINE_FLAG) {
-                try_ready!(self.run_hook(&function, instruction_index));
-            }
+            //debug_instruction(&self.stack, instruction_index, instr);
+
+            //if self.hook.flags.contains(HookFlags::LINE_FLAG) {
+            //    try_ready!(self.run_hook(&function, instruction_index));
+            //}
 
             match instr {
                 Push(i) => {
@@ -2134,7 +2139,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     self.stack.push(Float(f));
                 }
                 Call(args) => {
-                    self.stack.set_instruction_index(instruction_index + 1);
+                    self.stack
+                        .set_instruction_index(program_counter.instruction_index);
                     return self.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 TailCall(mut args) => {
@@ -2371,13 +2377,13 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     }
                 }
                 Jump(i) => {
-                    instruction_index = i as usize;
+                    program_counter.jump(i as usize);
                     continue;
                 }
                 CJump(i) => match self.stack.pop().get_repr() {
                     ValueRepr::Tag(0) => (),
                     _ => {
-                        instruction_index = i as usize;
+                        program_counter.jump(i as usize);
                         continue;
                     }
                 },
@@ -2465,9 +2471,12 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 DivideFloat => binop_f64(self.thread, &mut self.stack, f64::div)?,
                 FloatLT => binop_bool(self.thread, &mut self.stack, |l: f64, r| l < r)?,
                 FloatEQ => binop_bool(self.thread, &mut self.stack, |l: f64, r| l == r)?,
-            }
 
-            instruction_index += 1;
+                Return => {
+                    drop(program_counter);
+                    break;
+                }
+            }
         }
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame().excess;
@@ -2890,6 +2899,41 @@ pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<crate::
         };
     }
     Ok(trace)
+}
+
+struct ProgramCounter<'a> {
+    instruction_index: usize,
+    instructions: &'a [Instruction],
+}
+
+impl<'a> ProgramCounter<'a> {
+    fn new(instruction_index: usize, instructions: &'a [Instruction]) -> Self {
+        assert!(instruction_index < instructions.len());
+        // As long as we end with a `Return` instruction and `step` is not called after `Return` is
+        // we do not need to bounds check on `step`
+        assert!(instructions.last() == Some(&Return));
+        ProgramCounter {
+            instruction_index,
+            instructions,
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn instruction(&self) -> Instruction {
+        *self.instructions.get_unchecked(self.instruction_index)
+    }
+
+    #[inline(always)]
+    fn step(&mut self) {
+        self.instruction_index += 1;
+        debug_assert!(self.instruction_index < self.instructions.len());
+    }
+
+    #[inline(always)]
+    fn jump(&mut self, index: usize) {
+        assert!(index < self.instructions.len());
+        self.instruction_index = index;
+    }
 }
 
 #[cfg(test)]

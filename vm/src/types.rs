@@ -139,6 +139,8 @@ pub enum Instruction {
     DivideFloat,
     FloatLT,
     FloatEQ,
+
+    Return,
 }
 
 impl Instruction {
@@ -171,6 +173,7 @@ impl Instruction {
             AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat | AddByte
             | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ | SubtractFloat
             | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
+            Return => 0,
         }
     }
 }
