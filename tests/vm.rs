@@ -78,7 +78,7 @@ fn record() {
         ValueRef::Data(data) => {
             assert_eq!(data.get(0).unwrap(), ValueRef::Int(0));
             assert_eq!(data.get(1).unwrap(), ValueRef::Float(1.0));
-            match data.get(2).unwrap() {
+            match &data.get(2).unwrap() {
                 ValueRef::Data(data) if data.len() == 0 => (),
                 _ => panic!(),
             }

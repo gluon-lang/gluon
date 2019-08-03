@@ -1298,7 +1298,7 @@ mod tests {
         count
     }
 
-    #[derive(Copy, Clone, Trace)]
+    #[derive(Trace)]
     #[gluon(gluon_vm)]
     struct Data_ {
         fields: GcPtr<Vec<Value>>,
@@ -1324,25 +1324,39 @@ mod tests {
             mem::size_of::<Self::Value>()
         }
         fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
-            result.write(self.elems.to_owned())
+            unsafe { result.write(self.elems.iter().map(|v| v.clone_unrooted()).collect()) }
         }
     }
 
-    #[derive(Copy, Clone, PartialEq, Debug, Trace)]
+    #[derive(PartialEq, Debug, Trace)]
     #[gluon(gluon_vm)]
     enum Value {
         Int(i32),
         Data(Data_),
     }
 
-    fn new_data(p: GcPtr<Vec<Value>>) -> Value {
-        Data(Data_ { fields: p })
+    unsafe impl CopyUnrooted for Value {}
+
+    impl CloneUnrooted for Value {
+        type Value = Self;
+        #[inline]
+        unsafe fn clone_unrooted(&self) -> Self {
+            self.copy_unrooted()
+        }
+    }
+
+    fn new_data(p: GcRef<Vec<Value>>) -> Value {
+        unsafe {
+            Data(Data_ {
+                fields: p.unrooted(),
+            })
+        }
     }
 
     #[test]
     fn gc_header() {
         let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
-        let ptr = gc.alloc(Def { elems: &[Int(1)] }).unwrap();
+        let ptr = unsafe { gc.alloc(Def { elems: &[Int(1)] }).unwrap().unrooted() };
         let header: *const _ = ptr.header();
         let other: &mut GcHeader = gc.values.as_mut().unwrap();
         assert_eq!(&*ptr as *const _ as *const (), other.value());
@@ -1356,7 +1370,12 @@ mod tests {
         let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
         let mut stack: Vec<Value> = Vec::new();
         stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] }).unwrap()));
-        let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }).unwrap());
+        let d2 = new_data(
+            gc.alloc(Def {
+                elems: std::slice::from_ref(&stack[0]),
+            })
+            .unwrap(),
+        );
         stack.push(d2);
         assert_eq!(object_count(&gc), 2);
         unsafe {

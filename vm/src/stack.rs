@@ -458,7 +458,7 @@ impl Stack {
     }
 
     pub fn clear(&mut self) {
-        let count = self.values.len();
+        let count = self.values.len() as VmIndex;
         self.assert_pop(count);
         self.values.clear();
     }
@@ -651,7 +651,7 @@ impl<'a: 'b, 'b> StackFrame<'b, State> {
     }
 
     pub fn new_frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
-        let frame = unsafe { Self::add_new_frame(stack, args, gc::Borrow::new(&state)).unrooted() };
+        let frame = unsafe { Self::add_new_frame(stack, args, &state, false).unrooted() };
         StackFrame { stack, frame }
     }
 }
@@ -671,6 +671,13 @@ impl<'a: 'b, 'b, S> StackFrame<'b, S>
 where
     S: StackState,
 {
+    pub fn to_state(self) -> StackFrame<'b, State> {
+        StackFrame {
+            stack: self.stack,
+            frame: unsafe { self.frame.to_state().unrooted() },
+        }
+    }
+
     fn offset(&self) -> VmIndex {
         self.frame.offset
     }
@@ -723,14 +730,14 @@ where
 
     pub fn pop(&mut self) -> Value {
         self.assert_pop(1);
-        self.stack.values.pop()
+        self.stack.values.pop().expect("pop on empty stack")
     }
 
     pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
         self.assert_pop(1);
         unsafe {
             let value = self.stack.last().unwrap().get_repr().clone_unrooted();
-            PopValue(self, Variants(value, PhantomData))
+            PopValue(self.stack, Variants(value, PhantomData))
         }
     }
 
@@ -793,12 +800,20 @@ where
     where
         T: StackState,
     {
+        self.enter_scope_excess(args, state, false)
+    }
+
+    pub(crate) fn enter_scope_excess<T>(
+        self,
+        args: VmIndex,
+        state: &T,
+        excess: bool,
+    ) -> StackFrame<'b, T>
+    where
+        T: StackState,
+    {
         let stack = self.stack;
-        let frame = unsafe {
-            Self::add_new_frame(stack, args, T::to_state(state))
-                .from_state::<T>()
-                .clone_unrooted()
-        };
+        let frame = unsafe { Self::add_new_frame(stack, args, state, excess).unrooted() };
         StackFrame { stack, frame }
     }
 
@@ -837,17 +852,21 @@ where
         stack.current_frame()
     }
 
-    fn add_new_frame<'gc>(
+    fn add_new_frame<'gc, T>(
         stack: &mut Stack,
         args: VmIndex,
-        state: gc::Borrow<'gc, State>,
-    ) -> gc::Borrow<'gc, Frame> {
+        state: &'gc T,
+        excess: bool,
+    ) -> gc::Borrow<'gc, Frame<T>>
+    where
+        T: StackState,
+    {
         assert!(stack.len() >= args);
         let offset = stack.len() - args;
         let frame = construct_gc!(Frame {
             offset,
-            @state,
-            excess: false,
+            @state: gc::Borrow::new(state),
+            excess,
         });
         // Panic if the frame attempts to take ownership past the current frame
         if let Some(frame) = stack.frames.last() {
@@ -866,9 +885,9 @@ where
         // SAFETY The frame's gc pointers are scanned the `Stack::trace` since they are on
         // the stack
         unsafe {
-            stack.frames.push(frame.clone_unrooted());
+            stack.frames.push(frame.to_state().clone_unrooted());
         }
-        debug!("----> Store {} {:?}", stack.frames.len(), frame,);
+        debug!("----> Store {} {:?}", stack.frames.len(), frame.to_state());
         frame
     }
 }
@@ -1110,15 +1129,15 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
-        let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+        let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
 
-        frame = frame.enter_scope(2, State::Unknown);
+        frame = frame.enter_scope(2, &State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
 
-        frame = frame.enter_scope(1, State::Unknown);
+        frame = frame.enter_scope(1, &State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
@@ -1145,14 +1164,14 @@ mod tests {
 
         let mut stack = Stack::new();
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            let frame = frame.enter_scope(2, ExternState::new(ext));
+            let frame = frame.enter_scope(2, &*ExternState::new(&ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to access past the lock
-        StackFrame::frame(&mut stack, 1, State::Unknown);
+        StackFrame::new_frame(&mut stack, 1, State::Unknown);
 
         unsafe { gc.clear() }
     }
@@ -1167,9 +1186,9 @@ mod tests {
 
         let mut stack = Stack::new();
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
-            let frame = frame.enter_scope(1, ExternState::new(ext));
+            let frame = frame.enter_scope(1, &*ExternState::new(&ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to pop a locked value
@@ -1187,14 +1206,14 @@ mod tests {
 
         let mut stack = Stack::new();
         let lock = {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            let frame = frame.enter_scope(2, ExternState::new(ext));
+            let frame = frame.enter_scope(2, &*ExternState::new(&ext));
             frame.into_lock()
         };
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(2));
             frame = frame.exit_scope().unwrap();
             frame.exit_scope().unwrap_err();
@@ -1211,12 +1230,12 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
-        StackFrame::frame(&mut stack, 0, State::Unknown);
+        StackFrame::new_frame(&mut stack, 0, State::Unknown);
         let mut stack = StackFrame::<State>::current(&mut stack);
         stack.push(Int(0));
         stack.insert_slice(0, &[Int(2).into(), Int(1).into()]);
         assert_eq!(&stack[..], [Int(2).into(), Int(1).into(), Int(0).into()]);
-        stack = stack.enter_scope(2, State::Unknown);
+        stack = stack.enter_scope(2, &State::Unknown);
         stack.insert_slice(1, &[Int(10).into()]);
         assert_eq!(&stack[..], [Int(1).into(), Int(10).into(), Int(0).into()]);
         stack.insert_slice(1, &[]);

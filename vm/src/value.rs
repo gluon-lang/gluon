@@ -891,21 +891,21 @@ pub(crate) enum Callable {
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
 }
 
-unsafe impl CopyUnrooted for Callable {}
-impl CloneUnrooted for Callable {
-    type Value = Self;
-    #[inline]
-    unsafe fn clone_unrooted(&self) -> Self {
-        self.copy_unrooted()
-    }
-}
-
 impl Callable {
     pub fn args(&self) -> VmIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
             Callable::Extern(ref ext) => ext.args,
         }
+    }
+}
+
+unsafe impl CopyUnrooted for Callable {}
+impl CloneUnrooted for Callable {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
     }
 }
 
@@ -1757,35 +1757,26 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&nil) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, Variants::new(&nil), &DebugLevel::None)
             ),
             "Nil"
         );
-        let list1 = Value::from(ValueRepr::Data(
+        let list1 = Variants::from(
             gc.alloc(Def {
                 tag: 0,
                 elems: &[Value::from(ValueRepr::Int(123)), nil],
             })
             .unwrap(),
-        ));
+        );
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&list1) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, list1.clone(), &DebugLevel::None)
             ),
             "Cons 123 Nil"
         );
-        let list2 = Value::from(
+        let list1 = unsafe { list1.get_value().clone_unrooted() };
+        let list2 = Variants::from(
             gc.alloc(Def {
                 tag: 0,
                 elems: &[ValueRepr::Int(0).into(), list1],
@@ -1795,12 +1786,7 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&list2) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, list2, &DebugLevel::None)
             ),
             "Cons 0 (Cons 123 Nil)"
         );
@@ -1816,17 +1802,9 @@ mod tests {
 
         let env = MockEnv(None);
 
-        let nil = Value::from(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
+        let nil = Variants::from(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
         assert_eq!(
-            format!(
-                "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&nil) },
-                    &DebugLevel::None
-                )
-            ),
+            format!("{}", ValuePrinter::new(&env, &typ, nil, &DebugLevel::None)),
             "[1, 2, 3]"
         );
 

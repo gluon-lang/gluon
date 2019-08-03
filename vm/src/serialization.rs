@@ -872,7 +872,7 @@ mod tests {
             .deserialize(&mut de)
             .unwrap();
         match value.get_repr() {
-            ValueRepr::String(s) => assert_eq!(&*s, "test"),
+            ValueRepr::String(s) => assert_eq!(&s[..], "test"),
             _ => ice!(),
         }
     }
