@@ -1792,49 +1792,31 @@ impl<'b> OwnedContext<'b> {
                 }) => {
                     let max_stack_size = context.max_stack_size;
                     let instruction_index = *instruction_index;
-                    // Tail calls into extern functions at the top level will drop the last
-                    // stackframe so just return immedietly
-                    enum State {
-                        Exists,
-                        DoesNotExist,
-                        ReturnContext,
+                    let function_size = closure.function.max_stack_size;
+
+                    // Before entering a function check that the stack cannot exceed `max_stack_size`
+                    if instruction_index == 0
+                        && context.stack.stack().len() + function_size > max_stack_size
+                    {
+                        return Err(Error::StackOverflow(max_stack_size));
                     }
-                    let state = {
-                        let function_size = closure.function.max_stack_size;
 
-                        // Before entering a function check that the stack cannot exceed `max_stack_size`
-                        if instruction_index == 0
-                            && context.stack.stack().len() + function_size > max_stack_size
-                        {
-                            return Err(Error::StackOverflow(max_stack_size));
-                        }
+                    if context.stack.stack().get_frames().len() == 0 {
+                        return Ok(Async::Ready(Some(self)));
+                    } else {
+                        debug!(
+                            "Continue with {}\nAt: {}/{}\n{:?}",
+                            closure.function.name,
+                            instruction_index,
+                            closure.function.instructions.len(),
+                            &context.stack[..]
+                        );
 
-                        if context.stack.stack().get_frames().len() == 0 {
-                            State::ReturnContext
-                        } else {
-                            debug!(
-                                "Continue with {}\nAt: {}/{}\n{:?}",
-                                closure.function.name,
-                                instruction_index,
-                                closure.function.instructions.len(),
-                                &context.stack[..]
-                            );
-
-                            let closure_context = context.from_state();
-                            let new_context = try_ready!(closure_context.execute_());
-                            context = self.borrow_mut();
-                            if new_context.is_some() {
-                                State::Exists
-                            } else {
-                                State::DoesNotExist
-                            }
-                        }
-                    };
-                    match state {
-                        State::Exists => (),
-                        State::DoesNotExist => return Ok(None.into()),
-                        State::ReturnContext => {
-                            return Ok(Async::Ready(Some(self)));
+                        let closure_context = context.from_state();
+                        let new_context = try_ready!(closure_context.execute_());
+                        context = self.borrow_mut();
+                        if new_context.is_none() {
+                            return Ok(None.into());
                         }
                     }
                 }
@@ -2105,11 +2087,11 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             let instruction_index = program_counter.instruction_index;
             program_counter.step();
 
-            //debug_instruction(&self.stack, instruction_index, instr);
+            debug_instruction(&self.stack, instruction_index, instr);
 
-            //if self.hook.flags.contains(HookFlags::LINE_FLAG) {
-            //    try_ready!(self.run_hook(&function, instruction_index));
-            //}
+            if self.hook.flags.contains(HookFlags::LINE_FLAG) {
+                try_ready!(self.run_hook(&function, instruction_index));
+            }
 
             match instr {
                 Push(i) => {
@@ -2611,27 +2593,24 @@ where
         }
     }
 
-    fn execute_callable(self, function: &'gc Callable, excess: bool) -> Result<()> {
-        match function {
-            Callable::Closure(closure) => {
-                let mut next = self.enter_scope(
-                    closure.function.args,
-                    &*construct_gc!(ClosureState {
-                        @closure,
-                        instruction_index: 0,
-                    }),
-                );
-                next.stack.set_excess(excess);
-                Ok(())
-            }
-            Callable::Extern(ext) => {
-                assert!(self.stack.len() >= ext.args + 1);
-                let function_index = self.stack.len() - ext.args - 1;
-                trace!("------- {} {:?}", function_index, &self.stack[..]);
-                self.enter_scope(ext.args, &*ExternState::new(ext));
-                Ok(())
-            }
-        }
+    fn enter_closure(self, closure: &GcPtr<ClosureData>, excess: bool) -> Result<()> {
+        let mut next = self.enter_scope(
+            closure.function.args,
+            &*construct_gc!(ClosureState {
+                @closure,
+                instruction_index: 0,
+            }),
+        );
+        next.stack.set_excess(excess);
+        Ok(())
+    }
+
+    fn enter_extern(self, ext: &GcPtr<ExternFunction>, excess: bool) -> Result<()> {
+        assert!(self.stack.len() >= ext.args + 1);
+        let function_index = self.stack.len() - ext.args - 1;
+        trace!("------- {} {:?}", function_index, &self.stack[..]);
+        self.enter_scope(ext.args, &*ExternState::new(ext));
+        Ok(())
     }
 
     fn call_function_with_upvars(
@@ -2639,13 +2618,14 @@ where
         args: VmIndex,
         required_args: VmIndex,
         callable: &Callable,
+        enter_scope: impl FnOnce(Self, bool) -> Result<()>,
     ) -> Result<()> {
         trace!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
             &(*self.stack)[(function_index + 1) as usize..]
         });
         match args.cmp(&required_args) {
-            Ordering::Equal => self.execute_callable(&callable, false),
+            Ordering::Equal => enter_scope(self, false),
             Ordering::Less => {
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
@@ -2681,7 +2661,7 @@ where
                     &(*self.stack)[..],
                     self.stack.stack().get_frames()
                 );
-                self.execute_callable(&callable, true)
+                enter_scope(self, true)
             }
         }
     }
@@ -2697,17 +2677,24 @@ where
         match &value {
             Function(f) => {
                 let callable = construct_gc!(Callable::Extern(@gc::Borrow::new(f)));
-                self.call_function_with_upvars(args, f.args, &callable)
+                self.call_function_with_upvars(args, f.args, &callable, |self_, excess| {
+                    self_.enter_extern(f, excess)
+                })
             }
             Closure(closure) => {
                 let callable = construct_gc!(Callable::Closure(@gc::Borrow::new(closure)));
-                self.call_function_with_upvars(args, closure.function.args, &callable)
+                self.call_function_with_upvars(
+                    args,
+                    closure.function.args,
+                    &callable,
+                    |self_, excess| self_.enter_closure(closure, excess),
+                )
             }
             PartialApplication(app) => {
                 let total_args = app.args.len() as VmIndex + args;
                 let offset = self.stack.len() - args;
                 self.stack.insert_slice(offset, &app.args);
-                self.call_function_with_upvars(total_args, app.function.args(), &app.function)
+                self.do_call(total_args)
             }
             x => Err(Error::Message(format!("Cannot call {:?}", x))),
         }
