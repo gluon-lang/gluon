@@ -348,12 +348,13 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         Call(1),     // [f, m_ret]       Call m ()
         PushInt(0),  // [f, m_ret, ()]   Add a dummy argument ()
         TailCall(2), /* [f_ret]          Call f m_ret () */
+        Return,
     ];
 
     type FlatMap = fn(fn(A) -> IO<B>, IO<A>) -> IO<B>;
     type Wrap = fn(A) -> IO<A>;
 
-    let wrap = vec![Pop(1)];
+    let wrap = vec![Pop(1), Return];
 
     // IO functions
     ExternModule::new(

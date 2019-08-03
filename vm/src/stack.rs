@@ -314,14 +314,21 @@ where
     }
 }
 
-impl Frame<ClosureState> {
-    pub fn upvars(&self) -> &[Value] {
-        &self.state.closure.upvars
+impl<S> Frame<S> {
+    fn to_state(&self) -> gc::Borrow<Frame<State>>
+    where
+        S: StackState,
+    {
+        construct_gc!(Frame {
+            offset: self.offset,
+            @state: self.state.to_state(),
+            excess: self.excess,
+        })
     }
 }
 
-impl<'a> FrameView<'a, ClosureState> {
-    pub fn upvars(&self) -> &'a [Value] {
+impl Frame<ClosureState> {
+    pub fn upvars(&self) -> &[Value] {
         &self.state.closure.upvars
     }
 }
@@ -340,17 +347,42 @@ impl Frame<State> {
 }
 
 #[derive(Debug)]
-pub struct FrameView<'a, S> {
-    pub offset: VmIndex,
-    pub state: &'a S,
-    pub excess: bool,
+pub struct FrameViewMut<'a, S>
+where
+    S: StackState,
+{
+    frame: &'a mut Frame<S>,
+    stack: &'a mut Stack,
 }
 
-#[derive(Debug)]
-pub struct FrameViewMut<'a, S> {
-    pub offset: &'a mut VmIndex,
-    pub state: &'a mut S,
-    pub excess: &'a mut bool,
+impl<S> Deref for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    type Target = Frame<S>;
+    fn deref(&self) -> &Self::Target {
+        self.frame
+    }
+}
+
+impl<S> DerefMut for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.frame
+    }
+}
+
+impl<S> Drop for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    fn drop(&mut self) {
+        unsafe {
+            *self.stack.frames.last_mut().unwrap() = self.frame.to_state().unrooted();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -392,21 +424,18 @@ impl Stack {
     }
 
     fn assert_pop(&self, count: VmIndex) {
-        if let Some(frame) = self.frames.last() {
-            assert!(
-                self.len() >= frame.offset + count,
-                "Attempted to pop value which did not belong to the current frame"
-            );
-            if let State::Extern(ExternState {
-                locked: Some(args), ..
-            }) = *frame.state.to_state()
-            {
-                assert!(
-                    self.len() >= frame.offset + args + count,
-                    "Attempt to pop locked value"
-                );
-            }
-        }
+        let args = if let State::Extern(ExternState {
+            locked: Some(args), ..
+        }) = self.frames.last().unwrap().state
+        {
+            args
+        } else {
+            0
+        };
+        assert!(
+            self.len() >= count + args,
+            "Attempted to pop value which did not belong to the current frame"
+        );
     }
 
     pub fn pop(&mut self) -> Value {
@@ -429,6 +458,8 @@ impl Stack {
     }
 
     pub fn clear(&mut self) {
+        let count = self.values.len();
+        self.assert_pop(count);
         self.values.clear();
     }
 
@@ -493,8 +524,7 @@ impl Stack {
     {
         let frame: &Frame<S> = &*self.get_frames().last().expect("Frame").from_state();
         StackFrame {
-            _frame: PhantomData,
-            offset: frame.offset,
+            frame: unsafe { frame.clone_unrooted() },
             stack: self,
         }
     }
@@ -593,10 +623,7 @@ where
     S: StackState,
 {
     stack: &'b mut Stack,
-    // Offset is needed for indexing which is frequent enough to warrant explicit caching. It
-    // should never change as well while mutating a frame
-    offset: VmIndex,
-    _frame: PhantomData<Frame<S>>,
+    frame: Frame<S>,
 }
 
 impl<'b, S> fmt::Debug for StackFrame<'b, S>
@@ -616,21 +643,16 @@ impl<'a: 'b, 'b> StackFrame<'b, State> {
     where
         T: StackState,
     {
-        let frame = Frame::from_state::<T>(self.stack.frames.last().unwrap());
+        let frame = unsafe { Frame::from_state::<T>(self.stack.frames.last().unwrap()).unrooted() };
         StackFrame {
-            offset: frame.offset,
             stack: self.stack,
-            _frame: PhantomData,
+            frame,
         }
     }
 
     pub fn new_frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
-        let frame = Self::add_new_frame(stack, args, gc::Borrow::new(&state));
-        StackFrame {
-            stack,
-            offset: frame.offset,
-            _frame: PhantomData,
-        }
+        let frame = unsafe { Self::add_new_frame(stack, args, gc::Borrow::new(&state)).unrooted() };
+        StackFrame { stack, frame }
     }
 }
 
@@ -638,9 +660,9 @@ impl<'a: 'b, 'b> StackFrame<'b, ExternState> {
     /// Lock the stack below the current offset
     pub fn into_lock(mut self) -> Lock {
         let len = self.len();
-        let frame = self.frame_mut();
+        let mut frame = self.frame_mut();
         frame.state.locked = Some(len);
-        let lock = Lock(*frame.offset);
+        let lock = Lock(frame.offset);
         lock
     }
 }
@@ -650,36 +672,21 @@ where
     S: StackState,
 {
     fn offset(&self) -> VmIndex {
-        self.offset
+        self.frame.offset
     }
 
     pub(crate) fn stack(&self) -> &Stack {
         &self.stack
     }
 
-    pub fn frame(&self) -> FrameView<S> {
-        let Frame {
-            offset,
-            ref state,
-            excess,
-        } = *self.stack.frames.last().unwrap();
-        FrameView {
-            offset,
-            state: S::from_state(state),
-            excess,
-        }
+    pub fn frame(&self) -> &Frame<S> {
+        &self.frame
     }
 
     pub fn frame_mut(&mut self) -> FrameViewMut<S> {
-        let Frame {
-            offset,
-            state,
-            excess,
-        } = self.stack.frames.last_mut().unwrap();
         FrameViewMut {
-            offset,
-            state: S::from_state_mut(state),
-            excess,
+            frame: &mut self.frame,
+            stack: self.stack,
         }
     }
 
@@ -699,16 +706,38 @@ where
         self.stack.values.last().expect("StackFrame: top")
     }
 
+    fn assert_pop(&self, count: VmIndex) {
+        let args = if let State::Extern(ExternState {
+            locked: Some(args), ..
+        }) = *self.frame().state.to_state()
+        {
+            args
+        } else {
+            0
+        };
+        assert!(
+            self.len() >= count + args,
+            "Attempted to pop value which did not belong to the current frame"
+        );
+    }
+
     pub fn pop(&mut self) -> Value {
-        self.stack.pop()
+        self.assert_pop(1);
+        self.stack.values.pop()
     }
 
     pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
-        self.stack.pop_value()
+        self.assert_pop(1);
+        unsafe {
+            let value = self.stack.last().unwrap().get_repr().clone_unrooted();
+            PopValue(self, Variants(value, PhantomData))
+        }
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
-        self.stack.pop_many(count);
+        self.assert_pop(count);
+        let len = self.stack.values.len();
+        self.stack.values.truncate(len - count as usize);
     }
 
     pub fn clear(&mut self) {
@@ -765,19 +794,19 @@ where
         T: StackState,
     {
         let stack = self.stack;
-        let frame = Self::add_new_frame(stack, args, T::to_state(state));
-        StackFrame {
-            stack,
-            offset: frame.offset,
-            _frame: PhantomData,
-        }
+        let frame = unsafe {
+            Self::add_new_frame(stack, args, T::to_state(state))
+                .from_state::<T>()
+                .clone_unrooted()
+        };
+        StackFrame { stack, frame }
     }
 
     pub(crate) fn exit_scope(self) -> Result<StackFrame<'b, State>, &'b mut Stack>
     where
         S: StackState,
     {
-        if let State::Extern(ref ext) = *S::to_state(self.frame().state) {
+        if let State::Extern(ref ext) = *S::to_state(&self.frame().state) {
             if ext.is_locked() {
                 return Err(self.stack);
             }
@@ -787,9 +816,8 @@ where
         match stack.frames.last() {
             Some(frame) => {
                 let stack = StackFrame {
-                    offset: frame.offset,
+                    frame: unsafe { frame.clone_unrooted() },
                     stack,
-                    _frame: PhantomData,
                 };
                 debug!(
                     "<---- Restore {} {:?}",
@@ -848,6 +876,25 @@ where
 impl<'b> StackFrame<'b, ClosureState> {
     pub fn get_upvar(&self, index: VmIndex) -> Variants {
         Variants::new(&self.frame().upvars()[index as usize])
+    }
+
+    pub fn set_excess(&mut self, excess: bool) {
+        self.frame.excess = excess;
+        match self.stack.frames.last_mut() {
+            Some(frame) => frame.excess = excess,
+            _ => (),
+        }
+    }
+
+    pub fn set_instruction_index(&mut self, instruction_index: usize) {
+        self.frame.state.instruction_index = instruction_index;
+        match self.stack.frames.last_mut() {
+            Some(Frame {
+                state: State::Closure(closure),
+                ..
+            }) => closure.instruction_index = instruction_index,
+            _ => (),
+        }
     }
 }
 

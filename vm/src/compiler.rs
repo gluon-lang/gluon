@@ -1198,6 +1198,7 @@ mod tests {
                 CloseData { index: 1 },
                 Push(1),
                 Slide(2),
+                Return,
             ]],
         )
     }
@@ -1245,9 +1246,10 @@ mod tests {
                     // body
                     Push(1),
                     Slide(2),
+                    Return,
                 ],
-                &[PushUpVar(0)],
-                &[PushUpVar(0)],
+                &[PushUpVar(0), Return],
+                &[PushUpVar(0), Return],
             ],
         )
     }

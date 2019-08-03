@@ -1727,7 +1727,7 @@ impl<'b> OwnedContext<'b> {
                 return Err(Error::Interrupted);
             }
             trace!("STACK\n{:?}", context.stack.stack().get_frames());
-            let state = context.stack.frame().state;
+            let state = &context.stack.frame().state;
 
             if context.hook.flags.contains(HookFlags::CALL_FLAG) {
                 match state {
@@ -2086,7 +2086,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             };
         }
 
-        let state = self.stack.frame().state;
+        let state = &self.stack.frame().state;
         let mut instruction_index = state.instruction_index;
         let function = unsafe { state.closure.function.clone_unrooted() };
         {
@@ -2134,7 +2134,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     self.stack.push(Float(f));
                 }
                 Call(args) => {
-                    self.stack.frame_mut().state.instruction_index = instruction_index + 1;
+                    self.stack.set_instruction_index(instruction_index + 1);
                     return self.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
                 TailCall(mut args) => {
@@ -2612,7 +2612,7 @@ where
                         instruction_index: 0,
                     }),
                 );
-                *next.stack.frame_mut().excess = excess;
+                next.stack.set_excess(excess);
                 Ok(())
             }
             Callable::Extern(ext) => {
