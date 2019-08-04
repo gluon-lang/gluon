@@ -16,6 +16,9 @@ use crate::{
 #[derive(Eq)]
 pub struct InternedStr(GcStr);
 
+unsafe impl Send for InternedStr {}
+unsafe impl Sync for InternedStr {}
+
 unsafe impl CopyUnrooted for InternedStr {}
 impl CloneUnrooted for InternedStr {
     type Value = Self;
@@ -62,8 +65,6 @@ impl Hash for InternedStr {
         self.as_ptr().hash(hasher)
     }
 }
-
-unsafe impl Sync for InternedStr {}
 
 impl Deref for InternedStr {
     type Target = str;
