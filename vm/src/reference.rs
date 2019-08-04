@@ -2,7 +2,7 @@ use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
     api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
-    gc::{GcPtr, Move, Trace},
+    gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::ThreadInternal,
     value::{Cloner, Value},
     vm::Thread,
@@ -22,15 +22,21 @@ impl<T> Userdata for Reference<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
+    fn deep_clone<'gc>(
+        &self,
+        deep_cloner: &'gc mut Cloner,
+    ) -> Result<GcRef<'gc, Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
-        let cloned_value = deep_cloner.deep_clone(&value)?;
-        let data: Box<dyn Userdata> = Box::new(Reference {
-            value: Mutex::new(cloned_value),
-            thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
-            _marker: PhantomData::<A>,
-        });
-        deep_cloner.gc().alloc(Move(data))
+        // SAFETY During the `alloc` call the unrooted values are scanned through the `DataDef`
+        unsafe {
+            let cloned_value = deep_cloner.deep_clone(&value)?.unrooted();
+            let data: Box<dyn Userdata> = Box::new(Reference {
+                value: Mutex::new(cloned_value),
+                thread: GcPtr::from_raw(deep_cloner.thread()),
+                _marker: PhantomData::<A>,
+            });
+            deep_cloner.gc().alloc(Move(data))
+        }
     }
 }
 
@@ -47,23 +53,26 @@ unsafe impl<T> Trace for Reference<T> {
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    match r.thread.deep_clone_value(&r.thread, a.get_variant()) {
-        Ok(a) => {
-            *r.value.lock().unwrap() = a;
+    match r.thread.deep_clone_value(&r.thread, a.get_value()) {
+        // SAFETY Rooted when stored in the reference
+        Ok(a) => unsafe {
+            *r.value.lock().unwrap() = a.get_value().clone_unrooted();
             RuntimeResult::Return(())
-        }
+        },
         Err(err) => RuntimeResult::Panic(format!("{}", err)),
     }
 }
 
 fn get(r: &Reference<A>) -> Unrooted<A> {
-    Unrooted::from(r.value.lock().unwrap().clone())
+    // SAFETY The returned, unrooted value gets pushed immediately to the stack
+    unsafe { Unrooted::from(r.value.lock().unwrap().clone_unrooted()) }
 }
 
 fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
+    // SAFETY The returned, unrooted value gets pushed immediately to the stack
     unsafe {
         Reference {
-            value: Mutex::new(a.value.get_variant().get_value()),
+            value: Mutex::new(a.value.get_value().clone_unrooted()),
             thread: GcPtr::from_raw(a.vm),
             _marker: PhantomData,
         }

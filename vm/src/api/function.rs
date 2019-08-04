@@ -21,15 +21,15 @@ use crate::{Error, Result, Variants};
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
 
 pub struct Primitive<F> {
-    name: &'static str,
-    function: GluonFunction,
-    _typ: PhantomData<F>,
-}
-
-pub struct RefPrimitive<'vm, F> {
-    name: &'static str,
-    function: extern "C" fn(&'vm Thread) -> Status,
-    _typ: PhantomData<F>,
+    /// Exposed for macros
+    #[doc(hidden)]
+    pub name: &'static str,
+    /// Exposed for macros
+    #[doc(hidden)]
+    pub function: GluonFunction,
+    /// Exposed for macros
+    #[doc(hidden)]
+    pub _typ: PhantomData<F>,
 }
 
 #[inline]
@@ -47,15 +47,15 @@ where
 }
 
 #[inline]
-pub unsafe fn primitive_f<'vm, F>(
+pub fn primitive_f<F>(
     name: &'static str,
-    function: extern "C" fn(&'vm Thread) -> Status,
+    function: extern "C" fn(&Thread) -> Status,
     _: F,
-) -> RefPrimitive<'vm, F>
+) -> Primitive<F>
 where
-    F: VmFunction<'vm> + VmType,
+    for<'vm> F: VmFunction<'vm> + VmType,
 {
-    RefPrimitive {
+    Primitive {
         name: name,
         function: function,
         _typ: PhantomData,
@@ -74,7 +74,6 @@ where
     F: FunctionType + VmType,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
         // Map rust modules into gluon modules
         let name = if let Some(i) = self.name.rfind("::<") {
             &self.name[..i]
@@ -82,45 +81,12 @@ where
             self.name
         };
         let id = Symbol::from(name.replace("::", "."));
-        let value = ValueRepr::Function(context.context().alloc_with(
-            thread,
-            Move(ExternFunction {
-                id: id,
-                args: F::arguments(),
-                function: self.function,
-            }),
-        )?);
-        context.push(value);
+        context.context().push_new_alloc(Move(ExternFunction {
+            id: id,
+            args: F::arguments(),
+            function: self.function,
+        }))?;
         Ok(())
-    }
-}
-
-impl<'vm, F: VmType> VmType for RefPrimitive<'vm, F> {
-    type Type = F::Type;
-    fn make_type(vm: &Thread) -> ArcType {
-        F::make_type(vm)
-    }
-}
-
-impl<'vm, F> Pushable<'vm> for RefPrimitive<'vm, F>
-where
-    F: VmFunction<'vm> + FunctionType + VmType + 'vm,
-{
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        use std::mem::transmute;
-        let extern_function = unsafe {
-            // The VM guarantess that it only ever calls this function with itself which should
-            // make sure that ignoring the lifetime is safe
-            transmute::<extern "C" fn(&'vm Thread) -> Status, extern "C" fn(&Thread) -> Status>(
-                self.function,
-            )
-        };
-        Primitive {
-            function: extern_function,
-            name: self.name,
-            _typ: self._typ,
-        }
-        .push(context)
     }
 }
 
@@ -142,26 +108,11 @@ impl CPrimitive {
 
 impl<'vm> Pushable<'vm> for CPrimitive {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        use std::mem::transmute;
-
-        let thread = context.thread();
-        let function = self.function;
-        let extern_function = unsafe {
-            // The VM guarantess that it only ever calls this function with itself which should
-            // make sure that ignoring the lifetime is safe
-            transmute::<extern "C" fn(&'vm Thread) -> Status, extern "C" fn(&Thread) -> Status>(
-                function,
-            )
-        };
-        let value = context.context().alloc_with(
-            thread,
-            Move(ExternFunction {
-                id: self.id,
-                args: self.args,
-                function: extern_function,
-            }),
-        )?;
-        context.push(ValueRepr::Function(value));
+        context.context().push_new_alloc(Move(ExternFunction {
+            id: self.id,
+            args: self.args,
+            function: self.function,
+        }))?;
         Ok(())
     }
 }
@@ -332,7 +283,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
 
             let stack = StackFrame::<ExternState>::current(context.stack());
             $(
-                let variants = Variants::with_root(stack[i].clone(), vm);
+                let variants = Variants::with_root(&stack[i], vm);
                 let mut proxy = match $args::to_proxy(vm, variants) {
                     Ok(x) => x,
                     Err(err) => {
@@ -575,7 +526,7 @@ impl<T: VmType> VmType for TypedBytecode<T> {
 impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
-        let context = context.context();
+        let mut context = context.context();
         let mut compiled_module = CompiledModule::from(CompiledFunction::new(
             self.args,
             self.id,

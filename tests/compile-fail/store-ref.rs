@@ -1,8 +1,9 @@
+#[macro_use]
+extern crate gluon_vm;
 extern crate gluon;
 extern crate gluon_codegen;
 
-use std::fmt;
-use std::sync::Mutex;
+use std::{fmt, sync::Mutex};
 
 use gluon::import::add_extern_module;
 use gluon::new_vm;
@@ -27,10 +28,6 @@ impl<'vm> VmType for Test<'vm> {
     type Type = Test<'static>;
 }
 
-extern "C" fn dummy(_: &Thread) -> Status {
-    unimplemented!()
-}
-
 fn f<'vm>(test: &'vm Test<'vm>, s: &'vm str) {
     *test.0.lock().unwrap() = s;
 }
@@ -39,7 +36,7 @@ fn f<'vm>(test: &'vm Test<'vm>, s: &'vm str) {
 fn main() {
     let vm = new_vm();
     add_extern_module(&vm, "test", |vm| {
-        ExternModule::new(vm, unsafe { primitive_f("f", dummy, f as fn (_, _)) })
+        ExternModule::new(vm, primitive!(2, f))
         //~^ cannot infer an appropriate lifetime for lifetime parameter `'vm` due to conflicting requirements
     });
 }

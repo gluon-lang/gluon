@@ -1,6 +1,7 @@
 use std::{
     collections::hash_map::Entry,
     fmt, iter,
+    marker::PhantomData,
     mem::{self, size_of},
     result::Result as StdResult,
 };
@@ -9,25 +10,34 @@ use itertools::Itertools;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use crate::base::fnv::FnvMap;
-use crate::base::symbol::Symbol;
-use crate::base::types::pretty_print::ident as pretty_ident;
-use crate::base::types::{ArcType, Type, TypeEnv, TypeExt};
-use crate::base::DebugLevel;
-use crate::types::*;
+use crate::base::{
+    fnv::FnvMap,
+    symbol::Symbol,
+    types::{pretty_print::ident as pretty_ident, ArcType, Type, TypeEnv, TypeExt},
+    DebugLevel,
+};
 
-use crate::array::Array;
-use crate::compiler::DebugInfo;
-use crate::gc::{DataDef, Gc, GcPtr, Generation, Move, Trace, WriteOnly};
-use crate::interner::InternedStr;
-use crate::thread::{Status, Thread};
-use crate::{Error, Result, Variants};
+use crate::{
+    array::Array,
+    compiler::DebugInfo,
+    gc::{
+        self, CloneUnrooted, CopyUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move, Trace,
+        WriteOnly,
+    },
+    interner::InternedStr,
+    thread::{Status, Thread},
+    types::*,
+    Error, Result, Variants,
+};
 
 use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Trace + fmt::Debug + Send + Sync {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
+    fn deep_clone<'gc>(
+        &self,
+        deep_cloner: &'gc mut Cloner,
+    ) -> Result<GcRef<'gc, Box<dyn Userdata>>> {
         let _ = deep_cloner;
         Err(Error::Message("Userdata cannot be cloned".into()))
     }
@@ -40,7 +50,7 @@ impl PartialEq for dyn Userdata {
 }
 
 pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants<'a>> + Clone {
-    xs.iter().map(|v| unsafe { Variants::new(v) })
+    xs.iter().map(Variants::new)
 }
 
 #[derive(PartialEq, Trace)]
@@ -60,20 +70,28 @@ impl fmt::Debug for ClosureData {
     }
 }
 
-#[derive(Trace)]
-#[gluon(gluon_vm)]
-pub(crate) struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
+pub(crate) struct ClosureDataDef<'a, I>(pub &'a GcPtr<BytecodeFunction>, pub I);
 
-unsafe impl<'b> DataDef for ClosureDataDef<'b> {
+unsafe impl<I> Trace for ClosureDataDef<'_, I> {
+    impl_trace! { self, gc,
+        mark(&self.0, gc)
+    }
+}
+
+unsafe impl<'b, I> DataDef for ClosureDataDef<'_, I>
+where
+    I: Iterator<Item = &'b Value>,
+{
     type Value = ClosureData;
     fn size(&self) -> usize {
-        size_of::<ClosureData>() + self.1.len() * size_of::<Value>()
+        size_of::<ClosureData>() + self.1.size_hint().0 * size_of::<Value>()
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
+        // SAFETY The unrooted values are rooted through the created value
         unsafe {
             let result = &mut *result.as_mut_ptr();
-            result.function = self.0;
-            result.upvars.initialize(self.1.iter().cloned());
+            result.function = self.0.clone_unrooted();
+            result.upvars.initialize(self.1.map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -106,7 +124,10 @@ unsafe impl DataDef for ClosureInitDef {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -165,16 +186,16 @@ impl DataStruct {
     }
 }
 
-impl GcPtr<DataStruct> {
-    pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants>> {
+impl<'gc> GcRef<'gc, DataStruct> {
+    pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants<'gc>>> {
         let field = vm.global_env().intern(field)?;
-        Ok(self.get_field(field))
+        Ok(self.get_field(&field))
     }
 
-    pub(crate) fn get_field(&self, field: InternedStr) -> Option<Variants> {
+    pub(crate) fn get_field(&self, field: &InternedStr) -> Option<Variants<'gc>> {
         self.field_map()
-            .get(&field)
-            .map(|offset| unsafe { Variants::new(&self.fields[*offset as usize]) })
+            .get(field)
+            .map(|offset| Variants::new(&self.as_ref().fields[*offset as usize]))
     }
 }
 
@@ -194,7 +215,9 @@ unsafe impl<'b> DataDef for Def<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = self.tag;
-            result.fields.initialize(self.elems.iter().cloned());
+            result
+                .fields
+                .initialize(self.elems.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -204,7 +227,7 @@ unsafe impl<'b> DataDef for Def<'b> {
 #[gluon(gluon_vm)]
 pub(crate) struct VariantDef<'b> {
     pub tag: VmTag,
-    pub poly_tag: Option<InternedStr>,
+    pub poly_tag: Option<&'b InternedStr>,
     pub elems: &'b [Value],
 }
 unsafe impl<'b> DataDef for VariantDef<'b> {
@@ -224,7 +247,7 @@ unsafe impl<'b> DataDef for VariantDef<'b> {
         .initialize(result)
     }
 
-    fn tag(&self) -> Option<InternedStr> {
+    fn tag(&self) -> Option<&InternedStr> {
         self.poly_tag
     }
 }
@@ -268,7 +291,9 @@ unsafe impl<'b> DataDef for RecordDef<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
-            result.fields.initialize(self.elems.iter().cloned());
+            result
+                .fields
+                .initialize(self.elems.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -293,7 +318,7 @@ unsafe impl<'b> DataDef for UninitializedRecord<'b> {
             result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
             result
                 .fields
-                .initialize(iter::repeat(Value::int(0)).take(self.elems));
+                .initialize((0..self.elems).map(|_| Value::int(0)));
             result
         }
     }
@@ -307,44 +332,29 @@ unsafe impl<'b> Trace for UninitializedRecord<'b> {
 }
 
 mod gc_str {
-    use super::ValueArray;
-    use crate::gc::{Gc, GcPtr, Generation};
-    use crate::Error;
+    use super::{ValueArray, ValueStr};
 
-    use std::fmt;
-    use std::ops::Deref;
-    use std::str;
+    use std::{fmt, ops::Deref, str};
 
-    #[derive(Copy, Clone, PartialEq, Trace)]
-    #[gluon(gluon_vm)]
-    pub struct GcStr(GcPtr<ValueArray>);
+    use crate::gc::{GcPtr, GcRef};
 
-    // Needed due to https://github.com/rust-lang/rust/pull/60444, unsure if that is due to a bug
-    // or not
-    unsafe impl Send for GcStr {}
-    unsafe impl Sync for GcStr {}
+    pub type GcStr = GcPtr<ValueStr>;
 
-    impl fmt::Debug for GcStr {
+    impl fmt::Debug for ValueStr {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.debug_tuple("GcStr").field(&&**self).finish()
+            write!(f, "{}", &**self)
         }
     }
 
-    impl Eq for GcStr {}
-
     impl GcStr {
-        pub fn alloc(gc: &mut Gc, data: &str) -> Result<GcStr, Error> {
-            unsafe { Ok(GcStr::from_utf8_unchecked(gc.alloc(data)?)) }
-        }
-
-        pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
+        pub fn from_utf8(array: GcRef<ValueArray>) -> Result<GcRef<ValueStr>, ()> {
             unsafe {
                 if array
                     .as_slice::<u8>()
                     .and_then(|bytes| str::from_utf8(bytes).ok())
                     .is_some()
                 {
-                    Ok(GcStr::from_utf8_unchecked(array))
+                    Ok(array.map_unrooted(|v| GcStr::from_utf8_unchecked(v)))
                 } else {
                     Err(())
                 }
@@ -352,37 +362,28 @@ mod gc_str {
         }
 
         pub unsafe fn from_utf8_unchecked(array: GcPtr<ValueArray>) -> GcStr {
-            GcStr(array)
-        }
-
-        pub fn into_inner(self) -> GcPtr<ValueArray> {
-            self.0
-        }
-
-        pub fn generation(&self) -> Generation {
-            self.0.generation()
-        }
-
-        pub fn ptr_eq(self, other: Self) -> bool {
-            self.into_inner().ptr_eq(other.into_inner())
+            GcPtr::cast(array)
         }
     }
 
-    impl Deref for GcStr {
+    impl Deref for ValueStr {
         type Target = str;
 
         fn deref(&self) -> &str {
-            unsafe { str::from_utf8_unchecked(self.0.as_slice::<u8>().unwrap()) }
+            unsafe { str::from_utf8_unchecked(self.0.unsafe_array::<u8>()) }
         }
     }
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq, Trace)]
+#[derive(PartialEq, Trace)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -441,12 +442,14 @@ pub(crate) enum ValueRepr {
     Thread(#[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcPtr<Thread>),
 }
 
-// FIXME Remove Clone to make it harder to create unrooted values
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -462,7 +465,21 @@ impl From<ValueRepr> for Value {
     }
 }
 
+unsafe impl CopyUnrooted for Value {}
+
+impl CloneUnrooted for Value {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
 impl Value {
+    pub(crate) fn from_ref(v: &ValueRepr) -> &Value {
+        unsafe { mem::transmute(v) }
+    }
+
     pub fn int(i: VmInt) -> Value {
         Value(ValueRepr::Int(i))
     }
@@ -474,12 +491,17 @@ impl Value {
         Value(ValueRepr::Tag(tag))
     }
 
-    pub fn get_variants(&self) -> Variants {
-        unsafe { Variants::new(self) }
+    // Alias to let `on_array!` work with cloning
+    unsafe fn clone(&self) -> Value {
+        self.clone_unrooted()
     }
 
-    pub(crate) fn get_repr(&self) -> ValueRepr {
-        self.0
+    pub fn get_variants(&self) -> Variants {
+        Variants::new(self)
+    }
+
+    pub(crate) fn get_repr(&self) -> &ValueRepr {
+        &self.0
     }
 
     pub fn generation(&self) -> Generation {
@@ -498,7 +520,7 @@ impl Value {
 
     pub fn obj_eq(&self, other: &Self) -> bool {
         let (self_, other) = (self.get_repr(), other.get_repr());
-        if mem::discriminant(&self_) != mem::discriminant(&other) {
+        if mem::discriminant(self_) != mem::discriminant(other) {
             return false;
         }
         use self::ValueRepr::*;
@@ -518,6 +540,80 @@ impl Value {
             _ => unreachable!(),
         }
     }
+}
+
+impl ValueRepr {
+    pub fn get_variants(&self) -> Variants {
+        Variants::new(Value::from_ref(self))
+    }
+}
+
+unsafe impl CopyUnrooted for ValueRepr {}
+
+impl CloneUnrooted for ValueRepr {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
+macro_rules! value_from {
+    ($($typ: ty, $ident: ident),*) => {
+        $(
+            impl From<$typ> for Value {
+                #[inline]
+                fn from(v: $typ) -> Value {
+                    Value(ValueRepr::$ident(v))
+                }
+            }
+        )*
+    }
+}
+
+macro_rules! value_from_gc {
+    ($($typ: ty, $ident: ident),*) => {
+        $(
+            value_from!(GcPtr<$typ>, $ident);
+
+            impl<'gc> From<&'gc GcPtr<$typ>> for Variants<'gc> {
+                #[inline]
+                fn from(v: &'gc GcPtr<$typ>) -> Self {
+                    // SAFETY The 'gc lifetimme is preserved in the returned value
+                    unsafe {
+                        Variants(ValueRepr::$ident(v.clone_unrooted()), PhantomData)
+                    }
+                }
+            }
+
+            impl<'gc> From<gc::GcRef<'gc, $typ>> for Variants<'gc> {
+                #[inline]
+                fn from(v: gc::GcRef<'gc, $typ>) -> Self {
+                    // SAFETY The 'gc lifetimme is preserved in the returned value
+                    unsafe {
+                        Variants(ValueRepr::$ident(v.unrooted()), PhantomData)
+                    }
+                }
+            }
+        )*
+    }
+}
+
+value_from! {
+    u8, Byte,
+    VmInt, Int,
+    f64, Float
+}
+
+value_from_gc! {
+    ValueStr, String,
+    ExternFunction, Function,
+    ClosureData, Closure,
+    PartialApplicationData, PartialApplication,
+    DataStruct, Data,
+    ValueArray, Array,
+    Box<dyn Userdata>, Userdata,
+    Thread, Thread
 }
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
@@ -587,7 +683,7 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
             level: self.max_level,
             debug_level: self.debug_level,
         }
-        .pretty(self.value)
+        .pretty(self.value.clone())
         .group()
         .1
         .render(self.width, &mut s)
@@ -770,18 +866,21 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Trace)]
+#[derive(Debug, Trace)]
 #[gluon(gluon_vm)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
-pub enum Callable {
+pub(crate) enum Callable {
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
@@ -798,6 +897,15 @@ impl Callable {
             Callable::Closure(ref closure) => closure.function.args,
             Callable::Extern(ref ext) => ext.args,
         }
+    }
+}
+
+unsafe impl CopyUnrooted for Callable {}
+impl CloneUnrooted for Callable {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
     }
 }
 
@@ -831,10 +939,17 @@ impl PartialEq for PartialApplicationData {
 #[derive(Trace)]
 #[gluon(gluon_vm)]
 pub(crate) struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
+
+impl PartialApplicationDataDef<'_> {
+    pub(crate) fn size_of(args: usize) -> usize {
+        size_of::<PartialApplicationData>() + size_of::<Value>() * args
+    }
+}
+
 unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
     type Value = PartialApplicationData;
     fn size(&self) -> usize {
-        size_of::<PartialApplicationData>() + size_of::<Value>() * self.1.len()
+        Self::size_of(self.1.len())
     }
     fn initialize<'w>(
         self,
@@ -843,7 +958,9 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.0;
-            result.args.initialize(self.1.iter().cloned());
+            result
+                .args
+                .initialize(self.1.iter().map(|v| v.clone_unrooted()));
             result
         }
     }
@@ -890,13 +1007,13 @@ impl fmt::Debug for ValueRepr {
                 if level <= 0 {
                     return Ok(());
                 }
-                match (self.1).0 {
+                match &(self.1).0 {
                     ValueRepr::Byte(i) => write!(f, "{:?}b", i),
                     ValueRepr::Int(i) => write!(f, "{:?}", i),
                     ValueRepr::Float(x) => write!(f, "{:?}f", x),
                     ValueRepr::String(x) => write!(f, "{:?}", &*x),
                     ValueRepr::Tag(tag) => write!(f, "{{{:?}: }}", tag),
-                    ValueRepr::Data(ref data) => match data.poly_tag() {
+                    ValueRepr::Data(data) => match data.poly_tag() {
                         Some(tag) => write!(
                             f,
                             "{{{}: {:?}}}",
@@ -910,7 +1027,7 @@ impl fmt::Debug for ValueRepr {
                             LevelSlice(level - 1, variant_iter(&data.fields))
                         ),
                     },
-                    ValueRepr::Array(ref array) => {
+                    ValueRepr::Array(array) => {
                         let mut first = true;
                         write!(f, "[")?;
                         for value in array.iter() {
@@ -922,15 +1039,15 @@ impl fmt::Debug for ValueRepr {
                         }
                         write!(f, "]")
                     }
-                    ValueRepr::Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
-                    ValueRepr::Closure(ref closure) => {
+                    ValueRepr::Function(func) => write!(f, "<EXTERN {:?}>", &**func),
+                    ValueRepr::Closure(closure) => {
                         let p: *const _ = &*closure.function;
                         write!(f, "<{:?} {:?}>", closure.function.name, p)
                     }
-                    ValueRepr::PartialApplication(ref app) => {
-                        let name = match app.function {
-                            Callable::Closure(ref c) => &c.function.name,
-                            Callable::Extern(ref e) => &e.id,
+                    ValueRepr::PartialApplication(app) => {
+                        let name = match &app.function {
+                            Callable::Closure(c) => &c.function.name,
+                            Callable::Extern(e) => &e.id,
                         };
                         write!(
                             f,
@@ -939,12 +1056,12 @@ impl fmt::Debug for ValueRepr {
                             LevelSlice(level - 1, variant_iter(&app.args))
                         )
                     }
-                    ValueRepr::Userdata(ref data) => write!(f, "<Userdata {:?}>", &**data),
+                    ValueRepr::Userdata(data) => write!(f, "<Userdata {:?}>", &**data),
                     ValueRepr::Thread(_) => write!(f, "<thread>"),
                 }
             }
         }
-        unsafe { write!(f, "{:?}", Level(7, Variants::new(&Value(*self)))) }
+        write!(f, "{:?}", Level(7, self.get_variants()))
     }
 }
 
@@ -1027,7 +1144,7 @@ macro_rules! impl_repr {
                 unsafe {
                     let result = &mut *result.as_mut_ptr();
                     result.set_repr($repr);
-                    result.unsafe_array_mut::<$id>().initialize(self.iter().cloned());
+                    result.unsafe_array_mut::<$id>().initialize(self.iter().map(|v| v.clone()));
                     result
                 }
             }
@@ -1067,12 +1184,17 @@ impl_repr! {
 }
 
 unsafe impl<'a> DataDef for &'a str {
-    type Value = ValueArray;
+    type Value = ValueStr;
     fn size(&self) -> usize {
         self.as_bytes().size()
     }
-    fn initialize<'w>(self, result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-        self.as_bytes().initialize(result)
+    fn initialize<'w>(self, mut result: WriteOnly<'w, ValueStr>) -> &'w mut ValueStr {
+        unsafe {
+            let ptr = self
+                .as_bytes()
+                .initialize(WriteOnly::new(result.as_mut_ptr() as *mut ValueArray));
+            &mut *(ptr as *mut ValueArray as *mut ValueStr)
+        }
     }
 }
 
@@ -1095,6 +1217,11 @@ impl Repr {
     }
 }
 
+#[inline(always)]
+fn cast<T, R>(array: T, f: impl FnOnce(T) -> R) -> R {
+    f(array)
+}
+
 macro_rules! on_array {
     ($array:expr, $f:expr) => {{
         let ref array = $array;
@@ -1102,14 +1229,14 @@ macro_rules! on_array {
         // SAFETY We check the `repr` before casting to the inner type
         unsafe {
             match array.repr() {
-                Repr::Byte => $f(array.unsafe_array::<u8>()),
-                Repr::Int => $f(array.unsafe_array::<VmInt>()),
-                Repr::Float => $f(array.unsafe_array::<f64>()),
-                Repr::String => $f(array.unsafe_array::<GcStr>()),
-                Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
-                Repr::Unknown => $f(array.unsafe_array::<Value>()),
-                Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<dyn Userdata>>>()),
-                Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
+                Repr::Byte => cast(array.unsafe_array::<u8>(), $f),
+                Repr::Int => cast(array.unsafe_array::<VmInt>(), $f),
+                Repr::Float => cast(array.unsafe_array::<f64>(), $f),
+                Repr::String => cast(array.unsafe_array::<GcStr>(), $f),
+                Repr::Array => cast(array.unsafe_array::<GcPtr<ValueArray>>(), $f),
+                Repr::Unknown => cast(array.unsafe_array::<Value>(), $f),
+                Repr::Userdata => cast(array.unsafe_array::<GcPtr<Box<dyn Userdata>>>(), $f),
+                Repr::Thread => cast(array.unsafe_array::<GcPtr<Thread>>(), $f),
             }
         }
     }};
@@ -1144,8 +1271,7 @@ pub struct Iter<'a> {
 impl<'a> Iterator for Iter<'a> {
     type Item = Variants<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.array.len() {
-            let value = self.array.get(self.index);
+        if let Some(value) = self.array.get(self.index) {
             self.index += 1;
             Some(value)
         } else {
@@ -1166,19 +1292,33 @@ unsafe impl Trace for ValueArray {
 }
 
 impl ValueArray {
-    pub fn get(&self, index: usize) -> Variants {
-        unsafe {
-            let value = match self.repr {
-                Repr::Byte => ValueRepr::Byte(self.unsafe_get(index)),
-                Repr::Int => ValueRepr::Int(self.unsafe_get(index)),
-                Repr::Float => ValueRepr::Float(self.unsafe_get(index)),
-                Repr::String => ValueRepr::String(self.unsafe_get(index)),
-                Repr::Array => ValueRepr::Array(self.unsafe_get(index)),
-                Repr::Unknown => self.unsafe_get(index),
-                Repr::Userdata => ValueRepr::Userdata(self.unsafe_get(index)),
-                Repr::Thread => ValueRepr::Thread(self.unsafe_get(index)),
-            };
-            Variants::with_root(value.into(), self)
+    pub fn get(&self, index: usize) -> Option<Variants> {
+        if index < self.len() {
+            // SAFETY the representation is checked before calling any unsafe
+            unsafe {
+                let value = match self.repr {
+                    Repr::Byte => ValueRepr::Byte(self.unsafe_get::<u8>(index).clone()),
+                    Repr::Int => ValueRepr::Int(self.unsafe_get::<VmInt>(index).clone()),
+                    Repr::Float => ValueRepr::Float(self.unsafe_get::<f64>(index).clone()),
+                    Repr::String => {
+                        ValueRepr::String(self.unsafe_get::<GcStr>(index).clone_unrooted())
+                    }
+                    Repr::Array => ValueRepr::Array(
+                        self.unsafe_get::<GcPtr<ValueArray>>(index).clone_unrooted(),
+                    ),
+                    Repr::Unknown => self.unsafe_get::<Value>(index).clone_unrooted().0,
+                    Repr::Userdata => ValueRepr::Userdata(
+                        self.unsafe_get::<GcPtr<Box<dyn Userdata>>>(index)
+                            .clone_unrooted(),
+                    ),
+                    Repr::Thread => {
+                        ValueRepr::Thread(self.unsafe_get::<GcPtr<Thread>>(index).clone_unrooted())
+                    }
+                };
+                Some(Variants::with_root(&Value::from(value), self))
+            }
+        } else {
+            None
         }
     }
 
@@ -1217,18 +1357,18 @@ impl ValueArray {
 
         macro_rules! initialize_variants {
             ($($id: ident)+) => {
-        match self.repr {
+                match self.repr {
                     $(Repr::$id => {
-                let iter = iter.map(|v| match v {
-                            ValueRepr::$id(x) => x,
-                    _ => unreachable!(),
-                });
-                self.unsafe_array_mut().initialize(iter);
+                        let iter = iter.map(|v| match v {
+                                    ValueRepr::$id(x) => x,
+                            _ => unreachable!(),
+                        });
+                        self.unsafe_array_mut().initialize(iter);
                     })+
-            Repr::Unknown => {
-                self.unsafe_array_mut().initialize(iter);
-            }
-            }
+                    Repr::Unknown => {
+                        self.unsafe_array_mut().initialize(iter);
+                    }
+                }
             }
         }
 
@@ -1247,8 +1387,8 @@ impl ValueArray {
         }
     }
 
-    unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
-        self.unsafe_array()[index]
+    unsafe fn unsafe_get<T>(&self, index: usize) -> &T {
+        &self.unsafe_array()[index]
     }
 
     unsafe fn unsafe_array<T>(&self) -> &Array<T> {
@@ -1273,7 +1413,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
             result.repr = self.repr;
             on_array!(self, |array: &Array<_>| result
                 .unsafe_array_mut()
-                .initialize(array.iter().cloned()));
+                .initialize(array.iter().map(|v| v.clone())));
             result
         }
     }
@@ -1310,10 +1450,23 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
     }
 }
 
-pub struct Cloner<'t> {
+#[derive(PartialEq, Trace)]
+#[gluon(gluon_vm)]
+#[repr(transparent)]
+pub struct ValueStr(ValueArray);
+
+impl Eq for ValueStr {}
+
+impl ValueStr {
+    pub unsafe fn as_mut_array(&mut self) -> &mut ValueArray {
+        &mut self.0
+    }
+}
+
+pub struct Cloner<'gc> {
     visited: FnvMap<*const (), ValueRepr>,
-    thread: &'t Thread,
-    gc: &'t mut Gc,
+    thread: &'gc Thread,
+    gc: &'gc mut Gc,
     receiver_generation: Generation,
 }
 
@@ -1341,16 +1494,24 @@ impl<'t> Cloner<'t> {
         self
     }
 
-    pub(crate) fn deep_clone(&mut self, value: &Value) -> Result<Value> {
+    pub(crate) fn deep_clone<'gc>(&'gc mut self, value: &Value) -> Result<Variants<'gc>> {
+        unsafe {
+            self.deep_clone_inner(value)
+                .map(move |v| Variants::with_root(&v, self.gc))
+        }
+    }
+
+    unsafe fn deep_clone_inner(&mut self, value: &Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
         if self
             .receiver_generation
             .can_contain_values_from(value.generation())
         {
-            return Ok(value.clone());
+            return Ok(value.clone_unrooted());
         }
-        let result = match value.0 {
+
+        let result = match &value.0 {
             String(data) => self.deep_clone_str(data),
             ValueRepr::Data(data) => self.deep_clone_data(data).map(ValueRepr::Data),
             ValueRepr::Array(data) => self.deep_clone_array(data).map(ValueRepr::Array),
@@ -1361,48 +1522,53 @@ impl<'t> Cloner<'t> {
             Function(f) => self
                 .gc
                 .alloc(Move(ExternFunction::clone(&f)))
-                .map(ValueRepr::Function),
-            ValueRepr::Tag(i) => Ok(ValueRepr::Tag(i)),
-            ValueRepr::Byte(i) => Ok(ValueRepr::Byte(i)),
-            Int(i) => Ok(Int(i)),
-            Float(f) => Ok(Float(f)),
-            ValueRepr::Userdata(userdata) => userdata.deep_clone(self).map(ValueRepr::Userdata),
+                .map(|v| ValueRepr::Function(v.unrooted())),
+            ValueRepr::Tag(i) => Ok(ValueRepr::Tag(*i)),
+            ValueRepr::Byte(i) => Ok(ValueRepr::Byte(*i)),
+            Int(i) => Ok(Int(*i)),
+            Float(f) => Ok(Float(*f)),
+            ValueRepr::Userdata(userdata) => userdata
+                .deep_clone(self)
+                .map(|v| ValueRepr::Userdata(v.unrooted())),
             ValueRepr::Thread(_) => Err(Error::Message("Threads cannot be deep cloned yet".into())),
         };
         result.map(Value::from)
     }
 
-    fn deep_clone_ptr<T, A, R>(
+    unsafe fn deep_clone_ptr<T, A, R>(
         &mut self,
-        value: GcPtr<T>,
+        value: &GcPtr<T>,
         alloc: A,
     ) -> Result<StdResult<ValueRepr, R>>
     where
-        A: FnOnce(&mut Gc, &T) -> Result<(ValueRepr, R)>,
+        A: for<'s> FnOnce(&'s mut Gc, &T) -> Result<(gc::Borrow<'s, ValueRepr>, gc::Borrow<'s, R>)>,
     {
-        let key = &*value as *const T as *const ();
+        let key = &**value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
-            Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
+            Entry::Occupied(entry) => return Ok(Ok(entry.get().clone_unrooted())),
             Entry::Vacant(entry) => {
                 // FIXME Should allocate the real `Value` and possibly fill it later
-                let (value, new_ptr) = alloc(self.gc, &value)?;
-                entry.insert(value);
-                new_ptr
+                let (value, new_ptr) = alloc(self.gc, value)?;
+                entry.insert(value.unrooted());
+                new_ptr.unrooted()
             }
         };
         Ok(Err(new_ptr))
     }
 
-    fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
+    unsafe fn deep_clone_str(&mut self, data: &GcStr) -> Result<ValueRepr> {
         Ok(self
-            .deep_clone_ptr(data.into_inner(), |gc, _| {
-                let ptr = GcStr::alloc(gc, &data[..])?;
-                Ok((String(ptr), ptr))
+            .deep_clone_ptr(data, |gc, _| {
+                let ptr = gc.alloc(&data[..])?;
+                Ok((construct_gc!(String(@ptr)), ptr))
             })?
             .unwrap_or_else(String))
     }
 
-    fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
+    unsafe fn deep_clone_data(
+        &mut self,
+        data_ptr: &GcPtr<DataStruct>,
+    ) -> Result<GcPtr<DataStruct>> {
         let result = self.deep_clone_ptr(data_ptr, |gc, data| {
             let ptr = if data.is_record() {
                 gc.alloc(RecordDef {
@@ -1416,16 +1582,16 @@ impl<'t> Cloner<'t> {
                     elems: &data.fields,
                 })?
             };
-            Ok((ValueRepr::Data(ptr), ptr))
+            Ok((construct_gc!(ValueRepr::Data(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Data(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
-                    let new_fields = unsafe { &mut new_data.as_mut().fields };
+                    let new_fields = &mut new_data.as_mut().fields;
                     for (new, old) in new_fields.iter_mut().zip(&data_ptr.fields) {
-                        *new = self.deep_clone(old)?;
+                        *new = self.deep_clone_inner(old)?;
                     }
                 }
                 Ok(new_data)
@@ -1433,16 +1599,16 @@ impl<'t> Cloner<'t> {
         }
     }
 
-    fn deep_clone_userdata(
+    unsafe fn deep_clone_userdata(
         &mut self,
-        ptr: GcPtr<Box<dyn Userdata>>,
+        ptr: &GcPtr<Box<dyn Userdata>>,
     ) -> Result<GcPtr<Box<dyn Userdata>>> {
-        ptr.deep_clone(self)
+        Ok(ptr.deep_clone(self)?.unrooted())
     }
 
-    fn deep_clone_array(&mut self, array: GcPtr<ValueArray>) -> Result<GcPtr<ValueArray>> {
+    unsafe fn deep_clone_array(&mut self, array: &GcPtr<ValueArray>) -> Result<GcPtr<ValueArray>> {
         unsafe fn deep_clone_elems<T, F>(
-            mut new_array: GcPtr<ValueArray>,
+            new_array: &mut GcPtr<ValueArray>,
             mut deep_clone: F,
         ) -> Result<()>
         where
@@ -1455,76 +1621,77 @@ impl<'t> Cloner<'t> {
             Ok(())
         }
 
-        let result = self.deep_clone_ptr(array, |gc, array| {
+        let result = self.deep_clone_ptr(&array, |gc, array| {
             let ptr = gc.alloc(array)?;
-            Ok((ValueRepr::Array(ptr), ptr))
+            Ok((construct_gc!(ValueRepr::Array(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Array(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
-            Err(new_array) => {
-                unsafe {
-                    match new_array.repr() {
-                        Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
-                        Repr::Array => deep_clone_elems(new_array, |e| self.deep_clone_array(*e)),
-                        Repr::Unknown => deep_clone_elems(new_array, |e| self.deep_clone(e)),
-                        Repr::Userdata => {
-                            deep_clone_elems(new_array, |e| self.deep_clone_userdata(*e))
-                        }
-                        Repr::Thread => {
-                            return Err(Error::Message("Threads cannot be deep cloned yet".into()));
-                        }
-                    }?;
-                }
+            Err(mut new_array) => {
+                match new_array.repr() {
+                    Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
+                    Repr::Array => deep_clone_elems(&mut new_array, |e| self.deep_clone_array(e)),
+                    Repr::Unknown => deep_clone_elems(&mut new_array, |e| self.deep_clone_inner(e)),
+                    Repr::Userdata => {
+                        deep_clone_elems(&mut new_array, |e| self.deep_clone_userdata(e))
+                    }
+                    Repr::Thread => {
+                        return Err(Error::Message("Threads cannot be deep cloned yet".into()));
+                    }
+                }?;
                 Ok(new_array)
             }
         }
     }
 
-    fn deep_clone_closure(&mut self, data: GcPtr<ClosureData>) -> Result<GcPtr<ClosureData>> {
-        let result = self.deep_clone_ptr(data, |gc, data| {
+    unsafe fn deep_clone_closure(
+        &mut self,
+        data: &GcPtr<ClosureData>,
+    ) -> Result<GcPtr<ClosureData>> {
+        let result = self.deep_clone_ptr(&data, |gc, data| {
             debug_assert!(data.function.generation().is_root());
 
-            let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
-            Ok((Closure(ptr), ptr))
+            let ptr = gc.alloc(ClosureDataDef(&data.function, data.upvars.iter()))?;
+            Ok((construct_gc!(Closure(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::Closure(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
-                    let new_upvars = unsafe { &mut new_data.as_mut().upvars };
+                    let new_upvars = &mut new_data.as_mut().upvars;
                     for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                        *new = self.deep_clone(old)?;
+                        *new = self.deep_clone_inner(old)?;
                     }
                 }
                 Ok(new_data)
             }
         }
     }
-    fn deep_clone_app(
+    unsafe fn deep_clone_app(
         &mut self,
-        data: GcPtr<PartialApplicationData>,
+        data: &GcPtr<PartialApplicationData>,
     ) -> Result<GcPtr<PartialApplicationData>> {
-        let function = match data.function {
+        let function = match &data.function {
             Callable::Closure(closure) => Callable::Closure(self.deep_clone_closure(closure)?),
             Callable::Extern(ext) => {
-                Callable::Extern(self.gc.alloc(Move(ExternFunction::clone(&ext)))?)
+                Callable::Extern(self.gc.alloc(Move(ExternFunction::clone(&ext)))?.unrooted())
             }
         };
 
-        let result = self.deep_clone_ptr(data, |gc, data| {
+        let result = self.deep_clone_ptr(&data, |gc, data| {
             let ptr = gc.alloc(PartialApplicationDataDef(function, &data.args))?;
-            Ok((ValueRepr::PartialApplication(ptr), ptr))
+            Ok((construct_gc!(ValueRepr::PartialApplication(@ptr)), ptr))
         })?;
         match result {
             Ok(ValueRepr::PartialApplication(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
-                    let new_args = unsafe { &mut new_data.as_mut().args };
+                    let new_args = &mut new_data.as_mut().args;
                     for (new, old) in new_args.iter_mut().zip(&data.args) {
-                        *new = self.deep_clone(old)?;
+                        *new = self.deep_clone_inner(old)?;
                     }
                 }
                 Ok(new_data)
@@ -1590,50 +1757,36 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&nil) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, Variants::new(&nil), &DebugLevel::None)
             ),
             "Nil"
         );
-        let list1 = Value::from(ValueRepr::Data(
+        let list1 = Variants::from(
             gc.alloc(Def {
                 tag: 0,
                 elems: &[Value::from(ValueRepr::Int(123)), nil],
             })
             .unwrap(),
-        ));
+        );
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&list1) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, list1.clone(), &DebugLevel::None)
             ),
             "Cons 123 Nil"
         );
-        let list2 = Value::from(ValueRepr::Data(
+        let list1 = unsafe { list1.get_value().clone_unrooted() };
+        let list2 = Variants::from(
             gc.alloc(Def {
                 tag: 0,
                 elems: &[ValueRepr::Int(0).into(), list1],
             })
             .unwrap(),
-        ));
+        );
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&list2) },
-                    &DebugLevel::None
-                )
+                ValuePrinter::new(&env, &typ, list2, &DebugLevel::None)
             ),
             "Cons 0 (Cons 123 Nil)"
         );
@@ -1649,17 +1802,9 @@ mod tests {
 
         let env = MockEnv(None);
 
-        let nil = Value::array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
+        let nil = Variants::from(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
         assert_eq!(
-            format!(
-                "{}",
-                ValuePrinter::new(
-                    &env,
-                    &typ,
-                    unsafe { Variants::new(&nil) },
-                    &DebugLevel::None
-                )
-            ),
+            format!("{}", ValuePrinter::new(&env, &typ, nil, &DebugLevel::None)),
             "[1, 2, 3]"
         );
 

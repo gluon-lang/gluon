@@ -3,8 +3,8 @@ use std::{borrow::Borrow, cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 use crate::base::types::ArcType;
 
 use crate::{
-    api::{ArrayRef, Getable, Pushable, ValueRef, VmType},
-    gc::Trace,
+    api::{Getable, Pushable, ValueRef, VmType},
+    gc::{GcRef, Trace},
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
     value::{ArrayRepr, Value, ValueArray},
@@ -56,24 +56,24 @@ where
 /// self (and as such as its own lifetime already)
 pub trait AsVariant<'s, 'value>: private::Sealed {
     fn get_variant(&'s self) -> Variants<'value>;
-    fn get_value(self) -> Value;
+    fn get_value(&self) -> &Value;
 }
 
 impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
     fn get_variant(&'v self) -> Self {
-        *self
+        self.clone()
     }
-    fn get_value(self) -> Value {
-        Value::from(self.0)
+    fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
     }
 }
 
 impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
     fn get_variant(&'v self) -> Variants<'value> {
-        **self
+        (*self).clone()
     }
-    fn get_value(self) -> Value {
-        Value::from(self.0)
+    fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
     }
 }
 impl<'value, T> AsVariant<'value, 'value> for RootedValue<T>
@@ -83,7 +83,7 @@ where
     fn get_variant(&'value self) -> Variants<'value> {
         self.get_variant()
     }
-    fn get_value(self) -> Value {
+    fn get_value(&self) -> &Value {
         RootedValue::get_value(&self)
     }
 }
@@ -176,7 +176,10 @@ where
 
     fn deref(&self) -> &[V] {
         match self.0.as_value_ref() {
-            ValueRef::Array(data) => data.as_slice().expect("array is not of the correct type"),
+            ValueRef::Array(data) => data
+                .as_ref()
+                .as_slice()
+                .expect("array is not of the correct type"),
             _ => ice!("ValueRef is not an array"),
         }
     }
@@ -319,9 +322,8 @@ where
     T: AsVariant<'s, 'value>,
     V: ?Sized,
 {
-    /// Unsafe as `Value` are not rooted
-    pub unsafe fn get_value(&'s self) -> Value {
-        self.0.get_variant().get_value()
+    pub fn get_value(&'s self) -> &'s Value {
+        self.0.get_value()
     }
 
     pub fn get_variant(&'s self) -> Variants<'value> {
@@ -387,22 +389,21 @@ where
     T: AsVariant<'s, 'value>,
 {
     pub fn len(&'s self) -> usize {
-        self.get_value_array().len()
+        self.get_array().len()
     }
 
-    fn get_array(&'s self) -> ArrayRef<'value> {
+    pub fn get_array(&'s self) -> GcRef<'value, ValueArray> {
         match self.0.get_variant().as_ref() {
-            ValueRef::Array(array) => array,
-            _ => ice!("Expected an array"),
+            ValueRef::Array(data) => data,
+            _ => ice!("Value is not an array"),
         }
     }
 
-    pub(crate) fn get_value_array(&'s self) -> &'value ValueArray {
-        self.get_array().0
-    }
-
     pub fn get(&'s self, index: VmInt) -> Option<OpaqueRef<'value, V>> {
-        self.get_array().get(index as usize).map(Opaque::from_value)
+        self.get_array()
+            .as_ref()
+            .get(index as usize)
+            .map(Opaque::from_value)
     }
 
     pub fn iter(&'s self) -> Iter<'s, 'value, T, V> {
@@ -423,6 +424,7 @@ where
         V: for<'vm> Getable<'vm, 'value>,
     {
         self.get_array()
+            .as_ref()
             .get(index as usize)
             .map(|v| V::from_value(self.0.vm(), v))
     }

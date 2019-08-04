@@ -11,11 +11,11 @@ use crate::{
         generic::A, FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM,
     },
     base::types::{self, ArcType},
-    gc::{GcPtr, Move, Trace},
+    gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
-    Error, ExternModule, Result, Variants,
+    Error, ExternModule, Result,
 };
 
 pub struct Lazy<T> {
@@ -30,19 +30,26 @@ impl<T> Userdata for Lazy<T>
 where
     T: Any + Send + Sync,
 {
-    fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<dyn Userdata>>> {
+    fn deep_clone<'gc>(
+        &self,
+        deep_cloner: &'gc mut Cloner,
+    ) -> Result<GcRef<'gc, Box<dyn Userdata>>> {
         let value = self.value.lock().unwrap();
-        let cloned_value = match *value {
-            Lazy_::Blackhole(..) => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
-            Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
-        };
-        let data: Box<dyn Userdata> = Box::new(Lazy {
-            value: Mutex::new(cloned_value),
-            thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
-            _marker: PhantomData::<A>,
-        });
-        deep_cloner.gc().alloc(Move(data))
+
+        // SAFETY During the `alloc` call the unrooted values are scanned through the `DataDef`
+        unsafe {
+            let cloned_value = match *value {
+                Lazy_::Blackhole(..) => return Err(Error::Message("<<loop>>".into())),
+                Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?.unrooted()),
+                Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?.unrooted()),
+            };
+            let data: Box<dyn Userdata> = Box::new(Lazy {
+                value: Mutex::new(cloned_value),
+                thread: GcPtr::from_raw(deep_cloner.thread()),
+                _marker: PhantomData::<A>,
+            });
+            deep_cloner.gc().alloc(Move(data))
+        }
     }
 }
 
@@ -96,26 +103,23 @@ fn force(
     let mut lazy_lock = lazy.value.lock().unwrap();
     let lazy: GcPtr<Lazy<A>> = unsafe { GcPtr::from_raw(lazy) };
     let thunk = match *lazy_lock {
-        Lazy_::Thunk(ref value) => Some(value.clone()),
+        Lazy_::Thunk(ref value) => Some(value),
         _ => None,
     };
     match thunk {
         Some(value) => {
+            let mut function = FunctionRef::<fn(()) -> OpaqueValue<RootedThread, A>>::from_value(
+                vm,
+                value.get_variants(),
+            );
             *lazy_lock = Lazy_::Blackhole(vm as *const Thread as usize, None);
-            let mut function = unsafe {
-                FunctionRef::<fn(()) -> OpaqueValue<RootedThread, A>>::from_value(
-                    vm,
-                    Variants::new(&value),
-                )
-            };
             drop(lazy_lock);
             let vm = vm.root_thread();
             Either::B(Either::A(function.call_fast_async(()).then(
                 move |result| match result {
                     Ok(value) => {
                         {
-                            let value = match lazy.thread.deep_clone_value(&vm, value.get_variant())
-                            {
+                            let value = match lazy.thread.deep_clone_value(&vm, value.get_value()) {
                                 Ok(value) => value,
                                 Err(err) => return Err(err.to_string().into()),
                             };
@@ -128,7 +132,10 @@ fn force(
                                 }
                                 _ => unreachable!(),
                             }
-                            *lazy_lock = Lazy_::Value(value);
+                            // SAFETY Rooted by being stored in the lazy value
+                            unsafe {
+                                *lazy_lock = Lazy_::Value(value.get_variant().unrooted());
+                            }
                         }
                         value.push(&mut vm.current_context()).unwrap();
                         Ok(Pushed::default())
@@ -180,9 +187,10 @@ fn force(
 }
 
 fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
+    // SAFETY We get rooted immediately on returning
     unsafe {
         Lazy {
-            value: Mutex::new(Lazy_::Thunk(f.get_value())),
+            value: Mutex::new(Lazy_::Thunk(f.get_value().clone_unrooted())),
             thread: GcPtr::from_raw(f.vm()),
             _marker: PhantomData,
         }

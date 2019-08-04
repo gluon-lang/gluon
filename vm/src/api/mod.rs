@@ -6,13 +6,10 @@ use crate::base::{
 };
 use crate::{
     forget_lifetime,
-    gc::{DataDef, GcPtr, Move, Trace},
-    thread::{self, Context, RootedThread, ThreadInternal, VmRoot, VmRootInternal},
+    gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
+    thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
-    value::{
-        ArrayDef, ArrayRepr, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
-        ValueRepr,
-    },
+    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
     Error, Result, Variants,
 };
@@ -38,7 +35,7 @@ pub use self::{
     opaque::{Opaque, OpaqueRef, OpaqueValue},
     record::Record,
 };
-pub use crate::{thread::ActiveThread, value::Userdata, value::Cloner};
+pub use crate::{thread::ActiveThread, value::Cloner, value::Userdata};
 
 macro_rules! count {
     () => { 0 };
@@ -60,7 +57,7 @@ macro_rules! impl_getable_simple {
         }
         #[inline(always)]
         fn from_proxy(vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
-            <Self as Getable<'vm, 'value>>::from_value(vm, *proxy)
+            <Self as Getable<'vm, 'value>>::from_value(vm, proxy.clone())
         }
     };
 }
@@ -81,14 +78,14 @@ pub mod ser;
 #[cfg(feature = "serde")]
 pub mod typ;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum ValueRef<'a> {
     Byte(u8),
     Int(VmInt),
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
-    Array(ArrayRef<'a>),
+    Array(GcRef<'a, ValueArray>),
     Userdata(&'a dyn vm::Userdata),
     Thread(&'a Thread),
     Closure(Closure<'a>),
@@ -101,11 +98,11 @@ impl<'a, 'b> PartialEq<ValueRef<'b>> for ValueRef<'a> {
         use self::ValueRef::*;
 
         match (self, other) {
-            (&Byte(l), &Byte(r)) => l == r,
-            (&Int(l), &Int(r)) => l == r,
-            (&Float(l), &Float(r)) => l == r,
-            (&String(l), &String(r)) => l == r,
-            (&Data(l), &Data(r)) => l == r,
+            (Byte(l), Byte(r)) => l == r,
+            (Int(l), Int(r)) => l == r,
+            (Float(l), Float(r)) => l == r,
+            (String(l), String(r)) => l == r,
+            (Data(l), Data(r)) => l == r,
             _ => false,
         }
     }
@@ -120,22 +117,24 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
 impl<'a> ValueRef<'a> {
     #[inline]
     pub(crate) fn new(value: &'a Value) -> ValueRef<'a> {
-        unsafe { ValueRef::rooted_new(value.get_repr()) }
+        Variants::new(value).as_ref()
     }
 
     #[inline]
-    pub(crate) unsafe fn rooted_new(value: ValueRepr) -> ValueRef<'a> {
+    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> {
         match value {
-            ValueRepr::Byte(i) => ValueRef::Byte(i),
-            ValueRepr::Int(i) => ValueRef::Int(i),
-            ValueRepr::Float(f) => ValueRef::Float(f),
+            ValueRepr::Byte(i) => ValueRef::Byte(*i),
+            ValueRepr::Int(i) => ValueRef::Int(*i),
+            ValueRepr::Float(f) => ValueRef::Float(*f),
             ValueRepr::String(s) => ValueRef::String(forget_lifetime(&*s)),
-            ValueRepr::Data(data) => ValueRef::Data(Data(DataInner::Data(forget_lifetime(&*data)))),
-            ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
-            ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
-            ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&*thread)),
-            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&*c))),
+            ValueRepr::Data(data) => {
+                ValueRef::Data(Data(DataInner::Data(GcRef::new(forget_lifetime(data)))))
+            }
+            ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
+            ValueRepr::Array(array) => ValueRef::Array(GcRef::new(forget_lifetime(array))),
+            ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&***data)),
+            ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&**thread)),
+            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
             ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
         }
     }
@@ -161,14 +160,14 @@ impl<'a> Closure<'a> {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 enum DataInner<'a> {
     Tag(VmTag),
-    Data(&'a DataStruct),
+    Data(GcRef<'a, DataStruct>),
 }
 
 /// Stores values of variants and records.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
@@ -191,15 +190,15 @@ impl<'a> Data<'a> {
     /// let val = Fourth // has the tag '3'
     /// ```
     pub fn tag(&self) -> VmTag {
-        match self.0 {
-            DataInner::Tag(tag) => tag,
+        match &self.0 {
+            DataInner::Tag(tag) => *tag,
             DataInner::Data(data) => data.tag(),
         }
     }
 
     /// Returns the number of fields of this value.
     pub fn len(&self) -> usize {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => 0,
             DataInner::Data(data) => data.fields.len(),
         }
@@ -208,9 +207,9 @@ impl<'a> Data<'a> {
     /// Retrieves the value of the field at `index`, like `get_variant`, but does not
     /// wrap it in a `Variants` struct.
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => data.fields.get(index).map(ValueRef::new),
+            DataInner::Data(data) => data.as_ref().fields.get(index).map(ValueRef::new),
         }
     }
 
@@ -220,9 +219,9 @@ impl<'a> Data<'a> {
     }
 
     fn fields(&self) -> &'a [Value] {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => &[][..],
-            DataInner::Data(data) => &data.fields,
+            DataInner::Data(data) => &data.as_ref().fields,
         }
     }
 
@@ -230,33 +229,25 @@ impl<'a> Data<'a> {
     /// name the field (like in a variant). If the value is a record, use
     /// `lookup_field` instead.
     pub fn get_variant(&self, index: usize) -> Option<Variants<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+            DataInner::Data(data) => data.as_ref().fields.get(index).map(Variants::new),
         }
     }
 
     /// Retrieves the field `name` from this record.
     pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
-        match self.0 {
+        match &self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe {
-                GcPtr::from_raw(data)
-                    .get(thread, name)
-                    .ok()
-                    .and_then(|x| x)
-                    .map(|v| Variants(v.get_value().get_repr(), PhantomData))
-            },
+            DataInner::Data(data) => data.get(thread, name).ok().and_then(|x| x),
         }
     }
 
     #[doc(hidden)]
-    pub fn field_names(&self) -> Vec<crate::interner::InternedStr> {
-        match self.0 {
-            DataInner::Tag(_) => Vec::new(),
-            DataInner::Data(data) => unsafe {
-                GcPtr::from_raw(data).field_map().keys().cloned().collect()
-            },
+    pub fn field_names(&self) -> impl Iterator<Item = &crate::interner::InternedStr> {
+        match &self.0 {
+            DataInner::Tag(_) => itertools::Either::Left(None.into_iter()),
+            DataInner::Data(data) => itertools::Either::Right(data.field_map().keys()),
         }
     }
 }
@@ -473,14 +464,9 @@ pub trait AsyncPushable<'vm> {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
-                let msg = unsafe {
-                    GcStr::from_utf8_unchecked(
-                        context
-                            .context()
-                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
-                    )
-                };
-                context.push(ValueRepr::String(msg));
+                let mut context = context.context();
+                let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
+                context.stack.push(Variants::from(msg));
                 Status::Error
             }
         }
@@ -510,14 +496,9 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         match self.push(context) {
             Ok(()) => Status::Ok,
             Err(err) => {
-                let msg = unsafe {
-                    GcStr::from_utf8_unchecked(
-                        context
-                            .context()
-                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
-                    )
-                };
-                context.push(ValueRepr::String(msg));
+                let mut context = context.context();
+                let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
+                context.stack.push(Variants::from(msg));
                 Status::Error
             }
         }
@@ -529,7 +510,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     {
         let mut context = vm.current_context();
         self.push(&mut context)?;
-        let value = context.pop().get_value();
+        let value = context.pop().get_value().clone_unrooted();
         Ok(value)
     }
 
@@ -541,7 +522,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         let mut context = vm.current_context();
         self.push(&mut context)?;
         let variants = context.pop();
-        Ok(vm.root_value(*variants))
+        Ok(vm.root_value(variants.clone()))
     }
 }
 
@@ -571,16 +552,15 @@ where
     t.push(context)?;
     let thread = context.thread();
     let value = context.pop();
-    Ok(U::from_value(thread, *value))
+    Ok(U::from_value(thread, (*value).clone()))
 }
 
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let context = context.context();
+        let mut context = context.context();
         let data: Box<dyn vm::Userdata> = Box::new(self);
-        let userdata = context.alloc_with(thread, Move(data))?;
-        context.stack.push(ValueRepr::Userdata(userdata));
+        let userdata = alloc!(context, Move(data))?;
+        context.stack.push(Variants::from(userdata));
         Ok(())
     }
 }
@@ -683,7 +663,7 @@ where
                 },
                 |x| Ok(RefProxy::Ref(x)),
             ),
-            _ => ice!("ValueRef is not an Userdata"),
+            x => ice!("ValueRef is not an Userdata: {:?}", x),
         }
     }
     fn from_proxy(_vm: &'vm Thread, proxy: &'value mut Self::Proxy) -> Self {
@@ -999,11 +979,9 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let s = unsafe {
-            GcStr::from_utf8_unchecked(context.context().alloc_with(thread, self.as_bytes())?)
-        };
-        context.push(ValueRepr::String(s));
+        let mut context = context.context();
+        let s = alloc!(context, self)?;
+        context.stack.push(Variants::from(s));
         Ok(())
     }
 }
@@ -1148,9 +1126,9 @@ where
     &'s [T]: DataDef<Value = ValueArray>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        let result = context.context().alloc_with(thread, self)?;
-        context.push(ValueRepr::Array(result));
+        let mut context = context.context();
+        let result = alloc!(context, self)?;
+        context.stack.push(Variants::from(result));
         Ok(())
     }
 }
@@ -1159,7 +1137,7 @@ impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
 
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
-            ValueRef::Array(ptr) => ptr.as_slice().unwrap(),
+            ValueRef::Array(ptr) => ptr.as_ref().as_slice().unwrap(),
             _ => ice!("ValueRef is not an Array"),
         }
     }
@@ -1347,13 +1325,8 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
             Some(value) => {
-                let len = context.stack().len();
                 value.push(context)?;
-                let arg = [context.pop().get_value()];
-                let thread = context.thread();
-                let value = context.context().new_data(thread, 1, &arg)?;
-                assert!(context.stack().len() == len);
-                context.push(value);
+                context.context().push_new_data(1, 1)?;
             }
             None => context.push(ValueRepr::Tag(0)),
         }
@@ -1405,18 +1378,7 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
                 0
             }
         };
-        let data = {
-            let value = context.pop().get_value();
-            let thread = context.thread();
-            context.context().alloc_with(
-                thread,
-                Def {
-                    tag: tag,
-                    elems: &[value],
-                },
-            )?
-        };
-        context.push(ValueRepr::Data(data));
+        context.context().push_new_data(tag, 1)?;
         Ok(())
     }
 }
@@ -1478,7 +1440,7 @@ where
         frame_index: VmIndex,
     ) -> Result<Async<()>> {
         unsafe {
-            context.context().return_future(self.0, frame_index);
+            context.return_future(self.0, frame_index);
         }
         Ok(Async::Ready(()))
     }
@@ -1567,16 +1529,14 @@ where
     T: VmRootInternal,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let value = {
-            let thread = context.thread();
-            let full_clone = !thread.can_share_values_with(context.gc(), self.vm());
-            let mut cloner = Cloner::new(thread, context.gc());
-            if full_clone {
-                cloner.force_full_clone();
-            }
-            cloner.deep_clone(&self.get_value())?
-        };
-        context.push(value);
+        let mut context = context.context();
+        let full_clone = !context.thread.can_share_values_with(context.gc, self.vm());
+        let mut cloner = Cloner::new(context.thread, context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        let value = cloner.deep_clone(&self.get_value())?;
+        context.stack.push(value);
         Ok(())
     }
 }
@@ -1589,34 +1549,6 @@ where
 
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         vm.root_value(value)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct ArrayRef<'vm>(&'vm ValueArray);
-
-impl<'vm> ArrayRef<'vm> {
-    pub fn get(&self, index: usize) -> Option<Variants<'vm>> {
-        if index < self.0.len() {
-            Some(self.0.get(index))
-        } else {
-            None
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn as_slice<T>(&self) -> Option<&'vm [T]>
-    where
-        T: ArrayRepr + Copy,
-    {
-        self.0.as_slice()
-    }
-
-    pub fn iter(&self) -> crate::value::Iter<'vm> {
-        self.0.iter()
     }
 }
 
@@ -1700,20 +1632,7 @@ macro_rules! define_tuple {
                     $id.push(context)?;
                 )+
                 let len = count!($($id),+);
-                let thread = context.thread();
-                let context = context.context();
-                let offset = context.stack.len() - len;
-                let value = thread::alloc(&mut context.gc,
-                                          thread,
-                                          &context.stack,
-                                          Def {
-                                              tag: 0,
-                                              elems: &context.stack[offset..],
-                                          })?;
-                for _ in 0..len {
-                    context.stack.pop();
-                }
-                context.stack.push(ValueRepr::Data(value));
+                context.context().push_new_data(0, len)?;
                 Ok(())
             }
         }
@@ -1814,20 +1733,13 @@ where
             v.push(context)?;
             len += 1;
         }
-        let thread = context.thread();
+        let mut context = context.context();
         let result = {
-            let Context {
-                ref mut gc,
-                ref stack,
-                ..
-            } = *context.context();
-            let values = &stack[stack.len() - len..];
-            thread::alloc(gc, thread, stack, ArrayDef(values))?
+            let values = &context.stack[context.stack.len() - len..];
+            alloc!(context, ArrayDef(values))?
         };
-        for _ in 0..len {
-            context.pop();
-        }
-        context.push(ValueRepr::Array(result));
+        context.stack.pop_many(len);
+        context.stack.push(Variants::from(result));
         Ok(())
     }
 }
@@ -1869,7 +1781,7 @@ where
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Array(data) => Collect::new(GetableIter {
-                iter: data.iter(),
+                iter: data.as_ref().iter(),
                 vm,
                 _marker: PhantomData,
             }),

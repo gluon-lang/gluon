@@ -78,7 +78,7 @@ fn record() {
         ValueRef::Data(data) => {
             assert_eq!(data.get(0).unwrap(), ValueRef::Int(0));
             assert_eq!(data.get(1).unwrap(), ValueRef::Float(1.0));
-            match data.get(2).unwrap() {
+            match &data.get(2).unwrap() {
                 ValueRef::Data(data) if data.len() == 0 => (),
                 _ => panic!(),
             }
@@ -236,7 +236,7 @@ let prelude @ { (==) } = import! std.prelude
 false
 }
 
-test_expr! { partial_application,
+test_expr! { partial_application1,
 r"
 let f x y = x #Int+ y in
 let g = f 10
@@ -934,7 +934,7 @@ fn deep_clone_partial_application() {
         Symbol::from("@test"),
         Type::hole(),
         Metadata::default(),
-        unsafe { result.unwrap().0.get_value() },
+        result.unwrap().0.get_value(),
     )
     .unwrap();
 

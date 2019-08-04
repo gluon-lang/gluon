@@ -1,23 +1,21 @@
-extern crate http;
-extern crate hyper;
-extern crate native_tls;
-extern crate tokio_tcp;
-extern crate tokio_tls;
-
 use crate::real_std::{
     fmt, fs,
     path::Path,
     sync::{Arc, Mutex},
 };
 
-use self::{http::StatusCode, hyper::service::Service, hyper::Chunk, hyper::Server};
-
-use futures::{
-    future::{self, Either},
-    Async, Future, Stream,
+use {
+    collect_mac::collect,
+    futures::{
+        future::{self, Either},
+        Async, Future, Stream,
+    },
+    http::{
+        header::{HeaderMap, HeaderName, HeaderValue},
+        StatusCode,
+    },
+    hyper::{service::Service, Chunk, Server},
 };
-
-use self::http::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::base::types::{ArcType, Type};
 

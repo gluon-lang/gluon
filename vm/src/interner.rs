@@ -1,16 +1,31 @@
-use crate::base::fnv::FnvMap;
-use crate::Result;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-use crate::gc::{Gc, Trace};
-use crate::value::GcStr;
+use crate::base::fnv::FnvMap;
+
+use crate::{
+    forget_lifetime,
+    gc::{CloneUnrooted, CopyUnrooted, Gc, Trace},
+    value::GcStr,
+    Result,
+};
 
 /// Interned strings which allow for fast equality checks and hashing
-#[derive(Copy, Clone, Eq)]
+#[derive(Eq)]
 pub struct InternedStr(GcStr);
+
+unsafe impl Send for InternedStr {}
+unsafe impl Sync for InternedStr {}
+
+unsafe impl CopyUnrooted for InternedStr {}
+impl CloneUnrooted for InternedStr {
+    type Value = Self;
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        self.copy_unrooted()
+    }
+}
 
 // InternedStr are explicitly scanned in the intern table so we can skip them when they are
 // encountered elsewhere
@@ -51,8 +66,6 @@ impl Hash for InternedStr {
     }
 }
 
-unsafe impl Sync for InternedStr {}
-
 impl Deref for InternedStr {
     type Target = str;
     fn deref(&self) -> &str {
@@ -67,15 +80,18 @@ impl AsRef<str> for InternedStr {
 }
 
 impl InternedStr {
-    pub fn inner(&self) -> GcStr {
-        self.0
+    pub fn inner(&self) -> &GcStr {
+        &self.0
     }
 }
 
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -107,16 +123,21 @@ impl Interner {
     }
 
     pub fn intern(&mut self, gc: &mut Gc, s: &str) -> Result<InternedStr> {
-        match self.indexes.get(s) {
-            Some(interned_str) => return Ok(*interned_str),
-            None => (),
+        // SAFETY The interner is scanned
+        unsafe {
+            match self.indexes.get(s) {
+                Some(interned_str) => return Ok(interned_str.clone_unrooted()),
+                None => (),
+            }
+
+            let gc_str = InternedStr(gc.alloc(s)?.unrooted());
+
+            // The key will live as long as the value it refers to and the static str never escapes
+            // outside interner so this is safe
+            let key: &'static str = forget_lifetime(&gc_str);
+            self.indexes.insert(key, gc_str.clone_unrooted());
+            Ok(gc_str)
         }
-        let gc_str = InternedStr(GcStr::alloc(gc, s)?);
-        // The key will live as long as the value it refers to and the static str never escapes
-        // outside interner so this is safe
-        let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
-        self.indexes.insert(key, gc_str);
-        Ok(gc_str)
     }
 }
 

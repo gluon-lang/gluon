@@ -242,7 +242,7 @@ impl<'de, 't> Deserializer<'de, 't> {
     {
         let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
         if expected(&typ) {
-            visit(T::from_value(self.state.thread, self.input))
+            visit(T::from_value(self.state.thread, self.input.clone()))
         } else {
             Err(VmError::Message(format!(
                 "Unable to deserialize `{}`",
@@ -507,7 +507,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         };
         // If the type is not `Option` we just visit the value itself
         match option_inner_typ {
-            Some(typ) => match self.input.as_ref() {
+            Some(typ) => match &self.input.as_ref() {
                 ValueRef::Data(data) if data.tag() == 0 => visitor.visit_none(),
                 ValueRef::Data(data) if data.tag() == 1 => visitor.visit_some(&mut Deserializer {
                     state: self.state.clone(),
@@ -524,7 +524,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        match self.input.as_ref() {
+        match &self.input.as_ref() {
             ValueRef::Data(data) if data.tag() == 0 => visitor.visit_unit(),
             _ => self.deserialize_any(visitor),
         }
@@ -538,7 +538,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             VALUE_TRANSFER.with(|t| {
                 let mut store = t.borrow_mut();
                 assert!(store.is_none());
-                *store = Some(self.state.thread.root_value(self.input));
+                *store = Some(self.state.thread.root_value(self.input.clone()));
             });
             visitor.visit_unit()
         } else {
@@ -558,11 +558,11 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         V: Visitor<'de>,
     {
         let typ = resolve::remove_aliases_cow(self.state.env, &mut NullInterner, self.typ);
-        match (self.input.as_ref(), &**typ) {
+        match (&self.input.as_ref(), &**typ) {
             (ValueRef::Array(values), &Type::App(_, ref args)) if args.len() == 1 => visitor
                 .visit_seq(SeqDeserializer::new(
                     self.state.clone(),
-                    values.iter().map(|variant| (variant, &args[0])),
+                    values.as_ref().iter().map(|variant| (variant, &args[0])),
                 )),
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
@@ -826,7 +826,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
         T: DeserializeSeed<'de>,
     {
         let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, self.de.typ);
-        match (self.de.input.as_ref(), &**typ) {
+        match (&self.de.input.as_ref(), &**typ) {
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => seed.deserialize(&mut Deserializer {

@@ -1,15 +1,17 @@
 use std::{
     fmt,
+    marker::PhantomData,
     ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo},
 };
 
-use crate::base::pos::Line;
-use crate::base::symbol::Symbol;
+use crate::base::{pos::Line, symbol::Symbol};
 
-use crate::gc::{GcPtr, Trace};
-use crate::types::VmIndex;
-use crate::value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
-use crate::Variants;
+use crate::{
+    gc::{self, CloneUnrooted, CopyUnrooted, GcPtr, Trace},
+    types::VmIndex,
+    value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr},
+    Variants,
+};
 
 pub trait StackPrimitive {
     fn push_to(&self, stack: &mut Stack);
@@ -40,6 +42,21 @@ impl<'a, T: StackPrimitive + 'a> StackPrimitive for &'a T {
     }
 }
 
+impl<'a, T: StackPrimitive + 'a> StackPrimitive for gc::Borrow<'a, T> {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        (**self).push_to(stack)
+    }
+
+    fn extend_to<'b, I>(iter: I, stack: &mut Stack)
+    where
+        I: IntoIterator<Item = &'b Self>,
+        Self: 'b,
+    {
+        StackPrimitive::extend_to(iter.into_iter().map(|i| &**i), stack)
+    }
+}
+
 impl<'a> StackPrimitive for Variants<'a> {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
@@ -51,32 +68,31 @@ impl<'a> StackPrimitive for Variants<'a> {
         I: IntoIterator<Item = &'b Self>,
         Self: 'b,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(i.0)))
+        Value::extend_to(iter.into_iter().map(|i| i.get_value()), stack)
     }
 }
 
 impl StackPrimitive for ValueRepr {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
-        stack.values.push(Value::from(*self))
+        Value::from_ref(self).push_to(stack)
     }
 
     fn extend_to<'b, I>(iter: I, stack: &mut Stack)
     where
         I: IntoIterator<Item = &'b Self>,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(*i)))
+        Value::extend_to(iter.into_iter().map(Value::from_ref), stack)
     }
 }
 
 impl StackPrimitive for Value {
     #[inline(always)]
     fn push_to(&self, stack: &mut Stack) {
-        stack.values.push(Value::from(self.get_repr()))
+        // SAFETY The value is rooted by pushing it on the stack
+        unsafe {
+            stack.values.push(self.clone_unrooted());
+        }
     }
 
     #[inline(always)]
@@ -84,17 +100,23 @@ impl StackPrimitive for Value {
     where
         I: IntoIterator<Item = &'b Self>,
     {
-        stack
-            .values
-            .extend(iter.into_iter().map(|i| Value::from(i.get_repr())))
+        // SAFETY The value is rooted by pushing it on the stack
+        unsafe {
+            stack
+                .values
+                .extend(iter.into_iter().map(|i| i.clone_unrooted()));
+        }
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -109,7 +131,16 @@ pub struct ClosureState {
     pub(crate) instruction_index: usize,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+unsafe impl CopyUnrooted for ClosureState {}
+impl CloneUnrooted for ClosureState {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub(crate) enum ExternCallState {
     Start,
@@ -117,11 +148,14 @@ pub(crate) enum ExternCallState {
     Poll,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -135,12 +169,23 @@ pub struct ExternState {
     locked: Option<VmIndex>,
 }
 
+unsafe impl CopyUnrooted for ExternState {}
+impl CloneUnrooted for ExternState {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
 impl ExternState {
-    pub fn new(function: GcPtr<ExternFunction>) -> Self {
-        ExternState {
-            function,
-            call_state: ExternCallState::Start,
-            locked: None,
+    pub fn new(function: &GcPtr<ExternFunction>) -> gc::Borrow<Self> {
+        construct_gc! {
+            ExternState {
+                @ function,
+                call_state: ExternCallState::Start,
+                locked: None,
+            }
         }
     }
 
@@ -149,49 +194,68 @@ impl ExternState {
     }
 }
 
-pub trait StackState: Copy {
-    fn from_state(state: State) -> Self;
-    fn to_state(self) -> State;
+pub trait StackState: CopyUnrooted + Sized {
+    fn from_state(state: &State) -> &Self;
+    fn from_state_mut(state: &mut State) -> &mut Self;
+    fn to_state(&self) -> gc::Borrow<State>;
 }
 
 impl StackState for State {
-    fn from_state(state: State) -> Self {
+    fn from_state(state: &State) -> &Self {
         state
     }
-    fn to_state(self) -> State {
-        self
+    fn from_state_mut(state: &mut State) -> &mut Self {
+        state
+    }
+    fn to_state(&self) -> gc::Borrow<State> {
+        gc::Borrow::new(self)
     }
 }
 
 impl StackState for ClosureState {
-    fn from_state(state: State) -> Self {
+    fn from_state(state: &State) -> &Self {
         match state {
             State::Closure(state) => state,
-            _ => ice!("Expected closure: {:?}", state),
+            _ => ice!("Expected closure state, got {:?}", state),
         }
     }
-    fn to_state(self) -> State {
-        State::Closure(self)
+    fn from_state_mut(state: &mut State) -> &mut Self {
+        match state {
+            State::Closure(state) => state,
+            _ => ice!("Expected closure state, got {:?}", state),
+        }
+    }
+    fn to_state(&self) -> gc::Borrow<State> {
+        construct_gc!(State::Closure(@ gc::Borrow::new(self)))
     }
 }
 
 impl StackState for ExternState {
-    fn from_state(state: State) -> Self {
+    fn from_state(state: &State) -> &Self {
         match state {
             State::Extern(state) => state,
             _ => ice!("Expected extern: {:?}", state),
         }
     }
-    fn to_state(self) -> State {
-        State::Extern(self)
+    fn from_state_mut(state: &mut State) -> &mut Self {
+        match state {
+            State::Extern(state) => state,
+            _ => ice!("Expected closure state, got {:?}", state),
+        }
+    }
+    fn to_state(&self) -> gc::Borrow<State> {
+        construct_gc!(State::Extern(@ gc::Borrow::new(self)))
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -203,16 +267,28 @@ pub enum State {
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] ExternState),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+unsafe impl CopyUnrooted for State {}
+impl CloneUnrooted for State {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(
-        deserialize = "S: ::serde::de::DeserializeState<'de, crate::serialization::DeSeed>"
+        deserialize = "S: ::serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc>>"
     ))
 )]
 #[cfg_attr(
@@ -226,16 +302,28 @@ pub struct Frame<S = State> {
     pub excess: bool,
 }
 
+unsafe impl<S> CopyUnrooted for Frame<S> where S: CopyUnrooted {}
+impl<S> CloneUnrooted for Frame<S>
+where
+    S: CopyUnrooted,
+{
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        self.copy_unrooted()
+    }
+}
+
 impl<S> Frame<S> {
-    fn to_state(self) -> Frame<State>
+    fn to_state(&self) -> gc::Borrow<Frame<State>>
     where
         S: StackState,
     {
-        Frame {
+        construct_gc!(Frame {
             offset: self.offset,
-            state: self.state.to_state(),
+            @state: self.state.to_state(),
             excess: self.excess,
-        }
+        })
     }
 }
 
@@ -246,14 +334,53 @@ impl Frame<ClosureState> {
 }
 
 impl Frame<State> {
-    fn from_state<S>(self) -> Frame<S>
+    fn from_state<S>(&self) -> gc::Borrow<Frame<S>>
     where
         S: StackState,
     {
-        Frame {
+        construct_gc!(Frame {
             offset: self.offset,
-            state: S::from_state(self.state),
+            @state: gc::Borrow::new(S::from_state(&self.state)),
             excess: self.excess,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct FrameViewMut<'a, S>
+where
+    S: StackState,
+{
+    frame: &'a mut Frame<S>,
+    stack: &'a mut Stack,
+}
+
+impl<S> Deref for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    type Target = Frame<S>;
+    fn deref(&self) -> &Self::Target {
+        self.frame
+    }
+}
+
+impl<S> DerefMut for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.frame
+    }
+}
+
+impl<S> Drop for FrameViewMut<'_, S>
+where
+    S: StackState,
+{
+    fn drop(&mut self) {
+        unsafe {
+            *self.stack.frames.last_mut().unwrap() = self.frame.to_state().unrooted();
         }
     }
 }
@@ -266,7 +393,10 @@ pub struct Lock(VmIndex);
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -293,48 +423,58 @@ impl Stack {
         }
     }
 
-    fn assert_pop(&self) {
-        if let Some(&frame) = self.frames.last() {
-            assert!(
-                self.len() > frame.offset,
-                "Attempted to pop value which did not belong to the current frame"
-            );
-            if let State::Extern(ExternState {
-                locked: Some(args), ..
-            }) = frame.state.to_state()
-            {
-                assert!(
-                    self.len() > frame.offset + args,
-                    "Attempt to pop locked value"
-                );
-            }
-        }
+    fn assert_pop(&self, count: VmIndex) {
+        let args = if let State::Extern(ExternState {
+            locked: Some(args), ..
+        }) = self.frames.last().unwrap().state
+        {
+            args
+        } else {
+            0
+        };
+        assert!(
+            self.len() >= count + args,
+            "Attempted to pop value which did not belong to the current frame"
+        );
     }
 
     pub fn pop(&mut self) -> Value {
-        self.assert_pop();
+        self.assert_pop(1);
         self.values.pop().expect("pop on empty stack")
     }
 
     pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
-        self.assert_pop();
-        let value = self.last().unwrap().get_value();
-        PopValue(self, Variants(value.get_repr(), ::std::marker::PhantomData))
+        self.assert_pop(1);
+        unsafe {
+            let value = self.last().unwrap().get_repr().clone_unrooted();
+            PopValue(self, Variants(value, PhantomData))
+        }
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
+        self.assert_pop(count);
         let len = self.values.len();
         self.values.truncate(len - count as usize);
     }
 
     pub fn clear(&mut self) {
+        let count = self.values.len() as VmIndex;
+        self.assert_pop(count);
         self.values.clear();
     }
 
     pub fn slide(&mut self, count: VmIndex) {
-        let i = self.len() - 1 - count;
-        self[i] = self.last().unwrap().get_value();
+        let last = self.len() - 1;
+        let i = last - count;
+        self.copy_value(last, i);
         self.pop_many(count);
+    }
+
+    fn copy_value(&mut self, from: VmIndex, to: VmIndex) {
+        // SAFETY The value is stored in the stack, rooting it
+        unsafe {
+            self[to] = self[from].clone_unrooted();
+        }
     }
 
     #[inline(always)]
@@ -351,9 +491,11 @@ impl Stack {
 
     #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
-        self.values
-            .get(index as usize)
-            .map(|value| unsafe { Variants::new(value) })
+        if index < self.len() {
+            Some(Variants::new(&self.values[index as usize]))
+        } else {
+            None
+        }
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
@@ -380,13 +522,9 @@ impl Stack {
     where
         S: StackState,
     {
+        let frame: &Frame<S> = &*self.get_frames().last().expect("Frame").from_state();
         StackFrame {
-            frame: self
-                .get_frames()
-                .last()
-                .expect("Frame")
-                .clone()
-                .from_state(),
+            frame: unsafe { frame.clone_unrooted() },
             stack: self,
         }
     }
@@ -484,18 +622,8 @@ pub struct StackFrame<'b, S = State>
 where
     S: StackState,
 {
-    pub stack: &'b mut Stack,
-    pub frame: Frame<S>,
-}
-
-impl<'b, S> Drop for StackFrame<'b, S>
-where
-    S: StackState,
-{
-    fn drop(&mut self) {
-        // Move the cached frame back to storage
-        self.store_frame();
-    }
+    stack: &'b mut Stack,
+    frame: Frame<S>,
 }
 
 impl<'b, S> fmt::Debug for StackFrame<'b, S>
@@ -505,7 +633,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StackFrame")
             .field("stack", &*self.stack)
-            .field("frame", &self.frame)
+            .field("frame", &self.frame())
             .finish()
     }
 }
@@ -515,26 +643,26 @@ impl<'a: 'b, 'b> StackFrame<'b, State> {
     where
         T: StackState,
     {
-        let frame = self.frame.from_state();
-        let stack = self.take_stack();
-        StackFrame { stack, frame }
+        let frame = unsafe { Frame::from_state::<T>(self.stack.frames.last().unwrap()).unrooted() };
+        StackFrame {
+            stack: self.stack,
+            frame,
+        }
     }
 
-    pub fn frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
-        let frame = Self::add_new_frame(stack, args, state);
-        StackFrame {
-            stack: stack,
-            frame: frame,
-        }
+    pub fn new_frame(stack: &'b mut Stack, args: VmIndex, state: State) -> StackFrame<'b> {
+        let frame = unsafe { Self::add_new_frame(stack, args, &state, false).unrooted() };
+        StackFrame { stack, frame }
     }
 }
 
 impl<'a: 'b, 'b> StackFrame<'b, ExternState> {
     /// Lock the stack below the current offset
     pub fn into_lock(mut self) -> Lock {
-        self.frame.state.locked = Some(self.len());
-        let lock = Lock(self.frame.offset);
-        self.take_stack();
+        let len = self.len();
+        let mut frame = self.frame_mut();
+        frame.state.locked = Some(len);
+        let lock = Lock(frame.offset);
         lock
     }
 }
@@ -543,22 +671,34 @@ impl<'a: 'b, 'b, S> StackFrame<'b, S>
 where
     S: StackState,
 {
-    pub fn take_stack(self) -> &'b mut Stack
-    where
-        S: Copy,
-    {
-        *self.stack.frames.last_mut().unwrap() = self.frame.to_state();
-        // We only recover the Stack reference after the drop has run here.
-        // Since drop doesn't leak the reference this is safe
-        unsafe {
-            let stack: *mut Stack = self.stack;
-            drop(self);
-            &mut *stack
+    pub fn to_state(self) -> StackFrame<'b, State> {
+        StackFrame {
+            stack: self.stack,
+            frame: unsafe { self.frame.to_state().unrooted() },
+        }
+    }
+
+    fn offset(&self) -> VmIndex {
+        self.frame.offset
+    }
+
+    pub(crate) fn stack(&self) -> &Stack {
+        &self.stack
+    }
+
+    pub fn frame(&self) -> &Frame<S> {
+        &self.frame
+    }
+
+    pub fn frame_mut(&mut self) -> FrameViewMut<S> {
+        FrameViewMut {
+            frame: &mut self.frame,
+            stack: self.stack,
         }
     }
 
     pub fn len(&self) -> VmIndex {
-        self.stack.len() - self.frame.offset
+        self.stack.len() - self.offset()
     }
 
     #[inline(always)]
@@ -573,16 +713,38 @@ where
         self.stack.values.last().expect("StackFrame: top")
     }
 
+    fn assert_pop(&self, count: VmIndex) {
+        let args = if let State::Extern(ExternState {
+            locked: Some(args), ..
+        }) = *self.frame().state.to_state()
+        {
+            args
+        } else {
+            0
+        };
+        assert!(
+            self.len() >= count + args,
+            "Attempted to pop value which did not belong to the current frame"
+        );
+    }
+
     pub fn pop(&mut self) -> Value {
-        self.stack.pop()
+        self.assert_pop(1);
+        self.stack.values.pop().expect("pop on empty stack")
     }
 
     pub fn pop_value<'s>(&'s mut self) -> PopValue<'s> {
-        self.stack.pop_value()
+        self.assert_pop(1);
+        unsafe {
+            let value = self.stack.last().unwrap().get_repr().clone_unrooted();
+            PopValue(self.stack, Variants(value, PhantomData))
+        }
     }
 
     pub fn pop_many(&mut self, count: VmIndex) {
-        self.stack.pop_many(count);
+        self.assert_pop(count);
+        let len = self.stack.values.len();
+        self.stack.values.truncate(len - count as usize);
     }
 
     pub fn clear(&mut self) {
@@ -596,7 +758,7 @@ where
 
     #[inline]
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
-        self.stack.get_variant(self.frame.offset + index)
+        self.stack.get_variant(self.offset() + index)
     }
 
     #[inline]
@@ -612,26 +774,21 @@ where
     }
 
     pub fn insert_slice(&mut self, index: VmIndex, values: &[Value]) {
-        self.stack.values.reserve(values.len());
+        let index = (self.offset() + index) as usize;
+        // SAFETY the values get inserted to the stack
         unsafe {
-            let old_len = self.len();
-            for i in (index..old_len).rev() {
-                *self.get_unchecked_mut(i as usize + values.len()) = self[i].clone();
-            }
-            for (i, val) in (index..).zip(values) {
-                *self.get_unchecked_mut(i as usize) = val.clone();
-            }
-            let new_len = self.stack.values.len() + values.len();
-            self.stack.values.set_len(new_len);
+            self.stack
+                .values
+                .splice(index..index, values.iter().map(|v| v.clone_unrooted()));
         }
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
-        self.stack
-            .remove_range(self.frame.offset + from, self.frame.offset + to);
+        let offset = self.offset();
+        self.stack.remove_range(offset + from, offset + to);
     }
 
-    pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
+    pub fn excess_args(&self) -> Option<&GcPtr<DataStruct>> {
         let i = self.stack.values.len() - self.len() as usize - 2;
         match self.stack.values[i].get_repr() {
             ValueRepr::Data(data) => Some(data),
@@ -639,46 +796,49 @@ where
         }
     }
 
-    pub(crate) fn enter_scope<T>(self, args: VmIndex, state: T) -> StackFrame<'b, T>
+    pub(crate) fn enter_scope<T>(self, args: VmIndex, state: &T) -> StackFrame<'b, T>
     where
         T: StackState,
-        S: Copy,
     {
-        let stack = self.take_stack();
-        let frame = Self::add_new_frame(stack, args, state.to_state());
+        self.enter_scope_excess(args, state, false)
+    }
 
-        StackFrame {
-            stack,
-            frame: frame.from_state(),
-        }
+    pub(crate) fn enter_scope_excess<T>(
+        self,
+        args: VmIndex,
+        state: &T,
+        excess: bool,
+    ) -> StackFrame<'b, T>
+    where
+        T: StackState,
+    {
+        let stack = self.stack;
+        let frame = unsafe { Self::add_new_frame(stack, args, state, excess).unrooted() };
+        StackFrame { stack, frame }
     }
 
     pub(crate) fn exit_scope(self) -> Result<StackFrame<'b, State>, &'b mut Stack>
     where
-        S: StackState + Copy,
+        S: StackState,
     {
-        if let State::Extern(ref ext) = self.frame.state.to_state() {
+        if let State::Extern(ref ext) = *S::to_state(&self.frame().state) {
             if ext.is_locked() {
-                return Err(self.take_stack());
+                return Err(self.stack);
             }
         }
-        let frame = self.frame;
-        let stack = self.take_stack();
-        let current_frame = stack.frames.pop().expect("Expected frame");
-        // The root frame should always exist
-        debug_assert!(!stack.frames.is_empty(), "Poped the last frame");
-        assert!(
-            current_frame.offset == frame.offset,
-            "Attempted to exit a scope other than the top-most scope"
-        );
-        let frame = stack.frames.last().cloned();
-        match frame {
+        let stack = self.stack;
+        stack.frames.pop().expect("Expected frame");
+        match stack.frames.last() {
             Some(frame) => {
                 let stack = StackFrame {
+                    frame: unsafe { frame.clone_unrooted() },
                     stack,
-                    frame: frame.from_state(),
                 };
-                debug!("<---- Restore {} {:?}", stack.stack.frames.len(), frame);
+                debug!(
+                    "<---- Restore {} {:?}",
+                    stack.stack.frames.len(),
+                    stack.frame()
+                );
                 Ok(stack)
             }
             None => Err(stack),
@@ -692,22 +852,29 @@ where
         stack.current_frame()
     }
 
-    fn add_new_frame(stack: &mut Stack, args: VmIndex, state: State) -> Frame {
+    fn add_new_frame<'gc, T>(
+        stack: &mut Stack,
+        args: VmIndex,
+        state: &'gc T,
+        excess: bool,
+    ) -> gc::Borrow<'gc, Frame<T>>
+    where
+        T: StackState,
+    {
         assert!(stack.len() >= args);
-        let prev = stack.frames.last().cloned();
         let offset = stack.len() - args;
-        let frame = Frame {
+        let frame = construct_gc!(Frame {
             offset,
-            state,
-            excess: false,
-        };
+            @state: gc::Borrow::new(state),
+            excess,
+        });
         // Panic if the frame attempts to take ownership past the current frame
         if let Some(frame) = stack.frames.last() {
             assert!(frame.offset <= offset);
             if let State::Extern(ExternState {
                 locked: Some(locked_args),
                 ..
-            }) = frame.state.to_state()
+            }) = *State::to_state(&frame.state)
             {
                 assert!(
                     frame.offset + locked_args <= offset,
@@ -715,36 +882,38 @@ where
                 );
             }
         }
-        stack.frames.push(frame);
-        debug!(
-            "----> Store {} {:?}\n||| {:?}",
-            stack.frames.len(),
-            frame,
-            prev
-        );
+        // SAFETY The frame's gc pointers are scanned the `Stack::trace` since they are on
+        // the stack
+        unsafe {
+            stack.frames.push(frame.to_state().clone_unrooted());
+        }
+        debug!("----> Store {} {:?}", stack.frames.len(), frame.to_state());
         frame
-    }
-
-    pub fn store_frame(&mut self)
-    where
-        S: StackState + Copy,
-    {
-        let last_frame = self.stack.frames.last_mut().unwrap();
-        let frame = self.frame.to_state();
-        use self::State::*;
-        debug_assert!(match (&last_frame.state, &frame.state) {
-            (Unknown, Unknown) => true,
-            (Closure(_), Closure(_)) => true,
-            (Extern(_), Extern(_)) => true,
-            _ => false,
-        });
-        *last_frame = frame;
     }
 }
 
 impl<'b> StackFrame<'b, ClosureState> {
-    pub fn get_upvar(&self, index: VmIndex) -> &Value {
-        &self.frame.upvars()[index as usize]
+    pub fn get_upvar(&self, index: VmIndex) -> Variants {
+        Variants::new(&self.frame().upvars()[index as usize])
+    }
+
+    pub fn set_excess(&mut self, excess: bool) {
+        self.frame.excess = excess;
+        match self.stack.frames.last_mut() {
+            Some(frame) => frame.excess = excess,
+            _ => (),
+        }
+    }
+
+    pub fn set_instruction_index(&mut self, instruction_index: usize) {
+        self.frame.state.instruction_index = instruction_index;
+        match self.stack.frames.last_mut() {
+            Some(Frame {
+                state: State::Closure(closure),
+                ..
+            }) => closure.instruction_index = instruction_index,
+            _ => (),
+        }
     }
 }
 
@@ -754,7 +923,8 @@ where
 {
     type Target = [Value];
     fn deref(&self) -> &[Value] {
-        &self.stack.values[self.frame.offset as usize..]
+        let offset = self.offset();
+        &self.stack.values[offset as usize..]
     }
 }
 
@@ -763,7 +933,8 @@ where
     S: StackState,
 {
     fn deref_mut(&mut self) -> &mut [Value] {
-        &mut self.stack.values[self.frame.offset as usize..]
+        let offset = self.offset();
+        &mut self.stack.values[offset as usize..]
     }
 }
 
@@ -773,7 +944,8 @@ where
 {
     type Output = Value;
     fn index(&self, index: VmIndex) -> &Value {
-        &self.stack.values[(self.frame.offset + index) as usize]
+        let offset = self.offset();
+        &self.stack.values[(offset + index) as usize]
     }
 }
 impl<'b, S> IndexMut<VmIndex> for StackFrame<'b, S>
@@ -781,7 +953,8 @@ where
     S: StackState,
 {
     fn index_mut(&mut self, index: VmIndex) -> &mut Value {
-        &mut self.stack.values[(self.frame.offset + index) as usize]
+        let offset = self.offset();
+        &mut self.stack.values[(offset + index) as usize]
     }
 }
 impl<'b, S> Index<RangeFull> for StackFrame<'b, S>
@@ -790,7 +963,8 @@ where
 {
     type Output = [Value];
     fn index(&self, _: RangeFull) -> &[Value] {
-        &self.stack.values[self.frame.offset as usize..]
+        let offset = self.offset();
+        &self.stack.values[offset as usize..]
     }
 }
 impl<'b, S> IndexMut<RangeFull> for StackFrame<'b, S>
@@ -798,7 +972,8 @@ where
     S: StackState,
 {
     fn index_mut(&mut self, _: RangeFull) -> &mut [Value] {
-        &mut self.stack.values[self.frame.offset as usize..]
+        let offset = self.offset();
+        &mut self.stack.values[offset as usize..]
     }
 }
 impl<'b, S> Index<Range<VmIndex>> for StackFrame<'b, S>
@@ -807,7 +982,7 @@ where
 {
     type Output = [Value];
     fn index(&self, range: Range<VmIndex>) -> &[Value] {
-        let offset = self.frame.offset;
+        let offset = self.offset();
         &self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
@@ -816,7 +991,7 @@ where
     S: StackState,
 {
     fn index_mut(&mut self, range: Range<VmIndex>) -> &mut [Value] {
-        let offset = self.frame.offset;
+        let offset = self.offset();
         &mut self.stack.values[(range.start + offset) as usize..(range.end + offset) as usize]
     }
 }
@@ -826,7 +1001,8 @@ where
 {
     type Output = [Value];
     fn index(&self, range: RangeTo<VmIndex>) -> &[Value] {
-        &self.stack.values[..(range.end + self.frame.offset) as usize]
+        let offset = self.offset();
+        &self.stack.values[..(range.end + offset) as usize]
     }
 }
 impl<'b, S> IndexMut<RangeTo<VmIndex>> for StackFrame<'b, S>
@@ -834,7 +1010,8 @@ where
     S: StackState,
 {
     fn index_mut(&mut self, range: RangeTo<VmIndex>) -> &mut [Value] {
-        &mut self.stack.values[..(range.end + self.frame.offset) as usize]
+        let offset = self.offset();
+        &mut self.stack.values[..(range.end + offset) as usize]
     }
 }
 impl<'b, S> Index<RangeFrom<VmIndex>> for StackFrame<'b, S>
@@ -843,7 +1020,8 @@ where
 {
     type Output = [Value];
     fn index(&self, range: RangeFrom<VmIndex>) -> &[Value] {
-        &self.stack.values[(range.start + self.frame.offset) as usize..]
+        let offset = self.offset();
+        &self.stack.values[(range.start + offset) as usize..]
     }
 }
 impl<'b, S> IndexMut<RangeFrom<VmIndex>> for StackFrame<'b, S>
@@ -851,7 +1029,8 @@ where
     S: StackState,
 {
     fn index_mut(&mut self, range: RangeFrom<VmIndex>) -> &mut [Value] {
-        &mut self.stack.values[(range.start + self.frame.offset) as usize..]
+        let offset = self.offset();
+        &mut self.stack.values[(range.start + offset) as usize..]
     }
 }
 
@@ -950,15 +1129,15 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
-        let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+        let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
         frame.push(Int(0));
         frame.push(Int(1));
 
-        frame = frame.enter_scope(2, State::Unknown);
+        frame = frame.enter_scope(2, &State::Unknown);
         frame.push(Int(2));
         frame.push(Int(3));
 
-        frame = frame.enter_scope(1, State::Unknown);
+        frame = frame.enter_scope(1, &State::Unknown);
         frame.push(Int(4));
         frame.push(Int(5));
         frame.push(Int(6));
@@ -985,14 +1164,14 @@ mod tests {
 
         let mut stack = Stack::new();
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            let frame = frame.enter_scope(2, ExternState::new(ext));
+            let frame = frame.enter_scope(2, &*ExternState::new(&ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to access past the lock
-        StackFrame::frame(&mut stack, 1, State::Unknown);
+        StackFrame::new_frame(&mut stack, 1, State::Unknown);
 
         unsafe { gc.clear() }
     }
@@ -1007,9 +1186,9 @@ mod tests {
 
         let mut stack = Stack::new();
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
-            let frame = frame.enter_scope(1, ExternState::new(ext));
+            let frame = frame.enter_scope(1, &*ExternState::new(&ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to pop a locked value
@@ -1027,14 +1206,14 @@ mod tests {
 
         let mut stack = Stack::new();
         let lock = {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            let frame = frame.enter_scope(2, ExternState::new(ext));
+            let frame = frame.enter_scope(2, &*ExternState::new(&ext));
             frame.into_lock()
         };
         {
-            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            let mut frame = StackFrame::new_frame(&mut stack, 0, State::Unknown);
             frame.push(Int(2));
             frame = frame.exit_scope().unwrap();
             frame.exit_scope().unwrap_err();
@@ -1051,12 +1230,12 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
-        StackFrame::frame(&mut stack, 0, State::Unknown);
+        StackFrame::new_frame(&mut stack, 0, State::Unknown);
         let mut stack = StackFrame::<State>::current(&mut stack);
         stack.push(Int(0));
         stack.insert_slice(0, &[Int(2).into(), Int(1).into()]);
         assert_eq!(&stack[..], [Int(2).into(), Int(1).into(), Int(0).into()]);
-        stack = stack.enter_scope(2, State::Unknown);
+        stack = stack.enter_scope(2, &State::Unknown);
         stack.insert_slice(1, &[Int(10).into()]);
         assert_eq!(&stack[..], [Int(1).into(), Int(10).into(), Int(0).into()]);
         stack.insert_slice(1, &[]);

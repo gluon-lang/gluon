@@ -15,12 +15,41 @@ use std::{
     sync::Arc,
 };
 
-use crate::base::fnv::FnvMap;
-use crate::interner::InternedStr;
-use crate::types::VmIndex;
-use crate::{Error, Result};
+use crate::{
+    base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex, Error, Result,
+};
 
 pub mod mutex;
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! impl_trace {
+    ($self_: tt, $gc: ident, $body: expr) => {
+        unsafe fn root(&$self_) {
+            #[allow(unused)]
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::root(this)
+            }
+            let $gc = ();
+            $body
+        }
+        unsafe fn unroot(&$self_) {
+            #[allow(unused)]
+            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+                Trace::unroot(this)
+            }
+            let $gc = ();
+            $body
+        }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+            #[allow(unused)]
+            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
+                Trace::trace(this, gc)
+            }
+            $body
+        }
+    }
+}
 
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
@@ -58,7 +87,7 @@ pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
 
 impl<'s, T: ?Sized> WriteOnly<'s, T> {
     /// Unsafe as the lifetime must not be longer than the liftime of `t`
-    unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
+    pub unsafe fn new(t: *mut T) -> WriteOnly<'s, T> {
         WriteOnly(t, PhantomData)
     }
 
@@ -142,7 +171,10 @@ impl Generation {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -161,7 +193,7 @@ pub struct Gc {
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     type_infos: FnvMap<TypeId, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    record_infos: FnvMap<Vec<InternedStr>, Box<TypeInfo>>,
+    record_infos: FnvMap<Arc<[InternedStr]>, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     tag_infos: FnvMap<InternedStr, Box<TypeInfo>>,
     /// The generation of a gc determines what values it needs to copy and what values it can
@@ -232,7 +264,7 @@ pub unsafe trait DataDef {
         None
     }
 
-    fn tag(&self) -> Option<InternedStr> {
+    fn tag(&self) -> Option<&InternedStr> {
         None
     }
 }
@@ -262,7 +294,7 @@ struct TypeInfo {
     generation: Generation,
     tag: Option<InternedStr>,
     fields: FnvMap<InternedStr, VmIndex>,
-    fields_key: Arc<Vec<InternedStr>>,
+    fields_key: Arc<[InternedStr]>,
 }
 
 #[derive(Debug)]
@@ -383,6 +415,149 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
     }
 }
 
+/// SAFETY The only unsafety from copying the type is the creation of an unrooted value
+pub unsafe trait CopyUnrooted: CloneUnrooted<Value = Self> + Sized {
+    unsafe fn copy_unrooted(&self) -> Self {
+        ptr::read(self)
+    }
+}
+
+pub trait CloneUnrooted {
+    type Value;
+    /// Creates a clone of the value that is not rooted. To ensure safety the value must be
+    /// forgotten or rooted before the next garbage collection
+    unsafe fn clone_unrooted(&self) -> Self::Value;
+}
+
+impl<T: ?Sized + CloneUnrooted> CloneUnrooted for &'_ T {
+    type Value = T::Value;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        (**self).clone_unrooted()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Borrow<'a, T>(T, PhantomData<&'a T>);
+
+pub type GcRef<'a, T> = Borrow<'a, GcPtr<T>>;
+pub type OwnedGcRef<'a, T> = Borrow<'a, OwnedPtr<T>>;
+
+impl<T> Deref for Borrow<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Borrow<'_, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+impl<T> CloneUnrooted for Borrow<'_, T>
+where
+    T: CloneUnrooted,
+{
+    type Value = T::Value;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        self.0.clone_unrooted()
+    }
+}
+
+unsafe impl<T> Trace for Borrow<'_, T>
+where
+    T: Trace,
+{
+    impl_trace! { self, gc, mark(&**self, gc) }
+}
+
+unsafe impl<'a, T> DataDef for Borrow<'a, T>
+where
+    T: DataDef,
+    T::Value: Sized,
+{
+    type Value = T::Value;
+    fn size(&self) -> usize {
+        (**self).size()
+    }
+    fn initialize(self, result: WriteOnly<Self::Value>) -> &mut Self::Value {
+        self.0.initialize(result)
+    }
+}
+
+impl<'gc, T> Borrow<'gc, T> {
+    #[inline]
+    pub fn new(value: &'gc T) -> Borrow<'gc, T::Value>
+    where
+        T: CloneUnrooted,
+    {
+        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
+        // GcRef is also rooted
+        unsafe { Borrow::with_root(value.clone_unrooted(), value) }
+    }
+
+    #[inline]
+    pub fn from_static(value: T) -> Self
+    where
+        T: 'static, // TODO Necessary?
+    {
+        Borrow(value, PhantomData)
+    }
+
+    #[inline]
+    pub(crate) unsafe fn with_root<U: ?Sized>(value: T, _root: &'gc U) -> Self {
+        Borrow(value, PhantomData)
+    }
+
+    pub fn map<U>(&self, f: impl FnOnce(&T) -> &U) -> Borrow<'gc, U::Value>
+    where
+        U: CloneUnrooted,
+    {
+        let v = f(&self.0);
+        // SAFETY We can create a new root since the `'gc` lifetime is preserved
+        unsafe { Borrow(v.clone_unrooted(), PhantomData) }
+    }
+
+    pub unsafe fn map_unrooted<U>(self, f: impl FnOnce(T) -> U) -> Borrow<'gc, U> {
+        Borrow(f(self.0), PhantomData)
+    }
+
+    pub unsafe fn unrooted(self) -> T {
+        self.0
+    }
+
+    pub fn as_lifetime(&self) -> &'gc () {
+        &()
+    }
+}
+
+impl<'gc, T: ?Sized> From<OwnedGcRef<'gc, T>> for GcRef<'gc, T> {
+    /// Freezes `self` into a shared pointer
+    fn from(ptr: OwnedGcRef<'gc, T>) -> Self {
+        Borrow(ptr.0.into(), PhantomData)
+    }
+}
+
+impl<'a, T: ?Sized> Clone for GcRef<'a, T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        // SAFETY The lifetime of the new value is the same which just means that both values need
+        // to be dropped before any gc collection
+        unsafe { Borrow(self.0.clone_unrooted(), self.1) }
+    }
+}
+
+impl<'a, T: ?Sized> GcRef<'a, T> {
+    pub fn as_ref(&self) -> &'a T {
+        // SAFETY 'a is the lifetime that the value actually lives. Since `T` is behind a pointer
+        // we can make that pointer have that lifetime
+        unsafe { forget_lifetime(&*self.0) }
+    }
+}
+
 /// A pointer to a garbage collected value.
 ///
 /// It is only safe to access data through a `GcPtr` if the value is rooted (stored in a place
@@ -392,14 +567,6 @@ pub struct GcPtr<T: ?Sized>(NonNull<T>);
 // SAFETY Copied from `Arc`
 unsafe impl<T: ?Sized + Send + Sync> Send for GcPtr<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for GcPtr<T> {}
-
-impl<T: ?Sized> Copy for GcPtr<T> {}
-
-impl<T: ?Sized> Clone for GcPtr<T> {
-    fn clone(&self) -> GcPtr<T> {
-        GcPtr(self.0)
-    }
-}
 
 impl<T: ?Sized> Deref for GcPtr<T> {
     type Target = T;
@@ -451,6 +618,15 @@ impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
     }
 }
 
+unsafe impl<T: ?Sized> CopyUnrooted for GcPtr<T> {}
+impl<T: ?Sized> CloneUnrooted for GcPtr<T> {
+    type Value = Self;
+    #[inline]
+    unsafe fn clone_unrooted(&self) -> Self {
+        GcPtr(self.0)
+    }
+}
+
 impl<T: ?Sized> GcPtr<T> {
     /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
     /// else
@@ -467,15 +643,15 @@ impl<T: ?Sized> GcPtr<T> {
         self.header().generation()
     }
 
-    pub fn poly_tag(&self) -> Option<InternedStr> {
-        self.type_info().tag
+    pub fn poly_tag(&self) -> Option<&InternedStr> {
+        self.type_info().tag.as_ref()
     }
 
     pub fn field_map(&self) -> &FnvMap<InternedStr, VmIndex> {
         &self.type_info().fields
     }
 
-    pub fn field_names(&self) -> &Arc<Vec<InternedStr>> {
+    pub fn field_names(&self) -> &Arc<[InternedStr]> {
         &self.type_info().fields_key
     }
 
@@ -483,8 +659,21 @@ impl<T: ?Sized> GcPtr<T> {
         unsafe { &*self.header().type_info }
     }
 
-    pub fn ptr_eq(self, other: GcPtr<T>) -> bool {
-        ptr::eq(&*self, &*other)
+    pub fn ptr_eq(&self, other: &GcPtr<T>) -> bool {
+        ptr::eq::<T>(&**self, &**other)
+    }
+
+    #[doc(hidden)]
+    pub(crate) unsafe fn clone(&self) -> Self {
+        GcPtr(self.0)
+    }
+
+    pub unsafe fn unrooted(&self) -> Self {
+        GcPtr(self.0)
+    }
+
+    pub fn as_lifetime(&self) -> &() {
+        &()
     }
 
     fn header(&self) -> &GcHeader {
@@ -493,6 +682,10 @@ impl<T: ?Sized> GcPtr<T> {
             let header = p.offset(-(GcHeader::value_offset() as isize));
             &*(header as *const GcHeader)
         }
+    }
+
+    pub unsafe fn cast<U>(ptr: Self) -> GcPtr<U> {
+        GcPtr(ptr.0.cast())
     }
 }
 
@@ -536,34 +729,97 @@ pub unsafe trait Trace {
     }
 }
 
-#[doc(hidden)]
 #[macro_export]
-macro_rules! impl_trace {
-    ($self_: tt, $gc: ident, $body: expr) => {
-        unsafe fn root(&$self_) {
-            #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
-                Trace::root(this)
-            }
-            let $gc = ();
-            $body
+macro_rules! construct_enum_gc {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr, $($rest: tt)*) => { {
+        let ref ptr = $expr;
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
+                      [$($ptr)* ptr]
+                      $($rest)*
+        )
+    } };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr, $($rest: tt)*) => {
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* $expr,]
+                      [$($ptr)*]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr) => { {
+        let ref ptr = $expr;
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
+                      [$($ptr)* ptr]
+        )
+    } };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr) => {
+        $crate::construct_enum_gc!(impl $typ $(:: $variant)?
+                      [$($acc)* $expr,]
+                      [$($ptr)*]
+        )
+    };
+
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] ) => { {
+        let root = [$( $ptr.as_lifetime() )*].first().map_or(&(), |v| *v);
+        #[allow(unused_unsafe)]
+        let v = $typ $(:: $variant)? ( $($acc)* );
+        // Make sure that we constructed something and didn't call a function which could leak the
+        // pointers
+        match &v {
+            $typ $(:: $variant)? (..) if true => (),
+            _ => unreachable!(),
         }
-        unsafe fn unroot(&$self_) {
-            #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
-                Trace::unroot(this)
-            }
-            let $gc = ();
-            $body
-        }
-        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
-            #[allow(unused)]
-            fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
-                Trace::trace(this, gc)
-            }
-            $body
-        }
-    }
+        #[allow(unused_unsafe)]
+        unsafe { $crate::gc::Borrow::with_root(v, root) }
+    } };
+}
+
+#[macro_export]
+macro_rules! construct_gc {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr, $($rest: tt)*) => { {
+        let $field = $expr;
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
+                      [$($ptr)* $field]
+                      $($rest)*
+        )
+    } };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident, $($rest: tt)*) => {
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
+                      [$($ptr)* $field]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr)?, $($rest: tt)*) => {
+        $crate::construct_gc!(impl $typ
+                      [$($acc)* $field $(: $expr)?,]
+                      [$($ptr)*]
+                      $($rest)*
+        )
+    };
+
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] ) => { {
+        let root = [$( $ptr.as_lifetime() )*].first().map_or(&(), |v| *v);
+        #[allow(unused_unsafe)]
+        let v = $typ { $($acc)* };
+        #[allow(unused_unsafe)]
+        unsafe { $crate::gc::Borrow::with_root(v, root) }
+    } };
+
+    ($typ: ident { $( $tt: tt )* } ) => {
+        $crate::construct_gc!{impl $typ [] [] $( $tt )* }
+    };
+
+    ($typ: ident $(:: $variant: ident)? ( $( $tt: tt )* ) ) => {
+        $crate::construct_enum_gc!{impl $typ $(:: $variant)? [] [] $( $tt )* }
+    };
 }
 
 macro_rules! deref_trace {
@@ -691,7 +947,7 @@ where
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
     fn trace(&self, gc: &mut Gc) {
-        if !gc.mark(*self) {
+        if !gc.mark(self) {
             // Continue traversing if this ptr was not already marked
             (**self).trace(gc);
         }
@@ -733,7 +989,11 @@ impl Gc {
     /// will occur.
     ///
     /// Unsafe since `roots` must be able to trace all accesible `GcPtr` values.
-    pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<OwnedPtr<D::Value>>
+    pub unsafe fn alloc_and_collect<R, D>(
+        &mut self,
+        roots: R,
+        def: D,
+    ) -> Result<OwnedGcRef<D::Value>>
     where
         R: Trace + CollectScope,
         D: DataDef + Trace,
@@ -760,15 +1020,15 @@ impl Gc {
     }
 
     /// Allocates a new object.
-    pub fn alloc<D>(&mut self, def: D) -> Result<GcPtr<D::Value>>
+    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
     {
-        self.alloc_owned(def).map(GcPtr::from)
+        self.alloc_owned(def).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedPtr<D::Value>>
+    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -784,17 +1044,17 @@ impl Gc {
         Ok(self.alloc_ignore_limit_(size, def))
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcPtr<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
     {
-        GcPtr::from(self.alloc_ignore_limit_(def.size(), def))
+        GcRef::from(self.alloc_ignore_limit_(def.size(), def))
     }
 
     fn get_type_info(
         &mut self,
-        tag: Option<InternedStr>,
+        tag: Option<&InternedStr>,
         fields: Option<&[InternedStr]>,
         type_id: TypeId,
         drop: unsafe fn(*mut ()),
@@ -806,30 +1066,40 @@ impl Gc {
                 .map(|info| &**info as *const _)
             {
                 Some(info) => info,
-                None => &**self
-                    .record_infos
-                    .entry(fields.to_owned())
-                    .or_insert(Box::new(TypeInfo {
-                        drop,
-                        generation: self.generation,
-                        tag,
-                        fields: fields
+                None => {
+                    let owned_fields: Arc<[InternedStr]> = Arc::from(
+                        fields
                             .iter()
-                            .enumerate()
-                            .map(|(i, s)| (*s, i as VmIndex))
-                            .collect(),
-                        fields_key: Arc::new(fields.to_owned()),
-                    })),
+                            .map(|v| unsafe { v.clone_unrooted() })
+                            .collect::<Vec<_>>(),
+                    );
+                    &**self
+                        .record_infos
+                        .entry(owned_fields.clone())
+                        .or_insert(Box::new(TypeInfo {
+                            drop,
+                            generation: self.generation,
+                            tag: unsafe { tag.map(|tag| tag.clone_unrooted()) },
+                            fields: unsafe {
+                                fields
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, ref s)| (s.clone_unrooted(), i as VmIndex))
+                                    .collect()
+                            },
+                            fields_key: owned_fields,
+                        }))
+                }
             },
             None => match tag {
-                Some(tag) => match self.tag_infos.entry(tag) {
+                Some(tag) => match self.tag_infos.entry(unsafe { tag.clone_unrooted() }) {
                     Entry::Occupied(entry) => &**entry.get(),
                     Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
                         drop,
                         generation: self.generation,
-                        tag: Some(tag),
+                        tag: Some(unsafe { tag.clone_unrooted() }),
                         fields: FnvMap::default(),
-                        fields_key: Arc::new(Vec::new()),
+                        fields_key: Arc::from(Vec::new()),
                     })),
                 },
                 None => match self.type_infos.entry(type_id) {
@@ -837,16 +1107,16 @@ impl Gc {
                     Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
                         drop,
                         generation: self.generation,
-                        tag,
+                        tag: None,
                         fields: FnvMap::default(),
-                        fields_key: Arc::new(Vec::new()),
+                        fields_key: Arc::from(Vec::new()),
                     })),
                 },
             },
         }
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedPtr<D::Value>
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -874,7 +1144,7 @@ impl Gc {
             self.values = Some(ptr);
             let ptr = OwnedPtr(NonNull::new_unchecked(p));
             D::Value::unroot(&ptr);
-            ptr
+            OwnedGcRef::with_root(ptr, self)
         }
     }
 
@@ -906,7 +1176,7 @@ impl Gc {
 
     /// Marks the GcPtr
     /// Returns true if the pointer was already marked
-    pub fn mark<T: ?Sized>(&mut self, value: GcPtr<T>) -> bool {
+    pub fn mark<T: ?Sized>(&mut self, value: &GcPtr<T>) -> bool {
         let header = value.header();
         // We only need to mark and trace values from this garbage collectors generation
         if header.generation().is_parent_of(self.generation()) || header.marked.get() {
@@ -1028,7 +1298,7 @@ mod tests {
         count
     }
 
-    #[derive(Copy, Clone, Trace)]
+    #[derive(Trace)]
     #[gluon(gluon_vm)]
     struct Data_ {
         fields: GcPtr<Vec<Value>>,
@@ -1054,25 +1324,39 @@ mod tests {
             mem::size_of::<Self::Value>()
         }
         fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
-            result.write(self.elems.to_owned())
+            unsafe { result.write(self.elems.iter().map(|v| v.clone_unrooted()).collect()) }
         }
     }
 
-    #[derive(Copy, Clone, PartialEq, Debug, Trace)]
+    #[derive(PartialEq, Debug, Trace)]
     #[gluon(gluon_vm)]
     enum Value {
         Int(i32),
         Data(Data_),
     }
 
-    fn new_data(p: GcPtr<Vec<Value>>) -> Value {
-        Data(Data_ { fields: p })
+    unsafe impl CopyUnrooted for Value {}
+
+    impl CloneUnrooted for Value {
+        type Value = Self;
+        #[inline]
+        unsafe fn clone_unrooted(&self) -> Self {
+            self.copy_unrooted()
+        }
+    }
+
+    fn new_data(p: GcRef<Vec<Value>>) -> Value {
+        unsafe {
+            Data(Data_ {
+                fields: p.unrooted(),
+            })
+        }
     }
 
     #[test]
     fn gc_header() {
         let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
-        let ptr = gc.alloc(Def { elems: &[Int(1)] }).unwrap();
+        let ptr = unsafe { gc.alloc(Def { elems: &[Int(1)] }).unwrap().unrooted() };
         let header: *const _ = ptr.header();
         let other: &mut GcHeader = gc.values.as_mut().unwrap();
         assert_eq!(&*ptr as *const _ as *const (), other.value());
@@ -1086,7 +1370,12 @@ mod tests {
         let mut gc: Gc = Gc::new(Generation::default(), usize::MAX);
         let mut stack: Vec<Value> = Vec::new();
         stack.push(new_data(gc.alloc(Def { elems: &[Int(1)] }).unwrap()));
-        let d2 = new_data(gc.alloc(Def { elems: &[stack[0]] }).unwrap());
+        let d2 = new_data(
+            gc.alloc(Def {
+                elems: std::slice::from_ref(&stack[0]),
+            })
+            .unwrap(),
+        );
         stack.push(d2);
         assert_eq!(object_count(&gc), 2);
         unsafe {

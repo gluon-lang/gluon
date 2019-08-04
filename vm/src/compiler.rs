@@ -40,7 +40,10 @@ enum FieldAccess {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -59,7 +62,10 @@ pub struct UpvarInfo {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive",
@@ -79,7 +85,10 @@ pub struct DebugInfo {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -103,7 +112,10 @@ pub struct CompiledModule {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "crate::serialization::DeSeed")
+    serde(
+        deserialize_state = "crate::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -222,6 +234,7 @@ impl FunctionEnvs {
 
     fn end_function(&mut self, compiler: &mut Compiler, current_line: Option<Line>) -> FunctionEnv {
         compiler.stack_types.exit_scope();
+        self.function.instructions.push(Instruction::Return);
         let instructions = self.function.instructions.len();
 
         if compiler.emit_debug_info {
@@ -1186,6 +1199,7 @@ mod tests {
                 CloseData { index: 1 },
                 Push(1),
                 Slide(2),
+                Return,
             ]],
         )
     }
@@ -1233,9 +1247,10 @@ mod tests {
                     // body
                     Push(1),
                     Slide(2),
+                    Return,
                 ],
-                &[PushUpVar(0)],
-                &[PushUpVar(0)],
+                &[PushUpVar(0), Return],
+                &[PushUpVar(0), Return],
             ],
         )
     }

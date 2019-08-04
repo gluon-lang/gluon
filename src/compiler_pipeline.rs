@@ -825,7 +825,10 @@ pub struct Precompiled<D>(pub D);
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "::vm::serialization::DeSeed")
+    serde(
+        deserialize_state = "::vm::serialization::DeSeed<'gc>",
+        de_parameters = "'gc"
+    )
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -864,7 +867,7 @@ where
     {
         use crate::vm::serialization::DeSeed;
 
-        let module: Module = try_future!(DeSeed::new(&vm)
+        let module: Module = try_future!(DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
         let module_id = module.module.function.id.clone();
@@ -889,6 +892,7 @@ where
                 .map_err(Error::from),
         )
     }
+
     fn load_script<T>(
         self,
         compiler: &mut Compiler,
@@ -908,7 +912,7 @@ where
             typ,
             value,
             id: _,
-        } = try_future!(DeSeed::new(&vm)
+        } = try_future!(DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
         let id = compiler.symbols.symbol(format!("@{}", name));
@@ -916,7 +920,7 @@ where
             id,
             typ,
             mem::replace(Arc::make_mut(&mut metadata), Default::default()),
-            value,
+            &value,
         ));
         info!("Loaded module `{}`", name);
         Box::new(future::ok(()))

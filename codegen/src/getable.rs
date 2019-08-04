@@ -212,7 +212,7 @@ fn gen_impl(
                 }
 
                 fn from_proxy(vm: &'__vm _gluon_thread::Thread, proxy: &'__value mut Self::Proxy) -> Self {
-                    Self::from_value(vm, *proxy)
+                    Self::from_value(vm, proxy.clone())
                 }
 
                 fn from_value(vm: &'__vm _gluon_thread::Thread, variants: _GluonVariants<'__value>) -> Self {

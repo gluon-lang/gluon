@@ -176,13 +176,13 @@ fn gen_push_impl(
     let fields_len = field_idents.len();
     let new_data = match tag {
         Some(tag) => quote! {
-            ctx.context().push_new_data(vm, #tag as _gluon_types::VmTag, #fields_len)?
+            ctx.context().push_new_data(#tag as _gluon_types::VmTag, #fields_len)?
         },
         None => {
             let field_ident_strs = field_idents.iter().map(|i| i.to_string());
             quote! { {
                 let field_names = [#(vm.global_env().intern(#field_ident_strs)?),*];
-                ctx.context().push_new_record(vm, #fields_len, &field_names)?;
+                ctx.context().push_new_record(#fields_len, &field_names)?;
             } }
         }
     };

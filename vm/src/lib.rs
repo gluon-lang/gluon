@@ -51,6 +51,12 @@ macro_rules! try_future {
 
 pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'vm>;
 
+macro_rules! alloc {
+    ($context: ident, $data: expr) => {
+        $crate::thread::alloc($context.gc, $context.thread, &$context.stack.stack(), $data)
+    };
+}
+
 #[macro_use]
 #[cfg(feature = "serde")]
 pub mod serialization;
@@ -82,35 +88,45 @@ mod value;
 
 use std::{self as real_std, fmt, marker::PhantomData};
 
-use crate::api::{ValueRef, VmType};
-use crate::base::metadata::Metadata;
-use crate::base::symbol::Symbol;
-use crate::base::types::ArcType;
-use crate::stack::Stacktrace;
-use crate::thread::{RootedThread, RootedValue, Thread};
-use crate::types::{VmIndex, VmInt};
-use crate::value::{Value, ValueRepr};
+use crate::{
+    api::{ValueRef, VmType},
+    gc::CloneUnrooted,
+    stack::Stacktrace,
+    thread::{RootedThread, RootedValue, Thread},
+    types::{VmIndex, VmInt},
+    value::{Value, ValueRepr},
+};
+use crate::{base::metadata::Metadata, base::symbol::Symbol, base::types::ArcType};
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Trace)]
+#[derive(Debug, PartialEq, Trace)]
 #[gluon(gluon_vm)]
 #[repr(transparent)]
 pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
+
+impl Clone for Variants<'_> {
+    fn clone(&self) -> Self {
+        // SAFETY Cloning keeps the same lifetime as `self`
+        unsafe { Variants(self.0.clone_unrooted(), self.1) }
+    }
+}
 
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     #[inline]
-    pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(value.clone(), value)
+    pub fn new(value: &Value) -> Variants {
+        // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
+        // variant is also rooted
+        unsafe { Variants::with_root(value, value) }
     }
 
     #[inline]
-    pub(crate) unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
-        Variants(value.get_repr(), PhantomData)
+    pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> {
+        Variants(value.get_repr().clone_unrooted(), PhantomData)
     }
 
     #[inline]
@@ -119,15 +135,29 @@ impl<'a> Variants<'a> {
     }
 
     #[inline]
-    pub fn get_value(&self) -> Value {
-        self.0.into()
+    pub(crate) fn tag(i: VmIndex) -> Self {
+        Variants(ValueRepr::Tag(i), PhantomData)
+    }
+
+    #[inline]
+    pub fn get_value(&self) -> &Value {
+        Value::from_ref(&self.0)
+    }
+
+    #[inline]
+    pub(crate) fn get_repr(&self) -> &ValueRepr {
+        &self.0
+    }
+
+    pub(crate) unsafe fn unrooted(&self) -> Value {
+        Value::from(self.0.clone_unrooted())
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
     #[inline]
     pub fn as_ref(&self) -> ValueRef<'a> {
-        unsafe { ValueRef::rooted_new(self.0) }
+        unsafe { ValueRef::rooted_new(&self.0) }
     }
 }
 
