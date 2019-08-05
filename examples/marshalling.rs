@@ -84,9 +84,9 @@ fn marshal_enum() -> Result<()> {
     "#;
     type SourceType<'thread> = record_type! {
         unwrap_b => api::FunctionRef<'thread, fn (Enum) -> i32>,
-        value => Enum
+        value => Enum,
     };
-    let (record_p! { mut unwrap_b, value }, _) =
+    let (record_p! { mut unwrap_b, value, }, _) =
         Compiler::new().run_expr::<SourceType>(&thread, "example", source)?;
     match value {
         Enum::C(ref a, ref b) => {

@@ -403,7 +403,7 @@ macro_rules! row_type {
 /// ```
 #[macro_export(local_inner_macros)]
 macro_rules! record_type {
-    ($($field: ident => $value: ty),*) => {
+    ($($field: ident => $value: ty),* $(,)?) => {
         $crate::api::Record<
             $crate::frunk_core::hlist::HNil,
             record_type_inner!($($field => $value),*)
@@ -438,7 +438,7 @@ macro_rules! record_p_impl {
 /// ```
 #[macro_export(local_inner_macros)]
 macro_rules! record_p {
-    ($($field: pat),*) => {
+    ($($field: pat),* $(,)?) => {
         $crate::api::Record {
             fields: record_p_impl!($($field),*),
             type_fields: _
