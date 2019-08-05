@@ -118,8 +118,8 @@ type TestFn = OwnedFunction<fn(()) -> TestEff>;
 
 #[derive(Deserialize)]
 enum TestCase {
-    Test { name: String, test: TestFn },
-    Group { name: String, tests: Vec<TestCase> },
+    Test(String, TestFn),
+    Group(String, Vec<TestCase>),
 }
 
 define_test_type! { TestCase Hole }
@@ -163,12 +163,12 @@ fn make_tensile_test(name: String, test: TestFn) -> tensile::Test<Error> {
 impl TestCase {
     fn into_tensile_test(self) -> tensile::Test<Error> {
         match self {
-            TestCase::Test { name, test } => {
+            TestCase::Test(name, test) => {
                 let child_thread = test.vm().new_thread().unwrap();
                 let test = TestFn::from_value(&child_thread, test.get_variant());
                 make_tensile_test(name, test)
             }
-            TestCase::Group { name, tests } => tensile::Test::Group {
+            TestCase::Group(name, tests) => tensile::Test::Group {
                 name,
                 tests: tests.into_iter().map(TestCase::into_tensile_test).collect(),
             },

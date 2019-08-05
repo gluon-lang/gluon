@@ -232,7 +232,7 @@ fn normal_enum() {
                     assert (x == 1920)
                     assert (y == 1080)
                     1
-                | Struct key value ->
+                | Struct { key, value } ->
                     assert (key == "under the doormat")
                     assert (value == "lots of gold")
                     2
