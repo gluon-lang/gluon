@@ -857,37 +857,38 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
         V: Visitor<'de>,
     {
         let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, self.de.typ);
-        match (self.de.input.as_ref(), &**typ) {
-            (ValueRef::Data(data), &Type::Variant(ref row)) => {
-                match row.row_iter().nth(data.tag() as usize) {
-                    Some(field) => {
-                        let typ = resolve::remove_aliases_cow(
-                            self.de.state.env, &mut NullInterner, &field.typ);
-                        match (data.get_variant(0).unwrap().as_ref(), &**typ) {
-                            (ValueRef::Data(ref data), &Type::Function(_, ref typ, _)) => {
-                                let iter = typ.row_iter().flat_map(|field| {
-                                    data.lookup_field(self.de.state.thread, field.name.as_ref())
-                                        .map(|variant| (variant, &field.name, &field.typ))
-                                });
-                                visitor.visit_map(
-                                    MapDeserializer::new(self.de.state.clone(), iter))
-                            },
-                            _ => Err(VmError::Message(format!(
-                                "Unable to deserialize `{}`",
-                                self.de.typ
-                            ))),
-                        }
-                    }
-                    None => Err(VmError::Message(format!(
-                        "Unable to deserialize `{}`",
-                        self.de.typ
-                    ))),
-                }
-            },
-            _ => Err(VmError::Message(format!(
-                "Unable to deserialize `{}`",
-                self.de.typ
-            ))),
-        }
+        let input = self.de.input.as_ref();
+        let (data, row) = match (&input, &**typ) {
+            (ValueRef::Data(data), Type::Variant(row)) => (data, row),
+            _ => {
+                return Err(VmError::Message(format!(
+                    "Unable to deserialize `{}`",
+                    self.de.typ
+                )))
+            }
+        };
+
+        let field = row
+            .row_iter()
+            .nth(data.tag() as usize)
+            .ok_or_else(|| VmError::Message(format!("Unable to deserialize `{}`", self.de.typ)))?;
+
+        let typ = resolve::remove_aliases_cow(self.de.state.env, &mut NullInterner, &field.typ);
+        let variant = data.get_variant(0).map(|d| d.as_ref());
+        let (data, typ) = match (&variant, &**typ) {
+            (Some(ValueRef::Data(data)), Type::Function(_, typ, _)) => (data, typ),
+            _ => {
+                return Err(VmError::Message(format!(
+                    "Unable to deserialize `{}`",
+                    self.de.typ
+                )))
+            }
+        };
+
+        let iter = typ.row_iter().flat_map(|field| {
+            data.lookup_field(self.de.state.thread, field.name.as_ref())
+                .map(|variant| (variant, &field.name, &field.typ))
+        });
+        visitor.visit_map(MapDeserializer::new(self.de.state.clone(), iter))
     }
 }
