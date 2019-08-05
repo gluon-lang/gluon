@@ -206,6 +206,22 @@ mod string {
         RuntimeResult::Return(Getable::from_value(vm, Variants::from(value)))
     }
 
+    pub fn split_at(s: &str, index: usize) -> RuntimeResult<(&str, &str), String> {
+        if !s.is_char_boundary(index) {
+            // Limit the amount of characters to print in the error message
+            let mut iter = s.chars();
+            for _ in iter.by_ref().take(256) {}
+            RuntimeResult::Panic(format!(
+                "index {} in `{}` does not lie on a character \
+                 boundary",
+                index,
+                &s[..(s.len() - iter.as_str().len())]
+            ))
+        } else {
+            RuntimeResult::Return(s.split_at(index))
+        }
+    }
+
     pub fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
         if s.is_char_boundary(start) && s.is_char_boundary(end) {
             RuntimeResult::Return(&s[start..end])
@@ -382,7 +398,7 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
             acosh => primitive!(1, std::float::prim::acosh),
             atanh => primitive!(1, std::float::prim::atanh),
             from_int => primitive!(1, "std.float.prim.from_int", |i: VmInt| i as f64),
-            parse => primitive!(1, "std.float.prim.parse", parse::<f64>)
+            parse => primitive!(1, "std.float.prim.parse", parse::<f64>),
         },
     )
 }
@@ -418,7 +434,7 @@ pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
             overflowing_mul => primitive!(2, std::byte::prim::overflowing_mul),
             overflowing_div => primitive!(2, std::byte::prim::overflowing_div),
             from_int => primitive!(1, "std.byte.prim.from_int", |i: VmInt| i as u8),
-            parse => primitive!(1, "std.byte.prim.parse", parse::<u8>)
+            parse => primitive!(1, "std.byte.prim.parse", parse::<u8>),
         },
     )
 }
@@ -494,7 +510,7 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             is_empty => primitive!(1, std::string::prim::is_empty),
             is_char_boundary => primitive!(2, std::string::prim::is_char_boundary),
             as_bytes => primitive!(1, std::string::prim::as_bytes),
-            split_at => primitive!(2, std::string::prim::split_at),
+            split_at => primitive!(2, "std.string.prim.split_at", string::split_at),
             contains => primitive!(2, std::string::prim::contains::<&str>),
             starts_with => primitive!(2, std::string::prim::starts_with::<&str>),
             ends_with => primitive!(2, std::string::prim::ends_with::<&str>),
@@ -570,14 +586,14 @@ pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
             dir_entry => record! {
                 path => primitive!(1, "std.fs.prim.dir_entry.path", |m: &DirEntry| m.0.path()),
                 metadata => primitive!(1, "std.fs.prim.dir_entry.metadata", |m: &DirEntry| IO::from(m.0.metadata().map(Metadata))),
-                file_name => primitive!(1, "std.fs.prim.dir_entry.file_name", |m: &DirEntry| m.0.file_name())
+                file_name => primitive!(1, "std.fs.prim.dir_entry.file_name", |m: &DirEntry| m.0.file_name()),
             },
 
             metadata => record! {
                 is_dir => primitive!(1, "std.fs.prim.metadata.is_dir", |m: &Metadata| m.0.is_dir()),
                 is_file => primitive!(1, "std.fs.prim.metadata.is_file", |m: &Metadata| m.0.is_file()),
-                len => primitive!(1, "std.fs.prim.metadata.len", |m: &Metadata| m.0.len())
-            }
+                len => primitive!(1, "std.fs.prim.metadata.len", |m: &Metadata| m.0.len()),
+            },
         },
     )
 }
@@ -626,7 +642,7 @@ pub fn load_path(vm: &Thread) -> Result<ExternModule> {
             ),
             exists => primitive!(1, "std.path.prim.exists", |p: &Path| IO::Value(p.exists())),
             is_file => primitive!(1, "std.path.prim.is_file", |p: &Path| IO::Value(p.is_file())),
-            is_dir => primitive!(1, "std.path.prim.is_file", |p: &Path| IO::Value(p.is_dir()))
+            is_dir => primitive!(1, "std.path.prim.is_file", |p: &Path| IO::Value(p.is_dir())),
         },
     )
 }
