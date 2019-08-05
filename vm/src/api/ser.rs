@@ -116,11 +116,13 @@ let thread = new_vm();
 let expr = r#"
 type Enum = | A Int | B String Int | C { foo : Float, bar : Int }
 
+let extract_bar r : { bar : Int | r } -> Int = r.bar
+
 let f e =
     match e with
     | A a -> a
     | B b c -> c
-    | C { foo, bar } -> bar
+    | C c -> extract_bar c
 
 { Enum, f }
 "#;
@@ -133,9 +135,12 @@ let mut f: FunctionRef<fn (Ser<Enum>) -> i32> = thread
     .get_global("test.f")
     .unwrap_or_else(|err| panic!("{}", err));
 
-let result1 = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| panic!("{}", err));
+let result1 = f.call(Ser(Enum::B("".to_string(), 4)))
+    .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(result1, 4);
-let result2 = f.call(Ser(Enum::C{foo: 3.14, bar: 10})).unwrap_or_else(|err| panic!("{}", err));
+
+let result2 = f.call(Ser(Enum::C { foo: 3.14, bar: 10 }))
+    .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(result2, 10);
 
 # }
