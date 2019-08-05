@@ -95,10 +95,10 @@ fn derive_enum(
                 quote! {
                     #pattern => {
                         #push_impl
-                        ctx.context().push_new_data(vm, #tag as _gluon_types::VmTag, 1)?;
+                        ctx.context().push_new_data(#tag as _gluon_types::VmTag, 1)?;
                     }
                 }
-            },
+            }
             _ => {
                 let push_impl = gen_push_impl(Some(tag), &field_idents, &field_types);
                 quote! {
