@@ -856,14 +856,7 @@ impl<'a> Typecheck<'a> {
                 let mut unaliased_scrutinee_type = match alts.first().map(|alt| &alt.pattern.value)
                 {
                     Some(Pattern::Constructor(..)) => {
-                        let variant_type = self.subs.poly_variant(vec![], self.subs.new_var());
-                        let scrutinee_type = self.subsumes(
-                            expr.span,
-                            ErrorOrder::ExpectedActual,
-                            &variant_type,
-                            scrutinee_type.concrete.clone(),
-                        );
-                        let typ = self.remove_aliases(scrutinee_type);
+                        let typ = self.remove_aliases(scrutinee_type.concrete.clone());
                         ModType::new(modifier, self.instantiate_generics(&typ))
                     }
                     _ => scrutinee_type.clone(),
@@ -1286,9 +1279,9 @@ impl<'a> Typecheck<'a> {
                     .subs
                     .function(vec![arg1.clone(), arg2.clone()], ret.concrete.clone());
 
-                self.unify_span(do_span, &flat_map_type, func_type);
-
                 self.typecheck(bound, ModType::wobbly(&arg2));
+
+                self.unify_span(do_span, &flat_map_type, func_type);
 
                 if let Some(ref mut id) = *id {
                     self.typecheck_pattern(id, ModType::wobbly(id_var.clone()), id_var);

@@ -1114,3 +1114,29 @@ let ord ?ord : [Ord a] -> Ord (Array a) =
 "#,
 "()"
 }
+
+test_check! {
+do_expression_with_fully_applied_alias_1,
+r#"
+#[implicit]
+type Monad (m : Type -> Type) = {
+    flat_map : forall a b . (a -> m b) -> m a -> m b
+}
+
+let flat_map ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+
+type Test a = { x : a }
+let monad : Monad Test = {
+    flat_map = \f x -> f x.x,
+}
+let test x : a -> Test a = { x }
+
+type TestInt = Test Int
+
+let x : TestInt =
+    do x = test 1
+    test x
+x
+"#,
+"test.TestInt"
+}

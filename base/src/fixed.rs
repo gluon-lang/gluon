@@ -103,6 +103,15 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
         let values = &mut self.values;
         self.map.get_mut().get(k).map(move |&key| &mut values[key])
     }
+
+    pub fn remove<Q>(&mut self, key: &Q)
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+    {
+        self.map.get_mut().remove(key);
+        // TODO Actually remove it from values as well
+    }
 }
 
 impl<'a, Q, K, V> Index<&'a Q> for FixedMap<K, V>
@@ -203,6 +212,16 @@ impl<V> FixedVecMap<V> {
     pub fn drain<'a>(&'a mut self) -> impl Iterator<Item = V> + 'a {
         self.map.get_mut().clear();
         self.values.drain()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &V)> {
+        self.map
+            .borrow()
+            .iter()
+            .map(|(k, v)| (k, *v))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(move |(k, v)| (k, &self.values[v]))
     }
 }
 

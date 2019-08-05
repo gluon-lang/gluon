@@ -1099,3 +1099,24 @@ rec let eq_Recursive : [Eq a] -> Eq (Recursive a) =
 "#,
 "()"
 }
+
+test_check! {
+    do_unification_arguments_first,
+    r#"
+let any x = any x
+
+let foldl : forall a b . (b -> a -> b) -> b -> f a -> b = any ()
+
+type List a = | Cons a (List a) | Nil
+
+let flat_map f x = Nil
+
+do writer = Nil
+match writer with
+| Cons _ _ ->
+    let _ = foldl (\x y -> x) "" writer
+    Nil
+| Nil -> Cons "" Nil
+    "#,
+    "test.List String"
+}
