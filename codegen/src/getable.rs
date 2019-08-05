@@ -277,7 +277,7 @@ fn gen_struct_variant_cons<'a, I>(ident: &Ident, variant_ident: &Ident, fields: 
 where
     I: IntoIterator<Item = &'a Field>,
 {
-    let fields = fields.into_iter().enumerate().map(|(idx, field)| {
+    let fields = fields.into_iter().map(|field| {
         let field_ty = &field.ty;
         let field_ident = field
             .ident
@@ -288,7 +288,7 @@ where
             #field_ident: if let Some(val) = inner_data.lookup_field(vm, #quoted_field_ident) {
                 <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
-                panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
+                panic!("Enum does not contain the field `{}`. Do the type definitions match?", #quoted_field_ident)
             }
         }
     });
