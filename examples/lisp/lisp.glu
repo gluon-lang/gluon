@@ -4,6 +4,7 @@ let { map } = import! std.functor
 let { Foldable } = import! std.foldable
 let { traverse } = import! std.traversable
 let { id, (<|) } = import! std.function
+let { ? } = import! std.array
 
 let string = import! std.string
 let { (<>) } = import! std.prelude
@@ -131,10 +132,14 @@ let define xs =
     | _ -> throw "Unexpected parameters to define `define`"
 
 let primitives : LispState =
-    let { (<>) = (++) } = import! std.prelude
-    primitive_binop "+" (+) (+) ++ primitive_binop "-" (-) (-) ++ primitive_binop "*" (*) (*)
-        ++ primitive_binop "/" (/) (/)
-        ++ primitive "define" define
+    let { concat } = import! std.foldable
+    concat [
+        primitive_binop "+" (+) (+),
+        primitive_binop "-" (-) (-),
+        primitive_binop "*" (*) (*),
+        primitive_binop "/" (/) (/),
+        primitive "define" define,
+    ]
 
 rec
 let apply f xs : forall r . Expr -> List Expr -> Eff (LispEffect r) Expr =

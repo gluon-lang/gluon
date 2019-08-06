@@ -189,7 +189,9 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
                     instruction_index: 0,
                 })))
             }
-            ValueRepr::Function(function) => construct_gc!(State::Extern(@ ExternState::new(function))),
+            ValueRepr::Function(function) => {
+                construct_gc!(State::Extern(@ ExternState::new(function)))
+            }
             _ => gc::Borrow::from_static(State::Unknown),
         };
         value_variant.clone().push(&mut context)?;

@@ -2,7 +2,8 @@
 //! Implementation of the `Foldable` type
 
 let { Bool, Option } = import! std.types
-let { Monoid } = import! std.monoid
+let { Semigroup, append } = import! std.semigroup
+let { Monoid, empty } = import! std.monoid
 let { wrap } = import! std.applicative
 let { Monad, flat_map } = import! std.monad
 let { Eq, (==) } = import! std.cmp
@@ -18,11 +19,11 @@ type Foldable (f : Type -> Type) = {
 let foldr ?fold : forall a b . [Foldable f] -> (a -> b -> b) -> b -> f a -> b = fold.foldr
 let foldl ?fold : forall a b . [Foldable f] -> (b -> a -> b) -> b -> f a -> b = fold.foldl
 
-let concat monoid : [Foldable t] -> Monoid m -> t m -> m =
-    foldr monoid.semigroup.append monoid.empty
+let concat : [Foldable t] -> [Monoid m] -> t m -> m =
+    foldr append empty
 
-let concat_map monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
-    foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
+let concat_map f : [Foldable t] -> [Monoid m] -> (a -> m) -> t a -> m =
+    foldr (\x -> append (f x)) empty
 
 let fold_m ?fold ?monad f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a =
     foldl (\acc y -> flat_map (\x -> f x y) acc) (wrap z)
