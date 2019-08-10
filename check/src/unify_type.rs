@@ -1361,7 +1361,6 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         r: &RcType,
     ) -> Result<Option<RcType>, UnifyError<TypeError<Symbol, RcType>, RcType>> {
         let mut subs = self.unifier.subs;
-        // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
         debug!("{} <=> {}", l, r);
@@ -1369,9 +1368,31 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         // unified with whatever the other type is
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(Some(r.clone())),
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
 
-            (_, &Type::Forall(ref params, ref r)) => {
+            (_, Type::Variable(_)) => {
+                debug!("Union merge {} <> {}", l, r);
+                subs.union(r, l)?;
+                Ok(None)
+            }
+            (Type::Variable(_), _) => {
+                debug!("Union merge {} <> {}", l, r);
+                subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (Type::Skolem(_), _) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(l, r)?;
+                Ok(None)
+            }
+
+            (_, Type::Skolem(_)) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(r, l)?;
+                Ok(None)
+            }
+
+            (_, Type::Forall(params, r)) => {
                 let mut variables = params
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
@@ -1380,46 +1401,34 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 self.try_match_res(l, &r)
             }
 
-            (_, &Type::Variable(_)) => {
-                debug!("Union merge {} <> {}", l, r);
-                subs.union(r, l)?;
-                Ok(None)
-            }
-            (&Type::Variable(_), _) => {
-                debug!("Union merge {} <> {}", l, r);
-                subs.union(l, r)?;
-                Ok(None)
-            }
+            (Type::Forall(_, _), _) => Ok(self.subsume_check(l, r)),
 
-            (&Type::Skolem(_), _) if self.state.refinement => {
-                debug!("Skolem union {} <> {}", l, r);
-                subs.union(l, r)?;
-                Ok(None)
-            }
-
-            (_, &Type::Skolem(_)) if self.state.refinement => {
-                debug!("Skolem union {} <> {}", l, r);
-                subs.union(r, l)?;
-                Ok(None)
-            }
-
-            (&Type::Forall(_, _), _) => Ok(self.subsume_check(l, r)),
-
-            _ if l.as_explicit_function().is_some() => {
-                let (arg_l, ret_l) = l.as_explicit_function().unwrap();
-                let (arg_r, ret_r) = self.unify_function(r);
-                Ok(self.subsume_check_function(arg_l, ret_l, &arg_r, &ret_r))
-            }
-            _ if r.as_explicit_function().is_some() => {
-                let (arg_r, ret_r) = r.as_explicit_function().unwrap();
-                let (arg_l, ret_l) = self.unify_function(l);
-                Ok(self.subsume_check_function(&arg_l, &ret_l, arg_r, ret_r))
-            }
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
                 // unify)
-                l.zip_match(r, self)
+                match (l.as_explicit_function(), r.as_explicit_function()) {
+                    (None, None) => l.zip_match(r, self),
+                    (l_func, r_func) => {
+                        let x;
+                        let (arg_l, ret_l) = match l_func {
+                            Some(x) => x,
+                            None => {
+                                x = self.unify_function(l);
+                                (&x.0, &x.1)
+                            }
+                        };
+                        let y;
+                        let (arg_r, ret_r) = match r_func {
+                            Some(y) => y,
+                            None => {
+                                y = self.unify_function(r);
+                                (&y.0, &y.1)
+                            }
+                        };
+                        Ok(self.subsume_check_function(arg_l, ret_l, &arg_r, &ret_r))
+                    }
+                }
             }
         }
     }
