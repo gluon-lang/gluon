@@ -1632,7 +1632,7 @@ impl<'a> Typecheck<'a> {
                     );
                 }
 
-                match self.typecheck_pattern_rec(args, ctor_type) {
+                match self.typecheck_pattern_rec(args, &ctor_type) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 }
@@ -1789,19 +1789,19 @@ impl<'a> Typecheck<'a> {
     fn typecheck_pattern_rec(
         &mut self,
         args: &mut [SpannedPattern<Symbol>],
-        typ: RcType,
+        mut typ: &RcType,
     ) -> TcResult<RcType> {
         let len = args.len();
-        match args.split_first_mut() {
-            Some((head, tail)) => match typ.as_function() {
+        for arg_pattern in args {
+            match typ.as_function() {
                 Some((arg, ret)) => {
-                    self.typecheck_pattern(head, ModType::wobbly(arg.clone()), arg.clone());
-                    self.typecheck_pattern_rec(tail, ret.clone())
+                    self.typecheck_pattern(arg_pattern, ModType::wobbly(arg.clone()), arg.clone());
+                    typ = ret;
                 }
-                None => Err(TypeError::PatternError(typ.clone(), len)),
-            },
-            None => Ok(typ),
+                None => return Err(TypeError::PatternError(typ.clone(), len)),
+            }
         }
+        Ok(typ.clone())
     }
 
     fn translate_projected_type(&mut self, id: &[Symbol]) -> TcResult<RcType> {
