@@ -256,6 +256,7 @@ struct Settings {
     emit_debug_info: bool,
     run_io: bool,
     full_metadata: bool,
+    use_standard_lib: bool,
 }
 
 impl Default for Settings {
@@ -265,6 +266,7 @@ impl Default for Settings {
             emit_debug_info: true,
             run_io: false,
             full_metadata: false,
+            use_standard_lib: true,
         }
     }
 }
@@ -343,6 +345,12 @@ impl Compiler {
         /// Sets whether full metadata is required
         /// (default: false)
         full_metadata set_full_metadata: bool
+    }
+
+    option_settings! {
+        /// Sets whether internal standard library is searched for requested modules
+        /// (default: true)
+        use_standard_lib set_use_standard_lib: bool
     }
 
     fn state(&self) -> MutexGuard<State> {
