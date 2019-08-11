@@ -409,30 +409,6 @@ f 0 (\r -> { x = r #Int+ 1 })
 1i32
 }
 
-#[test]
-fn overloaded_bindings() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-#[implicit]
-let add_int x y = x #Int+ y
-#[implicit]
-let add_float x y = x #Float+ y
-
-let add ?f: [a -> a -> a] -> a -> a -> a = f
-
-{ x = add 1 2, y = add 1.0 2.0 }
-"#;
-    let vm = make_vm();
-    let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    match result.get_ref() {
-        ValueRef::Data(data) => {
-            assert_eq!(data.get(0).unwrap(), ValueRef::Int(3));
-            assert_eq!(data.get(1).unwrap(), ValueRef::Float(3.0));
-        }
-        _ => panic!(),
-    }
-}
-
 test_expr! { record_base_duplicate_fields,
 r#"
 { x = "" ..  { x = 1 } }.x

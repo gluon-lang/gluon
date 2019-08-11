@@ -776,7 +776,17 @@ impl<'a> ImplicitResolver<'a> {
     }
 
     pub fn on_stack_var(&mut self, subs: &Substitution<RcType>, id: &Symbol, typ: &RcType) {
-        self.add_implicits_of_record(subs, id, typ);
+        self.alias_resolver.clear();
+
+        self.path.clear();
+        self.path.push(TypedIdent {
+            name: id.clone(),
+            typ: typ.clone(),
+        });
+
+        let meta = self.metadata.get(id).cloned();
+
+        self.add_implicits_of_ident(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
     }
 
     pub fn add_implicits_of_record(
@@ -797,7 +807,7 @@ impl<'a> ImplicitResolver<'a> {
         self.add_implicits_of_record_rec(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
     }
 
-    fn add_implicits_of_record_rec(
+    fn add_implicits_of_ident(
         &mut self,
         mut subs: &Substitution<RcType>,
         typ: &RcType,
@@ -821,30 +831,47 @@ impl<'a> ImplicitResolver<'a> {
 
         let opt = self.try_create_implicit(metadata, typ);
 
-        let mut typ = typ.clone();
         if let Some(definition) = opt {
             let typ = subs.forall(forall_params.iter().cloned().collect(), typ.clone());
 
             self.implicit_bindings
                 .insert(subs, definition, &self.path, &typ);
-        }
 
+            self.add_implicits_of_record_rec(subs, &typ, metadata, forall_params)
+        }
+    }
+
+    fn add_implicits_of_record_rec(
+        &mut self,
+        mut subs: &Substitution<RcType>,
+        typ: &RcType,
+        metadata: Option<&Metadata>,
+        forall_params: &mut Vec<Generic<Symbol>>,
+    ) {
         let forall_params_len_before = forall_params.len();
 
+        let mut typ = typ.clone();
         while let Type::Forall(params, next) = &*typ {
             forall_params.extend(params.iter().cloned());
             typ = next.clone();
         }
 
-        let raw_type =
-            match self
-                .alias_resolver
-                .remove_aliases(&self.environment, &mut subs, typ.clone())
-            {
-                Ok(t) => t,
-                // Don't recurse into self recursive aliases
-                Err(_) => return,
-            };
+        let t = self.alias_resolver.remove_aliases_predicate(
+            &self.environment,
+            &mut subs,
+            typ.clone(),
+            |alias| {
+                alias
+                    .unresolved_type()
+                    .flags()
+                    .contains(Flags::HAS_IMPLICIT)
+            },
+        );
+        let raw_type = match t {
+            Ok(t) => t,
+            // Don't recurse into self recursive aliases
+            Err(_) => return,
+        };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
@@ -861,12 +888,7 @@ impl<'a> ImplicitResolver<'a> {
                         typ: field.typ.clone(),
                     });
 
-                    self.add_implicits_of_record_rec(
-                        subs,
-                        &field.typ,
-                        field_metadata,
-                        forall_params,
-                    );
+                    self.add_implicits_of_ident(subs, &field.typ, field_metadata, forall_params);
 
                     self.path.pop();
                 }

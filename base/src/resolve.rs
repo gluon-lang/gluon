@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::{
     fnv::FnvMap,
     symbol::Symbol,
-    types::{AliasRef, Type, TypeContext, TypeEnv, TypeExt},
+    types::{AliasData, AliasRef, Type, TypeContext, TypeEnv, TypeExt},
 };
 
 quick_error! {
@@ -106,7 +106,7 @@ impl<T> AliasRemover<T> {
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         loop {
-            typ = match self.remove_alias_to_concrete(env, interner, &typ)? {
+            typ = match self.remove_alias_to_concrete(env, interner, &typ, |_| true)? {
                 Some((typ, args)) => match *typ {
                     Type::Builtin(..)
                     | Type::Function(..)
@@ -137,13 +137,26 @@ impl<T> AliasRemover<T> {
         &mut self,
         env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
+        typ: T,
+    ) -> Result<T, Error>
+    where
+        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    {
+        self.remove_aliases_predicate(env, interner, typ, |_| true)
+    }
+
+    pub fn remove_aliases_predicate(
+        &mut self,
+        env: &dyn TypeEnv<Type = T>,
+        interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
+        mut predicate: impl FnMut(&AliasData<Symbol, T>) -> bool,
     ) -> Result<T, Error>
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         loop {
-            typ = match self.remove_alias(env, interner, &typ)? {
+            typ = match self.remove_alias(env, interner, &typ, &mut predicate)? {
                 Some(typ) => typ,
                 None => return Ok(typ),
             };
@@ -155,19 +168,20 @@ impl<T> AliasRemover<T> {
         env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &T,
+        predicate: impl FnOnce(&AliasData<Symbol, T>) -> bool,
     ) -> Result<Option<T>, Error>
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
-        Ok(self.remove_alias_to_concrete(env, interner, typ)?.map(
-            |(non_replaced_type, unapplied_args)| {
+        Ok(self
+            .remove_alias_to_concrete(env, interner, typ, predicate)?
+            .map(|(non_replaced_type, unapplied_args)| {
                 let non_replaced_type = non_replaced_type
                     .replace_generics(interner, &mut self.named_variables)
                     .unwrap_or_else(|| non_replaced_type.clone());
 
                 interner.app(non_replaced_type, unapplied_args.iter().cloned().collect())
-            },
-        ))
+            }))
     }
 
     pub fn remove_alias_to_concrete<'a>(
@@ -175,13 +189,16 @@ impl<T> AliasRemover<T> {
         env: &'a dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
+        predicate: impl FnOnce(&AliasData<Symbol, T>) -> bool,
     ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         match peek_alias(env, &typ)? {
-            Some(alias) => self.remove_alias_to_concrete_inner(interner, typ, alias),
-            None => Ok(None),
+            Some(alias) if predicate(alias) => {
+                self.remove_alias_to_concrete_inner(interner, typ, alias)
+            }
+            _ => Ok(None),
         }
     }
 
