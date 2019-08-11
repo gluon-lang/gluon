@@ -13,7 +13,14 @@ use crate::fnv::FnvMap;
 /// A symbol uniquely identifies something regardless of its name and which module it originated
 /// from
 #[derive(Clone, Eq)]
-pub struct Symbol(Arc<NameBuf>);
+pub struct Symbol(Arc<SymbolData>);
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub struct SymbolData<N = NameBuf> {
+    pub global: bool,
+    pub location: Option<(u32, u32)>,
+    pub name: N,
+}
 
 #[cfg(feature = "serde")]
 mod serialization {
@@ -30,7 +37,7 @@ mod serialization {
             D: Deserializer<'de>,
         {
             use std::borrow::Cow;
-            Cow::<str>::deserialize(deserializer).map(Symbol::from)
+            Cow::<str>::deserialize(deserializer).map(|s| Symbol::from(&s[..]))
         }
     }
 
@@ -46,7 +53,8 @@ mod serialization {
             use crate::serialization::SharedSeed;
 
             let seed = SharedSeed::new(seed);
-            seed.deserialize(deserializer).map(Symbol)
+            seed.deserialize(deserializer)
+                .map(|s: String| Symbol::from(&s[..]))
         }
     }
 
@@ -55,8 +63,7 @@ mod serialization {
         where
             S: Serializer,
         {
-            let s: &str = self.as_ref();
-            s.serialize(serializer)
+            serializer.collect_str(self)
         }
     }
 
@@ -75,7 +82,7 @@ mod serialization {
 impl Deref for Symbol {
     type Target = SymbolRef;
     fn deref(&self) -> &SymbolRef {
-        unsafe { &*(&*(self.0).0 as *const str as *const SymbolRef) }
+        unsafe { &*(&*self.0.name.0 as *const str as *const SymbolRef) }
     }
 }
 
@@ -87,7 +94,7 @@ impl Borrow<SymbolRef> for Symbol {
 
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
-        self.0.as_pretty_str()
+        self.0.name.as_str()
     }
 }
 
@@ -99,7 +106,19 @@ impl fmt::Debug for Symbol {
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", &**self)
+        write!(
+            f,
+            "{}{}",
+            if self.is_global() { "@" } else { "" },
+            self.0.name
+        )?;
+        if let Some((x, y)) = self.0.location {
+            write!(f, ":{}", x)?;
+            if y != 0 {
+                write!(f, "_{}", y)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -139,12 +158,47 @@ impl Hash for Symbol {
     }
 }
 
-impl<S> From<S> for Symbol
+impl From<String> for Symbol {
+    fn from(name: String) -> Symbol {
+        Symbol::from(&*name)
+    }
+}
+
+impl From<&'_ str> for Symbol {
+    fn from(name: &str) -> Symbol {
+        Symbol(Arc::new(SymbolData::from(name)))
+    }
+}
+
+impl<'a, N> From<&'a str> for SymbolData<N>
 where
-    S: Into<String>,
+    N: From<&'a str>,
 {
-    fn from(name: S) -> Symbol {
-        Symbol(Arc::new(NameBuf(name.into())))
+    fn from(mut name: &'a str) -> SymbolData<N> {
+        let global = name.starts_with('@');
+        let location = match name
+            .bytes()
+            .rposition(|b| (b < b'0' || b > b'9') && b != b'_')
+        {
+            Some(i) if name.as_bytes()[i] == b':' => {
+                let opt = name[(i + 1)..].parse::<u32>().ok().map(|x| (x, 0));
+
+                name = &name[..i];
+
+                opt
+            }
+            _ => None,
+        };
+
+        if global {
+            name = &name[1..];
+        }
+
+        SymbolData {
+            global,
+            location,
+            name: name.into(),
+        }
     }
 }
 
@@ -196,6 +250,10 @@ impl Symbol {
     pub fn strong_count(sym: &Symbol) -> usize {
         Arc::strong_count(&sym.0)
     }
+
+    pub fn is_global(&self) -> bool {
+        self.0.global
+    }
 }
 
 impl SymbolRef {
@@ -210,7 +268,7 @@ impl SymbolRef {
     }
 
     pub fn as_pretty_str(&self) -> &str {
-        Name::new(&self.0).as_pretty_str()
+        Name::new(&self.0).as_str()
     }
 
     pub fn as_str(&self) -> &str {
@@ -218,7 +276,7 @@ impl SymbolRef {
     }
 
     pub fn name(&self) -> &Name {
-        Name::new(Name::new(&self.0).as_pretty_str())
+        Name::new(&self.0)
     }
 
     pub fn raw_name(&self) -> &Name {
@@ -233,10 +291,6 @@ impl SymbolRef {
 
     pub fn definition_name(&self) -> &str {
         Name::new(&self.0).definition_name()
-    }
-
-    pub fn is_global(&self) -> bool {
-        self.0.starts_with('@')
     }
 
     fn ptr(&self) -> *const () {
@@ -292,22 +346,19 @@ impl<'a> Iterator for Components<'a> {
     }
 }
 
+impl<'a> From<&'a str> for &'a Name {
+    fn from(s: &'a str) -> &'a Name {
+        Name::new(s)
+    }
+}
+
 impl Name {
     #[inline]
     pub fn new<N: ?Sized + AsRef<str>>(n: &N) -> &Name {
         unsafe { &*(n.as_ref() as *const str as *const Name) }
     }
 
-    pub fn as_pretty_str(&self) -> &str {
-        Self::strip_position_suffix(&self.0)
-    }
-
     pub fn as_str(&self) -> &str {
-        debug_assert!(
-            !self.0.contains(':'),
-            "Did you mean to call as_pretty_str?: {}",
-            &self.0
-        );
         &self.0
     }
 
@@ -332,24 +383,7 @@ impl Name {
     }
 
     pub fn definition_name(&self) -> &str {
-        Self::strip_position_suffix(if self.0.as_bytes().get(0) == Some(&b'@') {
-            &self.0[1..]
-        } else {
-            &self.0
-        })
-    }
-
-    fn strip_position_suffix(name: &str) -> &str {
-        // Strip away a `:1234_56` suffix
-        let x = match name
-            .bytes()
-            .rposition(|b| (b < b'0' || b > b'9') && b != b'_')
-        {
-            Some(i) if name.as_bytes()[i] == b':' => &name[..i],
-            _ => name,
-        };
-
-        x
+        self.as_str()
     }
 }
 
@@ -445,7 +479,7 @@ impl<'a> From<&'a Name> for NameBuf {
 /// Used to make identifiers within a single module point to the same symbol
 #[derive(Debug, Default)]
 pub struct Symbols {
-    indexes: FnvMap<&'static Name, Symbol>,
+    indexes: FnvMap<SymbolData<&'static Name>, Symbol>,
 }
 
 impl Symbols {
@@ -455,30 +489,58 @@ impl Symbols {
         }
     }
 
-    fn make_symbol(&mut self, name: NameBuf) -> Symbol {
+    fn make_symbol(&mut self, global: bool, location: Option<(u32, u32)>, name: NameBuf) -> Symbol {
         // `name` is fixed in memory and the key lives as long as `s` this is safe
         let key = unsafe { &*(&*name as *const Name) };
-        let s = Symbol(Arc::new(name));
-        self.indexes.insert(key, s.clone());
+        let s = Symbol(Arc::new(SymbolData {
+            global,
+            location,
+            name,
+        }));
+        self.indexes.insert(
+            SymbolData {
+                global,
+                location,
+                name: key,
+            },
+            s.clone(),
+        );
         s
     }
 
-    /// Looks up the symbol for `name` or creates a new symbol if it does not exist
-    pub fn symbol<N>(&mut self, name: N) -> Symbol
+    pub fn simple_symbol<N>(&mut self, name: N) -> Symbol
     where
         N: Into<NameBuf> + AsRef<Name>,
     {
-        if let Some(symbol) = self.indexes.get(name.as_ref()) {
+        self.symbol(SymbolData {
+            global: false,
+            location: None,
+            name,
+        })
+    }
+
+    /// Looks up the symbol for `name` or creates a new symbol if it does not exist
+    pub fn symbol<N>(&mut self, name: SymbolData<N>) -> Symbol
+    where
+        N: Into<NameBuf> + AsRef<Name>,
+    {
+        let name_ref = SymbolData {
+            global: name.global,
+            location: name.location,
+            name: name.name.as_ref(),
+        };
+        if let Some(symbol) = self.indexes.get(&name_ref) {
             return symbol.clone();
         }
-        self.make_symbol(name.into())
+        self.make_symbol(name.global, name.location, name.name.into())
     }
 
     pub fn contains_name<N>(&mut self, name: N) -> bool
     where
         N: AsRef<Name>,
     {
-        self.indexes.contains_key(name.as_ref())
+        let s = SymbolData::<&Name>::from(name.as_ref().as_str());
+        self.indexes.contains_key(&s)
     }
 
     pub fn len(&self) -> usize {
@@ -508,8 +570,15 @@ impl<'a> SymbolModule<'a> {
         }
     }
 
+    pub fn simple_symbol<N>(&mut self, name: N) -> Symbol
+    where
+        N: Into<NameBuf> + AsRef<Name>,
+    {
+        self.symbols.simple_symbol(name)
+    }
+
     /// Creates an unprefixed symbol, same as `Symbols::symbol`
-    pub fn symbol<N>(&mut self, name: N) -> Symbol
+    pub fn symbol<N>(&mut self, name: SymbolData<N>) -> Symbol
     where
         N: Into<NameBuf> + AsRef<Name>,
     {
@@ -529,14 +598,18 @@ impl<'a> SymbolModule<'a> {
     /// # use gluon_base::symbol::{Symbols, SymbolModule};
     /// let mut symbols = Symbols::new();
     /// let mut symbols = SymbolModule::new(String::from("test"), &mut symbols);
-    /// assert_eq!(symbols.symbol("a").as_ref(), "a");
+    /// assert_eq!(symbols.simple_symbol("a").as_ref(), "a");
     /// assert_eq!(symbols.scoped_symbol("a").as_ref(), "test.a");
     /// ```
     pub fn scoped_symbol(&mut self, name: &str) -> Symbol {
         let len = self.module.0.len();
         self.module.0.push('.');
         self.module.0.push_str(name);
-        let symbol = self.symbols.symbol(&*self.module);
+        let symbol = self.symbols.symbol(SymbolData {
+            global: false,
+            location: None,
+            name: &*self.module,
+        });
         self.module.0.truncate(len);
         symbol
     }
@@ -568,7 +641,7 @@ impl DisplayEnv for Symbols {
 
 impl IdentEnv for Symbols {
     fn from_str(&mut self, s: &str) -> Symbol {
-        self.symbol(s)
+        self.symbol(SymbolData::<&Name>::from(s))
     }
 }
 
@@ -582,17 +655,6 @@ impl<'s> DisplayEnv for SymbolModule<'s> {
 
 impl<'a> IdentEnv for SymbolModule<'a> {
     fn from_str(&mut self, s: &str) -> Symbol {
-        self.symbol(s)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn definition_name() {
-        assert_eq!(Name::new("a:123").definition_name(), "a");
-        assert_eq!(Name::new("a:123_5").definition_name(), "a");
+        self.symbol(SymbolData::<&Name>::from(s))
     }
 }

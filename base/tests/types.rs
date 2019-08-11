@@ -366,7 +366,7 @@ pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
 }
 
 pub fn intern(s: &str) -> Symbol {
-    get_local_interner().borrow_mut().symbol(s)
+    get_local_interner().borrow_mut().simple_symbol(s)
 }
 
 pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {

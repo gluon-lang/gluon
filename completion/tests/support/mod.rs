@@ -8,7 +8,7 @@ use crate::base::{
     kind::{ArcKind, Kind, KindEnv},
     metadata::{Metadata, MetadataEnv},
     pos::BytePos,
-    symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+    symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
     types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
 };
 
@@ -40,7 +40,7 @@ pub fn intern(s: &str) -> Symbol {
     let mut interner = interner.borrow_mut();
 
     if s.starts_with(char::is_lowercase) {
-        interner.symbol(s)
+        interner.symbol(SymbolData::<&Name>::from(s))
     } else {
         SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
     }
@@ -65,7 +65,7 @@ impl MockEnv {
         let interner = get_local_interner();
         let mut interner = interner.borrow_mut();
 
-        let bool_sym = interner.symbol("Bool");
+        let bool_sym = interner.simple_symbol("Bool");
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv {

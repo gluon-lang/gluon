@@ -260,7 +260,7 @@ impl TypeVariableGenerator {
         } else {
             let name = format!("{}{}", self.name, self.i);
             self.i += 1;
-            tc.symbols.symbol(&name[..])
+            tc.symbols.simple_symbol(&name[..])
         };
         self.map.insert(symbol.clone());
         let hole = tc.hole();
@@ -271,7 +271,7 @@ impl TypeVariableGenerator {
     fn next_variable_(&mut self, tc: &mut Typecheck) -> Symbol {
         for c in b'a'..(b'z' + 1) {
             self.name.push(c as char);
-            let symbol = tc.symbols.symbol(&self.name[..]);
+            let symbol = tc.symbols.simple_symbol(&self.name[..]);
             if !self.map.contains(&symbol) && tc.environment.skolem_variables.get(&symbol).is_none()
             {
                 return symbol;

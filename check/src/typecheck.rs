@@ -336,7 +336,7 @@ impl<'a> Typecheck<'a> {
                     ctor_type,
                 );
 
-                let symbol = self.symbols.symbols().symbol(field.name.as_str());
+                let symbol = self.symbols.symbols().simple_symbol(field.name.as_str());
                 self.stack_var(symbol, typ);
             }
         }
@@ -837,7 +837,7 @@ impl<'a> Typecheck<'a> {
                                 let typ = self.infer_expr(expr);
                                 modifier |= typ.modifier;
                                 Field {
-                                    name: self.symbols.symbol(format!("_{}", i)),
+                                    name: self.symbols.simple_symbol(format!("_{}", i)),
                                     typ: typ.concrete,
                                 }
                             })
@@ -1496,7 +1496,7 @@ impl<'a> Typecheck<'a> {
                                 &mut args[i - 1].name.value
                             }
                             _ => {
-                                let id = Symbol::from(format!("__implicit_arg"));
+                                let id = Symbol::from("__implicit_arg");
                                 let pos = if i == 0 {
                                     before_args_pos
                                 } else {
@@ -2249,7 +2249,7 @@ impl<'a> Typecheck<'a> {
         }
         // HACK
         // For type projections
-        let id = self.symbols.symbol(id.declared_name());
+        let id = self.symbols.simple_symbol(id.declared_name());
         if let Some(bind) = self.environment.stack.get_mut(&id) {
             bind.typ.concrete = typ.clone();
         }
@@ -2974,7 +2974,8 @@ impl<'a> Typecheck<'a> {
                 self.errors.push(Spanned {
                     span: span,
                     // TODO Help to the other fields location
-                    value: TypeError::DuplicateField(self.symbols.symbols().symbol(name)).into(),
+                    value: TypeError::DuplicateField(self.symbols.symbols().simple_symbol(name))
+                        .into(),
                 });
                 false
             })

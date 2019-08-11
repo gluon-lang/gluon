@@ -491,7 +491,7 @@ impl<'a> Compiler<'a> {
         Compiler {
             globals: globals,
             vm: vm,
-            empty_symbol: symbols.symbol(""),
+            empty_symbol: symbols.simple_symbol(""),
             symbols: symbols,
             stack_types: ScopedMap::new(),
             source: source,
