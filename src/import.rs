@@ -171,6 +171,7 @@ impl<I> Import<I> {
 
     fn get_unloaded_module(
         &self,
+        compiler: &mut Compiler,
         vm: &Thread,
         module: &str,
         filename: &str,
@@ -180,10 +181,11 @@ impl<I> Import<I> {
         // Retrieve the source, first looking in the standard library included in the
         // binary
 
-        let std_file = STD_LIBS.iter().find(|tup| tup.0 == module);
-        if let Some(tup) = std_file {
-            return Ok(UnloadedModule::Source(Cow::Borrowed(tup.1)));
-        }
+        let std_file = if compiler.settings.use_standard_lib {
+            STD_LIBS.iter().find(|tup| tup.0 == module)
+        } else {
+            None
+        };
         Ok(match std_file {
             Some(tup) => UnloadedModule::Source(Cow::Borrowed(tup.1)),
             None => {
@@ -309,7 +311,7 @@ impl<I> Import<I> {
         // Retrieve the source, first looking in the standard library included in the
         // binary
         let unloaded_module = self
-            .get_unloaded_module(vm, &modulename, &filename)
+            .get_unloaded_module(compiler, vm, &modulename, &filename)
             .map_err(|err| (None, err.into()))?;
 
         match unloaded_module {

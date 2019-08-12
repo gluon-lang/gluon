@@ -79,7 +79,7 @@ impl ::std::str::FromStr for Color {
             "always" => Always,
             "always-ansi" => AlwaysAnsi,
             "never" => Never,
-            _ => return Err("Expected on of auto, always, always-ansi, never"),
+            _ => return Err("Expected one of 'auto', 'always', 'always-ansi', 'never'"),
         })
     }
 }
@@ -129,6 +129,12 @@ pub struct Opt {
     )]
     debug_level: base::DebugLevel,
 
+    #[structopt(
+        long = "no-std",
+        help = "Skip searching the internal standard library for requested modules."
+    )]
+    no_std: bool,
+
     #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
 
@@ -155,8 +161,8 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
-    let mut compiler = Compiler::new();
+fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
+    let mut compiler = Compiler::new().use_standard_lib(!opt.no_std);
     let thread = new_vm();
 
     Ok(compiler.format_expr(
@@ -167,7 +173,7 @@ fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
     )?)
 }
 
-fn fmt_file(name: &Path) -> Result<()> {
+fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     use std::fs::File;
     use std::io::Read;
 
@@ -180,7 +186,7 @@ fn fmt_file(name: &Path) -> Result<()> {
     let module_name = filename_to_module(&name.display().to_string());
     let mut code_map = codespan::CodeMap::new();
     let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
-    let formatted = format(&module_name, file_map.clone())?;
+    let formatted = format(&module_name, file_map.clone(), opt)?;
 
     // Avoid touching the .glu file if it did not change
     if file_map.src() != formatted {
@@ -196,7 +202,7 @@ fn fmt_file(name: &Path) -> Result<()> {
     Ok(())
 }
 
-fn fmt_stdio() -> Result<()> {
+fn fmt_stdio(opt: &Opt) -> Result<()> {
     use std::io::{stdin, stdout, Read};
 
     let mut buffer = String::new();
@@ -205,7 +211,7 @@ fn fmt_stdio() -> Result<()> {
     let mut code_map = codespan::CodeMap::new();
     let file_map = code_map.add_filemap("STDIN".into(), buffer);
 
-    let formatted = format("STDIN", file_map)?;
+    let formatted = format("STDIN", file_map, opt)?;
     stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }
@@ -241,10 +247,10 @@ fn run(
                 gluon_files.dedup();
 
                 for file in gluon_files {
-                    fmt_file(&file)?;
+                    fmt_file(&file, opt)?;
                 }
             } else {
-                fmt_stdio()?;
+                fmt_stdio(opt)?;
             }
         }
         Some(SubOpt::Doc(ref doc_opt)) => {
@@ -275,7 +281,9 @@ fn main() {
 
     let opt = Opt::from_args();
 
-    let mut compiler = Compiler::new().run_io(true);
+    let mut compiler = Compiler::new()
+        .run_io(true)
+        .use_standard_lib(!opt.no_std);
     let vm = new_vm();
 
     if let Err(err) = run(&opt, &mut compiler, opt.color, &vm) {
