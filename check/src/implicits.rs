@@ -709,7 +709,6 @@ pub struct ImplicitResolver<'a> {
     pub(crate) implicit_vars: ScopedMap<Symbol, Level>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
     alias_resolver: resolve::AliasRemover<RcType>,
-    is_implicit_memo: RefCell<FnvMap<SymbolKey, bool>>,
     path: Vec<TypedIdent<Symbol, RcType>>,
 }
 
@@ -725,7 +724,6 @@ impl<'a> ImplicitResolver<'a> {
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),
             alias_resolver: resolve::AliasRemover::new(),
-            is_implicit_memo: Default::default(),
             path: Vec::new(),
         }
     }
@@ -869,16 +867,8 @@ impl<'a> ImplicitResolver<'a> {
             is_implicit = iter
                 .typ
                 .remove_forall()
-                .owned_name()
-                .map_or(false, |typename| {
-                    let mut is_implicit_memo = self.is_implicit_memo.borrow_mut();
-                    *is_implicit_memo.entry(typename.clone()).or_insert_with(|| {
-                        self.metadata
-                            .get(&*typename)
-                            .or_else(|| self.environment.get_metadata(&typename))
-                            .map_or(false, |m| has_implicit_attribute(m))
-                    })
-                });
+                .applied_alias()
+                .map_or(false, |alias| alias.is_implicit());
         }
 
         if is_implicit {

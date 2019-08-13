@@ -2144,15 +2144,19 @@ impl<'a> Typecheck<'a> {
         let arc_alias_group = Alias::group(
             resolved_aliases
                 .iter()
-                .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
+                .zip(
+                    bindings
+                        .iter()
+                        .map(|bind| bind.metadata.get_attribute("implicit").is_some()),
+                )
+                .map(|(a, is_implicit)| {
+                    let mut alias_data = types::translate_alias(&a, |t| self.translate_rc_type(t));
+                    alias_data.is_implicit = is_implicit;
+                    alias_data
+                })
                 .collect(),
         );
-        let alias_group = self.subs.alias_group(
-            resolved_aliases,
-            bindings
-                .iter()
-                .map(|bind| bind.metadata.get_attribute("implicit").is_some()),
-        );
+        let alias_group = self.subs.alias_group(resolved_aliases);
         for (bind, alias) in bindings.iter_mut().zip(arc_alias_group) {
             bind.finalized_alias = Some(alias);
         }

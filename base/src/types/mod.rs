@@ -628,6 +628,7 @@ pub struct AliasData<Id, T> {
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
+    pub is_implicit: bool,
 }
 
 impl<Id, T> AliasData<Id, T> {
@@ -640,6 +641,10 @@ impl<Id, T> AliasData<Id, T> {
     pub fn unresolved_type_mut(&mut self) -> &mut T {
         &mut self.typ
     }
+
+    pub fn is_implicit(&self) -> bool {
+        self.is_implicit
+    }
 }
 
 impl<Id, T> AliasData<Id, T>
@@ -647,7 +652,12 @@ where
     T: From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
-        AliasData { name, args, typ }
+        AliasData {
+            name,
+            args,
+            typ,
+            is_implicit: false,
+        }
     }
 }
 
@@ -1004,7 +1014,12 @@ where
     pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::from(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData {
+                name,
+                args,
+                typ,
+                is_implicit: false,
+            }]),
         }))
     }
 
@@ -2949,13 +2964,12 @@ macro_rules! forward_type_interner_methods {
         fn alias_group(
             &mut self,
             group: Vec<$crate::types::AliasData<$id, $typ>>,
-            is_implicit_iter: impl IntoIterator<Item = bool>
             ) -> Vec<$crate::types::Alias<$id, $typ>>
         where
             $typ: $crate::types::TypeExt<Id = $id>,
             $id: PartialEq,
         {
-            $crate::expr!(self, $($tokens)+).alias_group(group, is_implicit_iter)
+            $crate::expr!(self, $($tokens)+).alias_group(group)
         }
 
         /*
@@ -3200,7 +3214,12 @@ pub trait TypeContext<Id, T> {
     fn alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         self.intern(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::from(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData {
+                name,
+                args,
+                typ,
+                is_implicit: false,
+            }]),
         }))
     }
 
@@ -3269,25 +3288,20 @@ pub trait TypeContext<Id, T> {
         }
     }
 
-    fn alias_group(
-        &mut self,
-        group: Vec<AliasData<Id, T>>,
-        is_implicit_iter: impl IntoIterator<Item = bool>,
-    ) -> Vec<Alias<Id, T>>
+    fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>>
     where
         T: TypeExt<Id = Id>,
         Id: PartialEq,
     {
         let group = Arc::<[_]>::from(group);
         (0..group.len())
-            .zip(is_implicit_iter)
-            .map(|(index, is_implicit)| {
+            .map(|index| {
                 let typ = Type::Alias(AliasRef {
                     index,
                     group: group.clone(),
                 });
                 let flags = Flags::from_type(&typ)
-                    | (if is_implicit {
+                    | (if group[index].is_implicit {
                         Flags::HAS_IMPLICIT
                     } else {
                         Flags::empty()
@@ -3863,6 +3877,7 @@ where
         name: alias.name.clone(),
         args: alias.args.clone(),
         typ: translate(&alias.typ),
+        is_implicit: alias.is_implicit,
     }
 }
 
