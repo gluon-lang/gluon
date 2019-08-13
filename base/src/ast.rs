@@ -188,7 +188,10 @@ pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
 }
 
 impl<Id> TypedIdent<Id> {
-    pub fn new(name: Id) -> TypedIdent<Id> {
+    pub fn new(name: Id) -> TypedIdent<Id>
+    where
+        Id: PartialEq,
+    {
         TypedIdent {
             typ: Type::hole(),
             name,
@@ -543,7 +546,10 @@ pub struct ValueBinding<Id> {
     pub expr: SpannedExpr<Id>,
 }
 
-impl<T> Default for ValueBinding<T> {
+impl<T> Default for ValueBinding<T>
+where
+    T: PartialEq,
+{
     fn default() -> Self {
         ValueBinding {
             metadata: Default::default(),

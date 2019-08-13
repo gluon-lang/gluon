@@ -426,3 +426,11 @@ fn resolve_partially_applied_alias() {
         "String -> Int"
     );
 }
+
+#[test]
+fn forall_hides_generic_flag() {
+    let a = Generic::new("a", Kind::typ());
+    let gen = Type::<_, ArcType<_>>::generic(a.clone());
+    assert_eq!(gen.flags(), Flags::HAS_GENERICS);
+    assert_eq!(Type::forall(vec![a], gen).flags(), Flags::HAS_FORALL);
+}

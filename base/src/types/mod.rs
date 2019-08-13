@@ -1301,7 +1301,10 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<ArcTypeInner<Id>>,
 }
 
-impl<Id> Default for ArcType<Id> {
+impl<Id> Default for ArcType<Id>
+where
+    Id: PartialEq,
+{
     fn default() -> Self {
         Type::hole()
     }
@@ -1310,7 +1313,7 @@ impl<Id> Default for ArcType<Id> {
 #[cfg(feature = "serde")]
 impl<'de, Id> DeserializeState<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
 where
-    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any + PartialEq,
 {
     fn deserialize_state<D>(
         seed: &mut Seed<Id, ArcType<Id>>,
@@ -1719,7 +1722,10 @@ where
     })
 }
 
-impl<Id> TypeExt for ArcType<Id> {
+impl<Id> TypeExt for ArcType<Id>
+where
+    Id: PartialEq,
+{
     type Id = Id;
 
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
@@ -1768,7 +1774,10 @@ where
     }
 }
 
-impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
+impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id>
+where
+    Id: PartialEq,
+{
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
     }
@@ -2058,7 +2067,7 @@ impl<Id> ArcType<Id> {
 
     pub fn set(into: &mut Self, typ: Type<Id, Self>)
     where
-        Id: Clone,
+        Id: Clone + PartialEq,
     {
         let into = Arc::make_mut(&mut into.typ);
         into.flags = Flags::from_type(&typ);
@@ -2079,7 +2088,10 @@ impl<Id> ArcType<Id> {
         )
     }
 
-    pub fn needs_generalize(&self) -> bool {
+    pub fn needs_generalize(&self) -> bool
+    where
+        Id: PartialEq,
+    {
         self.flags().intersects(Flags::NEEDS_GENERALIZE)
     }
 
@@ -2941,6 +2953,7 @@ macro_rules! forward_type_interner_methods {
             ) -> Vec<$crate::types::Alias<$id, $typ>>
         where
             $typ: $crate::types::TypeExt<Id = $id>,
+            $id: PartialEq,
         {
             $crate::expr!(self, $($tokens)+).alias_group(group, is_implicit_iter)
         }
@@ -3263,6 +3276,7 @@ pub trait TypeContext<Id, T> {
     ) -> Vec<Alias<Id, T>>
     where
         T: TypeExt<Id = Id>,
+        Id: PartialEq,
     {
         let group = Arc::<[_]>::from(group);
         (0..group.len())
