@@ -26,6 +26,19 @@ use crate::{
     TypecheckEnv,
 };
 
+fn spliterator<'a>(
+    subs: &'a Substitution<RcType>,
+    typ: &'a RcType,
+) -> impl Iterator<Item = SymbolKey> + 'a {
+    let mut current = Some(typ);
+    std::iter::from_fn(move || {
+        let typ = current?;
+        let (symbol, next) = split_type(subs, typ)?;
+        current = next;
+        Some(symbol)
+    })
+}
+
 fn split_type<'a>(
     subs: &'a Substitution<RcType>,
     typ: &'a RcType,
@@ -130,109 +143,53 @@ impl<T> Default for Partition<T> {
 }
 
 impl<T> Partition<T> {
-    fn insert(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>, level: Level, value: T)
+    fn insert(&mut self, subs: &Substitution<RcType>, typ: &RcType, level: Level, value: T)
     where
         T: Clone,
     {
-        self.insert_(subs, typ, level, value);
-        // Ignore the insertion request at the top level as we know that the partitioning is 100%
-        // correct here (it matches on the implicit type rather than the argument to the implicit
-        // type)
-    }
-
-    fn insert_(
-        &mut self,
-        subs: &Substitution<RcType>,
-        typ: Option<&RcType>,
-        level: Level,
-        value: T,
-    ) -> bool
-    where
-        T: Clone,
-    {
-        match typ.and_then(|typ| split_type(subs, typ)) {
-            Some((symbol, rest)) => {
-                let partition = self.partition.entry(symbol).or_default();
-                if partition.insert_(subs, rest, level, value.clone()) {
-                    // Add a fallback value, ideally we shouldn't need this
-                    partition.rest.push((level, value));
-                }
-                true
-            }
-            None => {
-                self.rest.push((level, value));
-                false
-            }
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            partition = partition.partition.entry(symbol).or_default();
+            partition.rest.push((level, value.clone()));
         }
     }
 
-    fn remove(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>) -> bool {
-        match typ.and_then(|typ| split_type(subs, typ)) {
-            Some((symbol, rest)) => {
-                let partition = self
-                    .partition
-                    .get_mut(&symbol)
-                    .expect("Entry from insert call");
-                if partition.remove(subs, rest) {
-                    partition.rest.pop();
-                }
-                true
-            }
-            None => {
-                self.rest.pop();
-                false
-            }
+    fn remove(&mut self, subs: &Substitution<RcType>, typ: &RcType) {
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            partition = partition
+                .partition
+                .get_mut(&symbol)
+                .expect("Entry from insert call");
+            partition.rest.pop();
         }
     }
 
     fn get_candidates<'a>(
         &'a self,
         subs: &Substitution<RcType>,
-        typ: Option<&RcType>,
+        typ: &RcType,
         implicit_bindings_level: Level,
         consumer: &mut impl FnMut(&'a T),
-    ) -> Option<()>
-    where
+    ) where
         T: fmt::Debug,
     {
         fn f<U>(t: &(Level, U)) -> &U {
             &t.1
         }
-        match typ.and_then(|typ| split_type(subs, &typ)) {
-            Some((symbol, rest)) => {
-                match self.partition.get(&symbol).and_then(|bindings| {
-                    bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
-                }) {
-                    Some(()) => Some(()),
-                    None => {
-                        let end = self
-                            .rest
-                            .iter()
-                            .rposition(|(level, _)| *level <= implicit_bindings_level)
-                            .map_or(0, |i| i + 1);
-                        self.rest[..end].iter().map(f).for_each(consumer);
-                        if end == 0 {
-                            None
-                        } else {
-                            Some(())
-                        }
-                    }
-                }
-            }
-            None => {
-                let end = self
-                    .rest
-                    .iter()
-                    .rposition(|(level, _)| *level <= implicit_bindings_level)
-                    .map_or(0, |i| i + 1);
-                self.rest[..end].iter().map(f).for_each(consumer);
-                if end == 0 {
-                    None
-                } else {
-                    Some(())
-                }
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            match self.partition.get(&symbol) {
+                Some(bindings) => partition = bindings,
+                None => break,
             }
         }
+        let end = partition
+            .rest
+            .iter()
+            .rposition(|(level, _)| *level <= implicit_bindings_level)
+            .map_or(0, |i| i + 1);
+        partition.rest[..end].iter().map(f).for_each(&mut *consumer);
     }
 }
 
@@ -287,7 +244,7 @@ impl ImplicitBindings {
         let level = Level(self.partition_insertions.len().try_into().unwrap());
 
         self.partition
-            .insert(subs, Some(typ), level, (Rc::from(&path[..]), typ.clone()));
+            .insert(subs, typ, level, (Rc::from(&path[..]), typ.clone()));
 
         self.partition_insertions
             .push(Some((typ.clone(), definition.cloned())));
@@ -308,9 +265,7 @@ impl ImplicitBindings {
     ) -> impl DoubleEndedIterator<Item = ImplicitBinding> {
         let mut candidates = Vec::new();
         self.partition
-            .get_candidates(subs, Some(typ), level, &mut |bind| {
-                candidates.push(bind.clone())
-            });
+            .get_candidates(subs, typ, level, &mut |bind| candidates.push(bind.clone()));
         candidates.into_iter()
     }
 
@@ -325,7 +280,7 @@ impl ImplicitBindings {
             if let Some(definition) = definition {
                 self.definitions.remove(&definition);
             }
-            self.partition.remove(subs, Some(&typ));
+            self.partition.remove(subs, &typ);
         }
     }
 }
