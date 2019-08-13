@@ -2123,6 +2123,8 @@ impl<'a> Typecheck<'a> {
             let mut alias =
                 types::translate_alias(&bind.alias.value, |typ| self.translate_ast_type(typ));
 
+            alias.is_implicit = bind.metadata.get_attribute("implicit").is_some();
+
             let replacement = self.create_unifiable_signature_with(
                 // alias.unresolved_type() is a dummy in this context
                 alias
@@ -2144,16 +2146,7 @@ impl<'a> Typecheck<'a> {
         let arc_alias_group = Alias::group(
             resolved_aliases
                 .iter()
-                .zip(
-                    bindings
-                        .iter()
-                        .map(|bind| bind.metadata.get_attribute("implicit").is_some()),
-                )
-                .map(|(a, is_implicit)| {
-                    let mut alias_data = types::translate_alias(&a, |t| self.translate_rc_type(t));
-                    alias_data.is_implicit = is_implicit;
-                    alias_data
-                })
+                .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
                 .collect(),
         );
         let alias_group = self.subs.alias_group(resolved_aliases);

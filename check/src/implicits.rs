@@ -1,4 +1,4 @@
-use std::{cell::RefCell, convert::TryInto, fmt, rc::Rc, sync::Arc};
+use std::{convert::TryInto, fmt, rc::Rc, sync::Arc};
 
 use {itertools::Itertools, smallvec::SmallVec};
 
@@ -856,20 +856,17 @@ impl<'a> ImplicitResolver<'a> {
         metadata: Option<&'m Metadata>,
         typ: &RcType,
     ) -> Option<Option<&'m Symbol>> {
-        let has_implicit_attribute =
-            |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
-        let mut is_implicit = metadata.map(&has_implicit_attribute).unwrap_or(false);
-
-        if !is_implicit {
-            // Look at the type without any implicit arguments
-            let mut iter = types::implicit_arg_iter(typ.remove_forall());
-            for _ in iter.by_ref() {}
-            is_implicit = iter
-                .typ
-                .remove_forall()
-                .applied_alias()
-                .map_or(false, |alias| alias.is_implicit());
-        }
+        // Look at the type without any implicit arguments
+        let mut iter = types::implicit_arg_iter(typ.remove_forall());
+        for _ in iter.by_ref() {}
+        let is_implicit = iter
+            .typ
+            .remove_forall()
+            .applied_alias()
+            .map_or(false, |alias| alias.is_implicit())
+            || metadata
+                .and_then(|metadata: &Metadata| metadata.get_attribute("implicit"))
+                .is_some();
 
         if is_implicit {
             Some(metadata.and_then(|m| m.definition.as_ref()))

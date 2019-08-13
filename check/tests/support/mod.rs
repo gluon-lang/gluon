@@ -295,13 +295,18 @@ where
 
 #[allow(dead_code)]
 pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
+    alias_implicit(s, args, typ, false)
+}
+
+pub fn alias_implicit(s: &str, args: &[&str], typ: ArcType, is_implicit: bool) -> ArcType {
     assert!(s.len() != 0);
-    Type::alias(
+    Type::alias_implicit(
         intern(s),
         args.iter()
             .map(|id| Generic::new(intern(id), Kind::typ()))
             .collect(),
         typ,
+        is_implicit,
     )
 }
 
@@ -311,12 +316,21 @@ pub fn variant(arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
 }
 
 pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> ArcType {
+    alias_variant_implicit(s, params, args, false)
+}
+
+pub fn alias_variant_implicit(
+    s: &str,
+    params: &[&str],
+    args: &[(&str, &[ArcType])],
+    is_implicit: bool,
+) -> ArcType {
     let variants = Type::variant(
         args.iter()
             .map(|(arg, types)| variant(arg, types))
             .collect(),
     );
-    alias(s, params, variants)
+    alias_implicit(s, params, variants, is_implicit)
 }
 
 /// Replace the variable at the `rest` part of a record for easier equality checks

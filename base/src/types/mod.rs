@@ -1012,13 +1012,17 @@ where
     }
 
     pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+        Self::alias_implicit(name, args, typ, false)
+    }
+
+    pub fn alias_implicit(name: Id, args: Vec<Generic<Id>>, typ: T, is_implicit: bool) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
             group: Arc::from(vec![AliasData {
                 name,
                 args,
                 typ,
-                is_implicit: false,
+                is_implicit,
             }]),
         }))
     }
