@@ -231,10 +231,6 @@ impl ImplicitBindings {
         path: &[TypedIdent<Symbol, RcType>],
         typ: &RcType,
     ) {
-        if let Some(definition) = definition {
-            self.definitions.insert(definition.clone(), ());
-        }
-
         let level = Level(self.partition_insertions.len().try_into().unwrap());
 
         self.partition
@@ -770,7 +766,11 @@ impl<'a> ImplicitResolver<'a> {
         // add it again to prevent ambiguities
         if let Some(metadata) = metadata {
             if let Some(ref definition) = metadata.definition {
-                if self.implicit_bindings.definitions.contains_key(definition) {
+                if self
+                    .implicit_bindings
+                    .definitions
+                    .insert(definition.clone(), ())
+                {
                     return;
                 }
             }
