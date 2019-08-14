@@ -1009,7 +1009,9 @@ impl Thread {
     }
 
     fn trace_fields_except_stack(&self, gc: &mut Gc) {
-        self.global_state.trace(gc);
+        if gc.generation().is_root() {
+            self.global_state.trace(gc);
+        }
         self.rooted_values.read().unwrap().trace(gc);
         self.child_threads.read().unwrap().trace(gc);
     }
