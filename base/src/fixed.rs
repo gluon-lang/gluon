@@ -3,7 +3,7 @@
 //! earlier inserted value to be overwritten.
 use std::{
     borrow::Borrow,
-    cell::RefCell,
+    cell::UnsafeCell,
     collections::hash_map::Entry,
     fmt,
     hash::Hash,
@@ -21,15 +21,45 @@ use vec_map::VecMap;
 // can only be inserted, never modified (this could be done with a Rc pointer as well but
 // is not done for efficiency since it is not needed)
 
-unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
-    ::std::mem::transmute(x)
+// UnsafeCell makes sure we are `!Sync`
+#[derive(Default)]
+struct MutCell<T: ?Sized>(UnsafeCell<T>);
+
+impl<T: fmt::Debug> fmt::Debug for MutCell<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.get().fmt(f)
+    }
+}
+
+impl<T> MutCell<T> {
+    fn new(t: T) -> Self {
+        MutCell(UnsafeCell::new(t))
+    }
+}
+
+impl<T: ?Sized> MutCell<T> {
+    fn get(&self) -> &T {
+        // Getting a shared reference from a shared reference is safe
+        unsafe { &*self.0.get() }
+    }
+
+    // We can get a mutable reference as long as we make sure to not have any `&T` references alive
+    // for the time that we use the mutable refernce
+    unsafe fn unsafe_get_mut(&self) -> &mut T {
+        &mut *self.0.get()
+    }
+
+    fn get_mut(&mut self) -> &mut T {
+        // Getting a mutable reference from a mutable reference is safe
+        unsafe { self.unsafe_get_mut() }
+    }
 }
 
 // A mapping between K and V where once a value has been inserted it cannot be changed
 // Through this and the fact the all values are stored as pointers it is possible to safely
 // insert new values without invalidating pointers retrieved from it
 pub struct FixedMap<K, V> {
-    map: RefCell<FnvMap<K, (u32, u32)>>,
+    map: MutCell<FnvMap<K, (u32, u32)>>,
     values: Buffer<V>,
 }
 
@@ -41,24 +71,24 @@ impl<K: Eq + Hash, V> Default for FixedMap<K, V> {
 
 impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for FixedMap<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.map.borrow().fmt(f)
+        self.map.get().fmt(f)
     }
 }
 
 impl<K: Eq + Hash, V> FixedMap<K, V> {
     pub fn new() -> FixedMap<K, V> {
         FixedMap {
-            map: RefCell::new(FnvMap::default()),
+            map: Default::default(),
             values: Default::default(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.map.borrow_mut().clear();
+        self.map.get_mut().clear();
     }
 
     pub fn len(&self) -> usize {
-        self.map.borrow().len()
+        self.map.get().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -82,7 +112,11 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
             Err((key, value))
         } else {
             let index_value = self.values.push(value);
-            self.map.borrow_mut().insert(key, index_value);
+            // SAFETY This effectively works as a RefCell since the mutable reference is limited to
+            // this module
+            unsafe {
+                self.map.unsafe_get_mut().insert(key, index_value);
+            }
             Ok(())
         }
     }
@@ -92,7 +126,7 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
         K: Borrow<Q>,
         Q: ?Sized + Eq + Hash,
     {
-        self.map.borrow().get(k).map(|key| &self.values[*key])
+        self.map.get().get(k).map(|key| &self.values[*key])
     }
 
     pub fn get_mut<Q>(&mut self, k: &Q) -> Option<&mut V>
@@ -130,7 +164,7 @@ where
 // insert new values without invalidating pointers retrieved from it
 pub struct FixedVecMap<V> {
     // Use u16 to leave space for the `Option` tag in `VecMap`
-    map: RefCell<VecMap<(u16, u32)>>,
+    map: MutCell<VecMap<(u16, u32)>>,
     values: Buffer<V>,
 }
 
@@ -142,7 +176,7 @@ impl<V> Default for FixedVecMap<V> {
 
 impl<V: fmt::Debug> fmt::Debug for FixedVecMap<V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.map.borrow().fmt(f)
+        self.map.get().fmt(f)
     }
 }
 
@@ -155,11 +189,11 @@ impl<V> FixedVecMap<V> {
     }
 
     pub fn clear(&mut self) {
-        self.map.borrow_mut().clear();
+        self.map.get_mut().clear();
     }
 
     pub fn len(&self) -> usize {
-        self.map.borrow().len()
+        self.map.get().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -190,13 +224,17 @@ impl<V> FixedVecMap<V> {
             Err((key, value))
         } else {
             let (i, j) = self.values.push(value);
-            self.map.borrow_mut().insert(key, (i as u16, j));
+            // SAFETY This effectively works as a RefCell since the mutable reference is limited to
+            // this module
+            unsafe {
+                self.map.unsafe_get_mut().insert(key, (i as u16, j));
+            }
             Ok(())
         }
     }
 
     pub fn get(&self, k: usize) -> Option<&V> {
-        self.map.borrow().get(k).map(|key| &self.values[*key])
+        self.map.get().get(k).map(|key| &self.values[*key])
     }
 
     pub fn get_mut(&mut self, k: usize) -> Option<&mut V> {
@@ -216,7 +254,7 @@ impl<V> FixedVecMap<V> {
 
     pub fn iter(&self) -> impl Iterator<Item = (usize, &V)> {
         self.map
-            .borrow()
+            .get()
             .iter()
             .map(|(k, v)| (k, *v))
             .collect::<Vec<_>>()
@@ -234,7 +272,7 @@ impl<V> Index<usize> for FixedVecMap<V> {
 
 #[derive(Debug)]
 pub struct FixedVec<T> {
-    vec: RefCell<Vec<(u32, u32)>>,
+    vec: MutCell<Vec<(u32, u32)>>,
     values: Buffer<T>,
 }
 
@@ -247,18 +285,22 @@ impl<T> Default for FixedVec<T> {
 impl<T> FixedVec<T> {
     pub fn new() -> FixedVec<T> {
         FixedVec {
-            vec: RefCell::new(Vec::new()),
+            vec: MutCell::new(Vec::new()),
             values: Default::default(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.vec.borrow_mut().clear();
+        self.vec.get_mut().clear();
     }
 
     pub fn push(&self, value: T) {
         let key = self.values.push(value);
-        self.vec.borrow_mut().push(key);
+        // SAFETY This effectively works as a RefCell since the mutable reference is limited to
+        // this module
+        unsafe {
+            self.vec.unsafe_get_mut().push(key);
+        }
     }
 
     pub fn extend<I: IntoIterator<Item = T>>(&self, iter: I) {
@@ -268,7 +310,7 @@ impl<T> FixedVec<T> {
     }
 
     pub fn len(&self) -> usize {
-        self.vec.borrow().len()
+        self.vec.get().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -304,14 +346,14 @@ impl<T> FixedVec<T> {
 impl<T> Index<usize> for FixedVec<T> {
     type Output = T;
     fn index(&self, index: usize) -> &T {
-        let vec = self.vec.borrow();
+        let vec = self.vec.get();
         &self.values[vec[index]]
     }
 }
 
 impl<T> IndexMut<usize> for FixedVec<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
-        let vec = self.vec.borrow();
+        let vec = self.vec.get();
         &mut self.values[vec[index]]
     }
 }
@@ -324,7 +366,7 @@ struct BufferInner<T> {
 
 #[derive(Debug)]
 struct Buffer<T> {
-    values: RefCell<BufferInner<T>>,
+    values: MutCell<BufferInner<T>>,
 }
 
 impl<T> Default for BufferInner<T> {
@@ -350,36 +392,40 @@ impl<T> Buffer<T> {
     }
 
     fn total_len(&self) -> usize {
-        let values = self.values.borrow();
+        let values = self.values.get();
         values.values.iter().map(|vec| vec.len()).sum::<usize>()
     }
 
     fn push(&self, value: T) -> (u32, u32) {
-        let mut values = self.values.borrow_mut();
-        let cap = match values.current().map(|vec| (vec.len(), vec.capacity())) {
-            Some((len, capacity)) => {
-                if len == capacity {
-                    values.current += 1;
-                    if values.current + 1 < values.values.len() {
-                        None
+        // SAFETY This effectively works as a RefCell since the mutable reference is limited to
+        // this module
+        unsafe {
+            let mut values = self.values.unsafe_get_mut();
+            let cap = match values.current().map(|vec| (vec.len(), vec.capacity())) {
+                Some((len, capacity)) => {
+                    if len == capacity {
+                        values.current += 1;
+                        if values.current + 1 < values.values.len() {
+                            None
+                        } else {
+                            Some(capacity * 2)
+                        }
                     } else {
-                        Some(capacity * 2)
+                        None
                     }
-                } else {
-                    None
                 }
+                None => Some(4),
+            };
+            if let Some(cap) = cap {
+                values.values.push(Vec::with_capacity(cap));
             }
-            None => Some(4),
-        };
-        if let Some(cap) = cap {
-            values.values.push(Vec::with_capacity(cap));
-        }
 
-        let i = values.current as u32;
-        let inner = values.current_mut().unwrap();
-        let j = inner.len() as u32;
-        inner.push(value);
-        (i, j)
+            let i = values.current as u32;
+            let inner = values.current_mut().unwrap();
+            let j = inner.len() as u32;
+            inner.push(value);
+            (i, j)
+        }
     }
 
     fn truncate(&mut self, index: usize) {
@@ -431,17 +477,13 @@ impl<T> BufferInner<T> {
 impl<T> Index<(u32, u32)> for Buffer<T> {
     type Output = T;
     fn index(&self, (i, j): (u32, u32)) -> &T {
-        unsafe {
-            forget_lifetime(
-                &self
-                    .values
-                    .borrow()
-                    .values
-                    .get(i as usize)
-                    .and_then(|v| v.get(j as usize))
-                    .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j))),
-            )
-        }
+        &self
+            .values
+            .get()
+            .values
+            .get(i as usize)
+            .and_then(|v| v.get(j as usize))
+            .unwrap_or_else(|| panic!("Index out of bounds: {:?}", (i, j)))
     }
 }
 

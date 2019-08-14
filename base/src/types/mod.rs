@@ -1256,10 +1256,22 @@ where
     }
 }
 
-#[derive(Eq, Clone, Debug)]
+#[derive(Eq, Clone)]
 pub enum SymbolKey {
     Owned(Symbol),
     Ref(&'static SymbolRef),
+}
+
+impl fmt::Debug for SymbolKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", Borrow::<SymbolRef>::borrow(self))
+    }
+}
+
+impl fmt::Display for SymbolKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", Borrow::<SymbolRef>::borrow(self))
+    }
 }
 
 impl Hash for SymbolKey {
