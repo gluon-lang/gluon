@@ -43,26 +43,20 @@ fn split_type<'a>(
     subs: &'a Substitution<RcType>,
     typ: &'a RcType,
 ) -> Option<(SymbolKey, Option<&'a RcType>)> {
-    let symbol = match **subs.real(typ) {
-        Type::App(ref id, ref args) => {
-            return split_type(subs, id)
-                .map(|(k, _)| k)
-                .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
+    let symbol = match &**subs.real(typ) {
+        Type::App(id, args) => {
+            return split_type(subs, id).map(|(key, _)| (key, args.get(0)));
         }
-        Type::Function(ArgType::Implicit, _, ref ret_type) => {
-            split_type(subs, ret_type)
-                    // Usually the implicit argument will appear directly inside type whose `SymbolKey`
-                    // that was returned so it is unlikely that partitition further
-                    .map(|(s, _)| s)
+        Type::Forall(_, typ) | Type::Function(ArgType::Implicit, _, typ) => {
+            return split_type(subs, typ)
         }
         Type::Function(ArgType::Explicit, ..) => {
             Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
         }
-        Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
-        Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
-        Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
-        Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-        Type::Forall(_, ref typ) => return split_type(subs, typ),
+        Type::Skolem(skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
+        Type::Ident(id) => Some(SymbolKey::Owned(id.clone())),
+        Type::Alias(alias) => Some(SymbolKey::Owned(alias.name.clone())),
+        Type::Builtin(builtin) => Some(SymbolKey::Ref(builtin.symbol())),
         _ => None,
     };
     symbol.map(|s| (s, None))
@@ -179,7 +173,7 @@ impl<T> Partition<T> {
         }
         let mut partition = self;
         for symbol in spliterator(subs, typ) {
-            match self.partition.get(&symbol) {
+            match partition.partition.get(&symbol) {
                 Some(bindings) => partition = bindings,
                 None => break,
             }
@@ -925,5 +919,41 @@ fn smallers(state: unify_type::State, new_types: &[RcType], old_types: &[RcType]
                 Size::Equal => smaller(state.clone(), new, old),
             })
             == Size::Smaller
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use base::{kind::Kind, types::SharedInterner};
+
+    use crate::tests::*;
+
+    #[test]
+    fn spliterator_test() {
+        let interner = SharedInterner::default();
+        let subs = Substitution::new(Kind::typ(), interner);
+
+        let a = intern("A");
+        let b = intern("B");
+
+        let typ = Type::app(Type::ident(a.clone()), collect![Type::ident(b.clone())]);
+        assert_eq!(
+            spliterator(&subs, &typ).collect::<Vec<_>>(),
+            vec![SymbolKey::Owned(a.clone()), SymbolKey::Owned(b.clone())]
+        );
+
+        let typ = Type::app(
+            Type::ident(a.clone()),
+            collect![Type::app(
+                Type::ident(b.clone()),
+                collect![Type::generic(Generic::new(intern("c"), Kind::typ()))]
+            )],
+        );
+        assert_eq!(
+            spliterator(&subs, &typ).collect::<Vec<_>>(),
+            vec![SymbolKey::Owned(a), SymbolKey::Owned(b)]
+        );
     }
 }

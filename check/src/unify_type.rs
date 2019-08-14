@@ -979,7 +979,6 @@ where
                         return Err(());
                     }
                 }
-                debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
