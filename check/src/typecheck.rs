@@ -25,7 +25,7 @@ use crate::base::{
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Flags, Generic, PrimitiveEnv, Type,
-        TypeCache, TypeContext, TypeEnv, TypeExt,
+        TypeCache, TypeContext, TypeEnv, TypeExt, Walker,
     },
 };
 
@@ -1445,7 +1445,7 @@ impl<'a> Typecheck<'a> {
         }
 
         let mut modifier = TypeModifier::Rigid;
-        types::walk_type(&self.subs.zonk(&original_func_type), &mut |typ: &RcType| {
+        types::FlagsVisitor(Flags::HAS_VARIABLES, |typ: &RcType| {
             if modifier == TypeModifier::Rigid {
                 if let Type::Variable(var) = &**typ {
                     if !return_variables.contains(&var.id) {
@@ -1453,7 +1453,8 @@ impl<'a> Typecheck<'a> {
                     }
                 }
             }
-        });
+        })
+        .walk(&self.subs.zonk(&original_func_type));
 
         Ok(TailCall::Type(ModType::new(modifier, func_type)))
     }
@@ -2913,7 +2914,7 @@ impl<'a> Typecheck<'a> {
         let new_type = f(self, ModType::new(original_type.modifier, skolemized));
 
         let original_type = self.subs.zonk(&original_type);
-        types::walk_type(&original_type, &mut |typ: &RcType| {
+        types::FlagsVisitor(Flags::HAS_SKOLEMS, |typ: &RcType| {
             if let Type::Skolem(skolem) = &**typ {
                 if !self.environment.skolem_variables.contains_key(&skolem.name) {
                     self.error(
@@ -2925,7 +2926,8 @@ impl<'a> Typecheck<'a> {
                     );
                 }
             }
-        });
+        })
+        .walk(&original_type);
 
         self.with_forall(&original_type, new_type)
     }

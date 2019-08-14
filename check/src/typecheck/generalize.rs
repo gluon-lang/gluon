@@ -14,7 +14,8 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     /// We delay updating the substitution until after all recursive bindings have been typechecked
     /// to ensure that they get can figure out which variable got generalized for each binding
     delayed_generalizations: Vec<(u32, RcType)>,
-    variable_generator: TypeVariableGenerator,
+    variable_generator: Option<TypeVariableGenerator>,
+    top_type: RcType,
     pub tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
 }
@@ -55,7 +56,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             level,
             unbound_variables: Default::default(),
             delayed_generalizations: Vec::new(),
-            variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
+            variable_generator: None,
+            top_type: typ.clone(),
             tc,
             span,
         }
@@ -152,9 +154,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 let Self {
                     tc,
                     variable_generator,
+                    top_type,
                     ..
                 } = self;
                 let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                    let variable_generator = match variable_generator {
+                        Some(v) => v,
+                        None => {
+                            *variable_generator =
+                                Some(TypeVariableGenerator::new(&tc.subs, top_type));
+                            variable_generator.as_mut().unwrap()
+                        }
+                    };
                     // Create a prefix if none exists
                     let id = variable_generator.next_variable(tc);
 
@@ -249,7 +260,7 @@ impl TypeVariableGenerator {
         gather_foralls(&mut map, subs, typ);
         TypeVariableGenerator {
             map,
-            name: "".to_string(),
+            name: String::new(),
             i: 0,
         }
     }
