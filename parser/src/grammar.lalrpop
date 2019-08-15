@@ -287,7 +287,7 @@ TypeTop: Either<AstType<Id>, Spanned<(Vec<Id>, Vec<Variant<Id>>, Option<AstType<
     <rest: Sp<(".." <AtomicType>)>> => {
         let Spanned { span, value: rest } = rest;
         Either::Left(
-            pos::spanned(span, Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), types: Vec::new(), rest }).into())).into()
+            pos::spanned(span, Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())).into()
         )
     },
     <Sp<VariantType>> => Either::Right(<>),
@@ -330,7 +330,7 @@ TypeBinding: Box<TypeBinding<Id>> = {
                             ),
                         })
                         .collect();
-                    AstType::from(pos::spanned(span, Type::ExtendRow { types: Vec::new(), fields, rest }))
+                    AstType::from(pos::spanned(span, Type::ExtendRow { fields, rest }))
                 };
 
                 AstType::from(Type::forall(
@@ -384,13 +384,13 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
     "(" <rest: Sp<(".." <AtomicType>)>> ")" => {
         let Spanned { span, value: rest } = rest;
-        Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), types: Vec::new(), rest }).into())
+        Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())
     },
 
 
     "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
         let rest = rest.unwrap_or_else(Type::empty_row);
-        Type::Effect(Type::extend_row(vec![], fields, rest))
+        Type::Effect(Type::extend_row(fields, rest))
     },
 
     "(" <elems: Comma<Type>> ")" =>
@@ -402,7 +402,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
     "{" <row: Comma<RecordField>> <rest: ("|" <Type>)?> "}" => {
         let (types, fields) = row.into_iter().partition_map(|x| x);
-        Type::Record(Type::extend_row(
+        Type::Record(Type::extend_full_row(
             types,
             fields,
             rest.unwrap_or_else(Type::empty_row),

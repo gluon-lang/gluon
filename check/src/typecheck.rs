@@ -1831,9 +1831,8 @@ impl<'a> Typecheck<'a> {
                 }),
             },
 
-            Type::ExtendRow {
+            Type::ExtendTypeRow {
                 ref types,
-                ref fields,
                 ref rest,
             } => {
                 let types = types
@@ -1851,17 +1850,9 @@ impl<'a> Typecheck<'a> {
                     })
                     .collect();
 
-                let fields = fields
-                    .iter()
-                    .map(|field| Field {
-                        name: field.name.clone(),
-                        typ: self.translate_ast_type(&field.typ),
-                    })
-                    .collect();
-
                 let rest = self.translate_ast_type(rest);
 
-                self.extend_row(types, fields, rest)
+                self.extend_type_row(types, rest)
             }
 
             Type::Projection(ref ids) => match self.translate_projected_type(ids) {
@@ -2474,8 +2465,21 @@ impl<'a> Typecheck<'a> {
             Type::Hole => Some(self.subs.new_var()),
 
             Type::ExtendRow {
-                ref types,
                 ref fields,
+                ref rest,
+            } => {
+                let new_fields = types::walk_move_types(fields, |field| {
+                    self.create_unifiable_signature2(&field.typ)
+                        .map(|typ| Field::new(field.name.clone(), typ))
+                });
+                let new_rest = self.create_unifiable_signature_(rest);
+                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
+                    self.intern(Type::ExtendRow { fields, rest })
+                })
+            }
+
+            Type::ExtendTypeRow {
+                ref types,
                 ref rest,
             } => {
                 let new_types = types::walk_move_types(types, |field| {
@@ -2492,26 +2496,12 @@ impl<'a> Typecheck<'a> {
                         self.new_alias(field.typ.name.clone(), field.typ.params().to_owned(), typ),
                     ))
                 });
-                let new_fields = types::walk_move_types(fields, |field| {
-                    self.create_unifiable_signature2(&field.typ)
-                        .map(|typ| Field::new(field.name.clone(), typ))
-                });
+
                 let new_rest = self.create_unifiable_signature_(rest);
-                merge::merge3(
-                    types,
-                    new_types,
-                    fields,
-                    new_fields,
-                    rest,
-                    new_rest,
-                    |types, fields, rest| {
-                        self.intern(Type::ExtendRow {
-                            types,
-                            fields,
-                            rest,
-                        })
-                    },
-                )
+
+                merge::merge(types, new_types, rest, new_rest, |types, rest| {
+                    self.intern(Type::ExtendTypeRow { types, rest })
+                })
             }
 
             Type::Forall(ref params, ref typ) => {

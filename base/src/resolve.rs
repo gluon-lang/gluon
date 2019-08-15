@@ -116,6 +116,7 @@ impl<T> AliasRemover<T> {
                     | Type::Effect(..)
                     | Type::EmptyRow
                     | Type::ExtendRow { .. }
+                    | Type::ExtendTypeRow { .. }
                         if args.is_empty() =>
                     {
                         return Ok(typ)

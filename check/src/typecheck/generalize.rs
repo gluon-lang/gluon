@@ -333,35 +333,42 @@ fn unroll_record(
 ) -> Option<RcType> {
     let mut new_types = Vec::new();
     let mut new_fields = Vec::new();
-    let mut current = match *typ {
-        Type::ExtendRow {
-            ref types,
-            ref fields,
-            ref rest,
-        } => match **rest {
-            Type::ExtendRow { .. } => {
-                new_types.extend_from_slice(types);
+    let mut current = match &*typ {
+        Type::ExtendRow { fields, rest } => match **rest {
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
                 new_fields.extend_from_slice(fields);
                 rest
             }
             _ => return None,
         },
+
+        Type::ExtendTypeRow { types, rest } => match **rest {
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
+                new_types.extend_from_slice(types);
+                rest
+            }
+            _ => return None,
+        },
+
         _ => return None,
     };
-    while let Type::ExtendRow {
-        ref types,
-        ref fields,
-        ref rest,
-    } = **current
-    {
-        new_types.extend_from_slice(types);
-        new_fields.extend_from_slice(fields);
-        current = rest;
+    loop {
+        match &**current {
+            Type::ExtendRow { fields, rest } => {
+                new_fields.extend_from_slice(fields);
+                current = rest;
+            }
+            Type::ExtendTypeRow { types, rest } => {
+                new_types.extend_from_slice(types);
+                current = rest;
+            }
+            _ => break,
+        }
     }
     if new_types.is_empty() && new_fields.is_empty() {
         None
     } else {
-        Some(interner.extend_row(new_types, new_fields, current.clone()))
+        Some(interner.extend_full_row(new_types, new_fields, current.clone()))
     }
 }
 

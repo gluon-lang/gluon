@@ -87,8 +87,11 @@ where
                 }
             }
             Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
-            Type::ExtendRow { fields, rest, .. } => {
+            Type::ExtendRow { fields, rest } => {
                 fields.add_flags(flags);
+                rest.add_flags(flags);
+            }
+            Type::ExtendTypeRow { rest, .. } => {
                 rest.add_flags(flags);
             }
             Type::Variable(_) => *flags |= Flags::HAS_VARIABLES,

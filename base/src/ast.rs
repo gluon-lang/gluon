@@ -815,17 +815,22 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
         Type::Effect(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
         Type::EmptyRow => (),
         Type::ExtendRow {
-            ref $($mut)* types,
             ref $($mut)* fields,
+            ref $($mut)* rest,
+        } => {
+            for field in fields {
+                v.visit_ast_type(&$($mut)* field.typ._typ.typ);
+            }
+            v.visit_ast_type(&$($mut)* rest._typ.typ);
+        }
+        Type::ExtendTypeRow {
+            ref $($mut)* types,
             ref $($mut)* rest,
         } => {
             for field in types {
                 if let Some(alias) = field.typ.$try_get_alias() {
                     v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
                 }
-            }
-            for field in fields {
-                v.visit_ast_type(&$($mut)* field.typ._typ.typ);
             }
             v.visit_ast_type(&$($mut)* rest._typ.typ);
         }

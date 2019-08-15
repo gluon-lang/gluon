@@ -310,8 +310,8 @@ pub fn rename<'s>(
         }
 
         fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<Self::Ident>) {
-            match s.value {
-                Type::ExtendRow { ref mut types, .. } => {
+            match &mut s.value {
+                Type::ExtendTypeRow { types, .. } => {
                     for field in types {
                         if let Some(alias) = field.typ.try_get_alias_mut() {
                             if let Some(new_name) = self.rename(&field.name) {
@@ -320,13 +320,13 @@ pub fn rename<'s>(
                         }
                     }
                 }
-                Type::Projection(ref mut ids) => {
+                Type::Projection( ids) => {
                     // The first id refers to a local variable so we need to rename it
                     if let Some(new_id) = self.rename(&mut ids[0]) {
                         ids[0] = new_id;
                     }
                 }
-                Type::Ident(ref mut id) => {
+                Type::Ident(id) => {
                     if let Some(new_id) = self.rename(id) {
                         *id = new_id;
                     }
