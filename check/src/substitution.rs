@@ -153,22 +153,26 @@ where
         var: u32,
         subs: &'a Substitution<T>,
     }
-    impl<'a, 't, T> Walker<'t, T> for Occurs<'a, T>
+    impl<'t, T> Walker<'t, T> for Occurs<'t, T>
     where
         T: Substitutable,
     {
-        fn walk(&mut self, typ: &'t T) {
-            if !typ.contains_variables() || self.occurs {
+        fn walk(&mut self, mut typ: &'t T) {
+            if !typ.contains_variables() {
                 return;
             }
-            let typ = self.subs.real(typ);
             if let Some(other) = typ.get_var() {
-                if self.var.get_id() == other.get_id() {
-                    self.occurs = true;
-                    typ.traverse(self);
-                    return;
+                let other_id = other.get_id();
+                if let Some(real_type) = self.subs.find_type_for_var(other_id) {
+                    typ = real_type;
+                } else {
+                    if self.var.get_id() == other_id {
+                        self.occurs = true;
+                        typ.traverse(self);
+                        return;
+                    }
+                    self.subs.update_level(self.var, other.get_id());
                 }
-                self.subs.update_level(self.var, other.get_id());
             }
             typ.traverse(self);
         }
