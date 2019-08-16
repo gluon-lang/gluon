@@ -12,7 +12,7 @@ use crate::base::{
 use std::str::FromStr;
 
 use crate::{ReplLine, Variant, new_ident};
-use crate::token::Token;
+use crate::token::{Token, StringLiteral};
 use crate::ordered_float::NotNan;
 
 use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
@@ -28,12 +28,12 @@ extern {
         "shebang line" => Token::ShebangLine(<&'input str>),
         "identifier" => Token::Identifier(<&'input str>),
         "operator" => Token::Operator(<&'input str>),
-        "string literal" => Token::StringLiteral(<String>),
+        "string literal" => Token::StringLiteral(<StringLiteral<'input>>),
         "char literal" => Token::CharLiteral(<char>),
         "int literal" => Token::IntLiteral(<i64>),
         "byte literal" => Token::ByteLiteral(<u8>),
         "float literal" => Token::FloatLiteral(<f64>),
-        "documentation comment" => Token::DocComment(<Comment>),
+        "documentation comment" => Token::DocComment(<Comment<&'input str>>),
 
         "rec" => Token::Rec,
         "else" => Token::Else,
@@ -549,7 +549,7 @@ Pattern = {
 // Expressions
 
 Literal: Literal = {
-    "string literal" => Literal::String(<>),
+    "string literal" => Literal::String(<>.unescape()),
     "char literal" => Literal::Char(<>),
     "int literal" => Literal::Int(<>),
     "byte literal" => Literal::Byte(<>),

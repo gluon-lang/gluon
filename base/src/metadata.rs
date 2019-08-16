@@ -30,9 +30,9 @@ pub enum CommentType {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
-pub struct Comment {
+pub struct Comment<S = String> {
     pub typ: CommentType,
-    pub content: String,
+    pub content: S,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
