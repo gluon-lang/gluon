@@ -2,12 +2,11 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
 use crate::ast::{DisplayEnv, IdentEnv};
-use crate::fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
 /// A symbol uniquely identifies something regardless of its name and which module it originated
@@ -479,33 +478,15 @@ impl<'a> From<&'a Name> for NameBuf {
 /// Used to make identifiers within a single module point to the same symbol
 #[derive(Debug, Default)]
 pub struct Symbols {
-    indexes: FnvMap<SymbolData<&'static Name>, Symbol>,
+    indexes:
+        hashbrown::HashMap<SymbolData<&'static Name>, Symbol, BuildHasherDefault<fnv::FnvHasher>>,
 }
 
 impl Symbols {
     pub fn new() -> Symbols {
         Symbols {
-            indexes: FnvMap::default(),
+            indexes: Default::default(),
         }
-    }
-
-    fn make_symbol(&mut self, global: bool, location: Option<(u32, u32)>, name: NameBuf) -> Symbol {
-        // `name` is fixed in memory and the key lives as long as `s` this is safe
-        let key = unsafe { &*(&*name as *const Name) };
-        let s = Symbol(Arc::new(SymbolData {
-            global,
-            location,
-            name,
-        }));
-        self.indexes.insert(
-            SymbolData {
-                global,
-                location,
-                name: key,
-            },
-            s.clone(),
-        );
-        s
     }
 
     pub fn simple_symbol<N>(&mut self, name: N) -> Symbol
@@ -529,10 +510,39 @@ impl Symbols {
             location: name.location,
             name: name.name.as_ref(),
         };
-        if let Some(symbol) = self.indexes.get(&name_ref) {
-            return symbol.clone();
-        }
-        self.make_symbol(name.global, name.location, name.name.into())
+
+        let mut hasher = self.indexes.hasher().build_hasher();
+        name_ref.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        self.indexes
+            .raw_entry_mut()
+            .from_hash(hash, |key| *key == name_ref)
+            .or_insert_with(|| {
+                let SymbolData {
+                    global,
+                    location,
+                    name,
+                } = name;
+                let name: NameBuf = name.into();
+
+                let key = unsafe { &*(&*name as *const Name) };
+                let s = Symbol(Arc::new(SymbolData {
+                    global,
+                    location,
+                    name,
+                }));
+                (
+                    SymbolData {
+                        global,
+                        location,
+                        name: key,
+                    },
+                    s,
+                )
+            })
+            .1
+            .clone()
     }
 
     pub fn contains_name<N>(&mut self, name: N) -> bool
