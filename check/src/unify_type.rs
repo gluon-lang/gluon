@@ -299,10 +299,6 @@ impl Substitutable for RcType<Symbol> {
         self.instantiate_generics(&mut subs, &mut FnvMap::default())
     }
 
-    fn on_union(&self) -> Option<&Self> {
-        None
-    }
-
     fn contains_variables(&self) -> bool {
         self.flags().contains(Flags::HAS_VARIABLES)
     }

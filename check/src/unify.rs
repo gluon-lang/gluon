@@ -208,13 +208,13 @@ where
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
             (_, Some(_)) => {
-                let replacement = subs.union(r, l)?;
-                debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
+                debug!("Union {} <> {}", l, r);
+                subs.union(r, l)?;
                 Ok(None)
             }
             (Some(_), _) => {
-                let replacement = subs.union(l, r)?;
-                debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
+                debug!("Union {} <> {}", l, r);
+                subs.union(l, r)?;
                 Ok(None)
             }
             (None, None) => {
