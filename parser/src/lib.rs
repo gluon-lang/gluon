@@ -21,7 +21,7 @@ extern crate quick_error;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::{cell::RefCell, fmt, hash::Hash, sync::Arc};
+use std::{fmt, hash::Hash, sync::Arc};
 
 use crate::base::{
     ast::{AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding},
@@ -233,76 +233,6 @@ impl Error {
     }
 }
 
-/// An iterator which forwards only the `Ok` values. If an `Err` is found the iterator returns
-/// `None` and the error can be retrieved using the `result` method.
-struct ResultOkIter<I, E> {
-    iter: I,
-    error: Option<E>,
-}
-
-impl<I, E> ResultOkIter<I, E> {
-    fn new(iter: I) -> ResultOkIter<I, E> {
-        ResultOkIter {
-            iter: iter,
-            error: None,
-        }
-    }
-
-    fn result<T>(&mut self, value: T) -> Result<T, E> {
-        match self.error.take() {
-            Some(err) => Err(err),
-            None => Ok(value),
-        }
-    }
-}
-
-impl<I, T, E> Iterator for ResultOkIter<I, E>
-where
-    I: Iterator<Item = Result<T, E>>,
-    E: ::std::fmt::Debug,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<T> {
-        match self.iter.next() {
-            Some(Ok(t)) => Some(t),
-            Some(Err(err)) => {
-                self.error = Some(err);
-                None
-            }
-            None => None,
-        }
-    }
-}
-
-/// An iterator which can be shared
-struct SharedIter<'a, I: 'a> {
-    iter: &'a RefCell<I>,
-}
-
-impl<'a, I> Clone for SharedIter<'a, I> {
-    fn clone(&self) -> SharedIter<'a, I> {
-        SharedIter { iter: self.iter }
-    }
-}
-
-impl<'a, I> SharedIter<'a, I> {
-    fn new(iter: &'a RefCell<I>) -> SharedIter<'a, I> {
-        SharedIter { iter }
-    }
-}
-
-impl<'a, I> Iterator for SharedIter<'a, I>
-where
-    I: Iterator,
-{
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<I::Item> {
-        self.iter.borrow_mut().next()
-    }
-}
-
 pub enum FieldPattern<Id> {
     Type(Spanned<Id, BytePos>, Option<Id>),
     Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
@@ -323,30 +253,6 @@ type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
-macro_rules! layout {
-    ($result_ok_iter:ident, $input:expr) => {{
-        let tokenizer = Tokenizer::new($input);
-        $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
-
-        Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
-            // Return the tokenizer error if one exists
-            $result_ok_iter.borrow_mut().result(()).map_err(|err| {
-                pos::spanned2(
-                    err.span.start().absolute,
-                    err.span.end().absolute,
-                    err.value.into(),
-                )
-            })?;
-            let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
-            debug!("Lex {:?}", token.value);
-            Ok((
-                token.span.start().absolute,
-                token.value,
-                token.span.end().absolute,
-            ))
-        })
-    }};
-}
 
 pub trait ParserSource {
     fn src(&self) -> &str;
@@ -397,27 +303,12 @@ where
     Id: Clone + AsRef<str>,
     S: ?Sized + ParserSource,
 {
-    let result_ok_iter;
-    let layout = layout!(result_ok_iter, input);
+    let layout = Layout::new(Tokenizer::new(input));
 
     let mut parse_errors = Errors::new();
 
     let result =
         grammar::TopExprParser::new().parse(&input, type_cache, symbols, &mut parse_errors, layout);
-
-    // If there is a tokenizer error it may still exist in the result iterator wrapper.
-    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
-    // emitted
-    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
-        parse_errors.pop(); // Remove the EOF error
-        parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(
-                err.span.start().absolute,
-                err.span.end().absolute,
-                err.value.into(),
-            ),
-        });
-    }
 
     match result {
         Ok(expr) => {
@@ -456,8 +347,7 @@ where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let result_ok_iter;
-    let layout = layout!(result_ok_iter, input);
+    let layout = Layout::new(Tokenizer::new(input));
 
     let mut parse_errors = Errors::new();
 
@@ -470,20 +360,6 @@ where
         &mut parse_errors,
         layout,
     );
-
-    // If there is a tokenizer error it may still exist in the result iterator wrapper.
-    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
-    // emitted
-    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
-        parse_errors.pop(); // Remove the EOF error
-        parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(
-                err.span.start().absolute,
-                err.span.end().absolute,
-                err.value.into(),
-            ),
-        });
-    }
 
     match result {
         Ok(repl_line) => {

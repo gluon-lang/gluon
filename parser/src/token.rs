@@ -125,6 +125,7 @@ impl<'input> fmt::Display for Token<'input> {
 pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
 
 pub type SpError = Spanned<Error, Location>;
+pub type Result<T, E = SpError> = std::result::Result<T, E>;
 
 quick_error! {
     #[derive(Clone, Debug, PartialEq, Eq)]
