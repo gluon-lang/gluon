@@ -298,7 +298,7 @@ where
 
     pub fn replace(&mut self, var: u32, t: T) {
         debug_assert!(t.get_id() != Some(var));
-        self.types_undo.borrow_mut().push(var);
+        self.types_undo.get_mut().push(var);
         self.types.insert(var as usize, t.into());
     }
 
@@ -333,7 +333,7 @@ where
     /// Assumes that no variables unified with anything (but variables < level may exist)
     pub fn clear_from(&mut self, level: u32) {
         self.union = RefCell::new(ena::unify::InPlaceUnificationTable::new());
-        let mut u = self.union.borrow_mut();
+        let u = self.union.get_mut();
         for var in 0..level {
             u.new_key(Level(var));
         }
