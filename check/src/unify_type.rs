@@ -1383,7 +1383,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
             (Type::Variable(_), _) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(l, r)?;
-                Ok(None)
+                Ok(Some(r.clone()))
             }
 
             (Type::Skolem(_), _) if self.state.refinement => {

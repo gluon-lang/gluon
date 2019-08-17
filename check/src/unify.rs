@@ -215,7 +215,7 @@ where
             (Some(_), _) => {
                 debug!("Union {} <> {}", l, r);
                 subs.union(l, r)?;
-                Ok(None)
+                Ok(Some(r.clone()))
             }
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
