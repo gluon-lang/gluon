@@ -125,16 +125,6 @@ impl Environment<'_> {
     }
 }
 
-/// Type returned from the main typecheck function to make sure that nested `type` and `let`
-/// expressions dont overflow the stack
-enum TailCall {
-    Type(ModType),
-    TypeImplicit(ModType, Vec<SpannedExpr<Symbol>>),
-    /// Returned from typechecking a `let` or `type` expresion to indicate that the expression body
-    /// should be typechecked now.
-    TailCall,
-}
-
 /// Struct which provides methods to typecheck expressions.
 pub struct Typecheck<'a> {
     pub(crate) environment: Environment<'a>,
@@ -515,11 +505,11 @@ impl<'a> Typecheck<'a> {
                 expr.span,
                 ModType::rigid(&expected_type),
                 |self_, expected_type| {
-                    self_.typecheck_opt_(true, expr, Some(ModType::rigid(&expected_type)))
+                    self_.typecheck_bindings(true, expr, Some(ModType::rigid(&expected_type)))
                 },
             )
         } else {
-            self.typecheck_opt_(true, expr, None)
+            self.typecheck_bindings(true, expr, None)
         };
 
         {
@@ -607,117 +597,51 @@ impl<'a> Typecheck<'a> {
     fn typecheck_opt(
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
-        expected_type: Option<ModTypeRef>,
-    ) -> ModType {
-        self.typecheck_opt_(false, expr, expected_type)
-    }
-
-    fn typecheck_opt_(
-        &mut self,
-        mut top_level: bool,
-        mut expr: &mut SpannedExpr<Symbol>,
         mut expected_type: Option<ModTypeRef>,
     ) -> ModType {
-        fn moving<T>(t: T) -> T {
-            t
-        }
-        // How many scopes that have been entered in this "tailcall" loop
-        let mut scope_count = 0;
         let returned_type;
-        let level = self.subs.var_id();
-        loop {
-            match self.typecheck_(expr, &mut expected_type) {
-                Ok(tailcall) => {
-                    match tailcall {
-                        TailCall::TailCall => {
-                            // Call typecheck_ again with the next expression
-                            expr = match moving(expr).value {
-                                Expr::LetBindings(ref mut binds, ref mut new_expr) => {
-                                    if top_level {
-                                        self.generalize_and_clear_subs(level, binds);
-                                    }
-                                    new_expr
-                                }
-                                Expr::TypeBindings(_, ref mut new_expr) => new_expr,
-                                Expr::Do(Do {
-                                    body: ref mut new_expr,
-                                    ..
-                                }) => {
-                                    top_level = false;
-                                    new_expr
-                                }
-                                _ => ice!("Only Let and Type expressions can tailcall"),
-                            };
-                            scope_count += 1;
-                        }
-                        TailCall::TypeImplicit(typ, args) => {
-                            if !args.is_empty() {
-                                match expr.value {
-                                    Expr::App {
-                                        ref mut implicit_args,
-                                        ..
-                                    } => {
-                                        if implicit_args.is_empty() {
-                                            *implicit_args = args;
-                                        } else {
-                                            implicit_args.extend(args);
-                                        }
-                                    }
-                                    _ => {
-                                        let dummy = Expr::Literal(Literal::Int(0));
-                                        let func = mem::replace(&mut expr.value, dummy);
-                                        expr.value = Expr::App {
-                                            func: Box::new(pos::spanned(expr.span, func)),
-                                            implicit_args: args,
-                                            args: vec![],
-                                        }
-                                    }
-                                }
-                            }
 
-                            returned_type = match expected_type {
-                                Some(expected_type) => ModType::new(
-                                    expected_type.modifier,
-                                    self.subsumes_expr(
-                                        expr.span,
-                                        &typ,
-                                        expected_type.concrete.clone(),
-                                        expr,
-                                    ),
-                                ),
-                                None => typ,
-                            };
-                            break;
+        match self.typecheck_(expr, &mut expected_type) {
+            Ok((typ, args)) => {
+                if !args.is_empty() {
+                    match expr.value {
+                        Expr::App {
+                            ref mut implicit_args,
+                            ..
+                        } => {
+                            if implicit_args.is_empty() {
+                                *implicit_args = args;
+                            } else {
+                                implicit_args.extend(args);
+                            }
                         }
-                        TailCall::Type(typ) => {
-                            returned_type = match expected_type {
-                                Some(expected_type) => ModType::new(
-                                    expected_type.modifier,
-                                    self.subsumes_expr(
-                                        expr.span,
-                                        &typ,
-                                        expected_type.concrete.clone(),
-                                        expr,
-                                    ),
-                                ),
-                                None => typ,
-                            };
-                            break;
+                        _ => {
+                            let dummy = Expr::Literal(Literal::Int(0));
+                            let func = mem::replace(&mut expr.value, dummy);
+                            expr.value = Expr::App {
+                                func: Box::new(pos::spanned(expr.span, func)),
+                                implicit_args: args,
+                                args: vec![],
+                            }
                         }
                     }
                 }
-                Err(err) => {
-                    returned_type = ModType::wobbly(self.subs.error());
-                    self.errors.push(Spanned {
-                        span: expr_check_span(expr),
-                        value: err.into(),
-                    });
-                    break;
-                }
+
+                returned_type = match expected_type {
+                    Some(expected_type) => ModType::new(
+                        expected_type.modifier,
+                        self.subsumes_expr(expr.span, &typ, expected_type.concrete.clone(), expr),
+                    ),
+                    None => typ,
+                };
             }
-        }
-        for _ in 0..scope_count {
-            self.exit_scope();
+            Err(err) => {
+                returned_type = ModType::wobbly(self.subs.error());
+                self.errors.push(Spanned {
+                    span: expr_check_span(expr),
+                    value: err.into(),
+                });
+            }
         }
         returned_type
     }
@@ -728,9 +652,9 @@ impl<'a> Typecheck<'a> {
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
         expected_type: &mut Option<ModTypeRef>,
-    ) -> TcResult<TailCall> {
+    ) -> TcResult<(ModType, Vec<SpannedExpr<Symbol>>)> {
         if let Some(result) = self.check_macro(expr) {
-            return result;
+            return Ok((result?, Vec::new()));
         }
         match expr.value {
             Expr::Ident(ref mut id) => {
@@ -742,15 +666,18 @@ impl<'a> Typecheck<'a> {
                     &mut expected_type.take().map(|t| t.concrete),
                 );
                 id.typ = self.subs.bind_arc(&typ);
-                Ok(TailCall::TypeImplicit(ModType::new(modifier, typ), args))
+                Ok((ModType::new(modifier, typ), args))
             }
-            Expr::Literal(ref lit) => Ok(TailCall::Type(ModType::rigid(match *lit {
-                Literal::Int(_) => self.subs.int(),
-                Literal::Byte(_) => self.subs.byte(),
-                Literal::Float(_) => self.subs.float(),
-                Literal::String(_) => self.subs.string(),
-                Literal::Char(_) => self.subs.char(),
-            }))),
+            Expr::Literal(ref lit) => Ok((
+                ModType::rigid(match *lit {
+                    Literal::Int(_) => self.subs.int(),
+                    Literal::Byte(_) => self.subs.byte(),
+                    Literal::Float(_) => self.subs.float(),
+                    Literal::String(_) => self.subs.string(),
+                    Literal::Char(_) => self.subs.char(),
+                }),
+                Vec::new(),
+            )),
             Expr::App {
                 ref mut func,
                 ref mut implicit_args,
@@ -774,7 +701,7 @@ impl<'a> Typecheck<'a> {
                 let false_type = self.instantiate_generics(&false_type);
 
                 self.unify(&true_type, false_type)
-                    .map(|t| TailCall::Type(ModType::new(modifier, t)))
+                    .map(|t| (ModType::new(modifier, t), Vec::new()))
             }
             Expr::Infix {
                 ref mut lhs,
@@ -846,7 +773,7 @@ impl<'a> Typecheck<'a> {
                     }
                 };
                 *typ = self.subs.bind_arc(&new_type);
-                Ok(TailCall::Type(new_type))
+                Ok((new_type, Vec::new()))
             }
             Expr::Match(ref mut expr, ref mut alts) => {
                 let mut scrutinee_type = self.infer_expr(&mut **expr);
@@ -927,12 +854,16 @@ impl<'a> Typecheck<'a> {
 
                     expr_type = Some(alt_type);
                 }
-                expr_type.ok_or(TypeError::EmptyCase).map(TailCall::Type)
+                expr_type
+                    .ok_or(TypeError::EmptyCase)
+                    .map(|typ| (typ, Vec::new()))
             }
-            Expr::LetBindings(ref mut bindings, _) => {
-                self.typecheck_bindings(bindings)?;
-                Ok(TailCall::TailCall)
-            }
+
+            Expr::TypeBindings(..) | Expr::LetBindings(..) => Ok((
+                self.typecheck_bindings(false, expr, expected_type.take()),
+                Vec::new(),
+            )),
+
             Expr::Projection(ref mut expr, ref field_id, ref mut ast_field_typ) => {
                 let mut expr_typ = self.infer_expr(&mut **expr);
                 let modifier = expr_typ.modifier;
@@ -975,12 +906,9 @@ impl<'a> Typecheck<'a> {
                             }
                         };
                         *ast_field_typ = self.subs.bind_arc(&new_ast_field_type);
-                        Ok(TailCall::TypeImplicit(
-                            ModType::new(modifier, new_ast_field_type),
-                            implicit_args,
-                        ))
+                        Ok((ModType::new(modifier, new_ast_field_type), implicit_args))
                     }
-                    Type::Error => Ok(TailCall::Type(ModType::new(modifier, record.clone()))),
+                    Type::Error => Ok((ModType::new(modifier, record.clone()), Vec::new())),
                     _ => Err(TypeError::InvalidProjection(record)),
                 }
             }
@@ -998,7 +926,7 @@ impl<'a> Typecheck<'a> {
                         self.typecheck(expr, ModType::wobbly(&expected_element_type));
                 }
 
-                Ok(TailCall::Type(ModType::wobbly(array_type)))
+                Ok((ModType::wobbly(array_type), Vec::new()))
             }
             Expr::Lambda(ref mut lambda) => {
                 let level = self.subs.var_id();
@@ -1020,11 +948,7 @@ impl<'a> Typecheck<'a> {
 
                 self.generalize_type(level, &mut typ, expr.span);
                 lambda.id.typ = self.subs.bind_arc(&typ);
-                Ok(TailCall::Type(typ.clone()))
-            }
-            Expr::TypeBindings(ref mut bindings, ref expr) => {
-                self.typecheck_type_bindings(bindings, expr);
-                Ok(TailCall::TailCall)
+                Ok((typ.clone(), Vec::new()))
             }
             Expr::Record {
                 ref mut typ,
@@ -1202,16 +1126,14 @@ impl<'a> Typecheck<'a> {
                 let new_type = self.subs.record(new_types, new_fields);
                 *typ = self.subs.bind_arc(&new_type);
 
-                Ok(TailCall::Type(ModType::new(modifier, new_type)))
+                Ok((ModType::new(modifier, new_type), Vec::new()))
             }
             Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
                 for expr in exprs {
                     self.infer_expr(expr);
                 }
-                Ok(TailCall::Type(
-                    self.typecheck_opt(last, expected_type.take()),
-                ))
+                Ok((self.typecheck_opt(last, expected_type.take()), Vec::new()))
             }
             Expr::Do(Do {
                 ref mut id,
@@ -1291,7 +1213,7 @@ impl<'a> Typecheck<'a> {
 
                 let ret = self.unify_span(body.span, &ret, body_type.concrete.clone());
 
-                Ok(TailCall::Type(ModType::wobbly(ret)))
+                Ok((ModType::wobbly(ret), Vec::new()))
             }
             Expr::MacroExpansion {
                 ref mut replacement,
@@ -1306,11 +1228,14 @@ impl<'a> Typecheck<'a> {
                 self.typecheck_(expr, &mut Some(ModType::rigid(&typ)))
             }
 
-            Expr::Error(ref typ) => Ok(TailCall::Type(ModType::wobbly(
-                typ.as_ref()
-                    .map(|typ| self.translate_arc_type(typ))
-                    .unwrap_or_else(|| self.subs.new_var()),
-            ))),
+            Expr::Error(ref typ) => Ok((
+                ModType::wobbly(
+                    typ.as_ref()
+                        .map(|typ| self.translate_arc_type(typ))
+                        .unwrap_or_else(|| self.subs.new_var()),
+                ),
+                Vec::new(),
+            )),
         }
     }
 
@@ -1320,12 +1245,13 @@ impl<'a> Typecheck<'a> {
         func_type: ModType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
         args: I,
-    ) -> TcResult<TailCall>
+    ) -> TcResult<(ModType, Vec<SpannedExpr<Symbol>>)>
     where
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
         I::IntoIter: ExactSizeIterator,
     {
         self.typecheck_application_(span, func_type, implicit_args, &mut args.into_iter())
+            .map(|typ| (typ, Vec::new()))
     }
 
     fn typecheck_application_<'e>(
@@ -1334,7 +1260,7 @@ impl<'a> Typecheck<'a> {
         func_type: ModType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
         args: &mut dyn ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
-    ) -> TcResult<TailCall> {
+    ) -> TcResult<ModType> {
         fn attach_extra_argument_help<F, R>(self_: &mut Typecheck, actual: u32, f: F) -> R
         where
             F: FnOnce(&mut Typecheck) -> R,
@@ -1456,7 +1382,7 @@ impl<'a> Typecheck<'a> {
         })
         .walk(&self.subs.zonk(&original_func_type));
 
-        Ok(TailCall::Type(ModType::new(modifier, func_type)))
+        Ok(ModType::new(modifier, func_type))
     }
 
     fn typecheck_lambda(
@@ -1866,7 +1792,50 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) -> TcResult<()> {
+    fn typecheck_bindings(
+        &mut self,
+        top_level: bool,
+        mut expr: &mut SpannedExpr<Symbol>,
+        expected_type: Option<ModTypeRef>,
+    ) -> ModType {
+        let mut scope_count = 0;
+
+        let level = self.subs.var_id();
+
+        loop {
+            match expr.value {
+                Expr::LetBindings(ref mut bindings, ref mut body) => {
+                    self.typecheck_let_bindings(bindings);
+
+                    scope_count += 1;
+
+                    if top_level {
+                        self.generalize_and_clear_subs(level, bindings);
+                    }
+
+                    expr = body
+                }
+                Expr::TypeBindings(ref mut bindings, ref mut body) => {
+                    self.typecheck_type_bindings(bindings, body);
+
+                    scope_count += 1;
+
+                    expr = body;
+                }
+                _ => {
+                    let typ = self.typecheck_opt(expr, expected_type);
+
+                    for _ in 0..scope_count {
+                        self.exit_scope();
+                    }
+
+                    return typ;
+                }
+            }
+        }
+    }
+
+    fn typecheck_let_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) {
         self.enter_scope();
         self.environment.skolem_variables.enter_scope();
         self.environment.type_variables.enter_scope();
@@ -2014,7 +1983,6 @@ impl<'a> Typecheck<'a> {
         debug!("Typecheck `in`");
         self.environment.type_variables.exit_scope();
         self.environment.skolem_variables.exit_scope();
-        Ok(())
     }
 
     fn typecheck_type_bindings(
@@ -2970,7 +2938,7 @@ impl<'a> Typecheck<'a> {
             })
     }
 
-    fn check_macro(&mut self, expr: &mut SpannedExpr<Symbol>) -> Option<TcResult<TailCall>> {
+    fn check_macro(&mut self, expr: &mut SpannedExpr<Symbol>) -> Option<TcResult<ModType>> {
         let (replacement, typ) = match expr.value {
             Expr::App {
                 ref mut func,
@@ -3110,7 +3078,7 @@ impl<'a> Typecheck<'a> {
 
         *expr = Expr::annotated(replacement, self.subs.bind_arc(&typ));
 
-        Some(Ok(TailCall::Type(ModType::wobbly(typ))))
+        Some(Ok(ModType::wobbly(typ)))
     }
 }
 
