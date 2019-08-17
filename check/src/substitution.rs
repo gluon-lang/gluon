@@ -413,21 +413,13 @@ where
     }
 
     /// Updates the level of `other` to be the minimum level value of `var` and `other`
-    pub fn update_level(&self, var: u32, other: u32) {
+    fn update_level(&self, var: u32, other: u32) {
         let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
         let mut union = self.union.borrow_mut();
         union.union_value(other, Level(level));
     }
 
-    pub fn set_level(&self, var: u32, level: u32) {
-        let mut union = self.union.borrow_mut();
-        union.union_value(var, Level(level));
-    }
-
-    pub fn get_level(&self, mut var: u32) -> u32 {
-        if let Some(v) = self.find_type_for_var(var) {
-            var = v.get_var().map_or(var, |v| v.get_id());
-        }
+    pub fn get_level(&self, var: u32) -> u32 {
         let mut union = self.union.borrow_mut();
         union.union_value(var, Level(var));
         union.probe_value(var).0
