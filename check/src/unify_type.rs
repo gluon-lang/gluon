@@ -1373,7 +1373,7 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (&**l, &**r) {
-            (&Type::Hole, _) => Ok(Some(r.clone())),
+            (Type::Hole, _) => Ok(Some(r.clone())),
 
             (_, Type::Variable(_)) => {
                 debug!("Union merge {} <> {}", l, r);
@@ -1386,9 +1386,12 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 Ok(Some(r.clone()))
             }
 
-            (Type::Skolem(_), _) if self.state.refinement => {
+            (Type::Skolem(l_skolem), _) if self.state.refinement => {
                 debug!("Skolem union {} <> {}", l, r);
-                subs.union(l, r)?;
+                match &**r {
+                    Type::Skolem(r_skolem) if r_skolem.id > l_skolem.id => subs.union(r, l)?,
+                    _ => subs.union(l, r)?,
+                }
                 Ok(None)
             }
 
