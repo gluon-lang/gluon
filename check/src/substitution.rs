@@ -216,7 +216,7 @@ pub struct Level(u32);
 impl ena::unify::UnifyValue for Level {
     type Error = ena::unify::NoError;
     fn unify_values(l: &Self, r: &Self) -> Result<Self, Self::Error> {
-        Ok(if l < r { l.clone() } else { r.clone() })
+        Ok(*l.min(r))
     }
 }
 
@@ -334,8 +334,8 @@ where
     pub fn clear_from(&mut self, level: u32) {
         self.union = RefCell::new(ena::unify::InPlaceUnificationTable::new());
         let mut u = self.union.borrow_mut();
-        for _ in 0..level {
-            u.new_key(Level(::std::u32::MAX));
+        for var in 0..level {
+            u.new_key(Level(var));
         }
 
         let variable_cache = self.variable_cache.get_mut();
@@ -367,11 +367,7 @@ where
         F: FnOnce(u32) -> T,
     {
         let var_id = self.variables.len() as u32;
-        let id = self
-            .union
-            .borrow_mut()
-            .new_key(Level(::std::u32::MAX))
-            .index;
+        let id = self.union.borrow_mut().new_key(Level(var_id)).index;
         assert!(id as usize == self.variables.len());
         debug!("New var {}", self.variables.len());
 
@@ -414,14 +410,13 @@ where
 
     /// Updates the level of `other` to be the minimum level value of `var` and `other`
     fn update_level(&self, var: u32, other: u32) {
-        let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
         let mut union = self.union.borrow_mut();
-        union.union_value(other, Level(level));
+        let level = union.probe_value(var).min(union.probe_value(other));
+        union.union_value(other, level);
     }
 
     pub fn get_level(&self, var: u32) -> u32 {
         let mut union = self.union.borrow_mut();
-        union.union_value(var, Level(var));
         union.probe_value(var).0
     }
 
@@ -459,23 +454,13 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         assert!(variable.get_id().is_some(), "Expected a variable");
         let id = variable.get_id().unwrap();
 
-        // Nothing needs to be done if both are the same variable already (also prevents the occurs
-        // check from failing)
-        if typ.get_var().map_or(false, |other| other.get_id() == id) {
-            return Ok(());
-        }
-        if occurs(typ, self, id) {
-            return Err(Error::Occurs(variable.clone(), typ.clone()));
-        }
-        match typ.get_var().map(|v| v.get_id()) {
-            Some(other_id) if variable.get_var().is_some() => {
-                self.union.borrow_mut().union(id, other_id);
-                self.update_level(id.get_id(), other_id);
-                self.update_level(other_id, id.get_id());
+        match typ.get_var() {
+            Some(other_var) if variable.get_var().is_some() => {
+                self.union.borrow_mut().union(id, other_var.get_id());
             }
             _ => {
-                if let Some(other_id) = typ.get_id() {
-                    self.update_level(id.get_id(), other_id);
+                if occurs(typ, self, id) {
+                    return Err(Error::Occurs(variable.clone(), typ.clone()));
                 }
                 self.insert(id.get_id(), typ.clone());
             }
