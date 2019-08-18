@@ -190,9 +190,12 @@ impl rustyline::highlight::Highlighter for Completer {
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         // TODO Detect when windows supports ANSI escapes
-        if cfg!(windows) {
+        #[cfg(windows)]
+        {
             Cow::Borrowed(hint)
-        } else {
+        }
+        #[cfg(not(windows))]
+        {
             use ansi_term::Style;
             Cow::Owned(Style::new().dimmed().paint(hint).to_string())
         }
