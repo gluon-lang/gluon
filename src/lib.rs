@@ -816,6 +816,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.io.prim", crate::std_lib::io::load);
         add_extern_module(&vm, "std.process.prim", crate::std_lib::process::load);
         add_extern_module(&vm, "std.env.prim", crate::std_lib::env::load);
+        add_extern_module(&vm, "std.time.prim", crate::std_lib::time::load);
 
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
