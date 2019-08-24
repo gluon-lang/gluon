@@ -1,0 +1,8 @@
+//! Time-related functionality
+
+let time = import! std.time.prim
+
+{
+    ..
+    time
+}
