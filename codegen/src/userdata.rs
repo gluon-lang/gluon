@@ -55,10 +55,10 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
 
     let deep_clone = if container.clone {
         quote! {
-            fn deep_clone(
+            fn deep_clone<'gc>(
                 &self,
-                deep_cloner: &mut _gluon_api::Cloner
-            ) -> _gluon_Result<_gluon_gc::GcPtr<Box<dyn _gluon_api::Userdata>>> {
+                deep_cloner: &'gc mut _gluon_api::Cloner
+            ) -> _gluon_Result<_gluon_gc::GcRef<'gc, Box<dyn _gluon_api::Userdata>>> {
                 let data: Box<dyn _gluon_api::Userdata> = Box::new(self.clone());
                 deep_cloner.gc().alloc(_gluon_gc::Move(data))
             }
