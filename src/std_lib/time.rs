@@ -1,5 +1,5 @@
 //! Module containing bindings to rust's `std::time` module.
-//!
+
 use crate::real_std::{
     time,
     convert::TryInto,
@@ -7,74 +7,92 @@ use crate::real_std::{
 
 use crate::vm::{
     self,
-    api::{Eff, IO},
+    api::{RuntimeResult, IO},
     thread::Thread,
     types::VmInt,
     ExternModule,
 };
 
-#[derive(Clone, Debug, Userdata, Trace, VmType)]
-#[gluon(vm_type = "std.time.types.Duration")]
-#[gluon(crate_name = "::vm")]
-#[gluon_trace(skip)]
-struct Duration(time::Duration);
+mod duration {
+    use super::*;
 
-fn as_secs(dur: &Duration) -> VmInt {
-    dur.0.as_secs().try_into().expect("Overflow when trying to convert Duration into seconds")
-}
+    #[derive(Clone, Debug, Userdata, Trace, VmType)]
+    #[gluon_userdata(clone)]
+    #[gluon(vm_type = "std.time.types.Duration")]
+    #[gluon(crate_name = "::vm")]
+    #[gluon_trace(skip)]
+    pub(crate) struct Duration(pub(crate) time::Duration);
 
-fn subsec_nanos(dur: &Duration) -> VmInt {
-    dur.0.subsec_nanos() as VmInt
-}
+    pub(crate) fn as_secs(dur: &Duration) -> RuntimeResult<VmInt, String> {
+        dur.0.as_secs()
+            .try_into()
+            .map_err(|_| String::from("Overflow when trying to convert Duration into seconds"))
+            .into()
+    }
 
-#[derive(Clone, Debug, Userdata, Trace, VmType)]
-#[gluon(vm_type = "std.time.types.Instant")]
-#[gluon(crate_name = "::vm")]
-#[gluon_trace(skip)]
-struct Instant(time::Instant);
-
-fn instant_now(_: ()) -> IO<Instant> {
-    IO::Value(Instant(time::Instant::now()))
-}
-
-/// Returns `Some(later - earlier)` if `later` is the same as or later than `earlier`.
-/// Returns None otherwise.
-fn instant_since(later: &Instant, earlier: &Instant) -> Option<Duration> {
-    // Note: replace with checked_duration_since when 1.38 is stable
-    if later.0 >= earlier.0 {
-        // should never panic
-        Some(Duration(later.0.duration_since(earlier.0)))
-    } else {
-        None
+    pub(crate) fn subsec_nanos(dur: &Duration) -> VmInt {
+        dur.0.subsec_nanos() as VmInt
     }
 }
 
-fn instant_elapsed(earlier: &Instant) -> Duration {
-    Duration(earlier.0.elapsed())
+mod instant {
+    use super::{ *, duration::Duration };
+
+    #[derive(Clone, Debug, Userdata, Trace, VmType)]
+    #[gluon_userdata(clone)]
+    #[gluon(vm_type = "std.time.types.Instant")]
+    #[gluon(crate_name = "::vm")]
+    #[gluon_trace(skip)]
+    pub(crate) struct Instant(pub(crate) time::Instant);
+
+    pub(crate) fn now(_: ()) -> IO<Instant> {
+        IO::Value(Instant(time::Instant::now()))
+    }
+
+    /// Returns `Some(later - earlier)` if `later` is the same as or later than `earlier`.
+    /// Returns None otherwise.
+    pub(crate) fn duration_since(later: &Instant, earlier: &Instant) -> Option<Duration> {
+        // Note: replace with checked_duration_since when 1.38 is stable
+        if later.0 >= earlier.0 {
+            // should never panic
+            Some(Duration(later.0.duration_since(earlier.0)))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn elapsed(earlier: &Instant) -> Duration {
+        Duration(earlier.0.elapsed())
+    }
 }
 
-#[derive(Clone, Debug, Userdata, Trace, VmType)]
-#[gluon(vm_type = "std.time.types.SystemTime")]
-#[gluon(crate_name = "::vm")]
-#[gluon_trace(skip)]
-struct SystemTime(time::SystemTime);
+mod system_time {
+    use super::{ *, duration::Duration };
 
-fn system_time_now(_: ()) -> IO<SystemTime> {
-    IO::Value(SystemTime(time::SystemTime::now()))
-}
+    #[derive(Clone, Debug, Userdata, Trace, VmType)]
+    #[gluon_userdata(clone)]
+    #[gluon(vm_type = "std.time.types.SystemTime")]
+    #[gluon(crate_name = "::vm")]
+    #[gluon_trace(skip)]
+    pub(crate) struct SystemTime(pub(crate) time::SystemTime);
 
-/// Returns `Ok(later - earlier)` if `later` is the same as or later than `earlier`.
-/// Returns `Err(earlier - later)` if `later` is earlier than `earlier`.
-fn system_time_since(later : &SystemTime, earlier : &SystemTime) -> Result<Duration, Duration> {
-    later.0.duration_since(earlier.0)
-        .map(|x| Duration(x))
-        .map_err(|e| Duration(e.duration()))
-}
+    pub(crate) fn now(_: ()) -> IO<SystemTime> {
+        IO::Value(SystemTime(time::SystemTime::now()))
+    }
 
-fn system_time_elapsed(earlier: &SystemTime) -> Result<Duration, Duration> {
-    earlier.0.elapsed()
-        .map(|x| Duration(x))
-        .map_err(|e| Duration(e.duration()))
+    /// Returns `Ok(later - earlier)` if `later` is the same as or later than `earlier`.
+    /// Returns `Err(earlier - later)` if `later` is earlier than `earlier`.
+    pub(crate) fn duration_since(later : &SystemTime, earlier : &SystemTime) -> Result<Duration, Duration> {
+        later.0.duration_since(earlier.0)
+            .map(|x| Duration(x))
+            .map_err(|e| Duration(e.duration()))
+    }
+
+    pub(crate) fn elapsed(earlier: &SystemTime) -> Result<Duration, Duration> {
+        earlier.0.elapsed()
+            .map(|x| Duration(x))
+            .map_err(|e| Duration(e.duration()))
+    }
 }
 
 mod std {
@@ -84,28 +102,35 @@ mod std {
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
-    vm.register_type::<Duration>("std.time.types.Duration", &[])?;
-    vm.register_type::<Instant>("std.time.types.Instant", &[])?;
-    vm.register_type::<SystemTime>("std.time.types.SystemTime", &[])?;
+    vm.register_type::<duration::Duration>("std.time.types.Duration", &[])?;
+    vm.register_type::<instant::Instant>("std.time.types.Instant", &[])?;
+    vm.register_type::<system_time::SystemTime>("std.time.types.SystemTime", &[])?;
 
     ExternModule::new(
         vm,
         record! {
-            type std::time::Duration => Duration,
-            type std::time::Instant => Instant,
-            type std::time::SystemTime => SystemTime,
+            duration => record! {
+                type std::time::Duration => duration::Duration,
 
-            unix_epoch => SystemTime(time::UNIX_EPOCH),
+                as_secs => primitive!(1, std::time::prim::duration::as_secs),
+                subsec_nanos => primitive!(1, std::time::prim::duration::subsec_nanos),
+            },
+            instant => record! {
+                type std::time::Instant => instant::Instant,
 
-            as_secs => primitive!(1, std::time::prim::as_secs),
-            subsec_nanos => primitive!(1, std::time::prim::subsec_nanos),
-            instant_now => primitive!(1, std::time::prim::instant_now),
-            instant_since => primitive!(2, std::time::prim::instant_since),
-            instant_elapsed => primitive!(1, std::time::prim::instant_elapsed),
-            system_time_now => primitive!(1, std::time::prim::system_time_now),
-            system_time_since => primitive!(2, std::time::prim::system_time_since),
-            system_time_elapsed => primitive!(1, std::time::prim::system_time_elapsed),
+                now => primitive!(1, std::time::prim::instant::now),
+                duration_since => primitive!(2, std::time::prim::instant::duration_since),
+                elapsed => primitive!(1, std::time::prim::instant::elapsed),
+            },
+            system_time => record! {
+                type std::time::SystemTime => system_time::SystemTime,
 
-        },
+                unix_epoch => system_time::SystemTime(time::UNIX_EPOCH),
+
+                now => primitive!(1, std::time::prim::system_time::now),
+                duration_since => primitive!(2, std::time::prim::system_time::duration_since),
+                elapsed => primitive!(1, std::time::prim::system_time::elapsed),
+            },
+        }
     )
 }
