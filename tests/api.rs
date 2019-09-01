@@ -705,3 +705,28 @@ fn child_vm_do_not_cause_undroppable_cycle_reverse_drop_order() {
         "The virtual machine and its values were not dropped"
     );
 }
+
+#[test]
+fn clone_userdata() {
+    let _ = ::env_logger::try_init();
+
+    let expr = r#"
+        import! test
+    "#;
+
+    #[derive(Debug, Userdata, Trace, VmType, Clone, PartialEq)]
+    #[gluon(vm_type = "Test")]
+    #[gluon_userdata(clone)]
+    struct Test(VmInt);
+
+    let vm = make_vm();
+    vm.register_type::<Test>("Test", &[])
+        .unwrap_or_else(|_| panic!("Could not add type"));
+    add_extern_module(&vm, "test", |thread| ExternModule::new(thread, Test(123)));
+
+    let (result, _) = Compiler::new()
+        .run_expr::<OpaqueValue<RootedThread, Test>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    assert_eq!(*result, Test(123));
+}

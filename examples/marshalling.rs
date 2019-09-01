@@ -334,7 +334,9 @@ fn marshal_wrapper() -> Result<()> {
     Ok(())
 }
 
-#[derive(Userdata, Trace, Debug, Clone, VmType)]
+#[derive(Userdata, Trace, Clone, Debug, VmType)]
+#[gluon_userdata(clone)]
+// Lets gluon know that the value can be cloned which can be needed when transferring the value between threads
 #[gluon(vm_type = "WindowHandle")]
 struct WindowHandle {
     id: Arc<u64>,
@@ -348,6 +350,7 @@ fn load_mod(vm: &gluon::Thread) -> vm::Result<ExternModule> {
         create_hwnd => primitive!(2, create_hwnd),
         id => primitive!(1, id),
         metadata => primitive!(1, metadata),
+        default_hwnd => create_hwnd(0, "default".into()),
     };
 
     ExternModule::new(vm, module)
