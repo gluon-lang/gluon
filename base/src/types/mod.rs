@@ -851,6 +851,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
 
+#[cfg(target_pointer_width = "64")]
 // Safeguard against accidentally growing Type as it is a core type
 const _: [(); 8 * 6] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
