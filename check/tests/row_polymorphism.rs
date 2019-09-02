@@ -229,7 +229,6 @@ fn row_kinds() {
     assert_eq!(result, Ok(Kind::row()));
 
     let mut typ = Type::extend_row(
-        vec![],
         vec![Field::new(intern("x"), Type::int())],
         Type::empty_row(),
     );
@@ -243,16 +242,11 @@ fn row_kinds_error() {
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 
-    let mut typ = Type::extend_row(
-        vec![],
-        vec![Field::new(intern("x"), Type::int())],
-        Type::int(),
-    );
+    let mut typ = Type::extend_row(vec![Field::new(intern("x"), Type::int())], Type::int());
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 
     let mut typ = Type::extend_row(
-        vec![],
         vec![Field::new(intern("x"), Type::empty_row())],
         Type::empty_row(),
     );

@@ -23,7 +23,7 @@ use crate::base::fnv::FnvMap;
 use crate::base::metadata::Metadata;
 use crate::base::resolve;
 use crate::base::source::Source;
-use crate::base::symbol::{Name, NameBuf, Symbol, SymbolModule};
+use crate::base::symbol::{Name, NameBuf, Symbol, SymbolData, SymbolModule};
 use crate::base::types::{ArcType, NullInterner, Type};
 
 use crate::check::{metadata, rename};
@@ -915,7 +915,11 @@ where
         } = try_future!(DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
             .map_err(|err| err.to_string()));
-        let id = compiler.symbols.symbol(format!("@{}", name));
+        let id = compiler.symbols.symbol(SymbolData {
+            global: true,
+            location: None,
+            name: name,
+        });
         try_future!(vm.set_global(
             id,
             typ,

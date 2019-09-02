@@ -708,7 +708,7 @@ where
     fn visit_ast_type(&mut self, typ: &'a AstType<Symbol>) {
         match **typ {
             // ExtendRow do not have spans set properly so recurse unconditionally
-            Type::ExtendRow { .. } => (),
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => (),
             _ if typ.span().containment(self.pos) != Ordering::Equal => return,
             _ => (),
         }

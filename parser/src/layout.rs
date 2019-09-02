@@ -1,6 +1,6 @@
 use crate::base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 
-use crate::token::{SpannedToken, Token};
+use crate::token::{self, SpannedToken, Token};
 
 quick_error! {
     #[derive(Debug, PartialEq)]
@@ -10,6 +10,8 @@ quick_error! {
         }
     }
 }
+
+type Result<T, E = Spanned<crate::Error, BytePos>> = std::result::Result<T, E>;
 
 #[derive(Copy, Clone, Debug)]
 struct Offside {
@@ -80,16 +82,13 @@ impl Contexts {
         self.stack.is_empty()
     }
 
-    fn push(&mut self, offside: Offside) -> Result<(), Spanned<Error, BytePos>> {
+    fn push(&mut self, offside: Offside) -> Result<()> {
         self.check_unindentation_limit(offside)?;
         self.stack.push(offside);
         Ok(())
     }
 
-    fn check_unindentation_limit(
-        &mut self,
-        offside: Offside,
-    ) -> Result<(), Spanned<Error, BytePos>> {
+    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<()> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -115,7 +114,7 @@ impl Contexts {
             return Err(pos::spanned2(
                 offside.location.absolute,
                 offside.location.absolute,
-                Error::UnindentedTooFar,
+                Error::UnindentedTooFar.into(),
             ));
         }
         Ok(())
@@ -130,7 +129,7 @@ pub struct Layout<'input, Tokens> {
 
 impl<'input, Tokens> Layout<'input, Tokens>
 where
-    Tokens: Iterator<Item = SpannedToken<'input>>,
+    Tokens: Iterator<Item = token::Result<SpannedToken<'input>>>,
 {
     pub fn new(tokens: Tokens) -> Layout<'input, Tokens> {
         Layout {
@@ -140,67 +139,82 @@ where
         }
     }
 
-    fn continue_block(&mut self, context: Context, token: &Token) -> bool {
+    fn continue_block(&mut self, context: Context, token: &Token) -> Result<bool> {
         let in_rec = self.indent_levels.stack.len() >= 2
             && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context == Context::Rec;
 
-        in_rec
+        Ok(in_rec
             && (context == Context::Attribute
-                || (*token != Token::Rec && self.scan_continue_block(context, token)))
+                || (*token != Token::Rec && self.scan_continue_block(context, token)?)))
     }
 
-    fn scan_continue_block(&mut self, context: Context, first_token: &Token) -> bool {
+    fn scan_continue_block(&mut self, context: Context, first_token: &Token) -> Result<bool> {
         let expected_token = match context {
             Context::Let => Token::Let,
             Context::Type => Token::Type,
-            _ => return false,
+            _ => return Ok(false),
         };
         let mut in_attribute = false;
         for i in 0.. {
             let peek_token = if i == 0 {
                 Some(first_token)
             } else {
-                self.peek_token(i - 1).map(|t| &t.value)
+                self.peek_token(i - 1)?.map(|t| &t.value)
             };
             if peek_token == Some(&expected_token) {
-                return true;
+                return Ok(true);
             }
             match peek_token {
                 Some(peek_token) => match peek_token {
                     Token::AttributeOpen => in_attribute = true,
                     Token::DocComment(..) => (),
                     Token::RBracket => in_attribute = false,
-                    _ if !in_attribute => return false,
+                    _ if !in_attribute => return Ok(false),
                     _ => (),
                 },
-                None => return false,
+                None => return Ok(false),
             }
         }
-        false
+        Ok(false)
     }
 
-    fn peek_token(&mut self, n: usize) -> Option<&SpannedToken<'input>> {
+    fn peek_token(&mut self, n: usize) -> Result<Option<&SpannedToken<'input>>> {
         for _ in self.unprocessed_tokens.len()..=n {
             let token = match self.tokens.next() {
-                Some(token) => token,
-                None => return None,
+                Some(token) => token.map_err(|err| {
+                    pos::spanned2(
+                        err.span.start().absolute,
+                        err.span.end().absolute,
+                        err.value.into(),
+                    )
+                })?,
+                None => return Ok(None),
             };
             self.unprocessed_tokens.insert(0, token);
         }
-        self.unprocessed_tokens.first()
+        Ok(self.unprocessed_tokens.first())
     }
 
-    fn next_token(&mut self) -> SpannedToken<'input> {
-        self.unprocessed_tokens.pop().unwrap_or_else(|| {
-            self.tokens.next().unwrap_or_else(|| {
-                // Blegh
-                let location = Location {
-                    line: Line::from(0),
-                    column: Column::from(1),
-                    absolute: BytePos::from(1),
-                };
-                pos::spanned2(location, location, Token::EOF)
-            })
+    fn next_token(&mut self) -> Result<SpannedToken<'input>> {
+        self.unprocessed_tokens.pop().map(Ok).unwrap_or_else(|| {
+            self.tokens
+                .next()
+                .unwrap_or_else(|| {
+                    // Blegh
+                    let location = Location {
+                        line: Line::from(0),
+                        column: Column::from(1),
+                        absolute: BytePos::from(1),
+                    };
+                    Ok(pos::spanned2(location, location, Token::EOF))
+                })
+                .map_err(|err| {
+                    pos::spanned2(
+                        err.span.start().absolute,
+                        err.span.end().absolute,
+                        err.value.into(),
+                    )
+                })
         })
     }
 
@@ -214,8 +228,8 @@ where
         pos::spanned(span, layout_token)
     }
 
-    fn scan_for_next_block(&mut self, context: Context) -> Result<(), Spanned<Error, BytePos>> {
-        let next = self.next_token();
+    fn scan_for_next_block(&mut self, context: Context) -> Result<()> {
+        let next = self.next_token()?;
         let span = next.span;
 
         self.unprocessed_tokens.push(next);
@@ -259,10 +273,10 @@ where
         self.indent_levels.push(Offside::new(span.start(), context))
     }
 
-    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Spanned<Error, BytePos>> {
+    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>> {
         use std::cmp::Ordering;
 
-        let mut token = self.next_token();
+        let mut token = self.next_token()?;
         if token.value == Token::EOF {
             let mut start = token.span.start();
             start.column = Column::from(0);
@@ -446,7 +460,7 @@ where
                 | (Context::Type, Ordering::Less)
                     if token.value != Token::RBrace =>
                 {
-                    if !self.continue_block(offside.context, &token.value) {
+                    if !self.continue_block(offside.context, &token.value)? {
                         if token.value == Token::EOF {
                             self.indent_levels.pop();
                             continue;
@@ -551,7 +565,7 @@ where
                 (&Token::With, _) => self.scan_for_next_block(Context::MatchClause)?,
 
                 (&Token::Else, _) => {
-                    let next = self.next_token();
+                    let next = self.next_token()?;
                     // Need to allow "else if" expressions so avoid inserting a block for those
                     // cases (A block would be inserted at column 5 and we would then get
                     // unindentation errors on the branches)
@@ -607,16 +621,22 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
 
 impl<'input, Tokens> Iterator for Layout<'input, Tokens>
 where
-    Tokens: Iterator<Item = SpannedToken<'input>>,
+    Tokens: Iterator<Item = token::Result<SpannedToken<'input>>>,
 {
-    type Item = Result<SpannedToken<'input>, Spanned<Error, BytePos>>;
+    type Item = Result<(BytePos, Token<'input>, BytePos)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.layout_next_token() {
             Ok(Spanned {
                 value: Token::EOF, ..
             }) => None,
-            token => Some(token),
+            token => Some(token.map(|token| {
+                (
+                    token.span.start().absolute,
+                    token.value.into(),
+                    token.span.end().absolute,
+                )
+            })),
         }
     }
 }

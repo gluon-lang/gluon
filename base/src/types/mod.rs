@@ -628,6 +628,7 @@ pub struct AliasData<Id, T> {
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
+    pub is_implicit: bool,
 }
 
 impl<Id, T> AliasData<Id, T> {
@@ -640,6 +641,10 @@ impl<Id, T> AliasData<Id, T> {
     pub fn unresolved_type_mut(&mut self) -> &mut T {
         &mut self.typ
     }
+
+    pub fn is_implicit(&self) -> bool {
+        self.is_implicit
+    }
 }
 
 impl<Id, T> AliasData<Id, T>
@@ -647,7 +652,12 @@ where
     T: From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
-        AliasData { name, args, typ }
+        AliasData {
+            name,
+            args,
+            typ,
+            is_implicit: false,
+        }
     }
 }
 
@@ -801,12 +811,18 @@ pub enum Type<Id, T = ArcType<Id>> {
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
     ExtendRow {
-        /// The associated types of this record type
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
         #[cfg_attr(feature = "serde_derive", serde(state))]
         fields: Vec<Field<Id, T>>,
+        /// The rest of the row
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        rest: T,
+    },
+    /// Row extension, of kind `... -> Row -> Row`
+    ExtendTypeRow {
+        /// The associated types of this record type
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        types: Vec<Field<Id, Alias<Id, T>>>,
         /// The rest of the row
         #[cfg_attr(feature = "serde_derive", serde(state))]
         rest: T,
@@ -834,6 +850,10 @@ pub enum Type<Id, T = ArcType<Id>> {
     Alias(#[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>),
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
+
+#[cfg(target_pointer_width = "64")]
+// Safeguard against accidentally growing Type as it is a core type
+const _: [(); 8 * 6] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
 impl<Id, T> Type<Id, T> {
     pub fn as_variable(&self) -> Option<&TypeVariable> {
@@ -893,7 +913,7 @@ where
     }
 
     pub fn poly_variant(fields: Vec<Field<Id, T>>, rest: T) -> T {
-        T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
+        T::from(Type::Variant(Type::extend_row(fields, rest)))
     }
 
     pub fn effect(fields: Vec<Field<Id, T>>) -> T {
@@ -901,7 +921,7 @@ where
     }
 
     pub fn poly_effect(fields: Vec<Field<Id, T>>, rest: T) -> T {
-        T::from(Type::Effect(Type::extend_row(Vec::new(), fields, rest)))
+        T::from(Type::Effect(Type::extend_row(fields, rest)))
     }
 
     pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
@@ -918,7 +938,6 @@ where
         I: IntoIterator<Item = T>,
     {
         Type::Record(Type::extend_row(
-            vec![],
             elems
                 .into_iter()
                 .enumerate()
@@ -940,22 +959,30 @@ where
         fields: Vec<Field<Id, T>>,
         rest: T,
     ) -> T {
-        T::from(Type::Record(Type::extend_row(types, fields, rest)))
+        T::from(Type::Record(Type::extend_full_row(types, fields, rest)))
     }
 
-    pub fn extend_row(
+    pub fn extend_full_row(
         types: Vec<Field<Id, Alias<Id, T>>>,
         fields: Vec<Field<Id, T>>,
         rest: T,
     ) -> T {
-        if types.is_empty() && fields.is_empty() {
+        Self::extend_type_row(types, Self::extend_row(fields, rest))
+    }
+
+    pub fn extend_row(fields: Vec<Field<Id, T>>, rest: T) -> T {
+        if fields.is_empty() {
             rest
         } else {
-            T::from(Type::ExtendRow {
-                types,
-                fields,
-                rest,
-            })
+            T::from(Type::ExtendRow { fields, rest })
+        }
+    }
+
+    pub fn extend_type_row(types: Vec<Field<Id, Alias<Id, T>>>, rest: T) -> T {
+        if types.is_empty() {
+            rest
+        } else {
+            T::from(Type::ExtendTypeRow { types, rest })
         }
     }
 
@@ -1002,9 +1029,18 @@ where
     }
 
     pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+        Self::alias_implicit(name, args, typ, false)
+    }
+
+    pub fn alias_implicit(name: Id, args: Vec<Generic<Id>>, typ: T, is_implicit: bool) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::from(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData {
+                name,
+                args,
+                typ,
+                is_implicit,
+            }]),
         }))
     }
 
@@ -1127,9 +1163,9 @@ where
 
     pub fn is_non_polymorphic_record(&self) -> bool {
         match *self {
-            Type::Record(ref row) | Type::ExtendRow { rest: ref row, .. } => {
-                row.is_non_polymorphic_record()
-            }
+            Type::Record(ref row)
+            | Type::ExtendRow { rest: ref row, .. }
+            | Type::ExtendTypeRow { rest: ref row, .. } => row.is_non_polymorphic_record(),
             Type::EmptyRow => true,
             _ => false,
         }
@@ -1155,7 +1191,9 @@ where
             Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
-            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row()),
+            Type::EmptyRow | Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
+                Cow::Owned(Kind::row())
+            }
             Type::Effect(_) => {
                 let t = Kind::typ();
                 Cow::Owned(Kind::function(t.clone(), t))
@@ -1237,10 +1275,22 @@ where
     }
 }
 
-#[derive(Eq, Clone, Debug)]
+#[derive(Eq, Clone)]
 pub enum SymbolKey {
     Owned(Symbol),
     Ref(&'static SymbolRef),
+}
+
+impl fmt::Debug for SymbolKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", Borrow::<SymbolRef>::borrow(self))
+    }
+}
+
+impl fmt::Display for SymbolKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", Borrow::<SymbolRef>::borrow(self))
+    }
 }
 
 impl Hash for SymbolKey {
@@ -1301,7 +1351,10 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<ArcTypeInner<Id>>,
 }
 
-impl<Id> Default for ArcType<Id> {
+impl<Id> Default for ArcType<Id>
+where
+    Id: PartialEq,
+{
     fn default() -> Self {
         Type::hole()
     }
@@ -1310,7 +1363,7 @@ impl<Id> Default for ArcType<Id> {
 #[cfg(feature = "serde")]
 impl<'de, Id> DeserializeState<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
 where
-    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any + PartialEq,
 {
     fn deserialize_state<D>(
         seed: &mut Seed<Id, ArcType<Id>>,
@@ -1719,7 +1772,10 @@ where
     })
 }
 
-impl<Id> TypeExt for ArcType<Id> {
+impl<Id> TypeExt for ArcType<Id>
+where
+    Id: PartialEq,
+{
     type Id = Id;
 
     fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
@@ -1768,7 +1824,10 @@ where
     }
 }
 
-impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
+impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id>
+where
+    Id: PartialEq,
+{
     fn from(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType::new(typ)
     }
@@ -1794,14 +1853,13 @@ where
 
     fn next(&mut self) -> Option<&'a Field<Id, Alias<Id, T>>> {
         match **self.typ {
-            Type::Record(ref row) => {
-                self.typ = row;
+            Type::ExtendRow { ref rest, .. } | Type::Record(ref rest) => {
+                self.typ = rest;
                 self.next()
             }
-            Type::ExtendRow {
+            Type::ExtendTypeRow {
                 ref types,
                 ref rest,
-                ..
             } => {
                 let current = self.current;
                 self.current += 1;
@@ -1853,6 +1911,10 @@ where
                     self.next()
                 })
             }
+            Type::ExtendTypeRow { ref rest, .. } => {
+                self.typ = rest;
+                self.next()
+            }
             _ => None,
         }
     }
@@ -1881,6 +1943,7 @@ where
                     size += fields.len();
                     rest
                 }
+                Type::ExtendTypeRow { ref rest, .. } => rest,
                 _ => break,
             };
         }
@@ -1911,7 +1974,10 @@ where
                 return Some(x);
             }
             match ***self.rest.as_ref()? {
-                Type::Record(_) | Type::Variant(_) | Type::ExtendRow { .. } => (),
+                Type::Record(_)
+                | Type::Variant(_)
+                | Type::ExtendRow { .. }
+                | Type::ExtendTypeRow { .. } => (),
                 _ => return None,
             };
 
@@ -1926,6 +1992,7 @@ where
                     self.fields = fields.iter_mut();
                     Some(rest)
                 }
+                Type::ExtendTypeRow { ref mut rest, .. } => Some(rest),
                 _ => unreachable!(),
             };
         }
@@ -2058,7 +2125,7 @@ impl<Id> ArcType<Id> {
 
     pub fn set(into: &mut Self, typ: Type<Id, Self>)
     where
-        Id: Clone,
+        Id: Clone + PartialEq,
     {
         let into = Arc::make_mut(&mut into.typ);
         into.flags = Flags::from_type(&typ);
@@ -2079,7 +2146,10 @@ impl<Id> ArcType<Id> {
         )
     }
 
-    pub fn needs_generalize(&self) -> bool {
+    pub fn needs_generalize(&self) -> bool
+    where
+        Id: PartialEq,
+    {
         self.flags().intersects(Flags::NEEDS_GENERALIZE)
     }
 
@@ -2367,13 +2437,15 @@ where
                     Self::pretty_record_like(row, printer, "{", &mut pretty_record_field, "}")
                 }
             }
-            Type::ExtendRow { .. } => self.pretty_row("{", printer, &mut |field| {
-                chain![arena;
-                    pretty_print::doc_comment(arena, field.typ.comment()),
-                    pretty_print::ident(arena, field.name.as_ref()),
-                    " : "
-                ]
-            }),
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
+                self.pretty_row("{", printer, &mut |field| {
+                    chain![arena;
+                        pretty_print::doc_comment(arena, field.typ.comment()),
+                        pretty_print::ident(arena, field.name.as_ref()),
+                        " : "
+                    ]
+                })
+            }
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
@@ -2386,7 +2458,11 @@ where
             Type::Alias(ref alias) => printer.symbol(&alias.name),
         };
         match **typ {
-            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
+            Type::App(..)
+            | Type::ExtendRow { .. }
+            | Type::ExtendTypeRow { .. }
+            | Type::Variant(..)
+            | Type::Function(..) => doc,
             _ => {
                 let comment = printer.comments_before(typ.span().start());
                 comment.append(doc)
@@ -2406,12 +2482,7 @@ where
     {
         let arena = printer.arena;
 
-        let forced_newline = match **row {
-            Type::ExtendRow { ref fields, .. } => {
-                fields.iter().any(|field| field.typ.comment().is_some())
-            }
-            _ => false,
-        };
+        let forced_newline = row_iter(row).any(|field| field.typ.comment().is_some());
 
         let newline = if forced_newline {
             arena.newline()
@@ -2427,7 +2498,7 @@ where
 
         doc = match **row {
             Type::EmptyRow => doc,
-            Type::ExtendRow { .. } => doc
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => doc
                 .append(top(row).pretty_row(open, printer, pretty_field))
                 .nest(INDENT),
             _ => doc
@@ -2457,9 +2528,15 @@ where
         let mut doc = arena.nil();
         let mut typ = self.typ;
 
-        let fields = match **typ {
-            Type::ExtendRow { ref fields, .. } => &fields[..],
-            _ => &[][..],
+        let fields = {
+            let mut typ = typ;
+            loop {
+                match **typ {
+                    Type::ExtendRow { ref fields, .. } => break &fields[..],
+                    Type::ExtendTypeRow { ref rest, .. } => typ = rest,
+                    _ => break &[][..],
+                }
+            }
         };
         let forced_newline = fields.iter().any(|field| field.typ.comment().is_some());
 
@@ -2475,89 +2552,72 @@ where
 
         let mut filtered = false;
 
-        while let Type::ExtendRow {
-            ref types,
-            ref rest,
-            ..
-        } = **typ
-        {
-            for (i, field) in types.iter().enumerate() {
-                let filter = printer.filter(&field.name);
-                if filter == Filter::Drop {
-                    filtered = true;
-                    continue;
-                }
-
-                let f = chain![arena;
-                    field.name.as_ref(),
-                    arena.space(),
-                    arena.concat(field.typ.params().iter().map(|param| {
-                        arena.text(param.id.as_ref()).append(arena.space())
-                    })),
-                    arena.text("= "),
-                    if filter == Filter::RetainKey {
-                        arena.text("...")
-                    } else {
-                         top(&field.typ.typ).pretty(printer)
-                    },
-                    if i + 1 != types.len() || print_any_field {
-                        arena.text(",")
-                    } else {
-                        arena.nil()
-                    }
-                ]
-                .group();
-                doc = doc.append(newline.clone()).append(f);
+        let types_len = type_field_iter(typ).count();
+        for (i, field) in type_field_iter(typ).enumerate() {
+            let filter = printer.filter(&field.name);
+            if filter == Filter::Drop {
+                filtered = true;
+                continue;
             }
-            typ = rest;
-        }
 
-        if !fields.is_empty() {
-            typ = self.typ;
-        }
-
-        while let Type::ExtendRow {
-            ref fields,
-            ref rest,
-            ..
-        } = **typ
-        {
-            for (i, field) in fields.iter().enumerate() {
-                let filter = printer.filter(&field.name);
-                if filter == Filter::Drop {
-                    filtered = true;
-                    continue;
-                }
-
-                let mut rhs = if filter == Filter::RetainKey {
+            let f = chain![arena;
+                field.name.as_ref(),
+                arena.space(),
+                arena.concat(field.typ.params().iter().map(|param| {
+                    arena.text(param.id.as_ref()).append(arena.space())
+                })),
+                arena.text("= "),
+                if filter == Filter::RetainKey {
                     arena.text("...")
                 } else {
-                    top(&field.typ).pretty(printer)
-                };
-                match *field.typ {
-                    // Records handle nesting on their own
-                    Type::Record(_) => (),
-                    _ => rhs = rhs.nest(INDENT),
-                }
-                let f = chain![arena;
-                    pretty_field(field),
-                    rhs.group(),
-                    if i + 1 != fields.len() {
-                        arena.text(",")
-                    } else {
-                        arena.nil()
-                    }
-                ]
-                .group();
-                let space_before = if i == 0 && open == "(" {
-                    arena.nil()
+                     top(&field.typ.typ).pretty(printer)
+                },
+                if i + 1 != types_len || print_any_field {
+                    arena.text(",")
                 } else {
-                    newline.clone()
-                };
-                doc = doc.append(space_before).append(f);
-            }
-            typ = rest;
+                    arena.nil()
+                }
+            ]
+            .group();
+            doc = doc.append(newline.clone()).append(f);
         }
+
+        let mut row_iter = row_iter(typ);
+        for (i, field) in row_iter.by_ref().enumerate() {
+            let filter = printer.filter(&field.name);
+            if filter == Filter::Drop {
+                filtered = true;
+                continue;
+            }
+
+            let mut rhs = if filter == Filter::RetainKey {
+                arena.text("...")
+            } else {
+                top(&field.typ).pretty(printer)
+            };
+            match *field.typ {
+                // Records handle nesting on their own
+                Type::Record(_) => (),
+                _ => rhs = rhs.nest(INDENT),
+            }
+            let f = chain![arena;
+                pretty_field(field),
+                rhs.group(),
+                if i + 1 != fields.len() {
+                    arena.text(",")
+                } else {
+                    arena.nil()
+                }
+            ]
+            .group();
+            let space_before = if i == 0 && open == "(" {
+                arena.nil()
+            } else {
+                newline.clone()
+            };
+            doc = doc.append(space_before).append(f);
+        }
+        typ = row_iter.typ;
 
         let doc = if filtered {
             if let Doc::Nil = doc.1 {
@@ -2664,15 +2724,20 @@ where
         | Type::Variant(ref typ)
         | Type::Effect(ref typ) => f.walk(typ),
         Type::ExtendRow {
-            ref types,
             ref fields,
+            ref rest,
+        } => {
+            for field in fields {
+                f.walk(&field.typ);
+            }
+            f.walk(rest);
+        }
+        Type::ExtendTypeRow {
+            ref types,
             ref rest,
         } => {
             for field in types {
                 f.walk(&field.typ.typ);
-            }
-            for field in fields {
-                f.walk(&field.typ);
             }
             f.walk(rest);
         }
@@ -2711,8 +2776,16 @@ where
             f.walk_mut(row)
         }
         Type::ExtendRow {
-            ref mut types,
             ref mut fields,
+            ref mut rest,
+        } => {
+            for field in fields {
+                f.walk_mut(&mut field.typ);
+            }
+            f.walk_mut(rest);
+        }
+        Type::ExtendTypeRow {
+            ref mut types,
             ref mut rest,
         } => {
             for field in types {
@@ -2720,9 +2793,6 @@ where
                     let field_type = alias.unresolved_type_mut();
                     f.walk_mut(field_type);
                 }
-            }
-            for field in fields {
-                f.walk_mut(&mut field.typ);
             }
             f.walk_mut(rest);
         }
@@ -2889,13 +2959,29 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).poly_record(types, fields, rest)
         }
 
-        fn extend_row(
+        fn extend_full_row(
             &mut self,
             types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
             fields: Vec<$crate::types::Field<$id, $typ>>,
             rest: $typ,
         ) -> $typ {
-            $crate::expr!(self, $($tokens)+).extend_row(types, fields, rest)
+            $crate::expr!(self, $($tokens)+).extend_full_row(types, fields, rest)
+        }
+
+        fn extend_row(
+            &mut self,
+            fields: Vec<$crate::types::Field<$id, $typ>>,
+            rest: $typ,
+        ) -> $typ {
+            $crate::expr!(self, $($tokens)+).extend_row(fields, rest)
+        }
+
+        fn extend_type_row(
+            &mut self,
+            types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
+            rest: $typ,
+        ) -> $typ {
+            $crate::expr!(self, $($tokens)+).extend_type_row(types, rest)
         }
 
         fn generic(&mut self, typ: $crate::types::Generic<$id>) -> $typ {
@@ -2937,12 +3023,12 @@ macro_rules! forward_type_interner_methods {
         fn alias_group(
             &mut self,
             group: Vec<$crate::types::AliasData<$id, $typ>>,
-            is_implicit_iter: impl IntoIterator<Item = bool>
             ) -> Vec<$crate::types::Alias<$id, $typ>>
         where
             $typ: $crate::types::TypeExt<Id = $id>,
+            $id: PartialEq,
         {
-            $crate::expr!(self, $($tokens)+).alias_group(group, is_implicit_iter)
+            $crate::expr!(self, $($tokens)+).alias_group(group)
         }
 
         /*
@@ -3064,7 +3150,7 @@ pub trait TypeContext<Id, T> {
     }
 
     fn poly_variant(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
-        let row = self.extend_row(Vec::new(), fields, rest);
+        let row = self.extend_row(fields, rest);
         self.intern(Type::Variant(row))
     }
 
@@ -3074,7 +3160,7 @@ pub trait TypeContext<Id, T> {
     }
 
     fn poly_effect(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
-        let extend_row = self.extend_row(Vec::new(), fields, rest);
+        let extend_row = self.extend_row(fields, rest);
         self.intern(Type::Effect(extend_row))
     }
 
@@ -3095,7 +3181,6 @@ pub trait TypeContext<Id, T> {
         let empty_row = self.empty_row();
         Type::Record(
             self.extend_row(
-                vec![],
                 elems
                     .into_iter()
                     .enumerate()
@@ -3120,24 +3205,33 @@ pub trait TypeContext<Id, T> {
         fields: Vec<Field<Id, T>>,
         rest: T,
     ) -> T {
-        let row = self.extend_row(types, fields, rest);
+        let row = self.extend_full_row(types, fields, rest);
         self.intern(Type::Record(row))
     }
 
-    fn extend_row(
+    fn extend_full_row(
         &mut self,
         types: Vec<Field<Id, Alias<Id, T>>>,
         fields: Vec<Field<Id, T>>,
         rest: T,
     ) -> T {
-        if types.is_empty() && fields.is_empty() {
+        let rest = self.extend_row(fields, rest);
+        self.extend_type_row(types, rest)
+    }
+
+    fn extend_row(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        if fields.is_empty() {
             rest
         } else {
-            self.intern(Type::ExtendRow {
-                types,
-                fields,
-                rest,
-            })
+            self.intern(Type::ExtendRow { fields, rest })
+        }
+    }
+
+    fn extend_type_row(&mut self, types: Vec<Field<Id, Alias<Id, T>>>, rest: T) -> T {
+        if types.is_empty() {
+            rest
+        } else {
+            self.intern(Type::ExtendTypeRow { types, rest })
         }
     }
 
@@ -3187,7 +3281,12 @@ pub trait TypeContext<Id, T> {
     fn alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         self.intern(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::from(vec![AliasData { name, args, typ }]),
+            group: Arc::from(vec![AliasData {
+                name,
+                args,
+                typ,
+                is_implicit: false,
+            }]),
         }))
     }
 
@@ -3256,24 +3355,20 @@ pub trait TypeContext<Id, T> {
         }
     }
 
-    fn alias_group(
-        &mut self,
-        group: Vec<AliasData<Id, T>>,
-        is_implicit_iter: impl IntoIterator<Item = bool>,
-    ) -> Vec<Alias<Id, T>>
+    fn alias_group(&mut self, group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>>
     where
         T: TypeExt<Id = Id>,
+        Id: PartialEq,
     {
         let group = Arc::<[_]>::from(group);
         (0..group.len())
-            .zip(is_implicit_iter)
-            .map(|(index, is_implicit)| {
+            .map(|index| {
                 let typ = Type::Alias(AliasRef {
                     index,
                     group: group.clone(),
                 });
                 let flags = Flags::from_type(&typ)
-                    | (if is_implicit {
+                    | (if group[index].is_implicit {
                         Flags::HAS_IMPLICIT
                     } else {
                         Flags::empty()
@@ -3723,7 +3818,6 @@ where
         Type::Variant(ref row) => f.visit(row).map(|row| f.make(Type::Variant(row))),
         Type::Effect(ref row) => f.visit(row).map(|row| f.make(Type::Effect(row))),
         Type::ExtendRow {
-            ref types,
             ref fields,
             ref rest,
         } => {
@@ -3733,9 +3827,17 @@ where
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                f.make(Type::ExtendRow {
+                f.make(Type::ExtendRow { fields, rest })
+            })
+        }
+        Type::ExtendTypeRow {
+            ref types,
+            ref rest,
+        } => {
+            let new_rest = f.visit(rest);
+            new_rest.map(|rest| {
+                f.make(Type::ExtendTypeRow {
                     types: types.clone(),
-                    fields,
                     rest,
                 })
             })
@@ -3849,6 +3951,7 @@ where
         name: alias.name.clone(),
         args: alias.args.clone(),
         typ: translate(&alias.typ),
+        is_implicit: alias.is_implicit,
     }
 }
 
@@ -3906,8 +4009,23 @@ where
             kind: skolem.kind.clone(),
         })),
         Type::ExtendRow {
-            ref types,
             ref fields,
+            ref rest,
+        } => {
+            let fields = fields
+                .iter()
+                .map(|field| Field {
+                    name: field.name.clone(),
+                    typ: translate(interner, &field.typ),
+                })
+                .collect();
+
+            let rest = translate(interner, rest);
+
+            interner.extend_row(fields, rest)
+        }
+        Type::ExtendTypeRow {
+            ref types,
             ref rest,
         } => {
             let types = types
@@ -3920,18 +4038,9 @@ where
                     },
                 })
                 .collect();
-
-            let fields = fields
-                .iter()
-                .map(|field| Field {
-                    name: field.name.clone(),
-                    typ: translate(interner, &field.typ),
-                })
-                .collect();
-
             let rest = translate(interner, rest);
 
-            interner.extend_row(types, fields, rest)
+            interner.extend_type_row(types, rest)
         }
         Type::Hole => interner.hole(),
         Type::Opaque => interner.opaque(),

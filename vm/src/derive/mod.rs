@@ -53,12 +53,12 @@ fn sequence_actions(
                 .map(|id| Argument::explicit(pos::spanned(span, id)))
                 .collect(),
             body: Box::new(packed_expr),
-            id: TypedIdent::new(symbols.symbol("pack_record")),
+            id: TypedIdent::new(symbols.simple_symbol("pack_record")),
         }),
     );
     let map_expr = app(
         span,
-        symbols.symbol("map"),
+        symbols.simple_symbol("map"),
         vec![
             paren(span, pack_record),
             paren(span, action(&field_symbols.first().expect("FIXME").name)),
@@ -67,7 +67,7 @@ fn sequence_actions(
 
     field_symbols.iter().skip(1).fold(map_expr, |prev, symbol| {
         let deserialize_field = action(&symbol.name);
-        infix(span, prev, symbols.symbol("<*>"), deserialize_field)
+        infix(span, prev, symbols.simple_symbol("<*>"), deserialize_field)
     })
 }
 
@@ -127,14 +127,14 @@ fn generate_import_(
                 types: type_fields
                     .iter()
                     .map(|f| PatternField {
-                        name: pos::spanned(span, symbols.symbol(*f)),
+                        name: pos::spanned(span, symbols.simple_symbol(*f)),
                         value: None,
                     })
                     .collect(),
                 fields: fields
                     .iter()
                     .map(|f| PatternField {
-                        name: pos::spanned(span, symbols.symbol(*f)),
+                        name: pos::spanned(span, symbols.simple_symbol(*f)),
                         value: None,
                     })
                     .collect(),
@@ -143,7 +143,7 @@ fn generate_import_(
         args: Vec::new(),
         expr: app(
             span,
-            symbols.symbol("import!"),
+            symbols.simple_symbol("import!"),
             vec![project(span, symbols, import)],
         ),
         metadata: Default::default(),
@@ -155,7 +155,7 @@ fn generate_import_(
 fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<Symbol> {
     p.split('.')
         .fold(None, |acc, name| {
-            let symbol = symbols.symbol(name);
+            let symbol = symbols.simple_symbol(name);
             Some(match acc {
                 Some(expr) => {
                     pos::spanned(span, Expr::Projection(Box::new(expr), symbol, Type::hole()))
@@ -226,7 +226,7 @@ fn binding_type(
     self_type: AstType<Symbol>,
     bind: &TypeBinding<Symbol>,
 ) -> AstType<Symbol> {
-    let derive_type: AstType<_> = Type::ident(symbols.symbol(derive_type_name));
+    let derive_type: AstType<_> = Type::ident(symbols.simple_symbol(derive_type_name));
     Type::function_implicit(
         bind.alias
             .value

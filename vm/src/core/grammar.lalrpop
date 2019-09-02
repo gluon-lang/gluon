@@ -17,8 +17,8 @@ Comma<Rule>: Vec<Rule> =
 
 
 Identifier: Symbol = {
-    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>),
-    <r"\(#?[A-Za-z_]*[+\-*/]\)"> => symbols.symbol(&<>[1..<>.len() - 1])
+    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.simple_symbol(<>),
+    <r"\(#?[A-Za-z_]*[+\-*/]\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1])
 };
 
 Field: (Symbol, Option<Symbol>) = {
@@ -61,7 +61,7 @@ AtomicExpr: Expr<'a> = {
     "(" <Expr> ")",
     "{" <args: Comma<FieldExpr>> "}" => {
         let id = TypedIdent {
-            name: symbols.symbol("<record>"),
+            name: symbols.simple_symbol("<record>"),
             typ: Type::record(vec![], args.iter()
                 .map(|&(ref arg, _)| Field { name: arg.clone(), typ: Type::hole(), })
                 .collect()),

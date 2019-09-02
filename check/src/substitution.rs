@@ -142,10 +142,6 @@ pub trait Substitutable: Sized {
     fn contains_variables(&self) -> bool {
         true
     }
-
-    fn on_union(&self) -> Option<&Self> {
-        None
-    }
 }
 
 pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: u32) -> bool
@@ -157,22 +153,26 @@ where
         var: u32,
         subs: &'a Substitution<T>,
     }
-    impl<'a, 't, T> Walker<'t, T> for Occurs<'a, T>
+    impl<'t, T> Walker<'t, T> for Occurs<'t, T>
     where
         T: Substitutable,
     {
-        fn walk(&mut self, typ: &'t T) {
-            if !typ.contains_variables() || self.occurs {
+        fn walk(&mut self, mut typ: &'t T) {
+            if !typ.contains_variables() {
                 return;
             }
-            let typ = self.subs.real(typ);
             if let Some(other) = typ.get_var() {
-                if self.var.get_id() == other.get_id() {
-                    self.occurs = true;
-                    typ.traverse(self);
-                    return;
+                let other_id = other.get_id();
+                if let Some(real_type) = self.subs.find_type_for_var(other_id) {
+                    typ = real_type;
+                } else {
+                    if self.var.get_id() == other_id {
+                        self.occurs = true;
+                        typ.traverse(self);
+                        return;
+                    }
+                    self.subs.update_level(self.var, other.get_id());
                 }
-                self.subs.update_level(self.var, other.get_id());
             }
             typ.traverse(self);
         }
@@ -216,7 +216,7 @@ pub struct Level(u32);
 impl ena::unify::UnifyValue for Level {
     type Error = ena::unify::NoError;
     fn unify_values(l: &Self, r: &Self) -> Result<Self, Self::Error> {
-        Ok(if l < r { l.clone() } else { r.clone() })
+        Ok(*l.min(r))
     }
 }
 
@@ -298,7 +298,7 @@ where
 
     pub fn replace(&mut self, var: u32, t: T) {
         debug_assert!(t.get_id() != Some(var));
-        self.types_undo.borrow_mut().push(var);
+        self.types_undo.get_mut().push(var);
         self.types.insert(var as usize, t.into());
     }
 
@@ -333,9 +333,9 @@ where
     /// Assumes that no variables unified with anything (but variables < level may exist)
     pub fn clear_from(&mut self, level: u32) {
         self.union = RefCell::new(ena::unify::InPlaceUnificationTable::new());
-        let mut u = self.union.borrow_mut();
-        for _ in 0..level {
-            u.new_key(Level(::std::u32::MAX));
+        let u = self.union.get_mut();
+        for var in 0..level {
+            u.new_key(Level(var));
         }
 
         let variable_cache = self.variable_cache.get_mut();
@@ -367,11 +367,7 @@ where
         F: FnOnce(u32) -> T,
     {
         let var_id = self.variables.len() as u32;
-        let id = self
-            .union
-            .borrow_mut()
-            .new_key(Level(::std::u32::MAX))
-            .index;
+        let id = self.union.borrow_mut().new_key(Level(var_id)).index;
         assert!(id as usize == self.variables.len());
         debug!("New var {}", self.variables.len());
 
@@ -413,23 +409,14 @@ where
     }
 
     /// Updates the level of `other` to be the minimum level value of `var` and `other`
-    pub fn update_level(&self, var: u32, other: u32) {
-        let level = ::std::cmp::min(self.get_level(var), self.get_level(other));
+    fn update_level(&self, var: u32, other: u32) {
         let mut union = self.union.borrow_mut();
-        union.union_value(other, Level(level));
+        let level = union.probe_value(var).min(union.probe_value(other));
+        union.union_value(other, level);
     }
 
-    pub fn set_level(&self, var: u32, level: u32) {
+    pub fn get_level(&self, var: u32) -> u32 {
         let mut union = self.union.borrow_mut();
-        union.union_value(var, Level(level));
-    }
-
-    pub fn get_level(&self, mut var: u32) -> u32 {
-        if let Some(v) = self.find_type_for_var(var) {
-            var = v.get_var().map_or(var, |v| v.get_id());
-        }
-        let mut union = self.union.borrow_mut();
-        union.union_value(var, Level(var));
         union.probe_value(var).0
     }
 
@@ -459,7 +446,7 @@ impl<T: Substitutable + Clone> Substitution<T> {
 
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union(&self, variable: &T, typ: &T) -> Result<Option<T>, Error<T>>
+    pub fn union(&self, variable: &T, typ: &T) -> Result<(), Error<T>>
     where
         T::Variable: Clone,
         T: fmt::Display,
@@ -467,42 +454,18 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         assert!(variable.get_id().is_some(), "Expected a variable");
         let id = variable.get_id().unwrap();
 
-        let resolved_type = typ.on_union();
-        let typ = resolved_type.unwrap_or(typ);
-        // Nothing needs to be done if both are the same variable already (also prevents the occurs
-        // check from failing)
-        if typ.get_var().map_or(false, |other| other.get_id() == id) {
-            return Ok(None);
-        }
-        if occurs(typ, self, id) {
-            return Err(Error::Occurs(variable.clone(), typ.clone()));
-        }
-        {
-            let id_type = self.find_type_for_var(id);
-            let other_type = self.real(typ);
-            if id_type.map_or(false, |x| x == other_type)
-                || other_type.get_var().map(|y| y.get_id()) == Some(id)
-            {
-                return Ok(None);
+        match typ.get_var() {
+            Some(other_var) if variable.get_var().is_some() => {
+                self.union.borrow_mut().union(id, other_var.get_id());
+            }
+            _ => {
+                if occurs(typ, self, id) {
+                    return Err(Error::Occurs(variable.clone(), typ.clone()));
+                }
+                self.insert(id.get_id(), typ.clone());
             }
         }
-        {
-            let typ = resolved_type.unwrap_or(typ);
-            match typ.get_var().map(|v| v.get_id()) {
-                Some(other_id) if variable.get_var().is_some() => {
-                    self.union.borrow_mut().union(id, other_id);
-                    self.update_level(id.get_id(), other_id);
-                    self.update_level(other_id, id.get_id());
-                }
-                _ => {
-                    if let Some(other_id) = typ.get_id() {
-                        self.update_level(id.get_id(), other_id);
-                    }
-                    self.insert(id.get_id(), typ.clone());
-                }
-            }
-        }
-        Ok(resolved_type.cloned())
+        Ok(())
     }
 }
 

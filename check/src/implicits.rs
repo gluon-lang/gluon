@@ -1,4 +1,4 @@
-use std::{cell::RefCell, convert::TryInto, fmt, rc::Rc, sync::Arc};
+use std::{convert::TryInto, fmt, rc::Rc, sync::Arc};
 
 use {itertools::Itertools, smallvec::SmallVec};
 
@@ -26,30 +26,37 @@ use crate::{
     TypecheckEnv,
 };
 
+fn spliterator<'a>(
+    subs: &'a Substitution<RcType>,
+    typ: &'a RcType,
+) -> impl Iterator<Item = SymbolKey> + 'a {
+    let mut current = Some(typ);
+    std::iter::from_fn(move || {
+        let typ = current?;
+        let (symbol, next) = split_type(subs, typ)?;
+        current = next;
+        Some(symbol)
+    })
+}
+
 fn split_type<'a>(
     subs: &'a Substitution<RcType>,
     typ: &'a RcType,
 ) -> Option<(SymbolKey, Option<&'a RcType>)> {
-    let symbol = match **subs.real(typ) {
-        Type::App(ref id, ref args) => {
-            return split_type(subs, id)
-                .map(|(k, _)| k)
-                .map(|key| (key, if args.len() == 1 { args.get(0) } else { None }));
+    let symbol = match &**subs.real(typ) {
+        Type::App(id, args) => {
+            return split_type(subs, id).map(|(key, _)| (key, args.get(0)));
         }
-        Type::Function(ArgType::Implicit, _, ref ret_type) => {
-            split_type(subs, ret_type)
-                    // Usually the implicit argument will appear directly inside type whose `SymbolKey`
-                    // that was returned so it is unlikely that partitition further
-                    .map(|(s, _)| s)
+        Type::Forall(_, typ) | Type::Function(ArgType::Implicit, _, typ) => {
+            return split_type(subs, typ)
         }
         Type::Function(ArgType::Explicit, ..) => {
             Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
         }
-        Type::Skolem(ref skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
-        Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
-        Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
-        Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
-        Type::Forall(_, ref typ) => return split_type(subs, typ),
+        Type::Skolem(skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
+        Type::Ident(id) => Some(SymbolKey::Owned(id.clone())),
+        Type::Alias(alias) => Some(SymbolKey::Owned(alias.name.clone())),
+        Type::Builtin(builtin) => Some(SymbolKey::Ref(builtin.symbol())),
         _ => None,
     };
     symbol.map(|s| (s, None))
@@ -130,109 +137,53 @@ impl<T> Default for Partition<T> {
 }
 
 impl<T> Partition<T> {
-    fn insert(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>, level: Level, value: T)
+    fn insert(&mut self, subs: &Substitution<RcType>, typ: &RcType, level: Level, value: T)
     where
         T: Clone,
     {
-        self.insert_(subs, typ, level, value);
-        // Ignore the insertion request at the top level as we know that the partitioning is 100%
-        // correct here (it matches on the implicit type rather than the argument to the implicit
-        // type)
-    }
-
-    fn insert_(
-        &mut self,
-        subs: &Substitution<RcType>,
-        typ: Option<&RcType>,
-        level: Level,
-        value: T,
-    ) -> bool
-    where
-        T: Clone,
-    {
-        match typ.and_then(|typ| split_type(subs, typ)) {
-            Some((symbol, rest)) => {
-                let partition = self.partition.entry(symbol).or_default();
-                if partition.insert_(subs, rest, level, value.clone()) {
-                    // Add a fallback value, ideally we shouldn't need this
-                    partition.rest.push((level, value));
-                }
-                true
-            }
-            None => {
-                self.rest.push((level, value));
-                false
-            }
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            partition = partition.partition.entry(symbol).or_default();
+            partition.rest.push((level, value.clone()));
         }
     }
 
-    fn remove(&mut self, subs: &Substitution<RcType>, typ: Option<&RcType>) -> bool {
-        match typ.and_then(|typ| split_type(subs, typ)) {
-            Some((symbol, rest)) => {
-                let partition = self
-                    .partition
-                    .get_mut(&symbol)
-                    .expect("Entry from insert call");
-                if partition.remove(subs, rest) {
-                    partition.rest.pop();
-                }
-                true
-            }
-            None => {
-                self.rest.pop();
-                false
-            }
+    fn remove(&mut self, subs: &Substitution<RcType>, typ: &RcType) {
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            partition = partition
+                .partition
+                .get_mut(&symbol)
+                .expect("Entry from insert call");
+            partition.rest.pop();
         }
     }
 
     fn get_candidates<'a>(
         &'a self,
         subs: &Substitution<RcType>,
-        typ: Option<&RcType>,
+        typ: &RcType,
         implicit_bindings_level: Level,
         consumer: &mut impl FnMut(&'a T),
-    ) -> Option<()>
-    where
+    ) where
         T: fmt::Debug,
     {
         fn f<U>(t: &(Level, U)) -> &U {
             &t.1
         }
-        match typ.and_then(|typ| split_type(subs, &typ)) {
-            Some((symbol, rest)) => {
-                match self.partition.get(&symbol).and_then(|bindings| {
-                    bindings.get_candidates(subs, rest, implicit_bindings_level, consumer)
-                }) {
-                    Some(()) => Some(()),
-                    None => {
-                        let end = self
-                            .rest
-                            .iter()
-                            .rposition(|(level, _)| *level <= implicit_bindings_level)
-                            .map_or(0, |i| i + 1);
-                        self.rest[..end].iter().map(f).for_each(consumer);
-                        if end == 0 {
-                            None
-                        } else {
-                            Some(())
-                        }
-                    }
-                }
-            }
-            None => {
-                let end = self
-                    .rest
-                    .iter()
-                    .rposition(|(level, _)| *level <= implicit_bindings_level)
-                    .map_or(0, |i| i + 1);
-                self.rest[..end].iter().map(f).for_each(consumer);
-                if end == 0 {
-                    None
-                } else {
-                    Some(())
-                }
+        let mut partition = self;
+        for symbol in spliterator(subs, typ) {
+            match partition.partition.get(&symbol) {
+                Some(bindings) => partition = bindings,
+                None => break,
             }
         }
+        let end = partition
+            .rest
+            .iter()
+            .rposition(|(level, _)| *level <= implicit_bindings_level)
+            .map_or(0, |i| i + 1);
+        partition.rest[..end].iter().map(f).for_each(&mut *consumer);
     }
 }
 
@@ -280,14 +231,10 @@ impl ImplicitBindings {
         path: &[TypedIdent<Symbol, RcType>],
         typ: &RcType,
     ) {
-        if let Some(definition) = definition {
-            self.definitions.insert(definition.clone(), ());
-        }
-
         let level = Level(self.partition_insertions.len().try_into().unwrap());
 
         self.partition
-            .insert(subs, Some(typ), level, (Rc::from(&path[..]), typ.clone()));
+            .insert(subs, typ, level, (Rc::from(&path[..]), typ.clone()));
 
         self.partition_insertions
             .push(Some((typ.clone(), definition.cloned())));
@@ -308,9 +255,7 @@ impl ImplicitBindings {
     ) -> impl DoubleEndedIterator<Item = ImplicitBinding> {
         let mut candidates = Vec::new();
         self.partition
-            .get_candidates(subs, Some(typ), level, &mut |bind| {
-                candidates.push(bind.clone())
-            });
+            .get_candidates(subs, typ, level, &mut |bind| candidates.push(bind.clone()));
         candidates.into_iter()
     }
 
@@ -325,7 +270,7 @@ impl ImplicitBindings {
             if let Some(definition) = definition {
                 self.definitions.remove(&definition);
             }
-            self.partition.remove(subs, Some(&typ));
+            self.partition.remove(subs, &typ);
         }
     }
 }
@@ -754,7 +699,6 @@ pub struct ImplicitResolver<'a> {
     pub(crate) implicit_vars: ScopedMap<Symbol, Level>,
     visited: ScopedMap<Box<[Symbol]>, Box<[RcType]>>,
     alias_resolver: resolve::AliasRemover<RcType>,
-    is_implicit_memo: RefCell<FnvMap<SymbolKey, bool>>,
     path: Vec<TypedIdent<Symbol, RcType>>,
 }
 
@@ -770,13 +714,22 @@ impl<'a> ImplicitResolver<'a> {
             implicit_vars: ScopedMap::new(),
             visited: Default::default(),
             alias_resolver: resolve::AliasRemover::new(),
-            is_implicit_memo: Default::default(),
             path: Vec::new(),
         }
     }
 
     pub fn on_stack_var(&mut self, subs: &Substitution<RcType>, id: &Symbol, typ: &RcType) {
-        self.add_implicits_of_record(subs, id, typ);
+        self.alias_resolver.clear();
+
+        self.path.clear();
+        self.path.push(TypedIdent {
+            name: id.clone(),
+            typ: typ.clone(),
+        });
+
+        let meta = self.metadata.get(id).cloned();
+
+        self.add_implicits_of_ident(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
     }
 
     pub fn add_implicits_of_record(
@@ -797,7 +750,7 @@ impl<'a> ImplicitResolver<'a> {
         self.add_implicits_of_record_rec(subs, typ, meta.as_ref().map(|m| &**m), &mut Vec::new());
     }
 
-    fn add_implicits_of_record_rec(
+    fn add_implicits_of_ident(
         &mut self,
         mut subs: &Substitution<RcType>,
         typ: &RcType,
@@ -813,7 +766,11 @@ impl<'a> ImplicitResolver<'a> {
         // add it again to prevent ambiguities
         if let Some(metadata) = metadata {
             if let Some(ref definition) = metadata.definition {
-                if self.implicit_bindings.definitions.contains_key(definition) {
+                if self
+                    .implicit_bindings
+                    .definitions
+                    .insert(definition.clone(), ())
+                {
                     return;
                 }
             }
@@ -821,30 +778,47 @@ impl<'a> ImplicitResolver<'a> {
 
         let opt = self.try_create_implicit(metadata, typ);
 
-        let mut typ = typ.clone();
         if let Some(definition) = opt {
             let typ = subs.forall(forall_params.iter().cloned().collect(), typ.clone());
 
             self.implicit_bindings
                 .insert(subs, definition, &self.path, &typ);
-        }
 
+            self.add_implicits_of_record_rec(subs, &typ, metadata, forall_params)
+        }
+    }
+
+    fn add_implicits_of_record_rec(
+        &mut self,
+        mut subs: &Substitution<RcType>,
+        typ: &RcType,
+        metadata: Option<&Metadata>,
+        forall_params: &mut Vec<Generic<Symbol>>,
+    ) {
         let forall_params_len_before = forall_params.len();
 
+        let mut typ = typ.clone();
         while let Type::Forall(params, next) = &*typ {
             forall_params.extend(params.iter().cloned());
             typ = next.clone();
         }
 
-        let raw_type =
-            match self
-                .alias_resolver
-                .remove_aliases(&self.environment, &mut subs, typ.clone())
-            {
-                Ok(t) => t,
-                // Don't recurse into self recursive aliases
-                Err(_) => return,
-            };
+        let t = self.alias_resolver.remove_aliases_predicate(
+            &self.environment,
+            &mut subs,
+            typ.clone(),
+            |alias| {
+                alias
+                    .unresolved_type()
+                    .flags()
+                    .contains(Flags::HAS_IMPLICIT)
+            },
+        );
+        let raw_type = match t {
+            Ok(t) => t,
+            // Don't recurse into self recursive aliases
+            Err(_) => return,
+        };
         match *raw_type {
             Type::Record(_) => {
                 for field in raw_type.row_iter() {
@@ -861,12 +835,7 @@ impl<'a> ImplicitResolver<'a> {
                         typ: field.typ.clone(),
                     });
 
-                    self.add_implicits_of_record_rec(
-                        subs,
-                        &field.typ,
-                        field_metadata,
-                        forall_params,
-                    );
+                    self.add_implicits_of_ident(subs, &field.typ, field_metadata, forall_params);
 
                     self.path.pop();
                 }
@@ -881,28 +850,17 @@ impl<'a> ImplicitResolver<'a> {
         metadata: Option<&'m Metadata>,
         typ: &RcType,
     ) -> Option<Option<&'m Symbol>> {
-        let has_implicit_attribute =
-            |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
-        let mut is_implicit = metadata.map(&has_implicit_attribute).unwrap_or(false);
-
-        if !is_implicit {
-            // Look at the type without any implicit arguments
-            let mut iter = types::implicit_arg_iter(typ.remove_forall());
-            for _ in iter.by_ref() {}
-            is_implicit = iter
-                .typ
-                .remove_forall()
-                .owned_name()
-                .map_or(false, |typename| {
-                    let mut is_implicit_memo = self.is_implicit_memo.borrow_mut();
-                    *is_implicit_memo.entry(typename.clone()).or_insert_with(|| {
-                        self.metadata
-                            .get(&*typename)
-                            .or_else(|| self.environment.get_metadata(&typename))
-                            .map_or(false, |m| has_implicit_attribute(m))
-                    })
-                });
-        }
+        // Look at the type without any implicit arguments
+        let mut iter = types::implicit_arg_iter(typ.remove_forall());
+        for _ in iter.by_ref() {}
+        let is_implicit = iter
+            .typ
+            .remove_forall()
+            .applied_alias()
+            .map_or(false, |alias| alias.is_implicit())
+            || metadata
+                .and_then(|metadata: &Metadata| metadata.get_attribute("implicit"))
+                .is_some();
 
         if is_implicit {
             Some(metadata.and_then(|m| m.definition.as_ref()))
@@ -961,5 +919,41 @@ fn smallers(state: unify_type::State, new_types: &[RcType], old_types: &[RcType]
                 Size::Equal => smaller(state.clone(), new, old),
             })
             == Size::Smaller
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use base::{kind::Kind, types::SharedInterner};
+
+    use crate::tests::*;
+
+    #[test]
+    fn spliterator_test() {
+        let interner = SharedInterner::default();
+        let subs = Substitution::new(Kind::typ(), interner);
+
+        let a = intern("A");
+        let b = intern("B");
+
+        let typ = Type::app(Type::ident(a.clone()), collect![Type::ident(b.clone())]);
+        assert_eq!(
+            spliterator(&subs, &typ).collect::<Vec<_>>(),
+            vec![SymbolKey::Owned(a.clone()), SymbolKey::Owned(b.clone())]
+        );
+
+        let typ = Type::app(
+            Type::ident(a.clone()),
+            collect![Type::app(
+                Type::ident(b.clone()),
+                collect![Type::generic(Generic::new(intern("c"), Kind::typ()))]
+            )],
+        );
+        assert_eq!(
+            spliterator(&subs, &typ).collect::<Vec<_>>(),
+            vec![SymbolKey::Owned(a), SymbolKey::Owned(b)]
+        );
     }
 }

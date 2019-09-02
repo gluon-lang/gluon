@@ -299,10 +299,6 @@ impl Substitutable for RcType<Symbol> {
         self.instantiate_generics(&mut subs, &mut FnvMap::default())
     }
 
-    fn on_union(&self) -> Option<&Self> {
-        None
-    }
-
     fn contains_variables(&self) -> bool {
         self.flags().contains(Flags::HAS_VARIABLES)
     }
@@ -470,12 +466,10 @@ where
 
         (
             &Type::ExtendRow {
-                types: ref l_types,
                 fields: ref l_args,
                 rest: ref l_rest,
             },
             &Type::ExtendRow {
-                types: ref r_types,
                 fields: ref r_args,
                 rest: ref r_rest,
             },
@@ -487,7 +481,6 @@ where
                     .iter()
                     .zip(r_args)
                     .all(|(l, r)| l.name.name_eq(&r.name))
-                && l_types == r_types
             {
                 let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
                     unifier
@@ -500,19 +493,9 @@ where
                     new_args,
                     l_rest,
                     new_rest,
-                    |fields, rest| subs.extend_row(l_types.clone(), fields, rest),
+                    |fields, rest| subs.extend_row(fields, rest),
                 ))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
-                for l_typ in expected.type_field_iter() {
-                    if actual
-                        .type_field_iter()
-                        .find(|r_typ| *r_typ == l_typ)
-                        .is_none()
-                    {
-                        return Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()));
-                    }
-                }
-
                 // HACK For non polymorphic records we need to care about field order as the
                 // compiler assumes the order the fields occur in the type determines how
                 // to access them
@@ -572,16 +555,37 @@ where
                     new_args,
                     l_rest,
                     new_rest,
-                    |fields, rest| subs.extend_row(l_types.clone(), fields, rest),
+                    |fields, rest| subs.extend_row(fields, rest),
                 ))
             } else {
                 unify_rows(unifier, expected, actual)
             }
         }
 
-        (&Type::ExtendRow { .. }, &Type::EmptyRow) | (&Type::EmptyRow, &Type::ExtendRow { .. }) => {
-            unify_rows(unifier, expected, actual)
+        (
+            &Type::ExtendTypeRow {
+                types: ref l_types,
+                rest: ref l_rest,
+            },
+            &Type::ExtendTypeRow {
+                types: ref r_types,
+                rest: ref r_rest,
+            },
+        ) => {
+            let rest_opt = unifier.try_match(l_rest, r_rest);
+            if l_types == r_types {
+                Ok(rest_opt.map(|rest| subs.extend_type_row(l_types.clone(), rest)))
+            } else {
+                return Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()));
+            }
         }
+
+        (&Type::ExtendTypeRow { .. }, &Type::ExtendRow { .. })
+        | (&Type::ExtendRow { .. }, &Type::ExtendTypeRow { .. })
+        | (&Type::EmptyRow, &Type::ExtendTypeRow { .. })
+        | (&Type::ExtendTypeRow { .. }, &Type::EmptyRow)
+        | (&Type::ExtendRow { .. }, &Type::EmptyRow)
+        | (&Type::EmptyRow, &Type::ExtendRow { .. }) => unify_rows(unifier, expected, actual),
 
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(actual.clone()))
@@ -872,8 +876,11 @@ where
             }
             _ => {
                 rest = subs.new_var();
-                let l_rest =
-                    subs.extend_row(types_missing_from_right, missing_from_right, rest.clone());
+                let l_rest = subs.extend_full_row(
+                    types_missing_from_right,
+                    missing_from_right,
+                    rest.clone(),
+                );
                 unifier.try_match(&l_rest, r_iter.current_type());
                 types.extend(l_rest.type_field_iter().cloned());
                 fields.extend(l_rest.row_iter().cloned());
@@ -906,7 +913,7 @@ where
             _ => {
                 rest = subs.new_var();
                 let r_rest =
-                    subs.extend_row(types_missing_from_left, missing_from_left, rest.clone());
+                    subs.extend_full_row(types_missing_from_left, missing_from_left, rest.clone());
                 unifier.try_match(l_iter.current_type(), &r_rest);
                 types.extend(r_rest.type_field_iter().cloned());
                 fields.extend(r_rest.row_iter().cloned());
@@ -914,7 +921,7 @@ where
         }
     }
 
-    Ok(Some(subs.extend_row(types, fields, rest)))
+    Ok(Some(subs.extend_full_row(types, fields, rest)))
 }
 
 fn resolve_application<'t>(typ: &'t RcType, mut subs: &'t Substitution<RcType>) -> Option<RcType> {
@@ -979,7 +986,6 @@ where
                         return Err(());
                     }
                 }
-                debug!("Looking for alias reduction from `{}` to `{}`", l_id, r_id);
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
@@ -1361,17 +1367,41 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
         r: &RcType,
     ) -> Result<Option<RcType>, UnifyError<TypeError<Symbol, RcType>, RcType>> {
         let mut subs = self.unifier.subs;
-        // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
         debug!("{} <=> {}", l, r);
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (&**l, &**r) {
-            (&Type::Hole, _) => Ok(Some(r.clone())),
-            (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
+            (Type::Hole, _) => Ok(Some(r.clone())),
 
-            (_, &Type::Forall(ref params, ref r)) => {
+            (_, Type::Variable(_)) => {
+                debug!("Union merge {} <> {}", l, r);
+                subs.union(r, l)?;
+                Ok(None)
+            }
+            (Type::Variable(_), _) => {
+                debug!("Union merge {} <> {}", l, r);
+                subs.union(l, r)?;
+                Ok(Some(r.clone()))
+            }
+
+            (Type::Skolem(l_skolem), _) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                match &**r {
+                    Type::Skolem(r_skolem) if r_skolem.id > l_skolem.id => subs.union(r, l)?,
+                    _ => subs.union(l, r)?,
+                }
+                Ok(None)
+            }
+
+            (_, Type::Skolem(_)) if self.state.refinement => {
+                debug!("Skolem union {} <> {}", l, r);
+                subs.union(r, l)?;
+                Ok(None)
+            }
+
+            (_, Type::Forall(params, r)) => {
                 let mut variables = params
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
@@ -1380,46 +1410,34 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Subsume<'e>> {
                 self.try_match_res(l, &r)
             }
 
-            (_, &Type::Variable(_)) => {
-                debug!("Union merge {} <> {}", l, r);
-                subs.union(r, l)?;
-                Ok(None)
-            }
-            (&Type::Variable(_), _) => {
-                debug!("Union merge {} <> {}", l, r);
-                subs.union(l, r)?;
-                Ok(None)
-            }
+            (Type::Forall(_, _), _) => Ok(self.subsume_check(l, r)),
 
-            (&Type::Skolem(_), _) if self.state.refinement => {
-                debug!("Skolem union {} <> {}", l, r);
-                subs.union(l, r)?;
-                Ok(None)
-            }
-
-            (_, &Type::Skolem(_)) if self.state.refinement => {
-                debug!("Skolem union {} <> {}", l, r);
-                subs.union(r, l)?;
-                Ok(None)
-            }
-
-            (&Type::Forall(_, _), _) => Ok(self.subsume_check(l, r)),
-
-            _ if l.as_explicit_function().is_some() => {
-                let (arg_l, ret_l) = l.as_explicit_function().unwrap();
-                let (arg_r, ret_r) = self.unify_function(r);
-                Ok(self.subsume_check_function(arg_l, ret_l, &arg_r, &ret_r))
-            }
-            _ if r.as_explicit_function().is_some() => {
-                let (arg_r, ret_r) = r.as_explicit_function().unwrap();
-                let (arg_l, ret_l) = self.unify_function(l);
-                Ok(self.subsume_check_function(&arg_l, &ret_l, arg_r, ret_r))
-            }
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
                 // unify)
-                l.zip_match(r, self)
+                match (l.as_explicit_function(), r.as_explicit_function()) {
+                    (None, None) => l.zip_match(r, self),
+                    (l_func, r_func) => {
+                        let x;
+                        let (arg_l, ret_l) = match l_func {
+                            Some(x) => x,
+                            None => {
+                                x = self.unify_function(l);
+                                (&x.0, &x.1)
+                            }
+                        };
+                        let y;
+                        let (arg_r, ret_r) = match r_func {
+                            Some(y) => y,
+                            None => {
+                                y = self.unify_function(r);
+                                (&y.0, &y.1)
+                            }
+                        };
+                        Ok(self.subsume_check_function(arg_l, ret_l, &arg_r, &ret_r))
+                    }
+                }
             }
         }
     }

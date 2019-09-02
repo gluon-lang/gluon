@@ -366,7 +366,7 @@ pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
 }
 
 pub fn intern(s: &str) -> Symbol {
-    get_local_interner().borrow_mut().symbol(s)
+    get_local_interner().borrow_mut().simple_symbol(s)
 }
 
 pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
@@ -425,4 +425,12 @@ fn resolve_partially_applied_alias() {
         .to_string(),
         "String -> Int"
     );
+}
+
+#[test]
+fn forall_hides_generic_flag() {
+    let a = Generic::new("a", Kind::typ());
+    let gen = Type::<_, ArcType<_>>::generic(a.clone());
+    assert_eq!(gen.flags(), Flags::HAS_GENERICS);
+    assert_eq!(Type::forall(vec![a], gen).flags(), Flags::HAS_FORALL);
 }

@@ -20,7 +20,7 @@ pub fn generate(
 
     let x = Symbol::from("x");
 
-    let serialize_fn = TypedIdent::new(symbols.symbol("serialize"));
+    let serialize_fn = TypedIdent::new(symbols.simple_symbol("serialize"));
 
     let self_type: AstType<_> = Type::app(
         Type::ident(bind.alias.value.name.clone()),
@@ -48,20 +48,20 @@ pub fn generate(
 
                     let map = app(
                         span,
-                        symbols.symbol("singleton"),
+                        symbols.simple_symbol("singleton"),
                         vec![literal(span, symbol.name.declared_name()), serialize_field],
                     );
 
                     Some(match prev {
-                        Some(prev) => infix(span, prev, symbols.symbol("<>"), map),
+                        Some(prev) => infix(span, prev, symbols.simple_symbol("<>"), map),
                         None => map,
                     })
                 })
-                .unwrap_or_else(|| ident(span, symbols.symbol("empty")));
+                .unwrap_or_else(|| ident(span, symbols.simple_symbol("empty")));
 
             let construct_object_expr = app(
                 span,
-                symbols.symbol("Object"),
+                symbols.simple_symbol("Object"),
                 vec![paren(span, construct_map_expr)],
             );
 
@@ -167,7 +167,7 @@ pub fn generate(
     let semigroup_import = generate_import(span, symbols, &[], &["<>"], "std.semigroup");
     let result_import = generate_import_(span, symbols, &[], &[], true, "std.result");
 
-    let serialize_ = TypedIdent::new(symbols.symbol("serialize_"));
+    let serialize_ = TypedIdent::new(symbols.simple_symbol("serialize_"));
     let serializer_binding = ValueBinding {
         name: pos::spanned(span, Pattern::Ident(serialize_.clone())),
         args: vec![Argument::explicit(pos::spanned(
@@ -187,7 +187,7 @@ pub fn generate(
             types: Vec::new(),
             exprs: vec![ExprField {
                 metadata: Default::default(),
-                name: pos::spanned(span, symbols.symbol("serialize")),
+                name: pos::spanned(span, symbols.simple_symbol("serialize")),
                 value: Some(ident(span, serialize_.name.clone())),
             }],
             base: None,
@@ -212,7 +212,7 @@ pub fn generate(
     Ok(ValueBinding {
         name: pos::spanned(
             span,
-            Pattern::Ident(TypedIdent::new(symbols.symbol(format!(
+            Pattern::Ident(TypedIdent::new(symbols.simple_symbol(format!(
                 "serialize_{}",
                 bind.alias.value.name.declared_name()
             )))),

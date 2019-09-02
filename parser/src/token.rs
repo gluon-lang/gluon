@@ -16,12 +16,12 @@ pub enum Token<'input> {
     Identifier(&'input str),
     Operator(&'input str),
 
-    StringLiteral(String),
+    StringLiteral(StringLiteral<'input>),
     CharLiteral(char),
     IntLiteral(i64),
     ByteLiteral(u8),
     FloatLiteral(f64),
-    DocComment(Comment),
+    DocComment(Comment<&'input str>),
 
     Rec,
     Else,
@@ -122,9 +122,47 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub enum StringLiteral<'input> {
+    Escaped(&'input str),
+    Raw(&'input str),
+}
+
+impl StringLiteral<'_> {
+    pub fn unescape(&self) -> String {
+        match self {
+            StringLiteral::Escaped(s) => unescape_string_literal(s),
+            StringLiteral::Raw(s) => s.to_string(),
+        }
+    }
+}
+
+fn unescape_string_literal(mut s: &str) -> String {
+    let mut string = String::new();
+    while let Some(i) = s.bytes().position(|b| b == b'\\') {
+        let c = match s.as_bytes()[i + 1] {
+            b'\'' => '\'',
+            b'"' => '"',
+            b'\\' => '\\',
+            b'/' => '/',
+            b'n' => '\n',
+            b'r' => '\r',
+            b't' => '\t',
+            _ => panic!("Invalid escape"),
+        };
+        string.push_str(&s[..i]);
+        string.push(c);
+        s = &s[i + 2..];
+    }
+    string.push_str(s);
+
+    string
+}
+
 pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
 
 pub type SpError = Spanned<Error, Location>;
+pub type Result<T, E = SpError> = std::result::Result<T, E>;
 
 quick_error! {
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -331,7 +369,7 @@ impl<'input> Tokenizer<'input> {
             let skip = if comment.starts_with("/// ") { 4 } else { 3 };
             let doc = Token::DocComment(Comment {
                 typ: CommentType::Line,
-                content: comment[skip..].to_string(),
+                content: &comment[skip..],
             });
             Some(pos::spanned2(start, end, doc))
         } else {
@@ -353,7 +391,7 @@ impl<'input> Tokenizer<'input> {
                         // FIXME: whitespace alignment
                         let doc = Token::DocComment(Comment {
                             typ: CommentType::Block,
-                            content: comment[3..].trim().to_string(),
+                            content: &comment[3..].trim(),
                         });
                         return Ok(Some(pos::spanned2(start, end, doc)));
                     } else {
@@ -408,19 +446,23 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
-        let mut string = String::new();
+        let content_start = self.next_loc();
         loop {
-            let content_start = self.next_loc();
-            let (_end, s) = self.take_until(content_start, |b| b == b'"' || b == b'\\');
-            string.push_str(s);
+            let scan_start = self.next_loc();
+            self.take_until(scan_start, |b| b == b'"' || b == b'\\');
             match self.bump() {
                 Some((_, b'\\')) => {
-                    string.push(self.escape_code()? as char);
+                    self.escape_code()?;
                 }
                 Some((_, b'"')) => {
                     let end = self.next_loc();
 
-                    let token = Token::StringLiteral(string);
+                    let mut content_end = end;
+                    content_end.absolute.0 -= 1;
+
+                    let token = Token::StringLiteral(StringLiteral::Escaped(
+                        self.slice(content_start, content_end),
+                    ));
                     return Ok(pos::spanned2(start, end, token));
                 }
                 _ => break,
@@ -456,9 +498,9 @@ impl<'input> Tokenizer<'input> {
                             let end = self.next_loc();
                             let mut content_end = end;
                             content_end.absolute.0 -= delimiters + 1;
-                            let string = self.slice(content_start, content_end).into();
+                            let string = self.slice(content_start, content_end);
 
-                            let token = Token::StringLiteral(string);
+                            let token = Token::StringLiteral(StringLiteral::Raw(string));
                             return Ok(pos::spanned2(start, end, token));
                         }
                     }
@@ -712,7 +754,7 @@ mod test {
     use codespan::{ByteOffset, ColumnOffset};
 
     use super::*;
-    use super::{error, Tokenizer};
+    use super::{error, StringLiteral, Tokenizer};
     use crate::token::Token;
     use crate::token::Token::*;
 
@@ -845,24 +887,29 @@ mod test {
     #[test]
     fn string_literals() {
         test(
-            r#"foo "bar\"\n" baz "" "\t""#,
+            r#"foo "bar\"\n" baz "" "\t" "\"\"""#,
             vec![
                 (r#"~~~                      "#, Identifier("foo")),
                 (
                     r#"    ~~~~~~~~~            "#,
-                    StringLiteral("bar\"\n".to_string()),
+                    Token::StringLiteral(StringLiteral::Escaped("bar\\\"\\n")),
                 ),
                 (r#"              ~~~        "#, Identifier("baz")),
                 (
                     r#"                  ~~     "#,
-                    StringLiteral("".to_string()),
+                    Token::StringLiteral(StringLiteral::Escaped("")),
                 ),
                 (
                     r#"                     ~~~~"#,
-                    StringLiteral("\t".to_string()),
+                    Token::StringLiteral(StringLiteral::Escaped("\\t")),
+                ),
+                (
+                    r#"                          ~~~~~~"#,
+                    Token::StringLiteral(StringLiteral::Escaped(r#"\"\""#)),
                 ),
             ],
         );
+        assert_eq!(StringLiteral::Escaped(r#"\"\""#).unescape(), r#""""#);
     }
 
     #[test]
@@ -873,12 +920,12 @@ mod test {
                 (r####"~~~                      "####, Identifier("foo")),
                 (
                     r#"    ~~~~~~~~~~            "#,
-                    StringLiteral("bar\" ".to_string()),
+                    Token::StringLiteral(StringLiteral::Raw("bar\" ")),
                 ),
                 (r####"               ~~~        "####, Identifier("baz")),
                 (
                     r#"                   ~~~~~~~     "#,
-                    StringLiteral("".to_string()),
+                    Token::StringLiteral(StringLiteral::Raw("")),
                 ),
             ],
         );
@@ -1123,7 +1170,7 @@ mod test {
                     r#"   ~~~~~~~~~~~~~~~~"#,
                     DocComment(Comment {
                         typ: CommentType::Line,
-                        content: "hellooo/// hi".to_string(),
+                        content: "hellooo/// hi",
                     }),
                 ),
             ],
@@ -1140,7 +1187,7 @@ mod test {
                     r#"   ~~~~~~~~~~~~~~~~~"#,
                     DocComment(Comment {
                         typ: CommentType::Line,
-                        content: "hellooo/// hi".to_string(),
+                        content: "hellooo/// hi",
                     }),
                 ),
             ],
@@ -1161,7 +1208,7 @@ mod test {
                     "            \n   ~~~~~~~~~~~~~~~~~",
                     DocComment(Comment {
                         typ: CommentType::Line,
-                        content: "hellooo/// hi".to_string(),
+                        content: "hellooo/// hi",
                     }),
                 ),
             ],

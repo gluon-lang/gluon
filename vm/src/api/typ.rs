@@ -85,7 +85,10 @@ where
     } else {
         type_cache.variant(variants)
     };
-    Ok((deserializer.state.symbols.symbol(deserializer.name), typ))
+    Ok((
+        deserializer.state.symbols.simple_symbol(deserializer.name),
+        typ,
+    ))
 }
 
 struct State<'de> {
@@ -479,7 +482,7 @@ where
             Some(field) => {
                 let value = seed.deserialize(&mut *self.deserializer)?;
                 self.types.push(Field::new(
-                    self.deserializer.state.symbols.symbol(field),
+                    self.deserializer.state.symbols.simple_symbol(field),
                     self.deserializer.typ.take().expect("typ"),
                 ));
                 Ok(value)
@@ -518,7 +521,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 
     fn unit_variant(self) -> Result<()> {
         self.de.variant = Some(Field::ctor(
-            self.de.state.symbols.symbol(self.variant),
+            self.de.state.symbols.simple_symbol(self.variant),
             vec![],
         ));
         Ok(())
@@ -530,7 +533,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     {
         let value = seed.deserialize(&mut *self.de)?;
         self.de.variant = Some(Field::ctor(
-            self.de.state.symbols.symbol(self.variant),
+            self.de.state.symbols.simple_symbol(self.variant),
             vec![self.de.typ.take().expect("typ")],
         ));
         Ok(value)
@@ -548,7 +551,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
             )
         };
         self.de.variant = Some(Field::ctor(
-            self.de.state.symbols.symbol(self.variant),
+            self.de.state.symbols.simple_symbol(self.variant),
             types,
         ));
         Ok(value)
@@ -566,7 +569,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
             )
         };
         self.de.variant = Some(Field::ctor(
-            self.de.state.symbols.symbol(self.variant),
+            self.de.state.symbols.simple_symbol(self.variant),
             vec![self.de.state.cache.record(vec![], types)],
         ));
         Ok(value)
@@ -597,8 +600,8 @@ mod tests {
             Type::record(
                 vec![],
                 vec![
-                    Field::new(symbols.symbol("x"), Type::int()),
-                    Field::new(symbols.symbol("name"), Type::string()),
+                    Field::new(symbols.simple_symbol("x"), Type::int()),
+                    Field::new(symbols.simple_symbol("name"), Type::string()),
                 ]
             )
         );
@@ -622,12 +625,19 @@ mod tests {
         assert_eq!(
             typ,
             Type::variant(vec![
-                Field::ctor(symbols.symbol("A"), vec![]),
-                Field::ctor(symbols.symbol("B"), vec![Type::int()]),
-                Field::ctor(symbols.symbol("C"), vec![Type::string(), Type::float()],),
-                Field::ctor(symbols.symbol("D"), vec![
-                    Type::record(vec![], vec![Field::new(symbols.symbol("foo"), Type::int())])
-                ]),
+                Field::ctor(symbols.simple_symbol("A"), vec![]),
+                Field::ctor(symbols.simple_symbol("B"), vec![Type::int()]),
+                Field::ctor(
+                    symbols.simple_symbol("C"),
+                    vec![Type::string(), Type::float()],
+                ),
+                Field::ctor(
+                    symbols.simple_symbol("D"),
+                    vec![Type::record(
+                        vec![],
+                        vec![Field::new(symbols.simple_symbol("foo"), Type::int())]
+                    )]
+                ),
             ])
         );
     }

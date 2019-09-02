@@ -244,7 +244,7 @@ impl<T: FieldTypes, U: FieldValues, R: VmType> VmType for Row<T, U, R> {
         T::field_types(vm, &mut type_fields);
         let mut fields = Vec::new();
         U::field_values(vm, &mut fields);
-        Type::extend_row(type_fields, fields, R::make_type(vm))
+        Type::extend_full_row(type_fields, fields, R::make_type(vm))
     }
 }
 

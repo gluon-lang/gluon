@@ -122,7 +122,10 @@ where
     }
 }
 
-impl<T> Shared for ArcType<T> {
+impl<Id> Shared for ArcType<Id>
+where
+    Id: PartialEq,
+{
     fn unique(&self) -> bool {
         ArcType::strong_count(self) == 1
     }
@@ -331,7 +334,7 @@ pub mod seq {
 
 impl<Id> SerializeState<SeSeed> for ArcType<Id>
 where
-    Id: SerializeState<SeSeed>,
+    Id: SerializeState<SeSeed> + PartialEq,
 {
     fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
