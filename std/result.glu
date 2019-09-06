@@ -1,4 +1,4 @@
-//@NO-IMPLICIT-PRELUDEJ
+//@NO-IMPLICIT-PRELUDE
 //! Error handling type.
 
 let { Eq, Ord, Ordering, (==) } = import! std.cmp
@@ -6,6 +6,7 @@ let { Show } = import! std.show
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
+let { Alternative, (<|>) } = import! std.alternative
 let { Result } = import! std.types
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
@@ -73,6 +74,18 @@ let monad : Monad (Result e) = {
         | Err err -> Err err,
 }
 
+let alternative ?alt : [Alternative m] -> Alternative (Result (m e)) =
+    let or a b =
+        match a with
+        | Ok a -> Ok a
+        | Err ea ->
+            match b with
+            | Ok b -> Ok b
+            | Err eb -> Err (ea <|> eb)
+    let empty = Err alt.empty
+
+    { applicative, or, empty }
+
 let foldable : Foldable (Result e) = {
     foldr = \f z r ->
         match r with
@@ -111,6 +124,7 @@ let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
     functor,
     applicative,
     monad,
+    alternative,
     foldable,
     traversable,
     show,
