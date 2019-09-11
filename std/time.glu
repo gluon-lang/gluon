@@ -2,6 +2,10 @@
 
 let time = import! std.time.prim
 
+// TODO: implement Eq Duration and Ord Duration
+// TODO: implement Eq Instant and Ord Instant
+// TODO: implement Eq SystemTime and Ord SystemTime
+
 {
     ..
     time
