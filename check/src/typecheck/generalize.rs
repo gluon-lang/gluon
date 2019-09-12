@@ -14,7 +14,8 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     /// We delay updating the substitution until after all recursive bindings have been typechecked
     /// to ensure that they get can figure out which variable got generalized for each binding
     delayed_generalizations: Vec<(u32, RcType)>,
-    variable_generator: TypeVariableGenerator,
+    variable_generator: Option<TypeVariableGenerator>,
+    top_type: RcType,
     pub tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,
 }
@@ -55,7 +56,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             level,
             unbound_variables: Default::default(),
             delayed_generalizations: Vec::new(),
-            variable_generator: TypeVariableGenerator::new(&tc.subs, typ),
+            variable_generator: None,
+            top_type: typ.clone(),
             tc,
             span,
         }
@@ -152,9 +154,18 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 let Self {
                     tc,
                     variable_generator,
+                    top_type,
                     ..
                 } = self;
                 let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                    let variable_generator = match variable_generator {
+                        Some(v) => v,
+                        None => {
+                            *variable_generator =
+                                Some(TypeVariableGenerator::new(&tc.subs, top_type));
+                            variable_generator.as_mut().unwrap()
+                        }
+                    };
                     // Create a prefix if none exists
                     let id = variable_generator.next_variable(tc);
 
@@ -249,7 +260,7 @@ impl TypeVariableGenerator {
         gather_foralls(&mut map, subs, typ);
         TypeVariableGenerator {
             map,
-            name: "".to_string(),
+            name: String::new(),
             i: 0,
         }
     }
@@ -260,7 +271,7 @@ impl TypeVariableGenerator {
         } else {
             let name = format!("{}{}", self.name, self.i);
             self.i += 1;
-            tc.symbols.symbol(&name[..])
+            tc.symbols.simple_symbol(&name[..])
         };
         self.map.insert(symbol.clone());
         let hole = tc.hole();
@@ -271,7 +282,7 @@ impl TypeVariableGenerator {
     fn next_variable_(&mut self, tc: &mut Typecheck) -> Symbol {
         for c in b'a'..(b'z' + 1) {
             self.name.push(c as char);
-            let symbol = tc.symbols.symbol(&self.name[..]);
+            let symbol = tc.symbols.simple_symbol(&self.name[..]);
             if !self.map.contains(&symbol) && tc.environment.skolem_variables.get(&symbol).is_none()
             {
                 return symbol;
@@ -322,35 +333,42 @@ fn unroll_record(
 ) -> Option<RcType> {
     let mut new_types = Vec::new();
     let mut new_fields = Vec::new();
-    let mut current = match *typ {
-        Type::ExtendRow {
-            ref types,
-            ref fields,
-            ref rest,
-        } => match **rest {
-            Type::ExtendRow { .. } => {
-                new_types.extend_from_slice(types);
+    let mut current = match &*typ {
+        Type::ExtendRow { fields, rest } => match **rest {
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
                 new_fields.extend_from_slice(fields);
                 rest
             }
             _ => return None,
         },
+
+        Type::ExtendTypeRow { types, rest } => match **rest {
+            Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => {
+                new_types.extend_from_slice(types);
+                rest
+            }
+            _ => return None,
+        },
+
         _ => return None,
     };
-    while let Type::ExtendRow {
-        ref types,
-        ref fields,
-        ref rest,
-    } = **current
-    {
-        new_types.extend_from_slice(types);
-        new_fields.extend_from_slice(fields);
-        current = rest;
+    loop {
+        match &**current {
+            Type::ExtendRow { fields, rest } => {
+                new_fields.extend_from_slice(fields);
+                current = rest;
+            }
+            Type::ExtendTypeRow { types, rest } => {
+                new_types.extend_from_slice(types);
+                current = rest;
+            }
+            _ => break,
+        }
     }
     if new_types.is_empty() && new_fields.is_empty() {
         None
     } else {
-        Some(interner.extend_row(new_types, new_fields, current.clone()))
+        Some(interner.extend_full_row(new_types, new_fields, current.clone()))
     }
 }
 

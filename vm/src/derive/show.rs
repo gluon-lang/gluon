@@ -16,7 +16,7 @@ pub fn generate(
     let span = bind.name.span;
 
     let x = Symbol::from("x");
-    let show_fn = TypedIdent::new(symbols.symbol("show_"));
+    let show_fn = TypedIdent::new(symbols.simple_symbol("show_"));
 
     let show_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {
@@ -41,24 +41,29 @@ pub fn generate(
                                 let show_function = if self_type {
                                     show_fn.name.clone()
                                 } else {
-                                    symbols.symbol("show")
+                                    symbols.simple_symbol("show")
                                 };
                                 let show = infix(
                                     span,
                                     literal(span, "("),
-                                    symbols.symbol("++"),
+                                    symbols.simple_symbol("++"),
                                     infix(
                                         span,
                                         app(span, show_function, vec![ident(span, x.name.clone())]),
-                                        symbols.symbol("++"),
+                                        symbols.simple_symbol("++"),
                                         literal(span, ")"),
                                     ),
                                 );
                                 infix(
                                     span,
                                     acc,
-                                    symbols.symbol("++"),
-                                    infix(span, literal(span, " "), symbols.symbol("++"), show),
+                                    symbols.simple_symbol("++"),
+                                    infix(
+                                        span,
+                                        literal(span, " "),
+                                        symbols.simple_symbol("++"),
+                                        show,
+                                    ),
                                 )
                             })
                     };
@@ -99,18 +104,18 @@ pub fn generate(
                     .fold(open_brace, |acc, (i, x)| {
                         let show = app(
                             span,
-                            symbols.symbol("show"),
+                            symbols.simple_symbol("show"),
                             vec![ident(span, x.name.clone())],
                         );
 
                         let show_field = infix(
                             span,
                             acc,
-                            symbols.symbol("++"),
+                            symbols.simple_symbol("++"),
                             infix(
                                 span,
                                 literal(span, &format!("{} = ", x.name.declared_name())),
-                                symbols.symbol("++"),
+                                symbols.simple_symbol("++"),
                                 show,
                             ),
                         );
@@ -120,12 +125,17 @@ pub fn generate(
                         infix(
                             span,
                             show_field,
-                            symbols.symbol("++"),
+                            symbols.simple_symbol("++"),
                             literal(span, suffix),
                         )
                     });
 
-                infix(span, show_expr, symbols.symbol("++"), literal(span, "}"))
+                infix(
+                    span,
+                    show_expr,
+                    symbols.simple_symbol("++"),
+                    literal(span, "}"),
+                )
             };
             Expr::Match(
                 Box::new(ident(span, x.clone())),
@@ -168,7 +178,7 @@ pub fn generate(
                 types: Vec::new(),
                 exprs: vec![ExprField {
                     metadata: Default::default(),
-                    name: pos::spanned(span, symbols.symbol("show")),
+                    name: pos::spanned(span, symbols.simple_symbol("show")),
                     value: Some(ident(span, show_fn.name.clone())),
                 }],
                 base: None,
@@ -179,9 +189,10 @@ pub fn generate(
     Ok(ValueBinding {
         name: pos::spanned(
             span,
-            Pattern::Ident(TypedIdent::new(
-                symbols.symbol(format!("show_{}", bind.alias.value.name.declared_name())),
-            )),
+            Pattern::Ident(TypedIdent::new(symbols.simple_symbol(format!(
+                "show_{}",
+                bind.alias.value.name.declared_name()
+            )))),
         ),
         args: Vec::new(),
         expr: pos::spanned(span, show_record_expr),

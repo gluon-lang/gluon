@@ -7,7 +7,7 @@ use crate::base::{
     pos::{self, ByteOffset, BytePos, Span},
     scoped_map::ScopedMap,
     source::Source,
-    symbol::{Symbol, SymbolModule},
+    symbol::{Symbol, SymbolData, SymbolModule},
     types::Type,
 };
 
@@ -82,7 +82,7 @@ pub fn rename<'s>(
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
             let new_id =
                 self.symbols
-                    .symbol(format!("{}:{}", self.symbols.string(&id), span.start()));
+                    .symbol(SymbolData { global: false, name: id.as_str(), location: Some((span.start().0, 0)) });
 
             let index = self.seen_symbols.entry(new_id.clone()).or_default();
             let new_id = if *index == 0 {
@@ -90,12 +90,11 @@ pub fn rename<'s>(
                 new_id
             } else {
                 *index += 1;
-                self.symbols.symbol(format!(
-                    "{}:{}_{}",
-                    self.symbols.string(&id),
-                    span.start(),
-                    index
-                ))
+                self.symbols.symbol(SymbolData {
+                    global: false,
+                    name: id.as_str(),
+                    location: Some((span.start().0, *index)),
+                } )
             };
 
             debug!("Rename binding `{:?}` = `{:?}`", id, new_id);
@@ -212,8 +211,12 @@ pub fn rename<'s>(
                 }
                 Expr::Lambda(ref mut lambda) => {
                     let location = self.source.location(expr.span.start()).unwrap_or_else(|| ice!("Lambda without source location"));
-                    let name = format!("{}.lambda:{}_{}", self.symbols.module(), location.line.number(), location.column.number());
-                    lambda.id.name = self.symbols.symbol(name);
+                    let name = format!("{}.lambda", self.symbols.module());
+                    lambda.id.name = self.symbols.symbol(SymbolData { global: false, location:
+                        
+                        
+                    Some(( location.line.0 + 1, location.column.0 + 1)
+                        ),name });
 
                     self.env.stack.enter_scope();
 
@@ -243,7 +246,7 @@ pub fn rename<'s>(
                     ref mut flat_map_id,
                     ..
                 }) => {
-                    let flat_map = self.symbols.symbol("flat_map");
+                    let flat_map = self.symbols.simple_symbol("flat_map");
                     *flat_map_id = Some(Box::new(pos::spanned(
                         Span::new(expr.span.end(), expr.span.start() + ByteOffset::from(2)),
                         Expr::Ident(TypedIdent {
@@ -307,8 +310,8 @@ pub fn rename<'s>(
         }
 
         fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<Self::Ident>) {
-            match s.value {
-                Type::ExtendRow { ref mut types, .. } => {
+            match &mut s.value {
+                Type::ExtendTypeRow { types, .. } => {
                     for field in types {
                         if let Some(alias) = field.typ.try_get_alias_mut() {
                             if let Some(new_name) = self.rename(&field.name) {
@@ -317,13 +320,13 @@ pub fn rename<'s>(
                         }
                     }
                 }
-                Type::Projection(ref mut ids) => {
+                Type::Projection( ids) => {
                     // The first id refers to a local variable so we need to rename it
                     if let Some(new_id) = self.rename(&mut ids[0]) {
                         ids[0] = new_id;
                     }
                 }
-                Type::Ident(ref mut id) => {
+                Type::Ident(id) => {
                     if let Some(new_id) = self.rename(id) {
                         *id = new_id;
                     }

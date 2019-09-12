@@ -13,7 +13,7 @@ use self::{
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
         pos::{BytePos, Spanned},
-        symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+        symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
         types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
     },
     check::{
@@ -63,7 +63,7 @@ pub fn intern_unscoped(s: &str) -> Symbol {
     let i = get_local_interner();
     let mut i = i.borrow_mut();
 
-    i.symbol(s)
+    i.simple_symbol(s)
 }
 
 pub fn intern(s: &str) -> Symbol {
@@ -71,7 +71,7 @@ pub fn intern(s: &str) -> Symbol {
     let mut interner = interner.borrow_mut();
 
     if s.starts_with(char::is_lowercase) {
-        interner.symbol(s)
+        interner.symbol(SymbolData::<&Name>::from(s))
     } else {
         SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
     }
@@ -103,7 +103,7 @@ impl MockEnv {
 
         MockEnv {
             bool: {
-                let bool_sym = interner.symbol("Bool");
+                let bool_sym = interner.simple_symbol("Bool");
                 let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
                 Alias::new(bool_sym, Vec::new(), bool_ty)
             },
@@ -295,13 +295,18 @@ where
 
 #[allow(dead_code)]
 pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
+    alias_implicit(s, args, typ, false)
+}
+
+pub fn alias_implicit(s: &str, args: &[&str], typ: ArcType, is_implicit: bool) -> ArcType {
     assert!(s.len() != 0);
-    Type::alias(
+    Type::alias_implicit(
         intern(s),
         args.iter()
             .map(|id| Generic::new(intern(id), Kind::typ()))
             .collect(),
         typ,
+        is_implicit,
     )
 }
 
@@ -311,12 +316,21 @@ pub fn variant(arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
 }
 
 pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> ArcType {
+    alias_variant_implicit(s, params, args, false)
+}
+
+pub fn alias_variant_implicit(
+    s: &str,
+    params: &[&str],
+    args: &[(&str, &[ArcType])],
+    is_implicit: bool,
+) -> ArcType {
     let variants = Type::variant(
         args.iter()
             .map(|(arg, types)| variant(arg, types))
             .collect(),
     );
-    alias(s, params, variants)
+    alias_implicit(s, params, variants, is_implicit)
 }
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
@@ -324,16 +338,11 @@ pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> A
 pub fn close_record(typ: ArcType) -> ArcType {
     types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
         Type::ExtendRow {
-            ref types,
             ref fields,
             ref rest,
         } => match **rest {
             Type::ExtendRow { .. } => None,
-            _ => Some(Type::extend_row(
-                types.clone(),
-                fields.clone(),
-                Type::empty_row(),
-            )),
+            _ => Some(Type::extend_row(fields.clone(), Type::empty_row())),
         },
         _ => None,
     })

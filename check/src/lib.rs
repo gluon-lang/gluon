@@ -113,7 +113,7 @@ mod tests {
         let mut interner = interner.borrow_mut();
 
         if s.starts_with(char::is_lowercase) {
-            interner.symbol(s)
+            interner.simple_symbol(s)
         } else {
             SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
         }

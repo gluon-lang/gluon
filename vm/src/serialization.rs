@@ -348,7 +348,7 @@ pub mod symbol {
     where
         D: Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(|s| seed.symbols.borrow_mut().symbol(s))
+        String::deserialize(deserializer).map(|s| seed.symbols.borrow_mut().simple_symbol(s))
     }
 
     pub fn serialize<S>(symbol: &Symbol, serializer: S, _state: &SeSeed) -> Result<S::Ok, S::Error>

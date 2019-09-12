@@ -212,7 +212,7 @@ f (Test ())
 "#;
     let result = support::typecheck(text);
 
-    let test = support::alias_variant("Test", &[], &[("Test", &[Type::unit()])]);
+    let test = support::alias_variant_implicit("Test", &[], &[("Test", &[Type::unit()])], true);
     assert_eq!(result, Ok(test));
 }
 

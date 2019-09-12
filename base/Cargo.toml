@@ -17,6 +17,7 @@ travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 bitflags = "1"
+hashbrown = "0.6"
 log = "0.4"
 quick-error = "1.0.0"
 fnv = "1.0.3"

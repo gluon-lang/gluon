@@ -308,8 +308,24 @@ impl<'a> KindCheck<'a> {
             }
 
             Type::ExtendRow {
-                ref mut types,
                 ref mut fields,
+                ref mut rest,
+            } => {
+                for field in fields {
+                    let kind = self.kindcheck(&mut field.typ)?;
+                    let type_kind = self.type_kind();
+                    self.unify(field.typ.span(), &type_kind, kind)?;
+                }
+
+                let kind = self.kindcheck(rest)?;
+                let row_kind = self.row_kind();
+                self.unify(rest.span(), &row_kind, kind)?;
+
+                Ok(row_kind)
+            }
+
+            Type::ExtendTypeRow {
+                ref mut types,
                 ref mut rest,
             } => {
                 for field in types {
@@ -327,11 +343,6 @@ impl<'a> KindCheck<'a> {
                             self_.unify(field_type.span(), &type_kind, kind)
                         })?;
                     }
-                }
-                for field in fields {
-                    let kind = self.kindcheck(&mut field.typ)?;
-                    let type_kind = self.type_kind();
-                    self.unify(field.typ.span(), &type_kind, kind)?;
                 }
 
                 let kind = self.kindcheck(rest)?;
@@ -416,8 +427,9 @@ impl<'a> KindCheck<'a> {
             }
             return;
         }
-        match **typ {
-            Type::ExtendRow { ref mut types, .. } => types.iter_mut().for_each(|field| {
+
+        match &mut **typ {
+            Type::ExtendTypeRow { types, .. } => types.iter_mut().for_each(|field| {
                 if let Some(alias) = field.typ.try_get_alias_mut() {
                     alias
                         .params_mut()
@@ -425,18 +437,18 @@ impl<'a> KindCheck<'a> {
                         .for_each(|var| *var = self.finalize_generic(var))
                 }
             }),
-            Type::Variable(ref mut var) => {
+            Type::Variable(var) => {
                 let default = Some(&self.kind_cache.typ);
                 var.kind = update_kind(&self.subs, var.kind.clone(), default);
             }
-            Type::Generic(ref mut var) => *var = self.finalize_generic(var),
-            Type::Alias(ref mut alias) => alias
+            Type::Generic(var) => *var = self.finalize_generic(var),
+            Type::Alias(alias) => alias
                 .try_get_alias_mut()
                 .expect("ICE: AstType did not provide mutable alias")
                 .params_mut()
                 .iter_mut()
                 .for_each(|var| *var = self.finalize_generic(var)),
-            Type::Forall(ref mut params, _) => {
+            Type::Forall(params, _) => {
                 for param in params {
                     *param = self.finalize_generic(&param);
                 }

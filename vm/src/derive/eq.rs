@@ -18,7 +18,7 @@ pub fn generate(
 ) -> Result<ValueBinding<Symbol>, Error> {
     let span = bind.name.span;
 
-    let eq = TypedIdent::new(symbols.symbol("eq"));
+    let eq = TypedIdent::new(symbols.simple_symbol("eq"));
     let l = Symbol::from("l");
     let r = Symbol::from("r");
 
@@ -38,7 +38,7 @@ pub fn generate(
             let equal_symbol = if self_type {
                 eq.name.clone()
             } else {
-                symbols.symbol("==")
+                symbols.simple_symbol("==")
             };
 
             let eq_check = app(
@@ -51,18 +51,21 @@ pub fn generate(
             );
 
             Some(match acc {
-                Some(acc) => infix(span, acc, symbols.symbol("&&"), eq_check),
+                Some(acc) => infix(span, acc, symbols.simple_symbol("&&"), eq_check),
                 None => eq_check,
             })
         })
-        .unwrap_or_else(|| ident(span, symbols.symbol("True")))
+        .unwrap_or_else(|| ident(span, symbols.simple_symbol("True")))
     };
 
     let comparison_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {
             let catch_all_alternative = Alternative {
-                pattern: pos::spanned(span, Pattern::Ident(TypedIdent::new(symbols.symbol("_")))),
-                expr: ident(span, symbols.symbol("False")),
+                pattern: pos::spanned(
+                    span,
+                    Pattern::Ident(TypedIdent::new(symbols.simple_symbol("_"))),
+                ),
+                expr: ident(span, symbols.simple_symbol("False")),
             };
 
             let alts = row_iter(variants)
@@ -202,7 +205,7 @@ pub fn generate(
                 types: Vec::new(),
                 exprs: vec![ExprField {
                     metadata: Default::default(),
-                    name: pos::spanned(span, symbols.symbol("==")),
+                    name: pos::spanned(span, symbols.simple_symbol("==")),
                     value: Some(ident(span, eq.name.clone())),
                 }],
                 base: None,
@@ -213,9 +216,10 @@ pub fn generate(
     Ok(ValueBinding {
         name: pos::spanned(
             span,
-            Pattern::Ident(TypedIdent::new(
-                symbols.symbol(format!("eq_{}", bind.alias.value.name.declared_name())),
-            )),
+            Pattern::Ident(TypedIdent::new(symbols.simple_symbol(format!(
+                "eq_{}",
+                bind.alias.value.name.declared_name()
+            )))),
         ),
         args: Vec::new(),
         expr: pos::spanned(span, eq_record_expr),

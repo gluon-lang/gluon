@@ -15,10 +15,10 @@ pub fn generate(
 ) -> Result<ValueBinding<Symbol>, Error> {
     let span = bind.name.span;
 
-    let deserializer_fn = TypedIdent::new(symbols.symbol("deserializer"));
+    let deserializer_fn = TypedIdent::new(symbols.simple_symbol("deserializer"));
 
-    let field_deserialize = symbols.symbol("field");
-    let deserializer_ident = ident(span, symbols.symbol("deserializer"));
+    let field_deserialize = symbols.simple_symbol("field");
+    let deserializer_ident = ident(span, symbols.simple_symbol("deserializer"));
 
     let self_type: AstType<_> = Type::app(
         Type::ident(bind.alias.value.name.clone()),
@@ -75,14 +75,19 @@ pub fn generate(
             .fold(None, |acc, variant| {
                 let deserialize_variant = app(
                     span,
-                    symbols.symbol("map"),
+                    symbols.simple_symbol("map"),
                     vec![
                         ident(span, variant.name.clone()),
                         deserializer_ident.clone(),
                     ],
                 );
                 Some(match acc {
-                    Some(prev) => infix(span, prev, symbols.symbol("<|>"), deserialize_variant),
+                    Some(prev) => infix(
+                        span,
+                        prev,
+                        symbols.simple_symbol("<|>"),
+                        deserialize_variant,
+                    ),
                     None => deserialize_variant,
                 })
             })
@@ -108,7 +113,7 @@ pub fn generate(
         expr: deserializer_expr,
         metadata: Default::default(),
         typ: Some(Type::app(
-            Type::ident(symbols.symbol("ValueDeserializer")),
+            Type::ident(symbols.simple_symbol("ValueDeserializer")),
             collect![self_type.clone()],
         )),
         resolved_type: Type::hole(),
@@ -121,7 +126,7 @@ pub fn generate(
             types: Vec::new(),
             exprs: vec![ExprField {
                 metadata: Default::default(),
-                name: pos::spanned(span, symbols.symbol("deserializer")),
+                name: pos::spanned(span, symbols.simple_symbol("deserializer")),
                 value: Some(ident(span, deserializer_fn.name.clone())),
             }],
             base: None,
@@ -144,7 +149,7 @@ pub fn generate(
     Ok(ValueBinding {
         name: pos::spanned(
             span,
-            Pattern::Ident(TypedIdent::new(symbols.symbol(format!(
+            Pattern::Ident(TypedIdent::new(symbols.simple_symbol(format!(
                 "deserialize_{}",
                 bind.alias.value.name.declared_name()
             )))),

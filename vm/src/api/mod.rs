@@ -1,19 +1,4 @@
 //! The marshalling api
-use crate::base::{
-    scoped_map::ScopedMap,
-    symbol::{Symbol, Symbols},
-    types::{self, ArcType, Type},
-};
-use crate::{
-    forget_lifetime,
-    gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
-    thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
-    types::{VmIndex, VmInt, VmTag},
-    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
-    vm::{self, RootedValue, Status, Thread},
-    Error, Result, Variants,
-};
-
 use std::{
     any::Any,
     borrow::Borrow,
@@ -28,6 +13,20 @@ use std::{
     result::Result as StdResult,
 };
 
+use crate::base::{
+    scoped_map::ScopedMap,
+    symbol::{Symbol, Symbols},
+    types::{self, ArcType, Field, Type},
+};
+use crate::{
+    forget_lifetime,
+    gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
+    thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
+    types::{VmIndex, VmInt, VmTag},
+    value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
+    vm::{self, RootedValue, Status, Thread},
+    Error, Result, Variants,
+};
 use futures::{Async, Future};
 
 pub use self::{
@@ -401,18 +400,34 @@ fn insert_forall_walker(
         )
         .map(|t| ArcType::from(Type::Variant(t))),
 
-        Type::Record(ref typ) => match **typ {
-            Type::ExtendRow { .. } => types::walk_move_type_opt(
-                typ,
-                &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
-            )
-            .map(|typ| ArcType::from(Type::Record(typ))),
-            _ => None,
-        },
+        Type::Record(ref typ) => {
+            insert_forall_walker_fields(variables, typ).map(|typ| ArcType::from(Type::Record(typ)))
+        }
         _ => types::walk_move_type_opt(
             typ,
             &mut types::ControlVisitation(|typ: &ArcType| insert_forall_walker(variables, typ)),
         ),
+    }
+}
+
+fn insert_forall_walker_fields(
+    variables: &mut ScopedMap<Symbol, types::Generic<Symbol>>,
+    typ: &ArcType,
+) -> Option<ArcType> {
+    match &**typ {
+        Type::ExtendRow { fields, rest } => {
+            let new_fields = types::walk_move_types(fields, |field| {
+                insert_forall(variables, &field.typ).map(|typ| Field {
+                    name: field.name.clone(),
+                    typ,
+                })
+            });
+            let new_rest = insert_forall_walker_fields(variables, rest);
+            base::merge::merge(fields, new_fields, rest, new_rest, Type::extend_row)
+        }
+        Type::ExtendTypeRow { types, rest } => insert_forall_walker_fields(variables, rest)
+            .map(|rest| Type::extend_type_row(types.clone(), rest)),
+        _ => None,
     }
 }
 

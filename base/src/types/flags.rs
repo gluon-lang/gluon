@@ -1,4 +1,4 @@
-use super::{Field, Type, TypeExt};
+use super::{Field, FlagsVisitor, Type, TypeExt, Walker};
 
 use bitflags::bitflags;
 
@@ -35,7 +35,8 @@ where
 
 impl<Id, T> AddFlags for Field<Id, T>
 where
-    T: AddFlags,
+    T: AddFlags + TypeExt<Id = Id>,
+    Id: PartialEq,
 {
     fn add_flags(&self, flags: &mut Flags) {
         self.typ.add_flags(flags);
@@ -53,7 +54,8 @@ where
 
 impl<Id, T> AddFlags for Type<Id, T>
 where
-    T: AddFlags,
+    T: AddFlags + TypeExt<Id = Id>,
+    Id: PartialEq,
 {
     fn add_flags(&self, flags: &mut Flags) {
         match self {
@@ -68,13 +70,28 @@ where
             Type::Record(ref typ) | Type::Variant(ref typ) | Type::Effect(ref typ) => {
                 typ.add_flags(flags)
             }
-            Type::Forall(_, ref typ) => {
+            Type::Forall(ref params, ref typ) => {
                 *flags |= Flags::HAS_FORALL;
                 typ.add_flags(flags);
+
+                let mut unbound_generic = false;
+                &mut FlagsVisitor(Flags::HAS_GENERICS, |typ: &T| match &**typ {
+                    Type::Generic(gen) => {
+                        unbound_generic |= params.iter().all(|param| param.id != gen.id)
+                    }
+                    _ => (),
+                })
+                .walk(typ);
+                if !unbound_generic {
+                    flags.remove(Flags::HAS_GENERICS);
+                }
             }
             Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
-            Type::ExtendRow { fields, rest, .. } => {
+            Type::ExtendRow { fields, rest } => {
                 fields.add_flags(flags);
+                rest.add_flags(flags);
+            }
+            Type::ExtendTypeRow { rest, .. } => {
                 rest.add_flags(flags);
             }
             Type::Variable(_) => *flags |= Flags::HAS_VARIABLES,
@@ -94,7 +111,8 @@ where
 impl Flags {
     pub fn from_type<Id, T>(typ: &Type<Id, T>) -> Self
     where
-        T: TypeExt,
+        T: TypeExt + TypeExt<Id = Id>,
+        Id: PartialEq,
     {
         let mut flags = Flags::empty();
         typ.add_flags(&mut flags);
