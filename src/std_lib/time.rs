@@ -151,8 +151,8 @@ mod instant {
         }
     }
 
-    pub(crate) fn elapsed(earlier: &Instant) -> Duration {
-        Duration(earlier.0.elapsed())
+    pub(crate) fn elapsed(earlier: &Instant) -> IO<Duration> {
+        IO::Value(Duration(earlier.0.elapsed()))
     }
 
     pub(crate) fn checked_add(moment: &Instant, dur: &Duration) -> Option<Instant> {
@@ -186,10 +186,10 @@ mod system_time {
             .map_err(|e| Duration(e.duration()))
     }
 
-    pub(crate) fn elapsed(earlier: &SystemTime) -> Result<Duration, Duration> {
-        earlier.0.elapsed()
-            .map(|x| Duration(x))
-            .map_err(|e| Duration(e.duration()))
+    pub(crate) fn elapsed(earlier: &SystemTime) -> IO<Result<Duration, Duration>> {
+        IO::Value(earlier.0.elapsed()
+                    .map(|x| Duration(x))
+                    .map_err(|e| Duration(e.duration())))
     }
 
     pub(crate) fn checked_add(moment: &SystemTime, dur: &Duration) -> Option<SystemTime> {
