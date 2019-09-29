@@ -1,9 +1,6 @@
 //! Module containing bindings to rust's `std::time` module.
 
-use crate::real_std::{
-    time,
-    convert::TryInto,
-};
+use crate::real_std::{convert::TryInto, time};
 
 use crate::vm::{
     self,
@@ -49,7 +46,9 @@ mod duration {
         match secs {
             Some(secs) => RuntimeResult::Return(Duration(time::Duration::new(secs, nanos))),
             // should never occur because i64.max_value() + i64.max_value() / 1e9 < u64.max_value()
-            None => RuntimeResult::Panic("seconds overflowed when creating a new Duration".to_string()),
+            None => {
+                RuntimeResult::Panic("seconds overflowed when creating a new Duration".to_string())
+            }
         }
     }
 
@@ -72,7 +71,10 @@ mod duration {
     }
 
     pub(crate) fn as_secs(dur: &Duration) -> RuntimeResult<VmInt, String> {
-        try_convert!(dur.0.as_secs(), "Overflow when trying to convert Duration into seconds")
+        try_convert!(
+            dur.0.as_secs(),
+            "Overflow when trying to convert Duration into seconds"
+        )
     }
 
     pub(crate) fn subsec_millis(dur: &Duration) -> VmInt {
@@ -88,15 +90,24 @@ mod duration {
     }
 
     pub(crate) fn as_millis(dur: &Duration) -> RuntimeResult<VmInt, String> {
-        try_convert!(dur.0.as_millis(), "Overflow when trying to convert Duration into milliseconds")
+        try_convert!(
+            dur.0.as_millis(),
+            "Overflow when trying to convert Duration into milliseconds"
+        )
     }
 
     pub(crate) fn as_micros(dur: &Duration) -> RuntimeResult<VmInt, String> {
-        try_convert!(dur.0.as_micros(), "Overflow when trying to convert Duration into microseconds")
+        try_convert!(
+            dur.0.as_micros(),
+            "Overflow when trying to convert Duration into microseconds"
+        )
     }
 
     pub(crate) fn as_nanos(dur: &Duration) -> RuntimeResult<VmInt, String> {
-        try_convert!(dur.0.as_nanos(), "Overflow when trying to convert Duration into nanoseconds")
+        try_convert!(
+            dur.0.as_nanos(),
+            "Overflow when trying to convert Duration into nanoseconds"
+        )
     }
 
     pub(crate) fn checked_add(dur1: &Duration, dur2: &Duration) -> Option<Duration> {
@@ -109,24 +120,31 @@ mod duration {
 
     // should this be Option because it better matches Rust's API or Result because it could fail
     // in two different ways?
-    pub(crate) fn checked_mul(dur1: &Duration, multiplier: VmInt) -> Option<Duration> {
+    pub(crate) fn checked_mul(dur: &Duration, multiplier: VmInt) -> Option<Duration> {
         match multiplier.try_into() {
-            Ok(n) => dur1.0.checked_mul(n).map(Duration),
+            Ok(n) => dur.0.checked_mul(n).map(Duration),
             Err(_) => None,
         }
     }
 
-    pub(crate) fn checked_div(dur1: &Duration, divisor: VmInt) -> Option<Duration> {
+    pub(crate) fn checked_div(dur: &Duration, divisor: VmInt) -> Option<Duration> {
         match divisor.try_into() {
-            Ok(n) => dur1.0.checked_div(n).map(Duration),
+            Ok(n) => dur.0.checked_div(n).map(Duration),
             Err(_) => None,
         }
     }
 
+    pub(crate) fn eq(dur1: &Duration, dur2: &Duration) -> bool {
+        dur1.0 == dur2.0
+    }
+
+    pub(crate) fn lt(dur1: &Duration, dur2: &Duration) -> bool {
+        dur1.0 < dur2.0
+    }
 }
 
 mod instant {
-    use super::{ *, duration::Duration };
+    use super::{duration::Duration, *};
 
     #[derive(Clone, Debug, Userdata, Trace, VmType)]
     #[gluon_userdata(clone)]
@@ -162,10 +180,18 @@ mod instant {
     pub(crate) fn checked_sub(moment: &Instant, dur: &Duration) -> Option<Instant> {
         moment.0.checked_sub(dur.0).map(Instant)
     }
+
+    pub(crate) fn eq(moment1: &Instant, moment2: &Instant) -> bool {
+        moment1.0 == moment2.0
+    }
+
+    pub(crate) fn lt(moment1: &Instant, moment2: &Instant) -> bool {
+        moment1.0 < moment2.0
+    }
 }
 
 mod system_time {
-    use super::{ *, duration::Duration };
+    use super::{duration::Duration, *};
 
     #[derive(Clone, Debug, Userdata, Trace, VmType)]
     #[gluon_userdata(clone)]
@@ -181,15 +207,19 @@ mod system_time {
     /// Returns `Ok(later - earlier)` if `later` is the same as or later than `earlier`.
     /// Returns `Err(earlier - later)` if `later` is earlier than `earlier`.
     pub(crate) fn duration_since(later : &SystemTime, earlier : &SystemTime) -> Result<Duration, Duration> {
-        later.0.duration_since(earlier.0)
+        later.0
+            .duration_since(earlier.0)
             .map(|x| Duration(x))
             .map_err(|e| Duration(e.duration()))
     }
 
     pub(crate) fn elapsed(earlier: &SystemTime) -> IO<Result<Duration, Duration>> {
-        IO::Value(earlier.0.elapsed()
-                    .map(|x| Duration(x))
-                    .map_err(|e| Duration(e.duration())))
+        IO::Value(
+            earlier.0
+                .elapsed()
+                .map(|x| Duration(x))
+                .map_err(|e| Duration(e.duration())),
+        )
     }
 
     pub(crate) fn checked_add(moment: &SystemTime, dur: &Duration) -> Option<SystemTime> {
@@ -198,6 +228,14 @@ mod system_time {
 
     pub(crate) fn checked_sub(moment: &SystemTime, dur: &Duration) -> Option<SystemTime> {
         moment.0.checked_sub(dur.0).map(SystemTime)
+    }
+
+    pub(crate) fn eq(moment1: &SystemTime, moment2: &SystemTime) -> bool {
+        moment1.0 == moment2.0
+    }
+
+    pub(crate) fn lt(moment1: &SystemTime, moment2: &SystemTime) -> bool {
+        moment1.0 < moment2.0
     }
 }
 
@@ -236,6 +274,9 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
                 checked_sub => primitive!(2, std::time::prim::duration::checked_sub),
                 checked_mul => primitive!(2, std::time::prim::duration::checked_mul),
                 checked_div => primitive!(2, std::time::prim::duration::checked_div),
+
+                eq => primitive!(2, std::time::prim::duration::eq),
+                lt => primitive!(2, std::time::prim::duration::lt),
             },
             instant => record! {
                 type std::time::Instant => instant::Instant,
@@ -246,6 +287,9 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
                 checked_add => primitive!(2, std::time::prim::instant::checked_add),
                 checked_sub => primitive!(2, std::time::prim::instant::checked_sub),
+
+                eq => primitive!(2, std::time::prim::instant::eq),
+                lt => primitive!(2, std::time::prim::instant::lt),
             },
             system_time => record! {
                 type std::time::SystemTime => system_time::SystemTime,
@@ -258,7 +302,10 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
                 checked_add => primitive!(2, std::time::prim::system_time::checked_add),
                 checked_sub => primitive!(2, std::time::prim::system_time::checked_sub),
+
+                eq => primitive!(2, std::time::prim::system_time::eq),
+                lt => primitive!(2, std::time::prim::system_time::lt),
             },
-        }
+        },
     )
 }
