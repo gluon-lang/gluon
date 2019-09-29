@@ -1,0 +1,42 @@
+//! Time-related functionality
+// Documentation in this module is mostly modified from Rust's std::time crate.
+
+let { Ordering } = import! std.types
+let { Eq, Ord } = import! std.cmp
+let instant @ { Instant } = import! std.time.prim.instant
+
+let eq : Eq Instant = {(==) = instant.eq}
+
+let ord : Ord Instant =
+    let compare x y =
+        if instant.eq x y then
+            EQ
+        else if instant.lt x y then
+            LT
+        else
+            GT
+
+    {eq, compare}
+
+{
+    /// Docs go here
+    Instant,
+    
+    /// Docs
+    now = instant.now,
+    
+    /// Docs
+    duration_since = instant.duration_since
+
+    /// Docs
+    elapsed = instant.elapsed,
+    
+    /// Docs
+    checked_add = instant.checked_add
+
+    /// Docs
+    checked_sub = instant.checked_sub
+
+    eq,
+    ord,
+}

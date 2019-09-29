@@ -1,0 +1,42 @@
+//! Time-related functionality
+// Documentation in this module is mostly modified from Rust's std::time crate.
+
+let { Ordering } = import! std.types
+let { Eq, Ord } = import! std.cmp
+let system_time @ { SystemTime } = import! std.time.prim.system_time
+
+let eq : Eq SystemTime = {(==) = system_time.eq}
+
+let ord : Ord SystemTime =
+    let compare x y =
+        if system_time.eq x y then
+            EQ
+        else if system_time.lt x y then
+            LT
+        else
+            GT
+
+    {eq, compare}
+
+{
+    /// Docs go here
+    SystemTime,
+    
+    /// Docs
+    now = system_time.now,
+    
+    /// Docs
+    duration_since = system_time.duration_since
+
+    /// Docs
+    elapsed = system_time.elapsed,
+    
+    /// Docs
+    checked_add = system_time.checked_add
+
+    /// Docs
+    checked_sub = system_time.checked_sub
+
+    eq,
+    ord,
+}
