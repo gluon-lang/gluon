@@ -6,9 +6,11 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use futures::{stream, Future, Stream};
-
-use codespan_reporting::Diagnostic;
+use {
+    codespan_reporting::Diagnostic,
+    downcast_rs::{impl_downcast, Downcast},
+    futures::{stream, Future, Stream},
+};
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
@@ -25,12 +27,40 @@ pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
 
-pub trait MacroError: ::mopa::Any + StdError + AsDiagnostic + Send + Sync + 'static {
+pub trait ArcDowncast: Downcast {
+    fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+
+impl<T> ArcDowncast for T
+where
+    T: Downcast + Send + Sync,
+{
+    fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+pub trait MacroError: ArcDowncast + StdError + AsDiagnostic + Send + Sync + 'static {
     fn clone_error(&self) -> Error;
     fn eq_error(&self, other: &dyn MacroError) -> bool;
     fn hash_error(&self, hash: &mut dyn std::hash::Hasher);
 }
-mopafy!(MacroError);
+
+impl_downcast!(MacroError);
+
+impl dyn MacroError {
+    #[inline]
+    pub fn downcast_arc<T: MacroError>(self: Arc<Self>) -> Result<Arc<T>, Arc<Self>>
+    where
+        Self: Send + Sync,
+    {
+        if self.is::<T>() {
+            Ok(ArcDowncast::into_arc_any(self).downcast::<T>().unwrap())
+        } else {
+            Err(self)
+        }
+    }
+}
 
 impl<T> MacroError for T
 where
@@ -140,7 +170,7 @@ impl Error {
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro: Trace + ::mopa::Any + Send + Sync {
+pub trait Macro: Trace + ArcDowncast + Send + Sync {
     fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
     where
         Self: Sized,
@@ -162,7 +192,21 @@ pub trait Macro: Trace + ::mopa::Any + Send + Sync {
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture;
 }
 
-mopafy!(Macro);
+impl_downcast!(Macro);
+
+impl dyn Macro {
+    #[inline]
+    pub fn downcast_arc<T: Macro>(self: Arc<Self>) -> Result<Arc<T>, Arc<Self>>
+    where
+        Self: Send + Sync,
+    {
+        if self.is::<T>() {
+            Ok(ArcDowncast::into_arc_any(self).downcast::<T>().unwrap())
+        } else {
+            Err(self)
+        }
+    }
+}
 
 impl<M> Macro for Box<M>
 where

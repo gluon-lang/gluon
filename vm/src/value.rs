@@ -6,9 +6,11 @@ use std::{
     result::Result as StdResult,
 };
 
-use itertools::Itertools;
-
-use pretty::{Arena, DocAllocator, DocBuilder};
+use {
+    downcast_rs::{impl_downcast, Downcast},
+    itertools::Itertools,
+    pretty::{Arena, DocAllocator, DocBuilder},
+};
 
 use crate::base::{
     fnv::FnvMap,
@@ -32,8 +34,8 @@ use crate::{
 
 use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
-mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Trace + fmt::Debug + Send + Sync {
+impl_downcast!(Userdata);
+pub trait Userdata: Downcast + Trace + fmt::Debug + Send + Sync {
     fn deep_clone<'gc>(
         &self,
         deep_cloner: &'gc mut Cloner,

@@ -9,8 +9,6 @@ pub extern crate frunk_core;
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate mopa;
-#[macro_use]
 extern crate quick_error;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
