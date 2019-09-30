@@ -908,7 +908,7 @@ dependencies = [
  "rand 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand_xorshift 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "salsa 0.13.0",
+ "salsa 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.98 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.98 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive_state 0.4.7",
@@ -2358,7 +2358,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "salsa"
-version = "0.13.0"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "crossbeam 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive-new 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2367,13 +2368,14 @@ dependencies = [
  "parking_lot 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-hash 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "salsa-macros 0.13.1",
+ "salsa-macros 0.13.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec 0.6.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "salsa-macros"
-version = "0.13.1"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "heck 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "proc-macro2 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3500,6 +3502,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rustfix 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "b96ea6eeae40f488397ccc9e1c0da19d720b23c75972bc63eaa6852b84d161e2"
 "checksum rustyline 5.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b7d4ca3c9586d2c1f742284f032e328313ea55f3f60a3b0a17e2ca1a2bf9ae22"
 "checksum ryu 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c92464b447c0ee8c4fb3824ecc8383b81717b9f1e74ba2e72540aef7b9f82997"
+"checksum salsa 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)" = "df34c3a66ef408c3219c11dee2c928d52e679390d3ee6e0b87e96cc758d85377"
+"checksum salsa-macros 0.13.2 (registry+https://github.com/rust-lang/crates.io-index)" = "cac182212d3a1db75ddc42399ff1461b258a694b8318ee7e0baf6c976e39efee"
 "checksum same-file 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)" = "585e8ddcedc187886a30fa705c47985c3fa88d06624095856b36ca0b82ff4421"
 "checksum schannel 0.1.15 (registry+https://github.com/rust-lang/crates.io-index)" = "f2f6abf258d99c3c1c5c2131d99d064e94b7b3dd5f416483057f308fea253339"
 "checksum scoped_threadpool 0.1.9 (registry+https://github.com/rust-lang/crates.io-index)" = "1d51f5df5af43ab3f1360b429fa5e0152ac5ce8c0bd6485cae490332e96846a8"

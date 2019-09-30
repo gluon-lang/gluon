@@ -172,9 +172,6 @@ impl salsa::Database for CompilerDatabase {
     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
     }
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
 }
 
 impl salsa::ParallelDatabase for CompilerDatabase {
