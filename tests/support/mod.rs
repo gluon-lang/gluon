@@ -10,13 +10,13 @@ use gluon::{
         api::{Getable, VmType},
         thread::{RootedThread, Thread},
     },
-    Compiler, ThreadExt,
+    ThreadExt,
 };
 
 #[allow(dead_code)]
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     vm.get_database_mut().set_implicit_prelude(false);
-    Compiler::new_lock().load_script(vm, filename, input)
+    vm.load_script(filename, input)
 }
 
 #[allow(dead_code)]
@@ -27,8 +27,7 @@ where
     vm.get_database_mut()
         .implicit_prelude(implicit_prelude)
         .run_io(true);
-    Compiler::new_lock()
-        .run_expr(vm, "<top>", s)
+    vm.run_expr("<top>", s)
         .unwrap_or_else(|err| panic!("{}", err))
         .0
 }
@@ -74,10 +73,10 @@ macro_rules! test_expr {
             use gluon::{vm::api::IO, ThreadExt};
 
             let _ = ::env_logger::try_init();
-            let mut vm = $crate::support::make_vm();
+            let vm = $crate::support::make_vm();
             vm.get_database_mut().implicit_prelude(false).run_io(true);
-            let (value, _) = ::gluon::Compiler::new_lock()
-                .run_expr(&mut vm, "<top>", $expr)
+            let (value, _) = vm
+                .run_expr("<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
             match value {
                 IO::Value(value) => {

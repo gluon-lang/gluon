@@ -324,7 +324,7 @@ impl<I> Import<I> {
 /// extern crate gluon_vm;
 ///
 /// use gluon::vm::{self, ExternModule};
-/// use gluon::{Compiler, Thread};
+/// use gluon::{Thread, ThreadExt};
 /// use gluon::import::add_extern_module;
 ///
 /// fn yell(s: &str) -> String {
@@ -348,7 +348,7 @@ impl<I> Import<I> {
 ///         let module = import! "my_module"
 ///         module.yell module.message
 ///     "#;
-///     let (result, _) = Compiler::new().run_expr::<String>(&thread, "example", script)?;
+///     let (result, _) = thread.run_expr::<String>("example", script)?;
 ///     assert_eq!(result, "HELLO WORLD!");
 ///     Ok(())
 /// }

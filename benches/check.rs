@@ -1,28 +1,26 @@
 #[macro_use]
 extern crate criterion;
-extern crate env_logger;
-
-extern crate gluon;
-extern crate gluon_base as base;
-extern crate gluon_check as check;
-extern crate gluon_parser as parser;
 
 use std::fs;
 
 use criterion::{Bencher, Criterion};
 
-use gluon::{compiler_pipeline::*, new_vm, Compiler};
+use gluon::{base, check, compiler_pipeline::*, new_vm, parser, ThreadExt};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
-    let compiler = Compiler::new();
     let text = fs::read_to_string("std/prelude.glu").unwrap();
     let MacroValue { expr } = text
-        .expand_macro(&mut compiler.module_compiler(), &vm, "std.prelude", &text)
+        .expand_macro(
+            &mut vm.module_compiler(&vm.get_database()),
+            &vm,
+            "std.prelude",
+            &text,
+        )
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     b.iter(|| {
         let result = MacroValue { expr: expr.clone() }.typecheck(
-            &mut compiler.module_compiler(),
+            &mut vm.module_compiler(&vm.get_database()),
             &vm,
             "std.prelude",
             &text,
@@ -37,25 +35,33 @@ fn typecheck_prelude(b: &mut Bencher) {
 
 fn clone_prelude(b: &mut Bencher) {
     let vm = new_vm();
-    let compiler = Compiler::new();
     let TypecheckValue { expr, .. } = {
         let text = fs::read_to_string("std/prelude.glu").unwrap();
-        text.typecheck(&mut compiler.module_compiler(), &vm, "std.prelude", &text)
-            .unwrap_or_else(|err| panic!("{}", err))
+        text.typecheck(
+            &mut vm.module_compiler(&vm.get_database()),
+            &vm,
+            "std.prelude",
+            &text,
+        )
+        .unwrap_or_else(|err| panic!("{}", err))
     };
     b.iter(|| expr.clone())
 }
 
 fn typecheck_24(b: &mut Bencher) {
     let vm = new_vm();
-    let compiler = Compiler::new();
     let text = fs::read_to_string("examples/24.glu").unwrap();
     let MacroValue { expr } = text
-        .expand_macro(&mut compiler.module_compiler(), &vm, "examples.24", &text)
+        .expand_macro(
+            &mut vm.module_compiler(&vm.get_database()),
+            &vm,
+            "examples.24",
+            &text,
+        )
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     b.iter(|| {
         let result = MacroValue { expr: expr.clone() }.typecheck(
-            &mut compiler.module_compiler(),
+            &mut vm.module_compiler(&vm.get_database()),
             &vm,
             "examples.24",
             &text,
@@ -70,11 +76,15 @@ fn typecheck_24(b: &mut Bencher) {
 
 fn typecheck_file(b: &mut Bencher, file: &str) {
     let vm = new_vm();
-    let compiler = Compiler::new();
     let text = fs::read_to_string(file).unwrap();
     let module_name = base::filename_to_module(file);
     let reparsed = text
-        .reparse_infix(&mut compiler.module_compiler(), &vm, &module_name, &text)
+        .reparse_infix(
+            &mut vm.module_compiler(&vm.get_database()),
+            &vm,
+            &module_name,
+            &text,
+        )
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     let InfixReparsed {
         metadata,
@@ -88,7 +98,12 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
             expr: expr.clone(),
         },
         |input| {
-            let result = input.typecheck(&mut compiler.module_compiler(), &vm, &module_name, &text);
+            let result = input.typecheck(
+                &mut vm.module_compiler(&vm.get_database()),
+                &vm,
+                &module_name,
+                &text,
+            );
             if let Err(ref err) = result {
                 println!("{}", err);
                 assert!(false);
@@ -117,9 +132,7 @@ fn typecheck_benchmark(c: &mut Criterion) {
     c.bench_function("compile_lisp", move |b| {
         b.iter(|| {
             let vm = new_vm();
-            let mut compiler = Compiler::new();
-            compiler
-                .load_file(&vm, "examples/lisp/lisp.glu")
+            vm.load_file("examples/lisp/lisp.glu")
                 .unwrap_or_else(|err| panic!("{}", err))
         })
     });

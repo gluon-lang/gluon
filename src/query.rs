@@ -33,7 +33,7 @@ use {
     },
 };
 
-use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Compiler, Error, Result, Settings};
+use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Error, Result, Settings, ThreadExt};
 
 #[derive(Debug, Trace)]
 #[gluon(crate_name = "gluon_vm")]
@@ -360,7 +360,7 @@ fn typechecked_module(
 
     let thread = db.thread();
     text.typecheck_expected(
-        &mut Compiler::new().module_compiler(db.compiler()),
+        &mut thread.module_compiler(db.compiler()),
         thread,
         &module,
         &text,
@@ -409,8 +409,7 @@ fn compiled_module(
     let thread = db.thread();
     let env = db.compiler();
 
-    let compiler = Compiler::new();
-    let mut compiler = compiler.module_compiler(db.compiler());
+    let mut compiler = thread.module_compiler(db.compiler());
 
     let source = compiler
         .get_filemap(&module)
@@ -451,11 +450,7 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
         format!("@{}", modulename)
     });
     let result = crate::get_import(thread)
-        .load_module(
-            &mut Compiler::new().module_compiler(compiler),
-            thread,
-            &name,
-        )
+        .load_module(&mut thread.module_compiler(compiler), thread, &name)
         .map_err(|(_, err)| err);
 
     compiler.collect_garbage();

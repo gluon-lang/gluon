@@ -16,7 +16,7 @@ use gluon::{
         channel::Sender,
         thread::{RootedThread, Thread, ThreadInternal},
     },
-    Compiler, Error, ThreadExt,
+    Error, ThreadExt,
 };
 
 test_expr! { pass_function_value,
@@ -116,14 +116,14 @@ let add l r = { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
 let sub l r = { x = l.x #Int- r.x, y = l.y #Int- r.y } in
 { T, add, sub }
 ";
-    let mut vm = make_vm();
-    load_script(&mut vm, "vec", text).unwrap_or_else(|err| panic!("{}", err));
+    let vm = make_vm();
+    load_script(&vm, "vec", text).unwrap_or_else(|err| panic!("{}", err));
 
     let script = r#"
 let { T, add, sub } = import! vec
 in add { x = 10, y = 5 } { x = 1, y = 2 }
 "#;
-    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, script);
+    let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, script);
     match value.get_ref() {
         ValueRef::Data(data) => {
             assert_eq!(data.get(0), Some(ValueRef::Int(11)));
@@ -533,9 +533,9 @@ let { List } = list
 let eq_list: Eq (List Int) = list.eq
 in Cons 1 Nil == Nil
 "#;
-    let mut vm = make_vm();
-    let (result, _) = Compiler::new()
-        .run_expr::<bool>(&mut vm, "<top>", text)
+    let vm = make_vm();
+    let (result, _) = vm
+        .run_expr::<bool>("<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = false;
 
@@ -554,10 +554,9 @@ let large_record = { x = 1 }
     large_record
 }
 "#;
-    let mut vm = make_vm();
+    let vm = make_vm();
     vm.get_database_mut().implicit_prelude(false);
-    let result =
-        Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
+    let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
@@ -566,9 +565,8 @@ let large_record = { x = 1 }
 fn test_implicit_prelude() {
     let _ = ::env_logger::try_init();
     let text = r#"1.0 + 3.0 - 2.0"#;
-    let mut vm = make_vm();
-    Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
+    let vm = make_vm();
+    vm.run_expr::<OpaqueValue<&Thread, Hole>>("<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -576,8 +574,8 @@ fn test_implicit_prelude() {
 fn access_field_through_vm() {
     let _ = ::env_logger::try_init();
     let text = r#" { x = 0, inner = { y = 1.0 } } "#;
-    let mut vm = make_vm();
-    load_script(&mut vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
+    let vm = make_vm();
+    load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
     let test_x = vm.get_global("test.x");
     assert_eq!(test_x, Ok(0));
     let test_inner_y = vm.get_global("test.inner.y");
@@ -588,8 +586,7 @@ fn access_field_through_vm() {
 fn access_operator_without_parentheses() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
-    Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
+    vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.prelude "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
         vm.get_global("std.prelude.num_Int.+");
@@ -604,8 +601,8 @@ fn get_binding_with_alias_type() {
         let x: Test = 0
         { Test, x }
         "#;
-    let mut vm = make_vm();
-    load_script(&mut vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
+    let vm = make_vm();
+    load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
     let test_x = vm.get_global("test.x");
     assert_eq!(test_x, Ok(0));
 }
@@ -653,8 +650,7 @@ fn opaque_value_type_mismatch() {
 
     vm.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
+    vm.run_expr::<()>("<top>", "let _ = import! std.channel in ()")
         .unwrap();
 
     let expr = r#"
@@ -662,8 +658,7 @@ let { sender, receiver } = channel 0
 send sender 1
 sender
 "#;
-    let result =
-        Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
+    let result = vm.run_expr::<OpaqueValue<&Thread, Sender<f64>>>("<top>", expr);
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -679,8 +674,8 @@ let string = import! std.string
 let s = "åäö"
 string.slice s 1 (string.len s)
 "#;
-    let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text);
+    let vm = make_vm();
+    let result = vm.run_expr::<String>("<top>", text);
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -695,8 +690,8 @@ fn arithmetic_over_flow_dont_panic() {
 let int = import! std.int
 int.max_value * 2
 "#;
-    let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
+    let vm = make_vm();
+    let result = vm.run_expr::<i32>("<top>", text);
     match result {
         Err(Error::VM(vm::Error::Message(ref err))) if err.contains("overflow") => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -709,8 +704,7 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
 
-    let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
-        &vm,
+    let result = vm.run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
         "test",
         r#"let { Option } = import! std.option in Some"#,
     );
@@ -734,8 +728,8 @@ let g x = 1 + f (x / 2)
 in
 g 10
 "#;
-    let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
+    let vm = make_vm();
+    let result = vm.run_expr::<i32>("<top>", text);
     match result {
         Err(Error::VM(vm::Error::Panic(_, Some(stacktrace)))) => {
             let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
@@ -787,6 +781,7 @@ g 10
         Ok(_) => panic!("Expected an error"),
     }
 }
+
 #[test]
 fn completion_with_prelude() {
     let _ = ::env_logger::try_init();
@@ -817,9 +812,8 @@ let from f : (Int -> Option a) -> Stream a =
 { from }
 "#;
 
-    let compiler = Compiler::new();
-    let (expr, _) = compiler
-        .typecheck_str(&vm, "example", source, None)
+    let (expr, _) = vm
+        .typecheck_str("example", source, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
@@ -840,9 +834,8 @@ fn completion_with_prelude_at_0() {
 
     let expr = "1";
 
-    let compiler = Compiler::new();
-    let (expr, _) = compiler
-        .typecheck_str(&vm, "example", expr, None)
+    let (expr, _) = vm
+        .typecheck_str("example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let file_map = vm.get_database().get_filemap("example").expect("file_map");
@@ -858,9 +851,8 @@ fn suggestion_from_implicit_prelude() {
 
     let expr = "1 ";
 
-    let compiler = Compiler::new();
-    let (expr, _) = compiler
-        .typecheck_str(&vm, "example", expr, None)
+    let (expr, _) = vm
+        .typecheck_str("example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
@@ -882,8 +874,7 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 
     let expr = "1";
 
-    Compiler::new()
-        .typecheck_str(&vm, "example", expr, Some(&Type::float()))
+    vm.typecheck_str("example", expr, Some(&Type::float()))
         .unwrap_err();
 }
 
@@ -902,8 +893,7 @@ fn deep_clone_partial_application() {
     assert_eq!(child.allocated_memory(), 0);
 
     child.get_database_mut().set_implicit_prelude(false);
-    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(
-        &child,
+    let result = child.run_expr::<OpaqueValue<&Thread, Hole>>(
         "test",
         r#"
                 let f x y = y

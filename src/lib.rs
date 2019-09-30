@@ -307,9 +307,6 @@ impl Default for Settings {
     }
 }
 
-/// Type which enables parsing, typechecking and compiling an AST into bytecode
-pub struct Compiler {}
-
 pub struct ModuleCompiler<'a> {
     database: &'a query::CompilerDatabase,
     symbols: Symbols,
@@ -391,20 +388,19 @@ impl import::CompilerLock {
     }
 }
 
-impl Compiler {
-    /// Creates a new compiler with default settings
-    pub fn new() -> Self {
-        Compiler {}
+/// Extension trait which provides methods to load and execute gluon code
+pub trait ThreadExt {
+    fn get_database(&self) -> import::DatabaseSnapshot;
+    fn get_database_mut(&self) -> import::CompilerLock;
+
+    fn run_io(&self, run: bool) {
+        self.get_database_mut().run_io(run);
     }
 
-    pub fn new_lock() -> Self {
-        Self::new()
-    }
+    #[doc(hidden)]
+    fn thread(&self) -> &Thread;
 
-    pub fn module_compiler<'a>(
-        &'a self,
-        database: &'a query::CompilerDatabase,
-    ) -> ModuleCompiler<'a> {
+    fn module_compiler<'a>(&'a self, database: &'a query::CompilerDatabase) -> ModuleCompiler<'a> {
         ModuleCompiler {
             database,
             symbols: Default::default(),
@@ -412,25 +408,24 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
-    pub fn parse_expr(
+    fn parse_expr(
         &self,
-        vm: &Thread,
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(vm, type_cache, file, expr_str)
+        self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
 
     /// Parse `input`, returning an expression if successful
-    pub fn parse_partial_expr(
+    fn parse_partial_expr(
         &self,
-        vm: &Thread,
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+        let vm = self.thread();
         parse_expr(
             &mut self.module_compiler(&get_db_snapshot(&vm)),
             type_cache,
@@ -441,13 +436,13 @@ impl Compiler {
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
     /// expression
-    pub fn typecheck_expr(
+    fn typecheck_expr(
         &self,
-        vm: &Thread,
         file: &str,
         expr_str: &str,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<ArcType> {
+        let vm = self.thread();
         expr.typecheck_expected(
             &mut self.module_compiler(&get_db_snapshot(&vm)),
             vm,
@@ -459,13 +454,13 @@ impl Compiler {
         .map_err(|t| t.1)
     }
 
-    pub fn typecheck_str(
+    fn typecheck_str(
         &self,
-        vm: &Thread,
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
+        let vm = self.thread();
         let db = get_db_snapshot(&vm);
         db.compiler()
             .state()
@@ -478,13 +473,13 @@ impl Compiler {
     }
 
     /// Compiles `expr` into a function which can be added and run by the `vm`
-    pub fn compile_script(
+    fn compile_script(
         &self,
-        vm: &Thread,
         filename: &str,
         expr_str: &str,
         expr: &SpannedExpr<Symbol>,
     ) -> Result<CompiledModule> {
+        let vm = self.thread();
         TypecheckValue {
             expr,
             typ: vm.global_env().type_cache().hole(),
@@ -503,9 +498,8 @@ impl Compiler {
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
     #[cfg(feature = "serialization")]
-    pub fn compile_to_bytecode<S>(
+    fn compile_to_bytecode<S>(
         &self,
-        thread: &Thread,
         name: &str,
         expr_str: &str,
         serializer: S,
@@ -514,6 +508,7 @@ impl Compiler {
         S: serde::Serializer,
         S::Error: 'static,
     {
+        let thread = self.thread();
         compile_to(
             expr_str,
             &mut self.module_compiler(&get_db_snapshot(&thread)),
@@ -529,36 +524,32 @@ impl Compiler {
     ///
     /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
     #[cfg(feature = "serialization")]
-    pub fn load_bytecode<'vm, D>(
-        &self,
-        thread: &'vm Thread,
-        name: &str,
-        deserializer: D,
-    ) -> impl Future<Item = (), Error = Error> + 'vm
+    fn load_bytecode<'vm, D>(&'vm self, name: &str, deserializer: D) -> BoxFuture<'vm, (), Error>
     where
         D: serde::Deserializer<'vm> + 'vm,
         D::Error: Send + Sync,
     {
-        Precompiled(deserializer).load_script(
+        let thread = self.thread();
+        Box::new(Precompiled(deserializer).load_script(
             &mut self.module_compiler(&get_db_snapshot(&thread)),
             thread,
             name,
             "",
             (),
-        )
+        ))
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
-    pub fn extract_metadata(
+    fn extract_metadata(
         &self,
-        vm: &Thread,
         file: &str,
         expr_str: &str,
     ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
-        let (expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
+        let (expr, typ) = self.typecheck_str(file, expr_str, None)?;
 
+        let vm = self.thread();
         let (metadata, _) = metadata::metadata(&vm.get_env(), &expr);
         Ok((expr, typ, metadata))
     }
@@ -568,47 +559,42 @@ impl Compiler {
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
-    pub fn load_script(&self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
-        self.load_script_async(vm, filename, input).wait()
+    fn load_script(&self, filename: &str, input: &str) -> Result<()> {
+        self.load_script_async(filename, input).wait()
     }
 
-    pub fn load_script_async<'vm>(
-        &self,
-        vm: &'vm Thread,
-        filename: &str,
-        input: &str,
-    ) -> impl Future<Item = (), Error = Error> + 'vm {
+    fn load_script_async<'vm>(&self, filename: &str, input: &str) -> BoxFuture<'vm, (), Error> {
         let module_name = filename_to_module(filename);
+        let vm = self.thread();
         let db = get_db_snapshot(&vm);
         db.compiler()
             .state()
             .inline_modules
             .insert(module_name.clone(), input.into());
-        future::result(db.global(module_name).map(|_| ()))
+        Box::new(future::result(db.global(module_name).map(|_| ())))
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file<'vm>(&self, vm: &'vm Thread, filename: &str) -> Result<()> {
-        self.load_file_async(vm, filename).wait()
+    fn load_file<'vm>(&'vm self, filename: &str) -> Result<()> {
+        self.load_file_async(filename).wait()
     }
 
-    pub fn load_file_async<'vm>(
-        &self,
-        vm: &'vm Thread,
-        filename: &str,
-    ) -> impl Future<Item = (), Error = Error> {
+    fn load_file_async<'vm>(&self, filename: &str) -> BoxFuture<'static, (), Error> {
+        let vm = self.thread();
         // Use the import macro's path resolution if it exists so that we mimick the import
         // macro as close as possible
         let import = get_import(vm);
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
-        import
-            .load_module(
-                &mut self.module_compiler(&import.snapshot(vm.root_thread())),
-                vm,
-                &module_name,
-            )
-            .map_err(|(_, err)| err.into())
-            .into_future()
+        Box::new(
+            import
+                .load_module(
+                    &mut self.module_compiler(&import.snapshot(vm.root_thread())),
+                    vm,
+                    &module_name,
+                )
+                .map_err(|(_, err)| err.into())
+                .into_future(),
+        )
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -619,13 +605,11 @@ impl Compiler {
     /// Import from gluon's standard library and evaluate a string
     ///
     /// ```
-    /// # extern crate gluon;
-    /// # use gluon::{new_vm,Compiler};
+    /// # use gluon::{new_vm, ThreadExt};
     /// # fn main() {
     /// let vm = new_vm();
-    /// let (result, _) = Compiler::new()
+    /// let (result, _) = vm
     ///     .run_expr::<String>(
-    ///         &vm,
     ///         "example",
     ///         " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" "
     ///     )
@@ -634,15 +618,11 @@ impl Compiler {
     /// # }
     /// ```
     ///
-    pub fn run_expr<'vm, T>(
-        &self,
-        vm: &'vm Thread,
-        name: &str,
-        expr_str: &str,
-    ) -> Result<(T, ArcType)>
+    fn run_expr<'vm, T>(&'vm self, name: &str, expr_str: &str) -> Result<(T, ArcType)>
     where
         T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
     {
+        let vm = self.thread();
         let expected = T::make_type(vm);
         expr_str
             .run_expr(
@@ -669,13 +649,12 @@ impl Compiler {
     /// Import from gluon's standard library and evaluate a string
     ///
     /// ```
-    /// # extern crate gluon;
-    /// # use gluon::{new_vm,Compiler};
+    /// # use gluon::{new_vm, ThreadExt};
     /// # use gluon::base::types::Type;
     /// # fn main() {
     /// let vm = new_vm();
-    /// let result = Compiler::new()
-    ///     .run_expr::<String>(&vm, "example",
+    /// let result = vm
+    ///     .run_expr::<String>("example",
     ///         " let string  = import! \"std/string.glu\" in string.trim \"    Hello world  \t\" ")
     ///     .unwrap();
     /// let expected = ("Hello world".to_string(), Type::string());
@@ -684,40 +663,36 @@ impl Compiler {
     /// }
     /// ```
     ///
-    pub fn run_expr_async<T>(
+    fn run_expr_async<T>(
         &self,
-        vm: &Thread,
         name: &str,
         expr_str: &str,
-    ) -> impl Future<Item = (T, ArcType), Error = Error>
+    ) -> BoxFuture<'static, (T, ArcType), Error>
     where
         T: for<'vm, 'value> Getable<'vm, 'value> + VmType + Send + 'static,
     {
+        let vm = self.thread();
         let expected = T::make_type(&vm);
         let vm = vm.root_thread();
-        expr_str
-            .run_expr(
-                &mut self.module_compiler(&get_db_snapshot(&vm)),
-                vm.clone(),
-                name,
-                expr_str,
-                Some(&expected),
-            )
-            .and_then(move |execute_value| {
-                Ok((
-                    T::from_value(&vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
+        Box::new(
+            expr_str
+                .run_expr(
+                    &mut self.module_compiler(&get_db_snapshot(&vm)),
+                    vm.clone(),
+                    name,
+                    expr_str,
+                    Some(&expected),
+                )
+                .and_then(move |execute_value| {
+                    Ok((
+                        T::from_value(&vm, execute_value.value.get_variant()),
+                        execute_value.typ,
+                    ))
+                }),
+        )
     }
 
-    pub fn format_expr(
-        &self,
-        formatter: &mut Formatter,
-        thread: &Thread,
-        file: &str,
-        input: &str,
-    ) -> Result<String> {
+    fn format_expr(&self, formatter: &mut Formatter, file: &str, input: &str) -> Result<String> {
         fn has_format_disabling_errors(file: &codespan::FileName, err: &Error) -> bool {
             match *err {
                 Error::Multiple(ref errors) => errors
@@ -728,6 +703,7 @@ impl Compiler {
             }
         }
 
+        let thread = self.thread();
         let db = get_db_snapshot(thread);
         let mut compiler = self.module_compiler(&db);
         let compiler = &mut compiler;
@@ -763,17 +739,15 @@ impl Compiler {
     }
 }
 
-pub trait ThreadExt {
-    fn get_database(&self) -> import::DatabaseSnapshot;
-    fn get_database_mut(&self) -> import::CompilerLock;
-}
-
 impl ThreadExt for Thread {
     fn get_database(&self) -> import::DatabaseSnapshot {
         get_db_snapshot(self)
     }
     fn get_database_mut(&self) -> import::CompilerLock {
         Import::compiler_lock(get_import(self), self.root_thread())
+    }
+    fn thread(&self) -> &Thread {
+        self
     }
 }
 
@@ -873,17 +847,15 @@ impl VmBuilder {
 
         add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
 
-        Compiler::new()
-            .run_expr::<OpaqueValue<&Thread, Hole>>(
-                &vm,
-                "",
-                r#"//@NO-IMPLICIT-PRELUDE
+        vm.run_expr::<OpaqueValue<&Thread, Hole>>(
+            "",
+            r#"//@NO-IMPLICIT-PRELUDE
                     let _ = import! std.types
                     let _ = import! std.prim
                     ()
                 "#,
-            )
-            .unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
 
         add_extern_module(&vm, "std.byte.prim", crate::vm::primitives::load_byte);
         add_extern_module(&vm, "std.int.prim", crate::vm::primitives::load_int);
@@ -954,8 +926,8 @@ mod tests {
 
         let thread = new_vm();
         thread.get_database_mut().set_implicit_prelude(false);
-        Compiler::new()
-            .run_expr::<()>(&thread, "prelude", PRELUDE)
+        thread
+            .run_expr::<()>("prelude", PRELUDE)
             .unwrap_or_else(|err| panic!("{}", err));
     }
 }

@@ -821,8 +821,7 @@ impl Thread {
     /// to an `add` function in rust
     ///
     /// ```rust
-    /// # extern crate gluon;
-    /// # use gluon::{new_vm, Compiler, Thread};
+    /// # use gluon::{new_vm, Thread, ThreadExt};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
     /// # fn main() {
     ///
@@ -832,9 +831,7 @@ impl Thread {
     ///
     /// let vm = new_vm();
     ///
-    /// Compiler::new()
-    ///     .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example",
-    ///         r#" import! std.int "#)
+    /// vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();

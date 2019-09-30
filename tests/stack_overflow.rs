@@ -1,5 +1,4 @@
-extern crate gluon;
-use gluon::{new_vm, Compiler};
+use gluon::{new_vm, ThreadExt};
 
 #[test]
 fn dont_stack_overflow_on_let_bindings() {
@@ -731,5 +730,5 @@ let _ = 1
 in 1
 "#;
     let vm = new_vm();
-    Compiler::new().load_script(&vm, "", text).unwrap();
+    vm.load_script("", text).unwrap();
 }

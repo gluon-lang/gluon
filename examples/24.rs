@@ -21,6 +21,6 @@ fn main_() -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::open("examples/24.glu")?;
     file.read_to_string(&mut source)?;
 
-    gluon::Compiler::new_lock().run_expr::<IO<()>>(&thread, "24", &source)?;
+    thread.run_expr::<IO<()>>("24", &source)?;
     Ok(())
 }

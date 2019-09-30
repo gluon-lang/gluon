@@ -6,7 +6,7 @@ use gluon::{
         thread::ThreadInternal,
         Error as VMError,
     },
-    Compiler, Error, Thread, ThreadExt,
+    Error, Thread, ThreadExt,
 };
 
 use crate::support::make_vm;
@@ -20,7 +20,7 @@ fn out_of_memory() {
     vm.get_database_mut().implicit_prelude(false);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", expr);
 
     match result {
         // FIXME This should just need to match on the explicit out of memory error
@@ -39,7 +39,7 @@ fn stack_overflow() {
     vm.get_database_mut().implicit_prelude(false);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new_lock().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", expr);
 
     match result {
         Err(Error::VM(VMError::StackOverflow(3))) => (),

@@ -1,12 +1,9 @@
-extern crate gluon;
-
-use gluon::{new_vm, Compiler, ThreadExt};
+use gluon::{new_vm, ThreadExt};
 
 #[test]
 fn macro_error_with_line_column_info() {
     let thread = new_vm();
-    let compiler = Compiler::new();
-    let result = compiler.run_expr::<()>(&thread, "test", "import! undefined");
+    let result = thread.run_expr::<()>("test", "import! undefined");
     assert_eq!(
         result
             .unwrap_err()

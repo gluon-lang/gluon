@@ -10,17 +10,20 @@ use futures::{
     Future,
 };
 
-use crate::vm::api::generic::{A, B};
-use crate::vm::api::{
-    Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
+use crate::vm::{
+    self,
+    api::{
+        generic::{A, B},
+        Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
+    },
+    internal::ValuePrinter,
+    stack::{self, StackFrame},
+    thread::{RootedThread, Thread, ThreadInternal},
+    types::*,
+    ExternModule, Result,
 };
-use crate::vm::internal::ValuePrinter;
-use crate::vm::stack::{self, StackFrame};
-use crate::vm::thread::{RootedThread, Thread, ThreadInternal};
-use crate::vm::types::*;
-use crate::vm::{self, ExternModule, Result};
 
-use crate::{compiler_pipeline::*, Compiler, Error};
+use crate::{compiler_pipeline::*, Error, ThreadExt};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -294,9 +297,8 @@ fn run_expr(
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    let compiler = Compiler::new();
     let db = crate::get_db_snapshot(&vm);
-    expr.run_expr(&mut compiler.module_compiler(&db), vm1, "<top>", expr, None)
+    expr.run_expr(&mut vm.module_compiler(&db), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();
@@ -323,9 +325,8 @@ fn load_script(
     let vm = vm.root_thread();
     let name = name.to_string();
 
-    let compiler = Compiler::new();
     let db = crate::get_db_snapshot(&vm);
-    expr.load_script(&mut compiler.module_compiler(&db), vm1, &name, expr, None)
+    expr.load_script(&mut vm.module_compiler(&db), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();

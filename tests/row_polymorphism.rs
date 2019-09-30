@@ -1,8 +1,7 @@
-extern crate env_logger;
-extern crate gluon;
-
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
-use gluon::{Compiler, Thread};
+use gluon::{
+    vm::api::{FunctionRef, Hole, OpaqueValue},
+    Thread, ThreadExt,
+};
 
 use crate::support::make_vm;
 
@@ -33,12 +32,10 @@ fn polymorphic_record_access_from_child_thread() {
     let vm = make_vm();
     let child = vm.new_thread().unwrap();
 
-    Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", "import! std.function")
+    vm.run_expr::<OpaqueValue<&Thread, Hole>>("", "import! std.function")
         .unwrap();
 
-    let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> i32>>(
-        &child,
+    let result = child.run_expr::<FunctionRef<fn(i32) -> i32>>(
         "test",
         r#"
         let function = import! std.function

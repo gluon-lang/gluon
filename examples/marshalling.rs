@@ -21,7 +21,7 @@ use gluon::{
         },
         ExternModule, Variants,
     },
-    Compiler, Result, RootedThread, Thread, ThreadExt,
+    Result, RootedThread, Thread, ThreadExt,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -69,7 +69,7 @@ fn marshal_enum() -> Result<()> {
     let thread = new_vm();
 
     let enum_source = api::typ::make_source::<Enum>(&thread)?;
-    Compiler::new().load_script(&thread, "examples.enum", &enum_source)?;
+    thread.load_script("examples.enum", &enum_source)?;
 
     let source = r#"
         let { Enum } = import! "examples/enum.glu"
@@ -89,7 +89,7 @@ fn marshal_enum() -> Result<()> {
         value => Enum,
     };
     let (record_p! { mut unwrap_b, value, }, _) =
-        Compiler::new().run_expr::<SourceType>(&thread, "example", source)?;
+        thread.run_expr::<SourceType>("example", source)?;
     match value {
         Enum::C(ref a, ref b) => {
             assert_eq!(a, "hello");
@@ -113,7 +113,7 @@ where
     let thread = new_vm();
 
     // Load std.map so that we can retrieve the `Map` type through the `VmType` trait
-    Compiler::new().run_expr::<()>(&thread, "example", "let _ = import! std.map in ()")?;
+    thread.run_expr::<()>("example", "let _ = import! std.map in ()")?;
 
     let config_example = r#"
         let array = import! std.array
@@ -127,9 +127,7 @@ where
         "#;
     let mut make_map: FunctionRef<
         fn(Vec<(String, String)>) -> OpaqueValue<RootedThread, api::Map<String, String>>,
-    > = Compiler::new()
-        .run_expr(&thread, "example", config_example)?
-        .0;
+    > = thread.run_expr("example", config_example)?.0;
 
     let entries: Vec<_> = iterable.into_iter().collect();
     let map = make_map.call(entries)?;
@@ -143,9 +141,7 @@ where
         "#;
     let mut query_map: FunctionRef<
         fn(OpaqueValue<RootedThread, api::Map<String, String>>) -> (Option<String>, Option<String>),
-    > = Compiler::new()
-        .run_expr(&thread, "example", config_query_example)?
-        .0;
+    > = thread.run_expr("example", config_query_example)?.0;
 
     let tuple = query_map.call(map)?;
     assert_eq!(tuple, (Some("value".to_string()), None));
@@ -172,8 +168,6 @@ fn marshal_generic() -> Result<()> {
     let thread = new_vm();
     thread.get_database_mut().run_io(true);
 
-    let compiler = Compiler::new_lock();
-
     // define the gluon type that maps to the rust Either
     let src = r#"
         type Either l r = | Left l | Right r
@@ -189,9 +183,7 @@ fn marshal_generic() -> Result<()> {
         ExternModule::new(thread, module)
     }
 
-    compiler
-        .load_script(&thread, "examples.either", src)
-        .unwrap();
+    thread.load_script("examples.either", src).unwrap();
     import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"
@@ -219,7 +211,7 @@ fn marshal_generic() -> Result<()> {
         | Right _ -> error "wrong answer!"
     "#;
 
-    compiler.run_expr::<IO<()>>(&thread, "example", script)?;
+    thread.run_expr::<IO<()>>("example", script)?;
 
     Ok(())
 }
@@ -299,7 +291,6 @@ where
 
 fn marshal_wrapper() -> Result<()> {
     let thread = new_vm();
-    let compiler = Compiler::new_lock();
 
     let src = r#"
         type User a = { name: String, age: Int, data: a }
@@ -317,9 +308,7 @@ fn marshal_wrapper() -> Result<()> {
         ExternModule::new(thread, module)
     }
 
-    compiler
-        .load_script(&thread, "examples.wrapper", src)
-        .unwrap();
+    thread.load_script("examples.wrapper", src).unwrap();
     import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"
@@ -335,7 +324,7 @@ fn marshal_wrapper() -> Result<()> {
         assert (actual.data == expected.data)
     "#;
 
-    compiler.run_expr::<()>(&thread, "example", script)?;
+    thread.run_expr::<()>("example", script)?;
 
     Ok(())
 }
@@ -379,12 +368,11 @@ fn metadata(hwnd: &WindowHandle) -> String {
 
 fn marshal_userdata() -> Result<()> {
     let thread = new_vm();
-    let compiler = gluon::Compiler::new();
 
     gluon::import::add_extern_module(&thread, "hwnd", load_mod);
 
     // Load the extern module so that the next run_expr call can access the registered type
-    compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "", "import! hwnd")?;
+    thread.run_expr::<OpaqueValue<&Thread, Hole>>("", "import! hwnd")?;
 
     let script = r#"
         let { assert } = import! std.test
@@ -397,14 +385,13 @@ fn marshal_userdata() -> Result<()> {
 
     // `UserdataValue` lets us extract a `Clone` of its inner userdata value
     let (UserdataValue(handle), _) =
-        compiler.run_expr::<UserdataValue<WindowHandle>>(&thread, "test", script)?;
+        thread.run_expr::<UserdataValue<WindowHandle>>("test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
 
     // If cloning would be expansive we can instate use `OpaqueValue` to get a smart pointer to the
     // userdata which implements `Deref` for easy access
-    let (handle, _) =
-        compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&thread, "test", script)?;
+    let (handle, _) = thread.run_expr::<OpaqueValue<&Thread, WindowHandle>>("test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
     Ok(())
@@ -421,16 +408,15 @@ enum List<T> {
 
 fn marshal_recursive() -> Result<()> {
     let vm = new_vm();
-    let compiler = gluon::Compiler::new();
 
     // Load std.list before we try to use it in `VmType for List`
-    compiler.run_expr::<OpaqueValue<RootedThread, Hole>>(&vm, "example", "import! std.list")?;
+    vm.run_expr::<OpaqueValue<RootedThread, Hole>>("example", "import! std.list")?;
 
     let source = r#"
         let list = import! std.list
         list.of [1, 2]
         "#;
-    let (list, _) = compiler.run_expr::<List<i32>>(&vm, "example", source)?;
+    let (list, _) = vm.run_expr::<List<i32>>("example", source)?;
 
     assert_eq!(list, List::Cons(1, List::Cons(2, List::Nil.into()).into()));
     println!("The list {:?}", list);

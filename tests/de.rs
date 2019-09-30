@@ -3,24 +3,29 @@ extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
 
-use gluon::base::symbol::Symbol;
-use gluon::base::types::{ArcType, Field, Type};
-use gluon::vm::api::de::{self, De};
-use gluon::vm::api::{Getable, Hole, OpaqueValue, VmType};
-use gluon::vm::thread::Thread;
-use gluon::{new_vm, Compiler, ThreadExt};
+use gluon::{
+    base::{
+        symbol::Symbol,
+        types::{ArcType, Field, Type},
+    },
+    new_vm,
+    vm::{
+        api::{
+            de::{self, De},
+            Getable, Hole, OpaqueValue, VmType,
+        },
+        thread::Thread,
+    },
+    ThreadExt,
+};
 
 #[test]
 fn bool() {
     let _ = env_logger::try_init();
 
     let thread = new_vm();
-    let (De(b), _) = Compiler::new()
-        .run_expr::<De<bool>>(
-            &thread,
-            "test",
-            r#"let { Bool } = import! std.bool in True"#,
-        )
+    let (De(b), _) = thread
+        .run_expr::<De<bool>>("test", r#"let { Bool } = import! std.bool in True"#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(b, true);
 }
@@ -57,9 +62,8 @@ fn option() {
     let _ = env_logger::try_init();
 
     let thread = new_vm();
-    let (De(opt), _) = Compiler::new()
+    let (De(opt), _) = thread
         .run_expr::<De<Option<f64>>>(
-            &thread,
             "test",
             r#"let { Option } = import! std.option in Some 1.0 "#,
         )
@@ -72,12 +76,8 @@ fn partial_record() {
     let _ = env_logger::try_init();
 
     let thread = new_vm();
-    let (De(record), _) = Compiler::new()
-        .run_expr::<De<Record>>(
-            &thread,
-            "test",
-            r#" { test = 1, extra = 1.0, string = "test", } "#,
-        )
+    let (De(record), _) = thread
+        .run_expr::<De<Record>>("test", r#" { test = 1, extra = 1.0, string = "test", } "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
         record,
@@ -114,17 +114,16 @@ fn optional_field() {
 
     let thread = new_vm();
 
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { } "#)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", r#" { } "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
         De::<OptionalFieldRecord>::from_value(&thread, value.get_variant()).0,
         OptionalFieldRecord { test: None }
     );
 
-    let (value, _) = Compiler::new()
+    let (value, _) = thread
         .run_expr::<OpaqueValue<&Thread, Hole>>(
-            &thread,
             "test",
             r#"let { Option } = import! std.option in { test = Some 2 } "#,
         )
@@ -134,8 +133,8 @@ fn optional_field() {
         OptionalFieldRecord { test: Some(2) }
     );
 
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { test = 1 } "#)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", r#" { test = 1 } "#)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let typ = Type::poly_record(
@@ -173,29 +172,20 @@ fn enum_() {
 
     let thread = new_vm();
     thread.get_database_mut().set_implicit_prelude(false);
-    Compiler::new_lock()
+    thread
         .load_script(
-            &thread,
             "test",
             r#" type Enum = | A String | B String Float | C Int Int in { Enum } "#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let (De(enum_), _) = Compiler::new_lock()
-        .run_expr::<De<Enum>>(
-            &thread,
-            "test",
-            r#" let { Enum } = import! "test" in A "abc" "#,
-        )
+    let (De(enum_), _) = thread
+        .run_expr::<De<Enum>>("test", r#" let { Enum } = import! "test" in A "abc" "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(enum_, Enum::A("abc".to_string()));
 
-    let (De(enum_), _) = Compiler::new_lock()
-        .run_expr::<De<Enum>>(
-            &thread,
-            "test",
-            r#" let { Enum } = import! "test" in C 0 1 "#,
-        )
+    let (De(enum_), _) = thread
+        .run_expr::<De<Enum>>("test", r#" let { Enum } = import! "test" in C 0 1 "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(enum_, Enum::C(0, 1));
 }

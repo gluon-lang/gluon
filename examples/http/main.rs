@@ -5,27 +5,14 @@
 //!
 //! [hyper]:https://hyper.rs
 
-extern crate gluon;
-
-extern crate env_logger;
-#[allow(unused_imports)]
-#[macro_use]
-extern crate log;
-extern crate failure;
-extern crate futures;
-extern crate tokio;
-
 use std::{env, fs::File, io::Read};
 
 use futures::{future, prelude::*};
 
 use gluon::{
     new_vm,
-    vm::{
-        api::{OwnedFunction, IO},
-        thread::Thread,
-    },
-    Compiler,
+    vm::api::{OwnedFunction, IO},
+    Thread, ThreadExt,
 };
 
 fn main() {
@@ -53,12 +40,8 @@ fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = failure::
         Ok(expr)
     })
     .and_then(move |expr| {
-        Compiler::new()
-            .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>(
-                &thread,
-                "examples/http/server.glu",
-                &expr,
-            )
+        thread
+            .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>("examples/http/server.glu", &expr)
             .from_err()
             .and_then(move |(mut listen, _)| listen.call_async(port).from_err().map(|_| ()))
     })

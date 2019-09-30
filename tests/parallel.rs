@@ -1,14 +1,16 @@
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
 use std::thread::spawn;
 
-use gluon::vm::api::FunctionRef;
-use gluon::vm::api::OpaqueValue;
-use gluon::vm::channel::{ChannelRecord, Receiver, Sender};
-use gluon::RootedThread;
-use gluon::{new_vm, Compiler, Error};
+use gluon::{
+    new_vm,
+    vm::{
+        api::{FunctionRef, OpaqueValue},
+        channel::{ChannelRecord, Receiver, Sender},
+    },
+    Error, RootedThread, ThreadExt,
+};
 
 #[test]
 fn parallel() {
@@ -21,12 +23,10 @@ fn parallel() {
 
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
-    let compiler = Compiler::new();
 
-    compiler.run_expr::<()>(&vm, "<top>", " let _ = import! std.channel in () ")?;
+    vm.run_expr::<()>("<top>", " let _ = import! std.channel in () ")?;
 
-    let (value, _) = compiler.run_expr(
-        &vm,
+    let (value, _) = vm.run_expr(
         "<top>",
         " let { channel } = import! std.channel in channel 0 ",
     )?;
@@ -45,9 +45,8 @@ fn parallel_() -> Result<(), Error> {
             ()
         f
         "#;
-        let compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> =
-            compiler.run_expr(&child, "<top>", expr)?.0;
+            child.run_expr("<top>", expr)?.0;
         Ok(f.call(sender)?)
     });
 
@@ -69,9 +68,8 @@ fn parallel_() -> Result<(), Error> {
 
         f
         "#;
-        let compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> =
-            compiler.run_expr(&child2, "<top>", expr)?.0;
+            child2.run_expr("<top>", expr)?.0;
         Ok(f.call(receiver)?)
     });
 

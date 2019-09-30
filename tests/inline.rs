@@ -11,9 +11,8 @@ fn inline_cross_module() {
     let thread = make_vm();
     thread.get_database_mut().set_implicit_prelude(false);
 
-    gluon::Compiler::new()
+    thread
         .load_script(
-            &thread,
             "test",
             r#"
         let { (+) } = import! std.num

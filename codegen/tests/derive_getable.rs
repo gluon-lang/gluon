@@ -21,7 +21,7 @@ use gluon::{
         },
         ExternModule,
     },
-    Compiler, RootedThread, Thread, ThreadExt,
+    RootedThread, Thread, ThreadExt,
 };
 use init::new_vm;
 
@@ -49,10 +49,9 @@ fn tuple_enum_to_str(val: TupleEnum) -> String {
 #[test]
 fn enum_tuple_variants() {
     let vm = new_vm();
-    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<TupleEnum>(&vm).unwrap();
-    compiler.load_script(&vm, "types", &src).unwrap();
+    vm.load_script("types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_tuple_enum_mod);
 
     let script = r#"
@@ -66,7 +65,7 @@ fn enum_tuple_variants() {
         assert (tuple_enum_to_str (LotsOfTupleThings 42 "Text" 0.0) == "LotsOfTupleThings(42, \"Text\", 0.0)")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }
@@ -93,11 +92,10 @@ fn struct_enum_to_str(val: StructEnum) -> String {
 #[test]
 fn enum_struct_variants() {
     let vm = new_vm();
-    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
     println!("Types:\n{}", src);
-    compiler.load_script(&vm, "types", &src).unwrap();
+    vm.load_script("types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_struct_enum_mod);
 
     let script = r#"
@@ -109,7 +107,7 @@ fn enum_struct_variants() {
         assert (struct_enum_to_str (TwoFields { name = "Pi", val = 3.14 }) == "TwoFields { name: \"Pi\", val: 3.14 }")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }
@@ -152,7 +150,6 @@ fn enum_generic_variants() {
     let _ = env_logger::try_init();
 
     let vm = new_vm();
-    let compiler = Compiler::new();
 
     import::add_extern_module(&vm, "functions", load_either_mod);
 
@@ -167,7 +164,7 @@ fn enum_generic_variants() {
         assert (extract_str (Right "right") == "right")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }
@@ -184,7 +181,6 @@ fn derive_generates_same_type_as_gluon_define() {
 
     let vm = new_vm();
     vm.get_database_mut().implicit_prelude(false);
-    let compiler = Compiler::new();
 
     import::add_extern_module(&vm, "test", |vm| {
         ExternModule::new(vm, primitive!(1, "test", |_: Enum| ()))
@@ -199,7 +195,7 @@ fn derive_generates_same_type_as_gluon_define() {
         test (TestVariant2 123)
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }
@@ -235,10 +231,9 @@ fn struct_to_str(val: Struct) -> String {
 #[test]
 fn struct_derive() {
     let vm = new_vm();
-    let compiler = Compiler::new();
 
     let src = api::typ::make_source::<Struct>(&vm).unwrap();
-    compiler.load_script(&vm, "types", &src).unwrap();
+    vm.load_script("types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_struct_mod);
 
     let script = r#"
@@ -249,7 +244,7 @@ fn struct_derive() {
         assert (struct_to_str { string = "test", int = 55, tuple = (0.0, 1.0) } == "Struct { string: \"test\", int: 55, tuple: (0.0, 1.0) }")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }
@@ -273,14 +268,13 @@ fn tuple_struct_to_str(val: TupleStruct) -> String {
 #[test]
 fn tuple_struct_derive() {
     let vm = new_vm();
-    let compiler = Compiler::new();
 
     let src = r#"
         type TupleStruct = (Int, Int)
         { TupleStruct }
     "#;
 
-    compiler.load_script(&vm, "types", &src).unwrap();
+    vm.load_script("types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_tuple_struct_mod);
 
     let script = r#"
@@ -291,7 +285,7 @@ fn tuple_struct_derive() {
         assert (tuple_struct_to_str (1, 2) == "TupleStruct(1, 2)")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }

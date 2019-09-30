@@ -1,12 +1,9 @@
-extern crate env_logger;
+use gluon::ThreadExt;
 
-extern crate gluon;
+use crate::support::*;
 
 #[macro_use]
 mod support;
-
-use crate::support::*;
-use gluon::Compiler;
 
 test_expr! { prelude match_on_bool,
 r#"
@@ -26,8 +23,8 @@ type AB = | A | B in
 match A with
 | B -> True
 ";
-    let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
+    let vm = make_vm();
+    let result = vm.run_expr::<bool>("<top>", text);
     assert!(result.is_err());
 }
 

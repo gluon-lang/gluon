@@ -8,19 +8,21 @@ Before you are able to do anything with the library, you will need to create a v
 
 ### Compiling and running gluon code
 
-Once in possession of a [RootedThread][], you can compile and execute code using the [run_expr][] method on the [Compiler][] builder type.
+Once in possession of a [RootedThread][], you can compile and execute code using the [run_expr][] method on the [ThreadExt][] extension trait.
+
+[ThreadExt]:https://docs.rs/gluon/*/gluon/trait.ThreadExt.html
 
 ```rust,ignore
 let vm = new_vm();
-let (result, _) = Compiler::new()
-    .run_expr::<i32>(&vm, "example", "1 + 2")
+let (result, _) = vm
+    .run_expr::<i32>("example", "1 + 2")
     .ok();
 assert_eq!(result, Some(3));
 ```
 
-Notably, if we were to execute a script with side effects the code above will actually not run the side effects. To make gluon run side effects we need to set the [run_io][] flag on [Compiler][].
+Notably, if we were to execute a script with side effects the code above will actually not run the side effects. To make gluon run side effects we need to set the [run_io][] flag on [ThreadExt][].
 
-[run_io]:https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_io
+[run_io]:https://docs.rs/gluon/*/gluon/trait.ThreadExt.html#method.run_io
 
 ```rust,ignore
 let vm = new_vm();
@@ -30,13 +32,11 @@ let io = import! std.io
 io.print "123"
 "#;
 // Returns an action which prints `123` when evaluated
-Compiler::new()
-    .run_expr::<IO<()>>(&vm, "example", script)
+vm.run_expr::<IO<()>>("example", script)
     .unwrap();
 // Prints `123` to stdout
-Compiler::new()
-    .run_io(true)
-    .run_expr::<IO<()>>(&vm, "example", script)
+vm.run_io(true);
+vm.run_expr::<IO<()>>(&vm, "example", script)
     .unwrap();
 ```
 
@@ -45,8 +45,7 @@ Often, it is either inconvenient or inefficient to compile and run code directly
 ```rust,ignore
 let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
-Compiler::new()
-    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
+vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.prelude "#)
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
@@ -81,8 +80,7 @@ let expr = r#"
     factorial 5
 "#;
 
-let (result, _) = Compiler::new()
-    .run_expr::<i32>(&vm, "factorial", expr)
+let (result, _) = vm.run_expr::<i32>("factorial", expr)
     .unwrap();
 
 assert_eq!(result, 120);
@@ -92,8 +90,7 @@ assert_eq!(result, 120);
 
 ```rust,ignore
 let vm = new_vm();
-let (result, _) = Compiler::new()
-    .run_expr::<String>(&vm, "example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+let (result, _) = vm.run_expr::<String>("example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
     .unwrap();
 assert_eq!(result, "Hello world");
 ```
@@ -102,8 +99,7 @@ assert_eq!(result, "Hello world");
 [new_vm]:https://docs.rs/gluon/*/gluon/fn.new_vm.html
 [RootedThread]:https://docs.rs/gluon/*/gluon/struct.RootedThread.html
 [Thread]:https://docs.rs/gluon/*/gluon/struct.Thread.html
-[run_expr]:https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_expr
-[Compiler struct]:https://docs.rs/gluon/*/gluon/struct.Compiler.html
+[run_expr]:https://docs.rs/gluon/*/gluon/trait.ThreadExt.html#method.run_expr
 [add_extern_module]:https://docs.rs/gluon/*/gluon/import/fn.add_extern_module.html
 [primitives]:https://github.com/gluon-lang/gluon/blob/master/vm/src/primitives.rs
 [string]:http://doc.rust-lang.org/std/primitive.str.html

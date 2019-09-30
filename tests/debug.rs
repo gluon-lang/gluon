@@ -20,7 +20,7 @@ use gluon::{
         compiler::UpvarInfo,
         thread::{HookFlags, ThreadInternal},
     },
-    Compiler, RootedThread, ThreadExt,
+    RootedThread, ThreadExt,
 };
 
 fn new_vm() -> RootedThread {
@@ -62,9 +62,7 @@ fn function_hook() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
-        .unwrap();
+    thread.run_expr::<i32>("test", SIMPLE_EXPR).unwrap();
 
     assert_eq!(
         *functions.lock().unwrap(),
@@ -82,9 +80,7 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    let mut execute = Compiler::new_lock()
-        .run_expr_async::<i32>(&thread, "test", source)
-        .map(|_| ());
+    let mut execute = thread.run_expr_async::<i32>("test", source).map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -163,9 +159,7 @@ fn line_hook_after_call() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    let mut execute = Compiler::new_lock()
-        .run_expr_async::<i32>(&thread, "test", expr)
-        .map(|_| ());
+    let mut execute = thread.run_expr_async::<i32>("test", expr).map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -208,9 +202,7 @@ fn implicit_prelude_lines_not_counted() {
         })));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    let mut execute = Compiler::new()
-        .run_expr_async::<i32>(&thread, "test", "1")
-        .map(|_| ());
+    let mut execute = thread.run_expr_async::<i32>("test", "1").map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -266,8 +258,8 @@ fn read_variables() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<i32>(&thread, "test", expr)
+    thread
+        .run_expr::<i32>("test", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let map = result.lock().unwrap();
@@ -340,9 +332,7 @@ fn argument_types() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     let int_function: ArcType = Type::function(vec![Type::int()], Type::int());
 
@@ -403,9 +393,7 @@ fn source_name() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     let name = result.lock().unwrap();
     assert_eq!(*name, "test");
@@ -440,9 +428,7 @@ fn upvars() {
 
     thread.get_database_mut().implicit_prelude(false);
 
-    Compiler::new_lock()
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     assert_eq!(
         *result.lock().unwrap(),
@@ -487,9 +473,7 @@ fn implicit_prelude_variable_names() {
         })));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    Compiler::new()
-        .run_expr::<i32>(&thread, "test", "\n1")
-        .unwrap();
+    thread.run_expr::<i32>("test", "\n1").unwrap();
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {

@@ -1,10 +1,8 @@
 #[macro_use(assert_diff)]
 extern crate difference;
-extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 
-extern crate gluon;
 extern crate gluon_base as base;
 extern crate gluon_format as format;
 
@@ -13,7 +11,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use gluon::{Compiler, RootedThread, VmBuilder};
+use gluon::{RootedThread, ThreadExt, VmBuilder};
 
 fn new_vm() -> RootedThread {
     VmBuilder::new()
@@ -22,20 +20,13 @@ fn new_vm() -> RootedThread {
 }
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
-    let compiler = Compiler::new();
     let thread = new_vm();
-    compiler.format_expr(&mut format::Formatter::default(), &thread, "test", expr)
+    thread.format_expr(&mut format::Formatter::default(), "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
-    let compiler = Compiler::new();
     let thread = new_vm();
-    compiler.format_expr(
-        &mut format::Formatter { expanded: true },
-        &thread,
-        "test",
-        expr,
-    )
+    thread.format_expr(&mut format::Formatter { expanded: true }, "test", expr)
 }
 
 fn test_format(filename: &str) {
@@ -50,10 +41,9 @@ fn test_format(filename: &str) {
 
     let name = base::filename_to_module(filename);
 
-    let compiler = Compiler::new();
     let thread = new_vm();
-    let out_str = compiler
-        .format_expr(&mut format::Formatter::default(), &thread, &name, &contents)
+    let out_str = thread
+        .format_expr(&mut format::Formatter::default(), &name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
     if contents != out_str {

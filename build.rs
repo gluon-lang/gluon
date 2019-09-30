@@ -31,7 +31,7 @@ mod gen_skeptic {
 ```rust,skeptic-template
 
 use gluon::vm::api::{Hole, OpaqueValue};
-use gluon::{VmBuilder, Compiler, Thread};
+use gluon::{VmBuilder, Thread, ThreadExt};
 
 let _ = ::env_logger::try_init();
 let text = r#"{{test}}"#;
@@ -39,7 +39,7 @@ let manifest_path = ::std::env::var("CARGO_MANIFEST_DIR").unwrap();
 let vm = VmBuilder::new()
     .import_paths(Some(vec![".".into(), manifest_path.into()]))
     .build();
-match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", text) {
+match vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", text) {
     Ok(_value) => (),
     Err(err) => {
         panic!("{}", err);

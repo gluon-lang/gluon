@@ -27,11 +27,11 @@ pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
 
-pub trait ArcDowncast: Downcast {
+pub trait DowncastArc: Downcast {
     fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 }
 
-impl<T> ArcDowncast for T
+impl<T> DowncastArc for T
 where
     T: Downcast + Send + Sync,
 {
@@ -40,7 +40,7 @@ where
     }
 }
 
-pub trait MacroError: ArcDowncast + StdError + AsDiagnostic + Send + Sync + 'static {
+pub trait MacroError: DowncastArc + StdError + AsDiagnostic + Send + Sync + 'static {
     fn clone_error(&self) -> Error;
     fn eq_error(&self, other: &dyn MacroError) -> bool;
     fn hash_error(&self, hash: &mut dyn std::hash::Hasher);
@@ -55,7 +55,7 @@ impl dyn MacroError {
         Self: Send + Sync,
     {
         if self.is::<T>() {
-            Ok(ArcDowncast::into_arc_any(self).downcast::<T>().unwrap())
+            Ok(DowncastArc::into_arc_any(self).downcast::<T>().unwrap())
         } else {
             Err(self)
         }
@@ -170,7 +170,7 @@ impl Error {
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro: Trace + ArcDowncast + Send + Sync {
+pub trait Macro: Trace + DowncastArc + Send + Sync {
     fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
     where
         Self: Sized,
@@ -201,7 +201,7 @@ impl dyn Macro {
         Self: Send + Sync,
     {
         if self.is::<T>() {
-            Ok(ArcDowncast::into_arc_any(self).downcast::<T>().unwrap())
+            Ok(DowncastArc::into_arc_any(self).downcast::<T>().unwrap())
         } else {
             Err(self)
         }

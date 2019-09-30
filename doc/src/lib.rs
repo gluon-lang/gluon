@@ -37,7 +37,7 @@ use gluon::{
         types::{ArcType, ArgType, Type, TypeExt},
     },
     check::metadata::metadata,
-    Compiler, Thread, ThreadExt,
+    Thread, ThreadExt,
 };
 
 pub type Error = failure::Error;
@@ -532,8 +532,7 @@ impl DocCollector<'_> {
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
-        let compiler = Compiler::new();
-        let (expr, typ) = compiler.typecheck_str(thread, &name, &content, None)?;
+        let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
         let (meta, _) = metadata(&thread.get_database(), &expr);
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;

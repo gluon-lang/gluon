@@ -31,7 +31,7 @@ extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::{Compiler, Thread, new_vm};
+use gluon::{Thread, ThreadExt, new_vm};
 use gluon::base::types::ArcType;
 use gluon::vm::api::{FunctionRef, VmType};
 use gluon::vm::api::ser::Ser;
@@ -62,8 +62,8 @@ impl VmType for Vec2 {
 
 let thread = new_vm();
 
-let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = Compiler::new()
-    .run_expr(&thread, "", r#"let f v: _ -> Int = v.x + v.y in f"#)
+let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = thread
+    .run_expr("", r#"let f v: _ -> Int = v.x + v.y in f"#)
     .unwrap_or_else(|err| panic!("{}", err));
 let vec = Vec2 {
     x: 3,
@@ -83,7 +83,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::{Compiler, Thread, ThreadExt, new_vm};
+use gluon::{Thread, ThreadExt, new_vm};
 use gluon::base::types::ArcType;
 use gluon::vm::api::{FunctionRef, VmType};
 use gluon::vm::api::ser::Ser;
@@ -126,8 +126,8 @@ let f e =
 
 { Enum, f }
 "#;
-Compiler::new()
-    .load_script(&thread, "test", expr)
+thread
+    .load_script("test", expr)
     .unwrap_or_else(|err| panic!("{}", err));
 
 let mut f: FunctionRef<fn (Ser<Enum>) -> i32> = thread
