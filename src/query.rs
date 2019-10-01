@@ -523,7 +523,13 @@ impl CompilerEnv for CompilerDatabase {
             self.get_global(id.definition_name())
                 .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
         } else {
-            None
+            let name = id.definition_name();
+
+            let globals = self.thread().global_env().get_globals();
+            globals
+                .globals
+                .get(name)
+                .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
         }
     }
 }
@@ -548,7 +554,10 @@ impl TypeEnv for CompilerDatabase {
         if id.is_global() {
             self.get_global(id.definition_name()).map(|g| g.typ.clone())
         } else {
-            None
+            let name = id.definition_name();
+
+            let globals = self.thread().global_env().get_globals();
+            globals.globals.get(name).map(|global| global.typ.clone())
         }
     }
 

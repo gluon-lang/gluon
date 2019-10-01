@@ -461,6 +461,14 @@ pub trait ThreadExt {
         expected_type: Option<&ArcType>,
     ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
         let vm = self.thread();
+        {
+            use salsa::Database;
+            let mut db = vm.get_database_mut();
+            if db.module_text(file.into()).as_ref().map(|s| &s[..]).ok() != Some(expr_str) {
+                db.query_mut(crate::query::ModuleTextQuery)
+                    .invalidate(&file.into());
+            }
+        }
         let db = get_db_snapshot(&vm);
         db.compiler()
             .state()
