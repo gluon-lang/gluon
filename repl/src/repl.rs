@@ -630,11 +630,12 @@ pub fn run(
     color: Color,
     prompt: &str,
     debug_level: DebugLevel,
+    use_std_lib: bool,
 ) -> impl Future<Item = (), Error = Box<dyn StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
     vm.global_env().set_debug_level(debug_level);
 
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new().use_standard_lib(use_std_lib);
     try_future!(
         compile_repl(&mut compiler, &vm)
             .map_err(|err| err.emit_string(&compiler.code_map()).unwrap()),
