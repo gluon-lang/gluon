@@ -3,7 +3,8 @@
 
 let { Ordering } = import! std.types
 let { Eq, Ord } = import! std.cmp
-let instant @ { Instant } = import! std.time.prim.instant
+let { instant } = import! std.time.prim
+let { Instant } = instant
 
 let eq : Eq Instant = {(==) = instant.eq}
 

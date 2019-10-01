@@ -3,7 +3,8 @@
 
 let { Ordering } = import! std.types
 let { Eq, Ord } = import! std.cmp
-let system_time @ { SystemTime } = import! std.time.prim.system_time
+let { system_time } = import! std.time.prim
+let { SystemTime } = system_time
 
 let eq : Eq SystemTime = {(==) = system_time.eq}
 
