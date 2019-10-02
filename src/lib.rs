@@ -462,18 +462,10 @@ pub trait ThreadExt {
     ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
         let vm = self.thread();
         {
-            use salsa::Database;
             let mut db = vm.get_database_mut();
-            if db.module_text(file.into()).as_ref().map(|s| &s[..]).ok() != Some(expr_str) {
-                db.query_mut(crate::query::ModuleTextQuery)
-                    .invalidate(&file.into());
-            }
+            db.add_module(file.into(), expr_str.into());
         }
         let db = get_db_snapshot(&vm);
-        db.compiler()
-            .state()
-            .inline_modules
-            .insert(file.into(), expr_str.into());
 
         let TypecheckValue { expr, typ, .. } =
             db.typechecked_module(file.into(), expected_type.cloned())?;
@@ -573,12 +565,13 @@ pub trait ThreadExt {
 
     fn load_script_async<'vm>(&self, filename: &str, input: &str) -> BoxFuture<'vm, (), Error> {
         let module_name = filename_to_module(filename);
+
         let vm = self.thread();
+        {
+            let mut db = vm.get_database_mut();
+            db.add_module(module_name.clone(), input.into());
+        }
         let db = get_db_snapshot(&vm);
-        db.compiler()
-            .state()
-            .inline_modules
-            .insert(module_name.clone(), input.into());
         Box::new(future::result(db.global(module_name).map(|_| ())))
     }
 

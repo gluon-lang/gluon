@@ -12,7 +12,6 @@ use {
 use {
     base::{
         ast::{self, Expr, SpannedExpr, TypedIdent},
-        error::Errors,
         fnv::FnvMap,
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -77,8 +76,6 @@ pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
     pub(crate) inline_modules: FnvMap<String, String>,
     pub(crate) index_map: FnvMap<String, BytePos>,
-    pub(crate) errors: Errors<Error>,
-    pub(crate) module_states: FnvMap<String, usize>,
 }
 
 impl State {
@@ -157,18 +154,17 @@ impl crate::query::CompilationBase for CompilerDatabase {
             .expect("Thread was not set in the compiler")
     }
 
-    fn invalidate_module(&self, module: String, contents: &str) {
-        let mut state = self.state();
+    fn add_module(&mut self, module: String, contents: &str) {
+        let state = self.state.clone();
+        let mut state = state.lock().unwrap();
         state.add_filemap(&module, &contents[..]);
-        state
-            .module_states
-            .entry(module)
-            .and_modify(|v| *v += 1)
-            .or_default();
-    }
-
-    fn report_errors(&self, error: &mut dyn Iterator<Item = Error>) {
-        self.state().errors.extend(error);
+        if state
+            .inline_modules
+            .insert(module.clone(), contents.into())
+            .is_some()
+        {
+            self.query_mut(ModuleTextQuery).invalidate(&module);
+        }
     }
 }
 
@@ -196,7 +192,6 @@ impl CompilerDatabase {
             thread,
         };
         compiler.set_compiler_settings(Default::default());
-        compiler.set_module_states(Default::default());
         compiler
     }
 
@@ -249,20 +244,13 @@ impl CompilerDatabase {
 pub trait CompilationBase: salsa::Database {
     fn compiler(&self) -> &CompilerDatabase;
     fn thread(&self) -> &Thread;
-    fn invalidate_module(&self, module: String, contents: &str);
-    fn report_errors(&self, error: &mut dyn Iterator<Item = Error>);
+    fn add_module(&mut self, module: String, contents: &str);
 }
 
 #[salsa::query_group(CompileStorage)]
 pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn compiler_settings(&self) -> Settings;
-
-    #[salsa::input]
-    fn module_states(&self) -> Arc<FnvMap<String, usize>>;
-
-    #[salsa::dependencies]
-    fn module_state(&self, module: String) -> usize;
 
     #[salsa::dependencies]
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
@@ -287,6 +275,7 @@ pub trait Compilation: CompilationBase {
     #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
+    #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
     fn global_(&self, name: String) -> Result<UnrootedGlobal>;
 
@@ -324,13 +313,9 @@ fn recover_cycle<T>(
     .into())
 }
 
-fn module_state(db: &impl Compilation, module: String) -> usize {
-    db.module_states().get(&module).cloned().unwrap_or_default()
-}
-
 fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
-    // We just need to depend on updates to the state, we don't care what it is
-    db.module_state(module.clone());
+    db.salsa_runtime()
+        .report_synthetic_read(salsa::Durability::LOW);
 
     let contents = if let Some(contents) = db.compiler().state().inline_modules.get(&module) {
         Arc::new(contents.to_string().into()) // FIXME Avoid copying
