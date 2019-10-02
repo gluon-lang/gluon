@@ -89,7 +89,7 @@ mod tests {
 
         let start_server = future::lazy(move || start(&thread, port));
 
-        runtime
+        let _ = runtime
             .block_on(
                 start_server
                     .select(wait_for_server(port))
@@ -118,7 +118,7 @@ mod tests {
 
         let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(40);
 
-        runtime
+        let _ = runtime
             .block_on(
                 start_server
                     .select(
