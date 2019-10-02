@@ -464,5 +464,5 @@ where
 }
 
 unsafe impl<I> Trace for Import<I> {
-    impl_trace! { self, gc, mark(&*self.compiler.lock().unwrap().snapshot().globals(), gc) }
+    impl_trace! { self, _gc, () }
 }

@@ -115,16 +115,15 @@ where
 
     // Returns `T` so that it can be reused by the caller
     fn poll(&mut self) -> Poll<Self::Item, Error> {
-        let thread = self
-            .0
-            .thread
-            .as_ref()
-            .expect("cannot poll Execute future after it has succeded")
-            .clone();
         match self.0.poll() {
             Ok(Async::Ready(x)) => Ok(Async::Ready(x)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(mut err) => {
+                let thread = self
+                    .0
+                    .thread
+                    .as_ref()
+                    .expect("cannot poll Execute future after it has succeded");
                 let mut context = thread.context();
                 let stack = StackFrame::<State>::current(&mut context.stack);
                 let new_trace = reset_stack(stack, 1)?;
@@ -262,7 +261,7 @@ where
         Variants::new(&self.value)
     }
 
-    pub fn vm(&self) -> &Thread {
+    pub fn vm(&self) -> &T {
         &self.vm
     }
 
@@ -716,9 +715,11 @@ impl RootedThread {
     }
 
     fn unroot_(&self) -> bool {
-        assert!(self.rooted.load());
         let root_count = {
             let mut roots = self.parent_threads();
+            if !self.rooted.load() {
+                return false;
+            }
             self.rooted.store(false);
             let (_, root_count) = &mut roots[self.thread_index];
             assert!(*root_count > 0);
@@ -1030,7 +1031,10 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     fn unroot_vm(&self);
 
     /// Roots a value
-    unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self> {
+    unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
+    where
+        Self: Sized,
+    {
         RootedValue::new(self, value)
     }
 }

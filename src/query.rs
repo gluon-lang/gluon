@@ -25,7 +25,7 @@ use {
         api::{OpaqueValue, ValueRef},
         compiler::{CompilerEnv, Variable},
         core::{self, interpreter, optimize::OptimizeEnv, CoreExpr},
-        gc::{CloneUnrooted, GcPtr, Trace},
+        gc::{GcPtr, Trace},
         internal::ClosureData,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
@@ -37,11 +37,15 @@ use crate::{compiler_pipeline::*, import::DatabaseSnapshot, Error, Result, Setti
 
 #[derive(Debug, Trace)]
 #[gluon(crate_name = "gluon_vm")]
-pub struct UnrootedValue(vm::internal::Value);
+pub struct UnrootedValue(RootedValue<RootedThread>);
 
 impl Clone for UnrootedValue {
     fn clone(&self) -> Self {
-        unsafe { UnrootedValue(self.0.clone_unrooted()) }
+        let value = self.0.clone();
+        unsafe {
+            self.0.vm().unroot();
+        }
+        UnrootedValue(value)
     }
 }
 
@@ -283,8 +287,6 @@ pub trait Compilation: CompilationBase {
     #[salsa::cycle(recover_cycle)]
     fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
-    fn globals(&self) -> Arc<FnvMap<String, UnrootedGlobal>>;
-
     #[salsa::cycle(recover_cycle)]
     fn global_(&self, name: String) -> Result<UnrootedGlobal>;
 
@@ -457,15 +459,6 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     Ok(Expr::Ident(TypedIdent::new(name)))
 }
 
-fn globals(db: &impl Compilation) -> Arc<FnvMap<String, UnrootedGlobal>> {
-    let globals = db
-        .module_states()
-        .keys()
-        .filter_map(|name| db.global_(name.clone()).ok().map(|g| (name.clone(), g)))
-        .collect();
-    Arc::new(globals)
-}
-
 fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
     let vm = db.thread();
 
@@ -504,11 +497,13 @@ fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
     let mut cloner = vm::internal::Cloner::new(vm, &mut gc);
     let value = cloner.deep_clone(&value)?;
 
+    let value: RootedValue<RootedThread> = vm.root_value(value);
+    unsafe { value.vm().unroot() };
     Ok(UnrootedGlobal {
         id,
         typ,
         metadata,
-        value: unsafe { UnrootedValue(value.get_value().clone_unrooted()) },
+        value: UnrootedValue(value),
     })
 }
 
@@ -602,11 +597,7 @@ impl OptimizeEnv for CompilerDatabase {
 }
 
 unsafe impl Trace for CompilerDatabase {
-    impl_trace! { self, gc,
-        for x in &*self.globals() {
-            mark(&x, gc);
-        }
-    }
+    impl_trace! { self, _gc, () }
 }
 
 impl VmEnv for CompilerDatabase {
