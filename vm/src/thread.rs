@@ -601,10 +601,13 @@ impl Drop for RootedThread {
                     err.into_inner()
                 });
                 let mut gc_to_drop =
-                    ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
+                    std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
                 // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
                 // when the Gc is dropped
                 drop(gc_ref);
+
+                // Macros can contain unrooted thread references via the database so we must drop those first
+                self.global_state.get_macros().clear();
 
                 // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
                 // droppting the thread

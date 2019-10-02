@@ -277,6 +277,10 @@ impl MacroEnv {
             .collect()
     }
 
+    pub fn clear(&self) {
+        self.macros.write().unwrap().clear();
+    }
+
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
     pub fn run(
         &self,
