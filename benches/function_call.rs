@@ -6,6 +6,7 @@ use gluon::{
         api::{primitive, FunctionRef, Primitive},
         thread::{Status, Thread},
     },
+    ThreadExt,
 };
 
 // Benchmarks function calls

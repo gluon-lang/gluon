@@ -1,11 +1,8 @@
-#[macro_use]
-extern crate criterion;
-
 use std::fs;
 
-use criterion::{Bencher, Criterion};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
-use gluon::{base, check, compiler_pipeline::*, new_vm, parser, ThreadExt};
+use gluon::{base, compiler_pipeline::*, new_vm, ThreadExt};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
@@ -25,7 +22,7 @@ fn typecheck_prelude(b: &mut Bencher) {
             "std.prelude",
             &text,
         );
-        if let Err(ref err) = result {
+        if let Err((_, err)) = &result {
             println!("{}", err);
             assert!(false);
         }
@@ -43,7 +40,7 @@ fn clone_prelude(b: &mut Bencher) {
             "std.prelude",
             &text,
         )
-        .unwrap_or_else(|err| panic!("{}", err))
+        .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     b.iter(|| expr.clone())
 }
@@ -51,40 +48,32 @@ fn clone_prelude(b: &mut Bencher) {
 fn typecheck_24(b: &mut Bencher) {
     let vm = new_vm();
     let text = fs::read_to_string("examples/24.glu").unwrap();
+    let db = vm.get_database();
+    let mut compiler = vm.module_compiler(&db);
     let MacroValue { expr } = text
-        .expand_macro(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            "examples.24",
-            &text,
-        )
+        .expand_macro(&mut compiler, &vm, "examples.24", &text)
         .unwrap_or_else(|(_, err)| panic!("{}", err));
-    b.iter(|| {
-        let result = MacroValue { expr: expr.clone() }.typecheck(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            "examples.24",
-            &text,
-        );
-        if let Err(ref err) = result {
-            println!("{}", err);
-            assert!(false);
-        }
-        result
-    })
+    b.iter_with_setup(
+        || MacroValue { expr: expr.clone() },
+        |input| {
+            let result = input.typecheck(&mut compiler, &vm, "examples.24", &text);
+            if let Err((_, err)) = &result {
+                println!("{}", err);
+                assert!(false);
+            }
+            result
+        },
+    )
 }
 
 fn typecheck_file(b: &mut Bencher, file: &str) {
     let vm = new_vm();
     let text = fs::read_to_string(file).unwrap();
     let module_name = base::filename_to_module(file);
+    let db = vm.get_database();
+    let mut compiler = vm.module_compiler(&db);
     let reparsed = text
-        .reparse_infix(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            &module_name,
-            &text,
-        )
+        .reparse_infix(&mut compiler, &vm, &module_name, &text)
         .unwrap_or_else(|(_, err)| panic!("{}", err));
     let InfixReparsed {
         metadata,
@@ -98,13 +87,8 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
             expr: expr.clone(),
         },
         |input| {
-            let result = input.typecheck(
-                &mut vm.module_compiler(&vm.get_database()),
-                &vm,
-                &module_name,
-                &text,
-            );
-            if let Err(ref err) = result {
+            let result = input.typecheck(&mut compiler, &vm, &module_name, &text);
+            if let Err((_, err)) = &result {
                 println!("{}", err);
                 assert!(false);
             }

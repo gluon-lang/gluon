@@ -720,23 +720,20 @@ pub trait ThreadExt {
             Err((None, err)) => return Err(err),
         };
 
-        fn skip_implicit_prelude(
-            span: Span<BytePos>,
-            mut l: &SpannedExpr<Symbol>,
-        ) -> &SpannedExpr<Symbol> {
-            loop {
-                match l.value {
-                    ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                        l = e;
-                    }
-                    _ => break l,
-                }
-            }
-        }
-
         let file_map = db.get_filemap(file).unwrap();
         let expr = skip_implicit_prelude(file_map.span(), &expr);
         Ok(formatter.pretty_expr(&*file_map, expr))
+    }
+}
+
+fn skip_implicit_prelude(span: Span<BytePos>, mut l: &SpannedExpr<Symbol>) -> &SpannedExpr<Symbol> {
+    loop {
+        match l.value {
+            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
+                l = e;
+            }
+            _ => break l,
+        }
     }
 }
 
@@ -784,13 +781,11 @@ impl<'a> ModuleCompiler<'a> {
         let original_expr = mem::replace(expr, prelude_expr);
 
         // Replace the 0 in the prelude with the actual expression
-        fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
-            match l.value {
-                ast::Expr::LetBindings(_, ref mut e) => {
-                    assign_last_body(e, original_expr);
-                }
-                _ => *l = original_expr,
+        fn assign_last_body(mut l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
+            while let ast::Expr::LetBindings(_, ref mut e) = l.value {
+                l = e;
             }
+            *l = original_expr;
         }
         assign_last_body(expr, original_expr);
     }

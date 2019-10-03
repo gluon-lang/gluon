@@ -241,7 +241,7 @@ impl fmt::Display for Help {
         match *self {
             Help::UndefinedFlatMapInDo => write!(
                 f,
-                "Try bringing the `flat_map` function found in the `Monad`\
+                "Try bringing the `flat_map` function found in the `Monad` \
                  instance for your type into scope"
             ),
             Help::ExtraArgument(expected, actual) => {
