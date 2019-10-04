@@ -36,7 +36,7 @@ impl api::VmType for Enum {
     fn make_type(thread: &Thread) -> ArcType {
         thread
             .find_type_info("examples.enum.Enum")
-            .unwrap()
+            .unwrap_or_else(|err| panic!("{}", err))
             .clone()
             .into_type()
     }
@@ -183,7 +183,7 @@ fn marshal_generic() -> Result<()> {
         ExternModule::new(thread, module)
     }
 
-    thread.load_script("examples.either", src).unwrap();
+    thread.load_script("examples.either", src)?;
     import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"
@@ -308,7 +308,7 @@ fn marshal_wrapper() -> Result<()> {
         ExternModule::new(thread, module)
     }
 
-    thread.load_script("examples.wrapper", src).unwrap();
+    thread.load_script("examples.wrapper", src)?;
     import::add_extern_module(&thread, "examples.prim", load_mod);
 
     let script = r#"

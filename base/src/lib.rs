@@ -100,7 +100,13 @@ pub fn filename_to_module(filename: &str) -> String {
     let path = Path::new(filename);
     let name = path.extension().map_or(filename, |ext| {
         ext.to_str()
-            .map(|ext| &filename[..filename.len() - ext.len() - 1])
+            .and_then(|ext| {
+                if ext == "glu" {
+                    Some(&filename[..filename.len() - ext.len() - 1])
+                } else {
+                    None
+                }
+            })
             .unwrap_or(filename)
     });
 
