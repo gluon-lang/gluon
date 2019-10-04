@@ -28,13 +28,6 @@ matrix:
       - DEPLOY=1
       - TARGET=x86_64-unknown-linux-gnu
 
-    # Run benchmark and a no-default-features check in a separate
-  - rust: stable
-    env:
-      - NO_NORMAL_TEST=1
-      - BENCH_DEFAULT_FEATURES_CHECK=1
-      - TARGET=x86_64-unknown-linux-gnu
-
   - rust: nightly-2019-10-01
     env: WASM=1
 
