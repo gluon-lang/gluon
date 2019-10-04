@@ -56,7 +56,7 @@ tokio-tls = { version = "0.2", optional = true }
 tokio-tcp = { version = "0.1", optional = true }
 
 # Crates used in testing
-compiletest_rs = { version = "0.3", optional = true }
+compiletest_rs = { version = "0.3.23", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rand = { version = "0.7", optional = true }
