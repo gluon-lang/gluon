@@ -11,7 +11,7 @@ use {
 
 use {
     base::{
-        ast::{Expr, SpannedExpr, TypedIdent},
+        ast::{self, Expr, SpannedExpr, TypedIdent},
         fnv::FnvMap,
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -672,10 +672,7 @@ impl CompilerDatabase {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    fn get_scoped_global<'s, 'n: 's>(
-        &'s self,
-        name: &'n str,
-    ) -> impl Iterator<Item = (&'n Name, DatabaseGlobal)> + 's {
+    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
         let mut module = Name::new(name.trim_start_matches('@'));
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
@@ -684,69 +681,76 @@ impl CompilerDatabase {
         // Test: "x"
         // Test: -> Error
         let globals = self.thread().global_env().get_globals();
-        std::iter::from_fn(move || {
-            loop {
-                if module.as_str() == "" {
-                    return None;
-                }
-                let current = module.as_str();
-                module = module.module();
-                if let Some(global) = globals
-                    .globals
-                    .get(current)
-                    .map(|global| DatabaseGlobal {
-                        id: global.id.clone(),
-                        typ: global.typ.clone(),
-                        metadata: global.metadata.clone(),
-                        value: self.thread().root_value(global.value.get_variants()),
-                    })
-                    .or_else(|| self.global(current.into()).ok())
-                {
-                    let remaining_offset = ::std::cmp::min(name.len(), current.len() + 1); //Add 1 byte for the '.'
-                    let remaining_fields = Name::new(&name[remaining_offset..]);
-                    return Some((remaining_fields, global));
-                }
+        let global = loop {
+            if module.as_str() == "" {
+                return None;
             }
-        })
+            if let Some(g) = globals
+                .globals
+                .get(name)
+                .map(|global| DatabaseGlobal {
+                    id: global.id.clone(),
+                    typ: global.typ.clone(),
+                    metadata: global.metadata.clone(),
+                    value: self.thread().root_value(global.value.get_variants()),
+                })
+                .or_else(|| self.global(module.as_str().into()).ok())
+            {
+                break g;
+            }
+            module = module.module();
+        };
+        let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
+        let remaining_fields = Name::new(&name[remaining_offset..]);
+        Some((remaining_fields, global))
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
         use crate::base::resolve;
 
-        Ok(self
+        let (remaining_fields, global) = self
             .get_scoped_global(name)
-            .find_map(|(remaining_fields, global)| {
-                if remaining_fields.as_str().is_empty() {
-                    // No fields left
-                    return Some((global.value, global.typ.clone()));
-                }
+            .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?;
 
-                let mut typ = global.typ;
-                let mut value = global.value.get_variant();
+        if remaining_fields.as_str().is_empty() {
+            // No fields left
+            return Ok((global.value, global.typ.clone()));
+        }
 
-                for mut field_name in remaining_fields.components() {
-                    if field_name.starts_with('(') && field_name.ends_with(')') {
-                        field_name = &field_name[1..field_name.len() - 1];
-                    }
-                    typ = resolve::remove_aliases(self, &mut NullInterner, typ);
-                    let next_type = {
-                        typ.row_iter()
-                            .enumerate()
-                            .find(|&(_, field)| field.name.as_ref() == field_name)
-                            .map(|(index, field)| match value.as_ref() {
-                                ValueRef::Data(data) => {
-                                    value = data.get_variant(index).unwrap();
-                                    &field.typ
-                                }
-                                _ => ice!("Unexpected value {:?}", value),
-                            })
-                            .cloned()
-                    };
-                    typ = next_type?;
-                }
-                Some((self.thread().root_value(value), typ))
-            })
-            .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?)
+        let mut typ = global.typ;
+        let mut value = global.value.get_variant();
+
+        for mut field_name in remaining_fields.components() {
+            if field_name.starts_with('(') && field_name.ends_with(')') {
+                field_name = &field_name[1..field_name.len() - 1];
+            } else if field_name.contains(ast::is_operator_char) {
+                return Err(vm::Error::Message(format!(
+                    "Operators cannot be used as fields \
+                     directly. To access an operator field, \
+                     enclose the operator with parentheses \
+                     before passing it in. (test.(+) instead of \
+                     test.+)"
+                ))
+                .into());
+            }
+            typ = resolve::remove_aliases(self, &mut NullInterner, typ);
+            let next_type = {
+                typ.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .map(|(index, field)| match value.as_ref() {
+                        ValueRef::Data(data) => {
+                            value = data.get_variant(index).unwrap();
+                            &field.typ
+                        }
+                        _ => ice!("Unexpected value {:?}", value),
+                    })
+                    .cloned()
+            };
+            typ =
+                next_type.ok_or_else(move || vm::Error::UndefinedField(typ, field_name.into()))?;
+        }
+        Ok((self.thread().root_value(value), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
@@ -755,13 +759,12 @@ impl CompilerDatabase {
     }
 
     fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
-        self.get_scoped_global(name_str)
-            .find_map(|(remaining, global)| {
-                let mut metadata = &global.metadata;
-                for field_name in remaining.components() {
-                    metadata = metadata.module.get(field_name)?
-                }
-                Some(metadata.clone())
-            })
+        let (remaining, global) = self.get_scoped_global(name_str)?;
+
+        let mut metadata = &global.metadata;
+        for field_name in remaining.components() {
+            metadata = metadata.module.get(field_name)?
+        }
+        Some(metadata.clone())
     }
 }
