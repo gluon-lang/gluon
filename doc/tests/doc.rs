@@ -4,7 +4,7 @@ use {itertools::Itertools, rayon::prelude::*};
 
 use gluon_doc as doc;
 
-use gluon::{check::metadata::metadata, Compiler, RootedThread};
+use gluon::{check::metadata::metadata, RootedThread, ThreadExt};
 
 fn new_vm() -> RootedThread {
     ::gluon::VmBuilder::new()
@@ -14,10 +14,8 @@ fn new_vm() -> RootedThread {
 
 fn doc_check(module: &str, expected: doc::Record) {
     let vm = new_vm();
-    let (expr, typ) = Compiler::new()
-        .typecheck_str(&vm, "basic", module, None)
-        .unwrap();
-    let (meta, _) = metadata(&*vm.get_env(), &expr);
+    let (expr, typ) = vm.typecheck_str("basic", module, None).unwrap();
+    let (meta, _) = metadata(&vm.get_env(), &expr);
 
     let out = doc::record(
         "basic",

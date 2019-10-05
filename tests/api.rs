@@ -16,6 +16,7 @@ use futures::{future::lazy, Future, IntoFuture};
 use gluon::{
     base::types::{Alias, ArcType, Type},
     import::{add_extern_module, Import},
+    query::Compilation,
     vm::{
         api::{
             de::De,
@@ -27,11 +28,11 @@ use gluon::{
         types::VmInt,
         Error, ExternModule,
     },
-    Compiler,
+    ThreadExt,
 };
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new().load_script(vm, filename, input)
+    vm.load_script(filename, input)
 }
 
 fn make_vm() -> RootedThread {
@@ -117,9 +118,7 @@ fn root_string() {
         ExternModule::new(thread, primitive!(1, test))
     });
 
-    let result = Compiler::new()
-        .run_expr::<String>(&vm, "<top>", expr)
-        .unwrap();
+    let result = vm.run_expr::<String>("<top>", expr).unwrap();
     let expected = ("hello world".to_string(), Type::string());
 
     assert_eq!(result, expected);
@@ -142,8 +141,8 @@ fn array() {
         ExternModule::new(thread, primitive!(1, sum_bytes))
     });
 
-    let result = Compiler::new()
-        .run_expr::<u8>(&vm, "<top>", expr)
+    let result = vm
+        .run_expr::<u8>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (160, Type::byte());
 
@@ -168,8 +167,8 @@ fn return_finished_future() {
         ExternModule::new(thread, primitive!(2, add))
     });
 
-    let result = Compiler::new()
-        .run_expr::<i32>(&vm, "<top>", expr)
+    let result = vm
+        .run_expr::<i32>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (3, Type::int());
 
@@ -209,13 +208,13 @@ fn return_delayed_future_simple() {
     "#;
 
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     add_extern_module(&vm, "poll_n", |thread| {
         ExternModule::new(thread, primitive!(1, poll_n))
     });
 
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<String>>(&vm, "<top>", expr)
+    let (result, _) = vm
+        .run_expr::<IO<String>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = IO::Value("test".to_string());
 
@@ -233,13 +232,13 @@ fn return_delayed_future_in_catch() {
     "#;
 
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     add_extern_module(&vm, "poll_n", |thread| {
         ExternModule::new(thread, primitive!(1, poll_n))
     });
 
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<String>>(&vm, "<top>", expr)
+    let (result, _) = vm
+        .run_expr::<IO<String>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = IO::Value("test".to_string());
 
@@ -263,13 +262,13 @@ fn io_future() {
     "#;
 
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     add_extern_module(&vm, "test", |thread| {
         ExternModule::new(thread, primitive!(1, test))
     });
 
-    let result = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<i32>>(&vm, "<top>", expr)
+    let result = vm
+        .run_expr::<IO<i32>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(result.0, IO::Value(124));
@@ -340,8 +339,8 @@ fn use_type_from_type_field() {
         let { Test } = import! test_types
         B "abc"
     "#;
-    let (De(actual), _) = Compiler::new()
-        .run_expr::<De<Test>>(&vm, "test", text)
+    let (De(actual), _) = vm
+        .run_expr::<De<Test>>("test", text)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(actual, Test::B("abc".to_string()));
 }
@@ -374,12 +373,12 @@ fn get_value_boxed_or_unboxed() {
 
     // The user should be able to decide whether or not any gluon value should
     // be boxed on the rust side.
-    let (unboxed, _) = Compiler::new()
-        .run_expr::<i32>(&vm, "test", text)
+    let (unboxed, _) = vm
+        .run_expr::<i32>("test", text)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(unboxed, 27);
-    let (boxed, _) = Compiler::new()
-        .run_expr::<Box<i32>>(&vm, "test", text)
+    let (boxed, _) = vm
+        .run_expr::<Box<i32>>("test", text)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(boxed, Box::new(27));
 }
@@ -388,6 +387,7 @@ fn get_value_boxed_or_unboxed() {
 fn runtime_result_vm_type_forwarding() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
 
     add_extern_module(&vm, "test", |vm| {
         ExternModule::new(
@@ -409,9 +409,8 @@ fn runtime_result_vm_type_forwarding() {
         wrap ()
     "#;
 
-    let _ = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<()>>(&vm, "test", text)
+    let _ = vm
+        .run_expr::<IO<()>>("test", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -435,8 +434,8 @@ fn scoped_reference_basic() {
         ExternModule::new(thread, primitive!(2, function))
     });
 
-    let (mut result, _) = Compiler::new()
-        .run_expr::<OwnedFunction<fn(_) -> VmInt>>(&vm, "<top>", expr)
+    let (mut result, _) = vm
+        .run_expr::<OwnedFunction<fn(_) -> VmInt>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(
@@ -480,7 +479,7 @@ fn scoped_reference_out_of_scope() {
         )
     });
 
-    let result = Compiler::new().run_expr::<VmInt>(&vm, "<top>", expr);
+    let result = vm.run_expr::<VmInt>("<top>", expr);
     match result {
         Err(gluon::Error::VM(Error::Panic(ref m, _))) if m == "Scoped pointer is invalidated" => (),
         Err(err) => panic!("Wrong error: {:#?}", err),
@@ -522,8 +521,8 @@ fn scoped_mutable_reference() {
         )
     });
 
-    let (mut result, _) = Compiler::new()
-        .run_expr::<OwnedFunction<fn(_, _) -> IO<VmInt>>>(&vm, "<top>", expr)
+    let (mut result, _) = vm
+        .run_expr::<OwnedFunction<fn(_, _) -> IO<VmInt>>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(
@@ -567,8 +566,7 @@ fn cyclic_userdata_simple() {
                 },
             )
         });
-        Compiler::new()
-            .run_expr::<OpaqueValue<RootedThread, Hole>>(&vm, "<top>", "import! function")
+        vm.run_expr::<OpaqueValue<RootedThread, Hole>>("<top>", "import! function")
             .unwrap();
 
         // Allocate a `Cyclic` value in the vm
@@ -622,7 +620,7 @@ fn cyclic_userdata_mutable() {
                 let cyclic = f.mk_cyclic ()
                 f.set cyclic noisy
         "#;
-        Compiler::new().load_script(&vm, "test", expr).unwrap();
+        vm.load_script("test", expr).unwrap();
 
         // Allocate a `Cyclic` value in the vm
         let mut f: FunctionRef<fn(NoisyDrop)> = vm
@@ -646,21 +644,31 @@ fn child_vm_do_not_cause_undroppable_cycle_normal_drop_order() {
 
     let mut noisy_drop = NoisyDrop::default();
     {
-        let vm = make_vm();
+        let vm = RootedThread::new();
+        let import = Import::new(gluon::import::DefaultImporter);
+        import.add_path("..");
+        vm.get_macros().insert(String::from("import"), import);
+
         let child_vm = vm.new_thread().unwrap();
 
         vm.register_type::<NoisyDrop>("NoisyDrop", &[])
             .unwrap_or_else(|_| panic!("Could not add type"));
 
-        Compiler::new()
-            .load_script(&vm, "function", "\\x -> ()")
-            .unwrap();
+        {
+            let mut db = vm.get_database_mut();
+            db.set_implicit_prelude(false);
+            assert!(!db.compiler_settings().implicit_prelude);
+        }
+        assert!(!vm.get_database().compiler_settings().implicit_prelude);
+        vm.load_script("function", "\\x -> ()")
+            .unwrap_or_else(|err| panic!("{}", err));
 
         {
             let mut f: FunctionRef<fn(NoisyDrop)> = vm
                 .get_global("function")
                 .unwrap_or_else(|err| panic!("{}", err));
-            f.call(noisy_drop.clone()).unwrap();
+            f.call(noisy_drop.clone())
+                .unwrap_or_else(|err| panic!("{}", err));
         }
 
         drop(child_vm);
@@ -685,9 +693,7 @@ fn child_vm_do_not_cause_undroppable_cycle_reverse_drop_order() {
         vm.register_type::<NoisyDrop>("NoisyDrop", &[])
             .unwrap_or_else(|_| panic!("Could not add type"));
 
-        Compiler::new()
-            .load_script(&vm, "function", "\\x -> ()")
-            .unwrap();
+        vm.load_script("function", "\\x -> ()").unwrap();
 
         {
             let mut f: FunctionRef<fn(NoisyDrop)> = vm
@@ -724,8 +730,8 @@ fn clone_userdata() {
         .unwrap_or_else(|_| panic!("Could not add type"));
     add_extern_module(&vm, "test", |thread| ExternModule::new(thread, Test(123)));
 
-    let (result, _) = Compiler::new()
-        .run_expr::<OpaqueValue<RootedThread, Test>>(&vm, "<top>", expr)
+    let (result, _) = vm
+        .run_expr::<OpaqueValue<RootedThread, Test>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(*result, Test(123));

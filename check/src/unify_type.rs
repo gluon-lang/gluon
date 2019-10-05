@@ -105,7 +105,7 @@ impl<'a> State<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Functor)]
 pub enum TypeError<I, T> {
     UndefinedType(I),
     FieldMismatch(I, I),

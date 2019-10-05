@@ -12,7 +12,7 @@ use crate::base::{
 };
 
 use crate::{
-    core::{self, CExpr, Expr, Literal, Pattern},
+    core::{self, is_primitive, CExpr, Expr, Literal, Pattern},
     interner::InternedStr,
     source_map::{LocalMap, SourceMap},
     types::*,
@@ -36,7 +36,7 @@ enum FieldAccess {
     Index(VmIndex),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -58,7 +58,7 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
@@ -81,7 +81,7 @@ pub struct DebugInfo {
     pub source_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -108,7 +108,7 @@ pub struct CompiledModule {
     pub function: CompiledFunction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
@@ -464,12 +464,12 @@ impl<'a> KindEnv for Compiler<'a> {
 impl<'a> TypeEnv for Compiler<'a> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
         None
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types.get(id)
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+        self.stack_types.get(id).cloned()
     }
 }
 
@@ -596,13 +596,10 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         debug!("Load {}", id);
-        match self.find(id, function).unwrap_or_else(|| {
-            ice!(
-                "Undefined variable `{}` in {}",
-                self.symbols.string(&id),
-                self.source_name,
-            )
-        }) {
+        match self
+            .find(id, function)
+            .unwrap_or_else(|| ice!("Undefined variable `{:?}` in {}", id, self.source_name,))
+        {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             // Zero argument constructors can be compiled as integers
@@ -656,7 +653,7 @@ impl<'a> Compiler<'a> {
             Expr::Const(ref lit, _) => match *lit {
                 Literal::Int(i) => function.emit(PushInt(i)),
                 Literal::Byte(b) => function.emit(PushByte(b)),
-                Literal::Float(f) => function.emit(PushFloat(f.into_inner())),
+                Literal::Float(f) => function.emit(PushFloat(f.into_inner().into())),
                 Literal::String(ref s) => function.emit_string(self.intern(&s)?),
                 Literal::Char(c) => function.emit(PushInt(u32::from(c).into())),
             },
@@ -759,11 +756,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&"
-                        || id.name.as_ref() == "||"
-                        || (id.name.as_ref().starts_with('#')
-                            && id.name.declared_name() != "#error")
-                    {
+                    if is_primitive(&id.name) && id.name.declared_name() != "#error" {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);
                     }
@@ -800,9 +793,10 @@ impl<'a> Compiler<'a> {
                                     .unwrap_or_else(|| {
                                         ice!(
                                             "ICE: Could not find tag for {}::{} when matching on \
-                                             expression",
+                                             expression:\n{}",
                                             typ,
                                             self.symbols.string(&id.name),
+                                            expr
                                         )
                                     });
 
@@ -845,7 +839,7 @@ impl<'a> Compiler<'a> {
                                 }
                                 Literal::Float(f) => {
                                     function.emit(Push(lhs_i));
-                                    function.emit(PushFloat(f.into_inner()));
+                                    function.emit(PushFloat(f.into_inner().into()));
                                     function.emit(FloatEQ);
                                 }
                                 Literal::String(ref s) => {
@@ -942,6 +936,8 @@ impl<'a> Compiler<'a> {
                     _ => ice!("ICE: Unexpected data type for {}: {}", id.name, typ),
                 }
             }
+
+            Expr::Cast(expr, _) => return Ok(Some(expr)),
         }
         Ok(None)
     }

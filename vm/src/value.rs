@@ -6,9 +6,11 @@ use std::{
     result::Result as StdResult,
 };
 
-use itertools::Itertools;
-
-use pretty::{Arena, DocAllocator, DocBuilder};
+use {
+    downcast_rs::{impl_downcast, Downcast},
+    itertools::Itertools,
+    pretty::{Arena, DocAllocator, DocBuilder},
+};
 
 use crate::base::{
     fnv::FnvMap,
@@ -32,8 +34,8 @@ use crate::{
 
 use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
-mopafy!(Userdata);
-pub trait Userdata: ::mopa::Any + Trace + fmt::Debug + Send + Sync {
+impl_downcast!(Userdata);
+pub trait Userdata: Downcast + Trace + fmt::Debug + Send + Sync {
     fn deep_clone<'gc>(
         &self,
         deep_cloner: &'gc mut Cloner,
@@ -57,7 +59,7 @@ pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants
 #[gluon(gluon_vm)]
 #[repr(C)]
 pub struct ClosureData {
-    pub(crate) function: GcPtr<BytecodeFunction>,
+    pub function: GcPtr<BytecodeFunction>,
     pub(crate) upvars: Array<Value>,
 }
 
@@ -1338,7 +1340,7 @@ impl ValueArray {
     }
 
     pub fn size_of(repr: Repr, len: usize) -> usize {
-        ::std::mem::size_of::<ValueArray>() + repr.size_of() * len
+        size_of::<ValueArray>() + repr.size_of() * len
     }
 
     pub fn repr(&self) -> Repr {
@@ -1494,7 +1496,7 @@ impl<'t> Cloner<'t> {
         self
     }
 
-    pub(crate) fn deep_clone<'gc>(&'gc mut self, value: &Value) -> Result<Variants<'gc>> {
+    pub fn deep_clone<'gc>(&'gc mut self, value: &Value) -> Result<Variants<'gc>> {
         unsafe {
             self.deep_clone_inner(value)
                 .map(move |v| Variants::with_root(&v, self.gc))
@@ -1723,12 +1725,12 @@ mod tests {
     impl TypeEnv for MockEnv {
         type Type = ArcType;
 
-        fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
             None
         }
 
-        fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-            self.0.as_ref()
+        fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
+            self.0.clone()
         }
     }
 
@@ -1813,19 +1815,17 @@ mod tests {
 
     #[test]
     fn closure_data_upvars_location() {
-        use std::mem;
         use std::ptr;
 
         unsafe {
             let p: *const ClosureData = ptr::null();
             assert_eq!(p as *const u8, &(*p).function as *const _ as *const u8);
-            assert!((p as *const u8).offset(mem::size_of::<*const ()>() as isize) != ptr::null());
+            assert!((p as *const u8).offset(size_of::<*const ()>() as isize) != ptr::null());
         }
     }
 
     #[test]
     fn value_size() {
-        assert!(::std::mem::size_of::<Value>() <= 16);
+        assert!(size_of::<Value>() <= 16);
     }
-
 }

@@ -46,6 +46,21 @@ pub struct Spanned<T, Pos> {
     pub value: T,
 }
 
+impl<T, Pos> std::hash::Hash for Spanned<T, Pos>
+where
+    T: std::hash::Hash,
+    Pos: std::hash::Hash + Copy,
+{
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.span.start().hash(state);
+        self.span.end().hash(state);
+        self.value.hash(state);
+    }
+}
+
 impl<T, Pos> Spanned<T, Pos> {
     pub fn map<U, F>(self, mut f: F) -> Spanned<U, Pos>
     where

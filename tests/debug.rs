@@ -4,16 +4,31 @@ extern crate env_logger;
 extern crate futures;
 extern crate gluon;
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use futures::{Async, Future};
 
-use gluon::base::pos::Line;
-use gluon::base::types::{ArcType, Type, TypeExt};
-use gluon::vm::compiler::UpvarInfo;
-use gluon::vm::thread::{HookFlags, ThreadInternal};
-use gluon::{new_vm, Compiler};
+use gluon::{
+    base::{
+        pos::Line,
+        types::{ArcType, Type, TypeExt},
+    },
+    vm::{
+        compiler::UpvarInfo,
+        thread::{HookFlags, ThreadInternal},
+    },
+    RootedThread, ThreadExt,
+};
+
+fn new_vm() -> RootedThread {
+    let thread = gluon::new_vm();
+
+    thread.get_database_mut().set_optimize(false);
+    thread
+}
 
 const SIMPLE_EXPR: &'static str = r#"
     let f x = x
@@ -44,10 +59,10 @@ fn function_hook() {
         })));
         context.set_hook_mask(HookFlags::CALL_FLAG);
     }
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
-        .unwrap();
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    thread.run_expr::<i32>("test", SIMPLE_EXPR).unwrap();
 
     assert_eq!(
         *functions.lock().unwrap(),
@@ -62,10 +77,10 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
         context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    let mut execute = Compiler::new()
-        .implicit_prelude(false)
-        .run_expr_async::<i32>(&thread, "test", source)
-        .map(|_| ());
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    let mut execute = thread.run_expr_async::<i32>("test", source).map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -141,10 +156,10 @@ fn line_hook_after_call() {
         id 0
         1
     "#;
-    let mut execute = Compiler::new()
-        .implicit_prelude(false)
-        .run_expr_async::<i32>(&thread, "test", expr)
-        .map(|_| ());
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    let mut execute = thread.run_expr_async::<i32>("test", expr).map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -187,9 +202,7 @@ fn implicit_prelude_lines_not_counted() {
         })));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    let mut execute = Compiler::new()
-        .run_expr_async::<i32>(&thread, "test", "1")
-        .map(|_| ());
+    let mut execute = thread.run_expr_async::<i32>("test", "1").map(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
@@ -242,10 +255,12 @@ fn read_variables() {
     let z = 1.0
     1
     "#;
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    thread
+        .run_expr::<i32>("test", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
 
     let map = result.lock().unwrap();
     assert_eq!(
@@ -314,10 +329,10 @@ fn argument_types() {
     let f z = g z
     f 1
     "#;
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     let int_function: ArcType = Type::function(vec![Type::int()], Type::int());
 
@@ -375,10 +390,10 @@ fn source_name() {
     let z = { x }
     1
     "#;
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     let name = result.lock().unwrap();
     assert_eq!(*name, "test");
@@ -410,10 +425,10 @@ fn upvars() {
         g x #Int+ y #Int+ z
     f 3
     "#;
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", expr)
-        .unwrap();
+
+    thread.get_database_mut().implicit_prelude(false);
+
+    thread.run_expr::<i32>("test", expr).unwrap();
 
     assert_eq!(
         *result.lock().unwrap(),
@@ -458,9 +473,7 @@ fn implicit_prelude_variable_names() {
         })));
         context.set_hook_mask(HookFlags::LINE_FLAG);
     }
-    Compiler::new()
-        .run_expr::<i32>(&thread, "test", "\n1")
-        .unwrap();
+    thread.run_expr::<i32>("test", "\n1").unwrap();
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {

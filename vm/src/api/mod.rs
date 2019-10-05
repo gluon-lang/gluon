@@ -914,12 +914,11 @@ impl<'vm, 'value> Getable<'vm, 'value> for f32 {
 impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        (*vm.global_env()
-            .get_env()
+        vm.get_env()
             .find_type_info("std.types.Bool")
-            .unwrap())
-        .clone()
-        .into_type()
+            .unwrap()
+            .clone()
+            .into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -1006,7 +1005,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for String {
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> String {
         match value.as_ref() {
             ValueRef::String(i) => String::from(&i[..]),
-            _ => ice!("ValueRef is not a String"),
+            _ => ice!("ValueRef is not a String: {:?}", value),
         }
     }
 }
@@ -1506,8 +1505,8 @@ where
 {
     type Type = IO<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let env = vm.global_env().get_env();
-        let alias = env.find_type_info("std.io.IO").unwrap().into_owned();
+        let env = vm.get_env();
+        let alias = env.find_type_info("std.io.IO").unwrap();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
     fn extra_args() -> VmIndex {

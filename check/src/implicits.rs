@@ -277,7 +277,7 @@ impl ImplicitBindings {
 
 type Result<T> = ::std::result::Result<T, Error<RcType>>;
 
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Functor)]
 pub struct Error<T> {
     pub kind: ErrorKind<T>,
     pub reason: rpds::List<T>,
@@ -302,13 +302,13 @@ impl<I: fmt::Display + Clone> AsDiagnostic for Error<I> {
     }
 }
 
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Functor)]
 pub struct AmbiguityEntry<T> {
     pub path: String,
     pub typ: T,
 }
 
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Functor)]
 pub enum ErrorKind<T> {
     /// An implicit parameter were not possible to resolve
     MissingImplicit(T),

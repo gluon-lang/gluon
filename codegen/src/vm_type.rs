@@ -145,10 +145,10 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                             _gluon_base::types::Field::ctor(
                                 ctor_name, vec![],
                             )
-                        }}
+                        }},
                     }
                     //----------------------------------------------------
-                    
+
                     //----------------------------------------------------
                 });
                 quote! {

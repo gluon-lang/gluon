@@ -1,21 +1,19 @@
-extern crate env_logger;
-
-extern crate gluon;
-
 mod support;
 
-use gluon::vm::api::{FunctionRef, OpaqueValue};
-use gluon::vm::reference::Reference;
-use gluon::{Compiler, RootedThread, Thread};
+use gluon::{
+    vm::{
+        api::{FunctionRef, OpaqueValue},
+        reference::Reference,
+    },
+    RootedThread, Thread, ThreadExt,
+};
 
 use crate::support::*;
 
 fn verify_value_cloned(from: &Thread, to: &Thread) {
-    Compiler::new()
-        .run_expr::<()>(&from, "load", r#"let _ = import! std.reference in () "#)
+    from.run_expr::<()>("load", r#"let _ = import! std.reference in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
-    Compiler::new()
-        .run_expr::<()>(&to, "load", r#"let _ = import! std.reference in () "#)
+    to.run_expr::<()>("load", r#"let _ = import! std.reference in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let expr = r#"
@@ -23,8 +21,8 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
         ref 0
         "#;
 
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<RootedThread, Reference<i32>>>(&from, "example", expr)
+    let (value, _) = from
+        .run_expr::<OpaqueValue<RootedThread, Reference<i32>>>("example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     // Load the prelude
@@ -33,8 +31,8 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
         let { (<-) } = import! std.reference
         \r -> r <- 1
         "#;
-    let (mut store_1, _) = Compiler::new()
-        .run_expr::<Fn>(&to, "store_1", store_expr)
+    let (mut store_1, _) = to
+        .run_expr::<Fn>("store_1", store_expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(store_1.call(value.clone()), Ok(()));
 

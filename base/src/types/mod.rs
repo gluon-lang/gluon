@@ -22,7 +22,7 @@ use crate::{
     ast::{Commented, EmptyEnv, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
-    merge::merge,
+    merge::{merge, merge_collect},
     metadata::Comment,
     pos::{BytePos, HasSpan, Span},
     source::Source,
@@ -73,20 +73,20 @@ macro_rules! forward_eq_hash {
 pub trait TypeEnv: KindEnv {
     type Type;
     /// Returns the type of the value bound at `id`
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type>;
+    fn find_type(&self, id: &SymbolRef) -> Option<Self::Type>;
 
     /// Returns information about the type `id`
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>>;
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, Self::Type>>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
     type Type = T::Type;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&Self::Type> {
+    fn find_type(&self, id: &SymbolRef) -> Option<Self::Type> {
         (**self).find_type(id)
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, Self::Type>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, Self::Type>> {
         (**self).find_type_info(id)
     }
 }
@@ -94,11 +94,11 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 impl TypeEnv for EmptyEnv<Symbol> {
     type Type = ArcType;
 
-    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<ArcType> {
         None
     }
 
-    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         None
     }
 }
@@ -106,11 +106,11 @@ impl TypeEnv for EmptyEnv<Symbol> {
 /// Trait which is a `TypeEnv` which also provides access to the type representation of some
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
-    fn get_bool(&self) -> &ArcType;
+    fn get_bool(&self) -> ArcType;
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
-    fn get_bool(&self) -> &ArcType {
+    fn get_bool(&self) -> ArcType {
         (**self).get_bool()
     }
 }
@@ -1085,6 +1085,16 @@ impl<Id, T> Type<Id, T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
+    pub fn is_array(&self) -> bool {
+        match self {
+            Type::App(typ, _) => match &**typ {
+                Type::Builtin(BuiltinType::Array) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     pub fn as_function(&self) -> Option<(&T, &T)> {
         self.as_function_with_type().map(|t| (t.1, t.2))
     }
@@ -3856,52 +3866,6 @@ where
     }
 }
 
-struct WalkMoveTypes<'a, I, F, T> {
-    types: I,
-    clone_types_iter: I,
-    f: F,
-    clone_types: usize,
-    next: Option<T>,
-    _marker: PhantomData<&'a T>,
-}
-
-impl<'a, I, F, T> Iterator for WalkMoveTypes<'a, I, F, T>
-where
-    I: Iterator<Item = &'a T>,
-    F: FnMut(&'a T) -> Option<T>,
-    T: Clone + 'a,
-{
-    type Item = T;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.clone_types > 0 {
-            self.clone_types -= 1;
-            self.clone_types_iter.next().cloned()
-        } else if let Some(typ) = self.next.take() {
-            self.clone_types_iter.next();
-            Some(typ)
-        } else {
-            let f = &mut self.f;
-            if let Some((i, typ)) = self
-                .types
-                .by_ref()
-                .enumerate()
-                .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
-            {
-                self.clone_types = i;
-                self.next = Some(typ);
-                self.next()
-            } else {
-                self.clone_types = usize::max_value();
-                self.next()
-            }
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.clone_types_iter.size_hint()
-    }
-}
-
 pub fn walk_move_types<'a, I, F, T, R>(types: I, f: F) -> Option<R>
 where
     I: IntoIterator<Item = &'a T>,
@@ -3910,34 +3874,7 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    walk_move_types_(types, f).map(|iter| iter.collect())
-}
-
-fn walk_move_types_<'a, I, F, T>(types: I, mut f: F) -> Option<WalkMoveTypes<'a, I::IntoIter, F, T>>
-where
-    I: IntoIterator<Item = &'a T>,
-    I::IntoIter: FusedIterator + Clone,
-    F: FnMut(&'a T) -> Option<T>,
-    T: Clone + 'a,
-{
-    let mut types = types.into_iter();
-    let clone_types_iter = types.clone();
-    if let Some((i, typ)) = types
-        .by_ref()
-        .enumerate()
-        .find_map(|(i, typ)| f(typ).map(|typ| (i, typ)))
-    {
-        Some(WalkMoveTypes {
-            clone_types_iter,
-            types,
-            f,
-            clone_types: i,
-            next: Some(typ),
-            _marker: PhantomData,
-        })
-    } else {
-        None
-    }
+    merge_collect(types, f, Clone::clone)
 }
 
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>

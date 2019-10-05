@@ -181,7 +181,7 @@ impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
     pub typ: T,
     pub name: Id,
@@ -226,13 +226,13 @@ pub enum Literal {
 /// Pattern which contains a location
 pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PatternField<Id, P> {
     pub name: Spanned<Id, BytePos>,
     pub value: Option<P>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Pattern<Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
     As(Spanned<Id, BytePos>, Box<SpannedPattern<Id>>),
@@ -264,19 +264,19 @@ impl<Id> Default for Pattern<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Alternative<Id> {
     pub pattern: SpannedPattern<Id>,
     pub expr: SpannedExpr<Id>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Array<Id> {
     pub typ: ArcType<Id>,
     pub exprs: Vec<SpannedExpr<Id>>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
     pub args: Vec<Argument<SpannedIdent<Id>>>,
@@ -291,14 +291,14 @@ pub type SpannedAlias<Id> = Spanned<AliasData<Id, AstType<Id>>, BytePos>;
 
 pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Do<Id> {
     pub id: Option<SpannedPattern<Id>>,
     pub bound: Box<SpannedExpr<Id>>,
@@ -307,7 +307,7 @@ pub struct Do<Id> {
 }
 
 /// The representation of gluon's expression syntax
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Expr<Id> {
     /// Identifiers
     Ident(TypedIdent<Id>),
@@ -447,7 +447,7 @@ impl<Id> Expr<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
@@ -461,7 +461,7 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
@@ -484,7 +484,7 @@ impl<Id> Argument<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ValueBindings<Id> {
     Plain(Box<ValueBinding<Id>>),
     Recursive(Vec<ValueBinding<Id>>),
@@ -536,7 +536,7 @@ impl<'a, Id> IntoIterator for &'a mut ValueBindings<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
     pub metadata: Metadata,
     pub name: SpannedPattern<Id>,

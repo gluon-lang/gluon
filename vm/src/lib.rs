@@ -9,8 +9,6 @@ pub extern crate frunk_core;
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate mopa;
-#[macro_use]
 extern crate quick_error;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
@@ -23,9 +21,6 @@ extern crate serde_json;
 
 #[cfg(test)]
 extern crate env_logger;
-#[cfg(test)]
-#[macro_use]
-extern crate lalrpop_util;
 
 #[macro_use]
 pub extern crate gluon_base as base;
@@ -166,7 +161,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
-    #[derive(Debug, PartialEq, Clone)]
+    #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Dead {
         }
@@ -205,6 +200,12 @@ quick_error! {
         Panic(err: String, stacktrace: Option<Stacktrace>) {
             display("{}", Panic { err, stacktrace })
         }
+    }
+}
+
+impl base::error::AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
+        codespan_reporting::Diagnostic::new_error(self.to_string())
     }
 }
 
@@ -259,6 +260,6 @@ impl ExternModule {
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
     pub use crate::interner::InternedStr;
-    pub use crate::value::{Value, ValuePrinter};
+    pub use crate::value::{Cloner, ClosureData, Value, ValuePrinter};
     pub use crate::vm::Global;
 }

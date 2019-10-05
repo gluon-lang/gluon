@@ -1,26 +1,14 @@
 #[macro_use]
 extern crate clap;
-extern crate failure;
-extern crate handlebars;
-extern crate itertools;
-extern crate rayon;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
 #[macro_use]
 extern crate structopt;
 #[macro_use]
 extern crate lazy_static;
-extern crate pretty;
-extern crate pulldown_cmark;
-extern crate regex;
-extern crate walkdir;
 
 #[macro_use]
 extern crate log;
-
-extern crate gluon;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,17 +18,14 @@ use std::{
     result::Result as StdResult,
 };
 
-use failure::ResultExt;
-
-use itertools::Itertools;
-
-use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
-
-use rayon::prelude::*;
-
-use serde::Deserialize;
-
-use pretty::{Arena, DocAllocator};
+use {
+    failure::ResultExt,
+    handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError},
+    itertools::Itertools,
+    pretty::{Arena, DocAllocator},
+    rayon::prelude::*,
+    serde::Deserialize,
+};
 
 use gluon::{
     base::{
@@ -52,7 +37,7 @@ use gluon::{
         types::{ArcType, ArgType, Type, TypeExt},
     },
     check::metadata::metadata,
-    Compiler, Thread,
+    Thread, ThreadExt,
 };
 
 pub type Error = failure::Error;
@@ -547,9 +532,8 @@ impl DocCollector<'_> {
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
-        let mut compiler = Compiler::new().full_metadata(true);
-        let (expr, typ) = compiler.typecheck_str(thread, &name, &content, None)?;
-        let (meta, _) = metadata(&*thread.get_env(), &expr);
+        let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
+        let (meta, _) = metadata(&thread.get_database(), &expr);
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
@@ -562,7 +546,8 @@ impl DocCollector<'_> {
             .format("\n")
             .to_string();
 
-        let source = compiler
+        let source = thread
+            .get_database()
             .get_filemap(&name)
             .expect("SourceMap not inserted by compilation");
 
@@ -603,6 +588,8 @@ pub fn generate(options: &Options, thread: &Thread) -> Result<()> {
         output: out_path,
         src_url,
     } = options;
+
+    thread.get_database_mut().full_metadata(true);
 
     let mut collector = DocCollector {
         directories: BTreeMap::new(),

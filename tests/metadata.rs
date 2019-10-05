@@ -1,9 +1,4 @@
-extern crate env_logger;
-extern crate gluon;
-
-use gluon::import::Import;
-use gluon::vm::thread::RootedThread;
-use gluon::Compiler;
+use gluon::{import::Import, vm::thread::RootedThread, ThreadExt};
 
 fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
@@ -24,8 +19,7 @@ fn metadata_from_other_module() {
 let { List, of }  = import! std.list
 { List, of }
 "#;
-    Compiler::new()
-        .load_script(&vm, "test", text)
+    vm.load_script("test", text)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let env = vm.get_env();

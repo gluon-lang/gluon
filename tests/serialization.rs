@@ -21,7 +21,7 @@ use gluon::{
         thread::{RootedThread, RootedValue, Thread},
         Variants,
     },
-    Compiler,
+    ThreadExt,
 };
 
 fn serialize_value(value: Variants) {
@@ -73,8 +73,8 @@ fn roundtrip(
 #[test]
 fn roundtrip_module() {
     let thread = new_vm();
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { x = 1, y = "test" } "#)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", r#" { x = 1, y = "test" } "#)
         .unwrap();
     let deserialize_value = roundtrip(&thread, &value);
     assert_eq!(deserialize_value, value.into_inner());
@@ -89,8 +89,8 @@ fn roundtrip_recursive_closure() {
         let g x = f x
         { f, g }
         "#;
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", expr)
         .unwrap();
     roundtrip(&thread, &value);
 }
@@ -99,8 +99,8 @@ fn roundtrip_recursive_closure() {
 fn roundtrip_std_prelude() {
     let thread = new_vm();
     let expr = r#" import! std.prelude "#;
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", expr)
         .unwrap();
     roundtrip(&thread, &value);
 }
@@ -138,8 +138,8 @@ fn roundtrip_std_libs() {
         }
     }
     expr.push_str("}\n");
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &value);
 }
@@ -158,25 +158,37 @@ fn precompile() {
     let mut buffer = Vec::new();
     {
         let mut serializer = serde_json::Serializer::new(&mut buffer);
-        Compiler::new()
-            .compile_to_bytecode(&thread, "test", &text, &mut serializer)
+        thread
+            .compile_to_bytecode("test", &text, &mut serializer)
             .unwrap()
     }
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
+            .run_expr(
+                &mut thread.module_compiler(&thread.get_database()),
+                &*thread,
+                "test",
+                "",
+                (),
+            )
             .wait()
             .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
-                .wait()
-                .unwrap()
-                .value
-                .get_variant()
+            text.run_expr(
+                &mut thread.module_compiler(&thread2.get_database()),
+                &*thread2,
+                "test",
+                &text,
+                None
+            )
+            .wait()
+            .unwrap()
+            .value
+            .get_variant()
         ),
         serialize_value(precompiled_result.value.get_variant())
     );
@@ -186,8 +198,8 @@ fn precompile() {
 fn roundtrip_reference() {
     let thread = new_vm();
     let expr = r#" import! std.reference "#;
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &value);
 }
@@ -196,8 +208,8 @@ fn roundtrip_reference() {
 fn roundtrip_lazy() {
     let thread = new_vm();
     let expr = r#" import! std.lazy "#;
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &value);
 }
@@ -206,8 +218,8 @@ fn roundtrip_lazy() {
 fn roundtrip_std_thread() {
     let thread = new_vm();
     let expr = r#" import! std.thread "#;
-    let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &value);
 }
@@ -216,10 +228,10 @@ fn roundtrip_std_thread() {
 #[ignore] // Unimplemented so far
 fn roundtrip_thread() {
     let thread = new_vm();
+    thread.get_database_mut().run_io(true);
     let expr = r#" let t = import! std.thread in t.new_thread ()"#;
-    let (value, _) = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<OpaqueValue<&Thread, Hole>>>(&thread, "test", &expr)
+    let (value, _) = thread
+        .run_expr::<IO<OpaqueValue<&Thread, Hole>>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &Into::<Result<_, _>>::into(value).unwrap());
 }

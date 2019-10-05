@@ -4,8 +4,8 @@ extern crate gluon;
 
 mod init;
 
-use gluon::{base::types::Type, vm::api::VmType};
 use gluon::vm::api;
+use gluon::{base::types::Type, vm::api::VmType};
 #[macro_use]
 extern crate serde_derive;
 use init::new_vm;

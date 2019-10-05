@@ -89,38 +89,38 @@ impl<'a> KindEnv for Environment<'a> {
 impl<'a> TypeEnv for Environment<'a> {
     type Type = RcType;
 
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<RcType> {
         self.stack
             .get(id)
-            .map(|bind| &bind.typ.concrete)
+            .map(|bind| bind.typ.concrete.clone())
             .or_else(|| self.environment.find_type(id))
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, RcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, RcType>> {
         self.stack_types
             .get(id)
-            .map(|&(_, ref alias)| alias)
+            .map(|&(_, ref alias)| alias.clone())
             .or_else(|| self.environment.find_type_info(id))
     }
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
-    fn get_bool(&self) -> &ArcType {
+    fn get_bool(&self) -> ArcType {
         self.environment.get_bool()
     }
 }
 
 impl<'a> MetadataEnv for Environment<'a> {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         self.environment.get_metadata(id)
     }
 }
 
 impl Environment<'_> {
-    fn find_mod_type(&self, id: &SymbolRef) -> Option<ModTypeRef> {
+    fn find_mod_type(&self, id: &SymbolRef) -> Option<ModType> {
         self.stack
             .get(id)
-            .map(|bind| bind.typ.as_ref())
+            .map(|bind| bind.typ.clone())
             .or_else(|| self.environment.find_type(id).map(ModType::rigid))
     }
 }
@@ -206,6 +206,9 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<ModType> {
+        if id.declared_name().contains("test") {
+            "".to_string();
+        }
         match self.environment.find_mod_type(id).map(|t| t.to_owned()) {
             Some(typ) => {
                 self.named_variables.clear();
@@ -239,7 +242,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, RcType>> {
+    fn find_type_info(&self, id: &Symbol) -> TcResult<Alias<Symbol, RcType>> {
         self.environment
             .find_type_info(id)
             .ok_or_else(|| TypeError::UndefinedType(id.clone()))
@@ -3116,7 +3119,6 @@ pub fn translate_projected_type(
             }
             None => Some(
                 env.find_type(&symbol)
-                    .cloned()
                     .or_else(|| {
                         env.find_type_info(&symbol)
                             .map(|alias| alias.typ(interner).into_owned())
@@ -3168,16 +3170,16 @@ pub fn extract_generics(args: &[RcType]) -> Vec<Generic<Symbol>> {
 fn get_alias_app<'a>(
     env: &'a dyn TypeEnv<Type = RcType>,
     typ: &'a RcType,
-) -> Option<(&'a AliasRef<Symbol, RcType>, Cow<'a, [RcType]>)> {
+) -> Option<(AliasRef<Symbol, RcType>, Cow<'a, [RcType]>)> {
     match **typ {
-        Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&[][..]))),
+        Type::Alias(ref alias) => Some((alias.clone(), Cow::Borrowed(&[][..]))),
         Type::App(ref alias, ref args) => match **alias {
-            Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&args[..]))),
+            Type::Alias(ref alias) => Some((alias.clone(), Cow::Borrowed(&args[..]))),
             _ => None,
         },
         _ => typ.alias_ident().and_then(|id| {
             env.find_type_info(id)
-                .map(|alias| (&**alias, typ.unapplied_args()))
+                .map(|alias| ((*alias).clone(), typ.unapplied_args()))
         }),
     }
 }

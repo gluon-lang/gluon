@@ -75,7 +75,7 @@ impl<T> AliasRemover<T> {
                 }
                 self.reduced_aliases.push(alias.name.clone());
 
-                if canonical(alias) {
+                if canonical(&alias) {
                     Cow::Borrowed(typ)
                 } else {
                     match alias.typ(interner).apply_args(
@@ -196,18 +196,18 @@ impl<T> AliasRemover<T> {
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
     {
         match peek_alias(env, &typ)? {
-            Some(alias) if predicate(alias) => {
+            Some(ref alias) if predicate(alias) => {
                 self.remove_alias_to_concrete_inner(interner, typ, alias)
             }
             _ => Ok(None),
         }
     }
 
-    pub fn remove_alias_to_concrete_inner<'a>(
+    fn remove_alias_to_concrete_inner<'a>(
         &mut self,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
-        alias: &'a AliasRef<Symbol, T>,
+        alias: &AliasRef<Symbol, T>,
     ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
     where
         T: TypeExt<Id = Symbol> + ::std::fmt::Display,
@@ -292,7 +292,7 @@ where
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
-            if canonical(alias) {
+            if canonical(&alias) {
                 Cow::Borrowed(typ)
             } else {
                 alias
@@ -340,7 +340,7 @@ where
 pub fn peek_alias<'t, T>(
     env: &'t dyn TypeEnv<Type = T>,
     typ: &'t T,
-) -> Result<Option<&'t AliasRef<Symbol, T>>, Error>
+) -> Result<Option<AliasRef<Symbol, T>>, Error>
 where
     T: TypeExt<Id = Symbol> + ::std::fmt::Display,
 {
@@ -349,8 +349,8 @@ where
     match typ.alias_ident() {
         Some(id) => {
             let alias = match maybe_alias {
-                Some(alias) => Some(alias),
-                None => env.find_type_info(id).map(|a| &**a),
+                Some(alias) => Some(alias.clone()),
+                None => env.find_type_info(id).map(|a| (*a).clone()),
             };
             Ok(alias)
         }

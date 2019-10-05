@@ -10,17 +10,20 @@ use futures::{
     Future,
 };
 
-use crate::vm::api::generic::{A, B};
-use crate::vm::api::{
-    Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
+use crate::vm::{
+    self,
+    api::{
+        generic::{A, B},
+        Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
+    },
+    internal::ValuePrinter,
+    stack::{self, StackFrame},
+    thread::{RootedThread, Thread, ThreadInternal},
+    types::*,
+    ExternModule, Result,
 };
-use crate::vm::internal::ValuePrinter;
-use crate::vm::stack::{self, StackFrame};
-use crate::vm::thread::{RootedThread, Thread, ThreadInternal};
-use crate::vm::types::*;
-use crate::vm::{self, ExternModule, Result};
 
-use crate::{compiler_pipeline::*, Compiler, Error};
+use crate::{compiler_pipeline::*, Error, ThreadExt};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -294,17 +297,18 @@ fn run_expr(
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    expr.run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
+    let db = crate::get_db_snapshot(&vm);
+    expr.run_expr(&mut vm.module_compiler(&db), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();
             Ok(match run_result {
                 Ok(execute_value) => {
-                    let env = vm.global_env().get_env();
+                    let env = vm.get_env();
                     let typ = execute_value.typ;
                     let debug_level = vm.global_env().get_debug_level();
                     IO::Value(record_no_decl!{
-                        value => ValuePrinter::new(&*env, &typ, execute_value.value.get_variant(), &debug_level).width(80).to_string(),
+                        value => ValuePrinter::new(&env, &typ, execute_value.value.get_variant(), &debug_level).width(80).to_string(),
                         typ => typ.to_string()
                     })
                 }
@@ -320,7 +324,9 @@ fn load_script(
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();
-    expr.load_script(&mut Compiler::new(), vm1, &name, expr, None)
+
+    let db = crate::get_db_snapshot(&vm);
+    expr.load_script(&mut vm.module_compiler(&db), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();

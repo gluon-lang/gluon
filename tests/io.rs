@@ -5,7 +5,7 @@ use tempfile::NamedTempFile;
 use gluon::{
     new_vm,
     vm::api::{Hole, OpaqueValue, OwnedFunction, ValueRef, IO},
-    Compiler, Thread,
+    Thread, ThreadExt,
 };
 
 use tokio::runtime::current_thread::Runtime;
@@ -20,6 +20,7 @@ fn read_file() {
     let _ = ::env_logger::try_init();
 
     let thread = new_vm();
+    thread.get_database_mut().run_io(true);
     let text = r#"
         let prelude = import! std.prelude
         let array = import! std.array
@@ -40,9 +41,7 @@ fn read_file() {
 
         wrap (array.index bytes 8)
         "#;
-    let result = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<u8>>(&thread, "<top>", text);
+    let result = thread.run_expr::<IO<u8>>("<top>", text);
 
     match result {
         Ok((IO::Value(value), _)) => assert_eq!(value, b']'),
@@ -58,6 +57,7 @@ fn write_and_flush_file() {
     let file = NamedTempFile::new().unwrap();
 
     let thread = new_vm();
+    thread.get_database_mut().run_io(true);
     let text = r#"
         let { assert } = import! std.test
         let { OpenOptions, open_file_with, write_slice_file, flush_file, ? } = import! std.io
@@ -69,9 +69,8 @@ fn write_and_flush_file() {
             flush_file file
     "#;
 
-    let (mut test, _) = Compiler::new()
-        .run_io(true)
-        .run_expr::<OwnedFunction<fn(String) -> IO<()>>>(&thread, "<top>", &text)
+    let (mut test, _) = thread
+        .run_expr::<OwnedFunction<fn(String) -> IO<()>>>("<top>", &text)
         .unwrap_or_else(|err| panic!("{}", err));
 
     test.call(file.path().to_str().unwrap().to_owned())
@@ -107,11 +106,9 @@ fn run_expr_int() {
         do result = io.run_expr "123"
         io.applicative.wrap result.value
     "#;
-    let mut vm = make_vm();
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .run_expr::<IO<String>>(&mut vm, "<top>", text)
-        .unwrap();
+    let vm = make_vm();
+    vm.get_database_mut().run_io(true);
+    let (result, _) = vm.run_expr::<IO<String>>("<top>", text).unwrap();
     match result {
         IO::Value(result) => {
             let expected = "123";
@@ -143,8 +140,8 @@ let io = import! std.io
 let { wrap } = io.applicative
 wrap 123
 "#;
-    let value = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+    let value = vm
+        .run_expr::<OpaqueValue<&Thread, Hole>>("example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(
         value.0.get_ref() != ValueRef::Int(123),
@@ -168,12 +165,9 @@ fn spawn_on_twice() {
 
     let mut runtime = Runtime::new().unwrap();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<String>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
@@ -183,11 +177,7 @@ fn spawn_on_twice() {
     }
 
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<String>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
@@ -214,12 +204,9 @@ fn spawn_on_runexpr() {
 
     let mut runtime = Runtime::new().unwrap();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<String>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
@@ -253,12 +240,9 @@ fn spawn_on_do_action_twice() {
 
     let mut runtime = Runtime::new().unwrap();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<i32>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(2));
 }
@@ -286,12 +270,9 @@ fn spawn_on_force_action_twice() {
 
     let mut runtime = Runtime::new().unwrap();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<i32>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(1));
 }
@@ -318,12 +299,9 @@ fn spawn_on_runexpr_in_catch() {
 
     let mut runtime = Runtime::new().unwrap();
     let vm = make_vm();
+    vm.get_database_mut().run_io(true);
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<String>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
@@ -333,11 +311,7 @@ fn spawn_on_runexpr_in_catch() {
     }
 
     let (result, _) = runtime
-        .block_on(
-            Compiler::new()
-                .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
+        .block_on(vm.run_expr_async::<IO<String>>("<top>", text))
         .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
@@ -358,10 +332,10 @@ fn io_error_in_catch1() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .implicit_prelude(false)
-        .run_expr::<IO<String>>(&vm, "<top>", expr)
+    vm.get_database_mut().implicit_prelude(false).run_io(true);
+
+    let (result, _) = vm
+        .run_expr::<IO<String>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = IO::Value("error".to_string());
 
@@ -380,10 +354,10 @@ fn io_error_in_catch2() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .implicit_prelude(false)
-        .run_expr::<IO<String>>(&vm, "<top>", expr)
+    vm.get_database_mut().implicit_prelude(false).run_io(true);
+
+    let (result, _) = vm
+        .run_expr::<IO<String>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = IO::Value("error".to_string());
 
@@ -403,10 +377,10 @@ fn io_error_in_catch3() {
 
     let vm = make_vm();
 
-    let (result, _) = Compiler::new()
-        .run_io(true)
-        .implicit_prelude(false)
-        .run_expr::<IO<String>>(&vm, "<top>", expr)
+    vm.get_database_mut().implicit_prelude(false).run_io(true);
+
+    let (result, _) = vm
+        .run_expr::<IO<String>>("<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = IO::Value("error2".to_string());
 

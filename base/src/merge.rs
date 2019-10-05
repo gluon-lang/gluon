@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::iter::FusedIterator;
 
 pub fn merge3<F, A: ?Sized, B: ?Sized, C: ?Sized, R>(
     a_original: &A,
@@ -69,61 +69,109 @@ where
 pub fn merge_tuple_iter<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
 where
     I: IntoIterator<Item = (&'a T, &'a T)>,
+    I::IntoIter: FusedIterator + Clone,
     F: FnMut(&'a T, &'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Default + Extend<T> + DerefMut<Target = [T]>,
+    R: std::iter::FromIterator<T>,
 {
-    merge_iter(types, |(l, r)| f(l, r), |(l, _)| l.clone())
+    merge_collect(types, |(l, r)| f(l, r), |(l, _)| l.clone())
 }
 
-pub fn merge_iter<I, F, G, U, R>(types: I, mut action: F, mut converter: G) -> Option<R>
+pub struct MergeIter<I, F, G, T> {
+    types: I,
+    clone_types_iter: I,
+    action: F,
+    converter: G,
+    clone_types: usize,
+    next: Option<T>,
+}
+
+impl<I, F, G, U> Iterator for MergeIter<I, F, G, U>
 where
-    I: IntoIterator,
-    F: FnMut(I::Item) -> Option<U>,
-    G: FnMut(I::Item) -> U,
-    I::Item: Copy,
-    R: Default + Extend<U> + DerefMut<Target = [U]>,
-{
-    let mut out = R::default();
-    merge_iter_(
-        types.into_iter(),
-        false,
-        &mut out,
-        &mut action,
-        &mut converter,
-    );
-    if out.is_empty() {
-        None
-    } else {
-        out.reverse();
-        Some(out)
-    }
-}
-
-fn merge_iter_<I, F, G, U, R>(
-    mut types: I,
-    replaced: bool,
-    output: &mut R,
-    f: &mut F,
-    converter: &mut G,
-) where
     I: Iterator,
     F: FnMut(I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
-    I::Item: Copy,
-    R: Default + Extend<U> + DerefMut<Target = [U]>,
 {
-    if let Some(l) = types.next() {
-        let new = f(l);
-        merge_iter_(types, replaced || new.is_some(), output, f, converter);
-        match new {
-            Some(typ) => {
-                output.extend(Some(typ));
+    type Item = U;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.clone_types > 0 {
+            self.clone_types -= 1;
+            self.clone_types_iter.next().map(&mut self.converter)
+        } else if let Some(typ) = self.next.take() {
+            self.clone_types_iter.next();
+            Some(typ)
+        } else {
+            let action = &mut self.action;
+            if let Some((i, typ)) = self
+                .types
+                .by_ref()
+                .enumerate()
+                .find_map(|(i, typ)| action(typ).map(|typ| (i, typ)))
+            {
+                self.clone_types = i;
+                self.next = Some(typ);
+                self.next()
+            } else {
+                self.clone_types = usize::max_value();
+                self.next()
             }
-            None if replaced || !output[..].is_empty() => {
-                output.extend(Some(converter(l)));
-            }
-            None => (),
         }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.clone_types_iter.size_hint()
+    }
+}
+
+impl<I, F, G, U> ExactSizeIterator for MergeIter<I, F, G, U>
+where
+    I: ExactSizeIterator,
+    F: FnMut(I::Item) -> Option<U>,
+    G: FnMut(I::Item) -> U,
+{
+    fn len(&self) -> usize {
+        self.clone_types_iter.len()
+    }
+}
+
+pub fn merge_collect<I, F, G, U, R>(types: I, action: F, converter: G) -> Option<R>
+where
+    I: IntoIterator,
+    I::IntoIter: FusedIterator + Clone,
+    F: FnMut(I::Item) -> Option<U>,
+    G: FnMut(I::Item) -> U,
+    R: std::iter::FromIterator<U>,
+{
+    merge_iter(types, action, converter).map(|iter| iter.collect())
+}
+
+pub fn merge_iter<I, F, G, U>(
+    types: I,
+    mut action: F,
+    converter: G,
+) -> Option<MergeIter<I::IntoIter, F, G, U>>
+where
+    I: IntoIterator,
+    I::IntoIter: FusedIterator + Clone,
+    F: FnMut(I::Item) -> Option<U>,
+    G: FnMut(I::Item) -> U,
+{
+    let mut types = types.into_iter();
+    let clone_types_iter = types.clone();
+    if let Some((i, typ)) = types
+        .by_ref()
+        .enumerate()
+        .find_map(|(i, typ)| action(typ).map(|typ| (i, typ)))
+    {
+        Some(MergeIter {
+            clone_types_iter,
+            types,
+            action,
+            converter,
+            clone_types: i,
+            next: Some(typ),
+        })
+    } else {
+        None
     }
 }

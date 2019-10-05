@@ -1,13 +1,13 @@
-#[macro_use]
-extern crate criterion;
+use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 
-extern crate gluon;
-
-use criterion::{black_box, Bencher, Criterion};
-
-use gluon::vm::api::{primitive, FunctionRef, Primitive};
-use gluon::vm::thread::{Status, Thread};
-use gluon::{new_vm, Compiler};
+use gluon::{
+    new_vm,
+    vm::{
+        api::{primitive, FunctionRef, Primitive},
+        thread::{Status, Thread},
+    },
+    ThreadExt,
+};
 
 // Benchmarks function calls
 fn factorial(b: &mut Bencher) {
@@ -19,7 +19,7 @@ fn factorial(b: &mut Bencher) {
         else n * factorial (n - 1)
     factorial
     "#;
-    Compiler::new().load_script(&vm, "factorial", text).unwrap();
+    vm.load_script("factorial", text).unwrap();
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(20).unwrap();
@@ -36,7 +36,7 @@ fn factorial_tail_call(b: &mut Bencher) {
         else factorial (a * n) (n - 1)
     factorial 1
     "#;
-    Compiler::new().load_script(&vm, "factorial", text).unwrap();
+    vm.load_script("factorial", text).unwrap();
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(20).unwrap();
@@ -69,7 +69,7 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
             for (n #Int- 10) f
     for
     "#;
-    Compiler::new().load_script(&vm, "test", text).unwrap();
+    vm.load_script("test", text).unwrap();
 
     let mut test: FunctionRef<fn(i32, Primitive<fn(i32)>) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {

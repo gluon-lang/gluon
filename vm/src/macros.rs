@@ -1,49 +1,236 @@
 //! Module providing the building blocks to create macros and expand them.
-use std::any::Any;
-use std::error::Error as StdError;
-use std::mem;
-use std::sync::{Arc, RwLock};
+use std::{
+    any::{Any, TypeId},
+    error::Error as StdError,
+    fmt, mem,
+    sync::{Arc, RwLock},
+};
 
-use futures::{stream, Future, Stream};
+use {
+    codespan_reporting::Diagnostic,
+    downcast_rs::{impl_downcast, Downcast},
+    futures::{stream, Future, Stream},
+};
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
-    error::Errors as BaseErrors,
+    error::{AsDiagnostic, Errors as BaseErrors},
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
     symbol::{Symbol, Symbols},
 };
 
-use crate::thread::Thread;
+use crate::{gc::Trace, thread::Thread};
 
-pub type Error = Box<dyn StdError + Send + Sync>;
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
 
+pub trait DowncastArc: Downcast {
+    fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
+}
+
+impl<T> DowncastArc for T
+where
+    T: Downcast + Send + Sync,
+{
+    fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
+    }
+}
+
+pub trait MacroError: DowncastArc + StdError + AsDiagnostic + Send + Sync + 'static {
+    fn clone_error(&self) -> Error;
+    fn eq_error(&self, other: &dyn MacroError) -> bool;
+    fn hash_error(&self, hash: &mut dyn std::hash::Hasher);
+}
+
+impl_downcast!(MacroError);
+
+impl dyn MacroError {
+    #[inline]
+    pub fn downcast_arc<T: MacroError>(self: Arc<Self>) -> Result<Arc<T>, Arc<Self>>
+    where
+        Self: Send + Sync,
+    {
+        if self.is::<T>() {
+            Ok(DowncastArc::into_arc_any(self).downcast::<T>().unwrap())
+        } else {
+            Err(self)
+        }
+    }
+}
+
+impl<T> MacroError for T
+where
+    T: Clone + PartialEq + std::hash::Hash + AsDiagnostic + StdError + Send + Sync + 'static,
+{
+    fn clone_error(&self) -> Error {
+        Error(Box::new(self.clone()))
+    }
+    fn eq_error(&self, other: &dyn MacroError) -> bool {
+        other
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+    fn hash_error(&self, mut hash: &mut dyn std::hash::Hasher) {
+        self.hash(&mut hash)
+    }
+}
+
+#[derive(Debug)]
+pub struct Error(Box<dyn MacroError>);
+
+impl StdError for Error {
+    fn description(&self) -> &str {
+        self.0.description()
+    }
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.0.source()
+    }
+}
+
+impl AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> Diagnostic {
+        self.0.as_diagnostic()
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Clone for Error {
+    fn clone(&self) -> Self {
+        self.0.clone_error()
+    }
+}
+
+impl Eq for Error {}
+
+impl PartialEq for Error {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_error(&*other.0)
+    }
+}
+
+impl std::hash::Hash for Error {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {
+        self.0.hash_error(state)
+    }
+}
+
+impl Error {
+    pub fn new<E>(err: E) -> Self
+    where
+        E: MacroError,
+    {
+        Self(Box::new(err))
+    }
+
+    pub fn message(s: impl Into<String>) -> Error {
+        #[derive(Debug, Eq, PartialEq, Clone, Hash)]
+        struct StringError(String);
+
+        impl StdError for StringError {
+            fn description(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for StringError {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fmt::Display::fmt(&self.0, f)
+            }
+        }
+
+        impl AsDiagnostic for StringError {
+            fn as_diagnostic(&self) -> Diagnostic {
+                Diagnostic::new_error(self.to_string())
+            }
+        }
+
+        Self::new(StringError(s.into()))
+    }
+
+    pub fn downcast<T>(self) -> Result<Box<T>, Self>
+    where
+        T: MacroError,
+    {
+        self.0.downcast().map_err(Self)
+    }
+}
+
 /// A trait which abstracts over macros.
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
-pub trait Macro: ::mopa::Any + Send + Sync {
+pub trait Macro: Trace + DowncastArc + Send + Sync {
+    fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
+    where
+        Self: Sized,
+        T: ?Sized + Any,
+    {
+        self.get_capability_impl(thread, TypeId::of::<T>())
+            .map(|b| {
+                *b.downcast::<Box<T>>()
+                    .ok()
+                    .expect("get_capability_impl return an unexpected type")
+            })
+    }
+
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        let _ = (thread, id);
+        None
+    }
+
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture;
 }
 
-mopafy!(Macro);
+impl_downcast!(Macro);
 
-impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
+impl dyn Macro {
+    #[inline]
+    pub fn downcast_arc<T: Macro>(self: Arc<Self>) -> Result<Arc<T>, Arc<Self>>
+    where
+        Self: Send + Sync,
+    {
+        if self.is::<T>() {
+            Ok(DowncastArc::into_arc_any(self).downcast::<T>().unwrap())
+        } else {
+            Err(self)
+        }
+    }
+}
+
+impl<M> Macro for Box<M>
 where
-    F: Fn(
-        &mut MacroExpander,
-        Vec<SpannedExpr<Symbol>>,
-    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
+    M: Macro + ?Sized,
 {
-    fn expand(
-        &self,
-        env: &mut MacroExpander,
-        args: Vec<SpannedExpr<Symbol>>,
-    ) -> Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send> {
-        self(env, args)
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, id)
+    }
+
+    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+        (**self).expand(env, args)
+    }
+}
+
+impl<M> Macro for Arc<M>
+where
+    M: Macro + ?Sized,
+{
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, id)
+    }
+
+    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+        (**self).expand(env, args)
     }
 }
 
@@ -52,6 +239,10 @@ where
 #[derive(Default)]
 pub struct MacroEnv {
     macros: RwLock<FnvMap<String, Arc<dyn Macro>>>,
+}
+
+unsafe impl Trace for MacroEnv {
+    impl_trace! { self, gc, mark(&*self.macros.read().unwrap(), gc) }
 }
 
 impl MacroEnv {
@@ -75,14 +266,30 @@ impl MacroEnv {
         self.macros.read().unwrap().get(name).cloned()
     }
 
+    pub fn get_capabilities<T>(&self, thread: &Thread) -> Vec<Box<T>>
+    where
+        T: ?Sized + Any,
+    {
+        let macros = self.macros.read().unwrap();
+        macros
+            .values()
+            .filter_map(|mac| mac.get_capability::<T>(thread))
+            .collect()
+    }
+
+    pub fn clear(&self) {
+        self.macros.write().unwrap().clear();
+    }
+
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
     pub fn run(
         &self,
         vm: &Thread,
+        user_data: &dyn Any,
         symbols: &mut Symbols,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<(), Errors> {
-        let mut expander = MacroExpander::new(vm);
+        let mut expander = MacroExpander::new(vm, user_data);
         expander.run(symbols, expr);
         expander.finish()
     }
@@ -92,24 +299,24 @@ pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<dyn Any>>,
     pub vm: &'a Thread,
     pub errors: Errors,
-    pub error_in_expr: bool,
+    pub user_data: &'a dyn Any,
     macros: &'a MacroEnv,
 }
 
 impl<'a> MacroExpander<'a> {
-    pub fn new(vm: &'a Thread) -> MacroExpander<'a> {
+    pub fn new(vm: &'a Thread, user_data: &'a dyn Any) -> MacroExpander<'a> {
         MacroExpander {
             vm: vm,
 
             state: FnvMap::default(),
             macros: vm.get_macros(),
-            error_in_expr: false,
+            user_data,
             errors: Errors::new(),
         }
     }
 
     pub fn finish(self) -> Result<(), Errors> {
-        if self.error_in_expr || self.errors.has_errors() {
+        if self.errors.has_errors() {
             Err(self.errors)
         } else {
             Ok(())
@@ -190,7 +397,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,
-                            "Implicit arguments are not allowed on macros".into(),
+                            Error::message("Implicit arguments are not allowed on macros"),
                         ));
                     }
 

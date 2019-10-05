@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Type representing a single error when checking a type
-#[derive(Debug, PartialEq, Functor)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Functor)]
 pub enum TypeError<I, T> {
     /// Variable has not been defined before it was used
     UndefinedVariable(I),
@@ -230,7 +230,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum Help {
     UndefinedFlatMapInDo,
     ExtraArgument(u32, u32),
@@ -241,7 +241,7 @@ impl fmt::Display for Help {
         match *self {
             Help::UndefinedFlatMapInDo => write!(
                 f,
-                "Try bringing the `flat_map` function found in the `Monad`\
+                "Try bringing the `flat_map` function found in the `Monad` \
                  instance for your type into scope"
             ),
             Help::ExtraArgument(expected, actual) => {

@@ -9,7 +9,7 @@ use std::io::{self, BufRead};
 use gluon::{
     new_vm,
     vm::api::{FunctionRef, OpaqueValue},
-    Compiler, RootedThread,
+    RootedThread, ThreadExt,
 };
 
 #[derive(VmType)]
@@ -32,7 +32,7 @@ fn main_() -> gluon::Result<()> {
     env_logger::init();
 
     let thread = new_vm();
-    Compiler::new().load_file(&thread, "examples/lisp/lisp.glu")?;
+    thread.load_file("examples/lisp/lisp.glu")?;
 
     let mut eval: FunctionRef<fn(String, LispState) -> Result<(Expr, LispState), String>> =
         thread.get_global("examples.lisp.lisp.eval_env_string")?;
@@ -66,7 +66,7 @@ mod tests {
 
     fn eval_lisp(expr: &str) -> Result<String, Error> {
         let thread = new_vm();
-        Compiler::new().load_file(&thread, "examples/lisp/lisp.glu")?;
+        thread.load_file("examples/lisp/lisp.glu")?;
 
         let mut eval: FunctionRef<fn(String, LispState) -> Result<(Expr, LispState), String>> =
             thread.get_global("examples.lisp.lisp.eval_env_string")?;

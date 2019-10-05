@@ -34,7 +34,7 @@ use gluon::{base, parser, vm};
 use crate::base::filename_to_module;
 
 use gluon::{
-    new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Compiler, Error, Result, Thread,
+    new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Error, Result, Thread, ThreadExt,
 };
 
 mod repl;
@@ -142,13 +142,13 @@ pub struct Opt {
     subcommand_opt: Option<SubOpt>,
 }
 
-fn run_files<I>(compiler: &mut Compiler, vm: &Thread, files: I) -> Result<()>
+fn run_files<I>(vm: &Thread, files: I) -> Result<()>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
 {
     for file in files {
-        compiler.load_file(&vm, file.as_ref())?;
+        vm.load_file(file.as_ref())?;
     }
     Ok(())
 }
@@ -162,12 +162,11 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
-    let mut compiler = Compiler::new().use_standard_lib(!opt.no_std);
     let thread = new_vm();
+    thread.get_database_mut().use_standard_lib(!opt.no_std);
 
-    Ok(compiler.format_expr(
+    Ok(thread.format_expr(
         &mut gluon_format::Formatter::default(),
-        &thread,
         file,
         file_map.src(),
     )?)
@@ -216,12 +215,7 @@ fn fmt_stdio(opt: &Opt) -> Result<()> {
     Ok(())
 }
 
-fn run(
-    opt: &Opt,
-    compiler: &mut Compiler,
-    color: Color,
-    vm: &Thread,
-) -> std::result::Result<(), gluon::Error> {
+fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -269,7 +263,7 @@ fn run(
                     future::lazy(move || repl::run(color, &prompt, debug_level, use_std_lib))
                 )?;
             } else if !opt.input.is_empty() {
-                run_files(compiler, &vm, &opt.input)?;
+                run_files(&vm, &opt.input)?;
             } else {
                 writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
                     .expect("Error writing help to stderr");
@@ -284,17 +278,17 @@ fn main() {
 
     let opt = Opt::from_args();
 
-    let mut compiler = Compiler::new()
-        .run_io(true)
-        .use_standard_lib(!opt.no_std);
     let vm = new_vm();
+    vm.get_database_mut()
+        .use_standard_lib(!opt.no_std)
+        .run_io(true);
 
-    if let Err(err) = run(&opt, &mut compiler, opt.color, &vm) {
+    if let Err(err) = run(&opt, opt.color, &vm) {
         match err {
             Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
             _ => {
                 let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
-                if let Err(err) = err.emit(&mut stderr, &compiler.code_map()) {
+                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
                     eprintln!("{}", err);
                 } else {
                     eprintln!("");
