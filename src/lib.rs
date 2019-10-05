@@ -46,6 +46,7 @@ macro_rules! try_future {
 pub mod compiler_pipeline;
 #[macro_use]
 pub mod import;
+pub mod lift_io;
 #[doc(hidden)]
 pub mod query;
 pub mod std_lib;
@@ -594,6 +595,7 @@ pub trait ThreadExt {
                     &module_name,
                 )
                 .map_err(|(_, err)| err.into())
+                .map(|_| ())
                 .into_future(),
         )
     }
@@ -831,15 +833,23 @@ impl VmBuilder {
         let vm =
             RootedThread::with_global_state(crate::vm::vm::GlobalVmStateBuilder::new().build());
 
-        let import = Import::new(DefaultImporter);
-        if let Some(import_paths) = self.import_paths {
-            import.set_paths(import_paths);
-        }
+        {
+            let macros = vm.get_macros();
 
-        if let Ok(gluon_path) = env::var("GLUON_PATH") {
-            import.add_path(gluon_path);
+            {
+                let import = Import::new(DefaultImporter);
+                if let Some(import_paths) = self.import_paths {
+                    import.set_paths(import_paths);
+                }
+
+                if let Ok(gluon_path) = env::var("GLUON_PATH") {
+                    import.add_path(gluon_path);
+                }
+                macros.insert(String::from("import"), import);
+            }
+
+            macros.insert(String::from("lift_io"), lift_io::LiftIo);
         }
-        vm.get_macros().insert(String::from("import"), import);
 
         add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
 
