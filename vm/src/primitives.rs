@@ -163,9 +163,9 @@ pub mod array {
 
 mod string {
     use super::*;
-    use crate::{thread::ThreadInternal, value::ValueStr};
+    use crate::value::ValueStr;
 
-    pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
+    pub(crate) fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<Pushed<String>, Error> {
         #[derive(Trace)]
         #[gluon(gluon_vm)]
         struct StrAppend<'b> {
@@ -198,12 +198,31 @@ mod string {
         let vm = lhs.vm;
         let lhs = lhs.value;
 
-        let mut context = vm.context();
-        let value = match context.alloc(StrAppend { lhs: lhs, rhs: rhs }) {
+        let mut context = vm.current_context();
+        let mut context = context.context();
+        let value = match alloc!(context, StrAppend { lhs: lhs, rhs: rhs }) {
             Ok(x) => x,
             Err(err) => return RuntimeResult::Panic(err),
         };
-        RuntimeResult::Return(Getable::from_value(vm, Variants::from(value)))
+        context.stack.push(Variants::from(value));
+        RuntimeResult::Return(Pushed::default())
+    }
+
+    pub(crate) fn append_char(
+        lhs: WithVM<&str>,
+        rhs: char,
+    ) -> RuntimeResult<Pushed<String>, Error> {
+        append(lhs, rhs.encode_utf8(&mut [0; 4]))
+    }
+
+    pub(crate) fn from_char(c: WithVM<char>) -> RuntimeResult<Pushed<String>, Error> {
+        append_char(
+            WithVM {
+                vm: c.vm,
+                value: "",
+            },
+            c.value,
+        )
     }
 
     pub fn split_at(s: &str, index: usize) -> RuntimeResult<(&str, &str), String> {
@@ -277,7 +296,7 @@ fn show_float(f: f64) -> String {
 }
 
 fn show_char(c: char) -> String {
-    format!("{}", c)
+    format!("{:?}", c)
 }
 
 fn show_byte(c: u8) -> String {
@@ -522,6 +541,8 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             trim_end => primitive!(1, std::string::prim::trim_end),
             trim_end_matches => primitive!(2, std::string::prim::trim_end_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
+            append_char => primitive!(2, "std.string.prim.append_char", string::append_char),
+            from_char => primitive!(1, "std.string.prim.from_char", string::from_char),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
             from_utf8 => primitive!(
                 1,
