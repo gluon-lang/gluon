@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Alternative` type
 let { Applicative } = import! std.applicative
 
 /// A monoid on applicative functors.

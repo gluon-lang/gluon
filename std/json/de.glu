@@ -2,7 +2,7 @@
 //!
 //! _This module is only available if gluon is compiled with the `serialization` feature._
 
-let { Value } = import! std.json.value
+let { Value } = import! std.json
 let prim = import! std.json.prim
 
 let { Result, ? } = import! std.result

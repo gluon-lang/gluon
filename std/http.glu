@@ -1,3 +1,5 @@
+//! A minimal library for writing HTTP servers.
+
 let prelude = import! std.prelude
 let function = import! std.function
 let { ? } = import! std.io
