@@ -974,7 +974,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         let mut replaced_expr = Vec::new();
         let mut expr = Reduced::Local(expr);
-        loop {
+        for _ in 0..10 {
             let replaced_expr_len = replaced_expr.len();
             let new_expr = self
                 .peek_reduced_expr_fn(expr.clone(), &mut |cost, e| {
@@ -1018,13 +1018,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         continue;
                     }
 
-                    return replaced_expr
-                        .into_iter()
-                        .rev()
-                        .find(|(cost, e)| {
-                            *cost <= 10 && !self.contains_unbound_variables(e.as_ref())
-                        })
-                        .map(|(_, e)| e.into_local(&self.allocator));
+                    break;
                 }
                 Some(e) => {
                     expr = Reduced::Local(e);
@@ -1032,6 +1026,12 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 }
             }
         }
+
+        replaced_expr
+            .into_iter()
+            .rev()
+            .find(|(cost, e)| *cost <= 10 && !self.contains_unbound_variables(e.as_ref()))
+            .map(|(_, e)| e.into_local(&self.allocator))
     }
 
     fn inline_call<'b>(
@@ -1159,7 +1159,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         mut expr: ReducedExpr<'e>,
         report_reduction: &mut dyn FnMut(Cost, &ReducedExpr<'e>),
     ) -> CostBinding<'e> {
-        loop {
+        for _ in 0..10 {
             let new_bind = expr.clone().with(self.allocator, |resolver, expr| {
                 match peek_through_lets(expr) {
                     Expr::Ident(ref id, _) => {
@@ -1228,6 +1228,10 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     }
                 }
             }
+        }
+        CostBinding {
+            cost: 0,
+            bind: Binding::Expr(expr),
         }
     }
 

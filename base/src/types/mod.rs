@@ -1501,6 +1501,14 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         type_field_iter(self)
     }
 
+    fn arg_iter(&self) -> ArgIterator<Self> {
+        arg_iter(self)
+    }
+
+    fn implicit_arg_iter(&self) -> ImplicitArgIterator<Self> {
+        implicit_arg_iter(self)
+    }
+
     /// Returns an iterator over all fields in a record.
     /// `{ Test, Test2, x, y } => [x, y]`
     fn row_iter(&self) -> RowIterator<Self> {

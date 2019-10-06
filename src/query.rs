@@ -343,15 +343,18 @@ fn typechecked_module(
     let text = db.module_text(module.clone())?;
 
     let thread = db.thread();
-    text.typecheck_expected(
-        &mut thread.module_compiler(db.compiler()),
-        thread,
-        &module,
-        &text,
-        expected_type.as_ref(),
-    )
-    .map(|value| value.map(Arc::new))
-    .map_err(|(_, err)| err)
+    let mut compiler = thread.module_compiler(db.compiler());
+    let value = text
+        .typecheck_expected(
+            &mut compiler,
+            thread,
+            &module,
+            &text,
+            expected_type.as_ref(),
+        )
+        .map_err(|(_, err)| err)?;
+
+    Ok(value.map(Arc::new))
 }
 
 fn core_expr(
@@ -439,9 +442,9 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
 
     compiler.collect_garbage();
 
-    result?;
+    let typ = result?;
 
-    Ok(Expr::Ident(TypedIdent::new(name)))
+    Ok(Expr::Ident(TypedIdent { name, typ }))
 }
 
 fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {

@@ -79,7 +79,7 @@ pub trait Importer: Any + Clone + Sync + Send {
         compiler: &mut ModuleCompiler,
         vm: &Thread,
         modulename: &str,
-    ) -> Result<(), (Option<ArcType>, crate::Error)>;
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
 }
 
 #[derive(Clone)]
@@ -90,12 +90,12 @@ impl Importer for DefaultImporter {
         compiler: &mut ModuleCompiler,
         _vm: &Thread,
         modulename: &str,
-    ) -> Result<(), (Option<ArcType>, crate::Error)> {
-        compiler
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
+        let value = compiler
             .database
             .global(modulename.to_string())
             .map_err(|err| (None, err))?;
-        Ok(())
+        Ok(value.typ)
     }
 }
 
@@ -285,7 +285,7 @@ impl<I> Import<I> {
         compiler: &mut ModuleCompiler,
         vm: &Thread,
         module_id: &Symbol,
-    ) -> Result<(), (Option<ArcType>, MacroError)>
+    ) -> Result<ArcType, (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
@@ -297,22 +297,26 @@ impl<I> Import<I> {
             .get_unloaded_module(vm, &modulename)
             .map_err(|err| (None, MacroError::new(err)))?;
 
-        match unloaded_module {
+        Ok(match unloaded_module {
             UnloadedModule::Extern(ExternModule {
                 value,
                 typ,
                 metadata,
             }) => {
-                vm.set_global(module_id.clone(), typ, metadata.into(), value.get_value())
-                    .map_err(|err| (None, MacroError::new(err)))?;
+                vm.set_global(
+                    module_id.clone(),
+                    typ.clone(),
+                    metadata.into(),
+                    value.get_value(),
+                )
+                .map_err(|err| (None, MacroError::new(err)))?;
+                typ
             }
-            UnloadedModule::Source => {
-                self.importer
-                    .import(compiler, vm, &modulename)
-                    .map_err(|(t, err)| (t, MacroError::new(err)))?;
-            }
-        }
-        Ok(())
+            UnloadedModule::Source => self
+                .importer
+                .import(compiler, vm, &modulename)
+                .map_err(|(t, err)| (t, MacroError::new(err)))?,
+        })
     }
 }
 

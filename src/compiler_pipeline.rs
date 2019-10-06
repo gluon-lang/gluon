@@ -524,6 +524,28 @@ where
     }
 }
 
+fn typecheck_expr(
+    expr: &mut SpannedExpr<Symbol>,
+    compiler: &mut ModuleCompiler,
+    thread: &Thread,
+    file: &str,
+    expected_type: Option<&ArcType>,
+    metadata_map: &mut FnvMap<Symbol, Arc<Metadata>>,
+) -> Result<ArcType> {
+    use crate::check::typecheck::Typecheck;
+    let env = compiler.database;
+    let mut tc = Typecheck::new(
+        file.into(),
+        &mut compiler.symbols,
+        &env,
+        &thread.global_env().type_cache(),
+        metadata_map,
+    );
+
+    tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
+        .map_err(|err| InFile::new(compiler.database.state().code_map.clone(), err).into())
+}
+
 impl<E> Typecheckable for InfixReparsed<E>
 where
     E: BorrowMut<SpannedExpr<Symbol>>,
@@ -538,7 +560,6 @@ where
         _expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> SalvageResult<TypecheckValue<Self::Expr>> {
-        use crate::check::typecheck::Typecheck;
         trace!("Typecheck: {}", file);
 
         let InfixReparsed {
@@ -547,35 +568,28 @@ where
             metadata,
         } = self;
 
-        let typ = {
-            let result = {
-                let env = compiler.database;
-                let mut tc = Typecheck::new(
-                    file.into(),
-                    &mut compiler.symbols,
-                    &env,
-                    &thread.global_env().type_cache(),
-                    &mut metadata_map,
-                );
-
-                tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
-            };
-            match result {
-                Ok(typ) => typ,
-                Err(err) => {
-                    return Err((
-                        Some(TypecheckValue {
-                            typ: expr
-                                .borrow_mut()
-                                .try_type_of(&compiler.database)
-                                .unwrap_or_else(|_| thread.global_env().type_cache().error()),
-                            expr,
-                            metadata_map,
-                            metadata,
-                        }),
-                        InFile::new(compiler.database.state().code_map.clone(), err).into(),
-                    ));
-                }
+        let typ = match typecheck_expr(
+            expr.borrow_mut(),
+            compiler,
+            thread,
+            file,
+            expected_type,
+            &mut metadata_map,
+        ) {
+            Ok(typ) => typ,
+            Err(err) => {
+                return Err((
+                    Some(TypecheckValue {
+                        typ: expr
+                            .borrow_mut()
+                            .try_type_of(&compiler.database)
+                            .unwrap_or_else(|_| thread.global_env().type_cache().error()),
+                        expr,
+                        metadata_map,
+                        metadata,
+                    }),
+                    err,
+                ))
             }
         };
 

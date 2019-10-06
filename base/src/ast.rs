@@ -16,7 +16,7 @@ use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
 use crate::resolve::remove_aliases_cow;
 use crate::symbol::Symbol;
 use crate::types::{
-    self, Alias, AliasData, ArcType, ArgType, NullInterner, Type, TypeEnv, TypeExt,
+    self, Alias, AliasData, ArcType, ArgType, Flags, NullInterner, Type, TypeEnv, TypeExt,
 };
 use ordered_float::NotNan;
 
@@ -109,6 +109,12 @@ impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
 impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
     fn from(typ: Type<Id, AstType<Id>>) -> Self {
         Self::from(pos::spanned2(0.into(), 0.into(), typ))
+    }
+}
+
+impl<Id> From<(Type<Id, AstType<Id>>, Flags)> for AstType<Id> {
+    fn from((typ, _): (Type<Id, AstType<Id>>, Flags)) -> AstType<Id> {
+        Self::from(typ)
     }
 }
 
@@ -423,6 +429,18 @@ impl<Id> Default for Expr<Id> {
 }
 
 impl<Id> Expr<Id> {
+    pub fn app(func: SpannedExpr<Id>, args: Vec<SpannedExpr<Id>>) -> Self {
+        if args.is_empty() {
+            func.value
+        } else {
+            Expr::App {
+                func: func.into(),
+                implicit_args: Vec::new(),
+                args,
+            }
+        }
+    }
+
     // TODO Use impl Trait
     pub fn field_iter<'a>(
         &'a self,
@@ -902,6 +920,7 @@ impl Typed for Expr<Symbol> {
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         match *self {
             Expr::Ident(ref id) => Ok(id.typ.clone()),
+            Expr::Tuple { ref elems, .. } if elems.len() == 1 => elems[0].try_type_of(env),
             Expr::Projection(_, _, ref typ)
             | Expr::Record { ref typ, .. }
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),

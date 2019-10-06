@@ -1,0 +1,3 @@
+let { lift } = import! std.effect.lift
+let { Write } = import! std.io.write
+lift_io! lift (import! std.io.write)

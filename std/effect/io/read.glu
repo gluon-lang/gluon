@@ -1,0 +1,3 @@
+let { lift } = import! std.effect.lift
+let { Read } = import! std.io.read
+lift_io! lift (import! std.io.read)
