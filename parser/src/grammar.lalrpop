@@ -218,7 +218,7 @@ TypeParam: Generic<Id> = {
 };
 
 RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
-    <comment: DocComment?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
+    <metadata: Metadata?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
@@ -227,22 +227,22 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
                 args.into_iter()
                     .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                     .collect(),
-                AstType::with_comment(comment, alias),
+                AstType::with_metadata(metadata, alias),
             )),
         ))
     },
-    <comment: DocComment?> <id: Sp<Ident>> => {
+    <metadata: Metadata?> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
             Alias::new(
                 id.value,
                 Vec::new(),
-                AstType::with_comment(comment, pos::spanned(span, Type::Hole)),
+                AstType::with_metadata(metadata, pos::spanned(span, Type::Hole)),
             ),
         ))
     },
-    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> => {
+    <metadata: Metadata?> <id: Ident> ":" <typ: Sp<Type_>> => {
         if env.string(&id).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(typ.span, format!("Defining a kind for a type in this location is not supported yet").into()),
@@ -252,13 +252,13 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
                 Alias::new(
                     id,
                     Vec::new(),
-                    AstType::with_comment(comment, typ),
+                    AstType::with_metadata(metadata, typ),
                 ),
             ))
         } else {
             Either::Right(Field::new(
                 id,
-                AstType::with_comment(comment, typ),
+                AstType::with_metadata(metadata, typ),
             ))
         }
     },

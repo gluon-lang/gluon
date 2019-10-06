@@ -69,7 +69,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 struct InnerAstType<Id> {
-    comment: Option<Comment>,
+    metadata: Option<Metadata>,
     typ: Spanned<Type<Id, AstType<Id>>, BytePos>,
 }
 
@@ -101,7 +101,10 @@ impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
 impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
     fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
         AstType {
-            _typ: Box::new(InnerAstType { comment: None, typ }),
+            _typ: Box::new(InnerAstType {
+                metadata: None,
+                typ,
+            }),
         }
     }
 }
@@ -139,34 +142,39 @@ where
     }
 }
 
-pub trait Commented {
-    fn comment(&self) -> Option<&Comment>;
+pub trait HasMetadata {
+    fn metadata(&self) -> Option<&Metadata>;
+
+    fn comment(&self) -> Option<&Comment> {
+        self.metadata()
+            .and_then(|metadata| metadata.comment.as_ref())
+    }
 }
 
-impl<Id> Commented for AstType<Id> {
-    fn comment(&self) -> Option<&Comment> {
-        self._typ.comment.as_ref()
+impl<Id> HasMetadata for AstType<Id> {
+    fn metadata(&self) -> Option<&Metadata> {
+        self._typ.metadata.as_ref()
     }
 }
 
 impl<Id> AstType<Id> {
-    pub fn with_comment<T>(comment: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
+    pub fn with_metadata<T>(metadata: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
     where
-        T: Into<Option<Comment>>,
+        T: Into<Option<Metadata>>,
     {
         AstType {
             _typ: Box::new(InnerAstType {
-                comment: comment.into(),
+                metadata: metadata.into(),
                 typ,
             }),
         }
     }
 
-    pub fn set_comment<T>(&mut self, comment: T)
+    pub fn set_metadata<T>(&mut self, metadata: T)
     where
-        T: Into<Option<Comment>>,
+        T: Into<Option<Metadata>>,
     {
-        self._typ.comment = comment.into();
+        self._typ.metadata = metadata.into();
     }
 
     pub fn into_inner(self) -> Type<Id, Self> {

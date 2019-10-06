@@ -127,7 +127,7 @@ impl<T> From<ResolveError> for TypeError<Symbol, T> {
 impl<I, T> fmt::Display for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str>,
-    T: TypeExt<Id = I> + ast::Commented + pos::HasSpan,
+    T: TypeExt<Id = I> + ast::HasMetadata + pos::HasSpan,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let filter = self.make_filter();
@@ -176,7 +176,7 @@ where
 impl<I, T> TypeError<I, T>
 where
     I: fmt::Display + AsRef<str>,
-    T: TypeExt<Id = I> + ast::Commented + pos::HasSpan,
+    T: TypeExt<Id = I> + ast::HasMetadata + pos::HasSpan,
 {
     pub fn make_filter<'a>(&'a self) -> Box<dyn Fn(&I) -> Filter + 'a> {
         match *self {

@@ -86,7 +86,7 @@ where
     I: fmt::Display + AsRef<str> + Clone,
     T: TypeExt<Id = I>
         + fmt::Display
-        + ast::Commented
+        + ast::HasMetadata
         + pos::HasSpan
         + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
 {
@@ -217,7 +217,7 @@ where
     I: fmt::Display + AsRef<str> + Clone,
     T: TypeExt<Id = I>
         + fmt::Display
-        + ast::Commented
+        + ast::HasMetadata
         + pos::HasSpan
         + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
 {
