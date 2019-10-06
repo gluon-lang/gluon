@@ -48,10 +48,10 @@ let transformer : Transformer (StateT s) =
     { /* monad, */ wrap_monad }
 
 let alternative : [Monad m] -> [Alternative m] -> Alternative (StateT s m) =
-    let stor sra srb = or << sra <*> srb
     let stempty = transformer.wrap_monad empty
+    let stor sra srb = or << sra <*> srb
 
-    { applicative, or = stor, empty = stempty }
+    { applicative, empty = stempty, or = stor }
 
 let put value : [Monad m] -> s -> StateT s m () = \state ->
     wrap { value = (), state = value }

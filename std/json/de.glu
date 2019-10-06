@@ -48,11 +48,12 @@ let applicative : Applicative (Deserializer i) = {
 let alternative : Alternative (Deserializer i) = {
     applicative,
 
+    empty = deserializer (\stream -> Err (error_msg "empty")),
+
     or = \l r -> deserializer (\stream ->
             match deserializer l stream with
             | Ok a -> Ok a
             | Err _ -> deserializer r stream),
-    empty = deserializer (\stream -> Err (error_msg "empty")),
 }
 
 let monad : Monad (Deserializer i) = {

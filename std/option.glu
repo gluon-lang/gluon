@@ -104,11 +104,11 @@ let applicative : Applicative Option = {
 
 let alternative : Alternative Option = {
     applicative = applicative,
+    empty = None,
     or = \x y ->
         match x with
         | Some _ -> x
         | None -> y,
-    empty = None,
 }
 
 let monad : Monad Option = {
