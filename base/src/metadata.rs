@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use crate::{
     ast::Argument,
@@ -40,6 +40,16 @@ pub struct Comment<S = String> {
 pub struct Attribute {
     pub name: String,
     pub arguments: Option<String>,
+}
+
+impl fmt::Display for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "#[{}", self.name)?;
+        if let Some(arguments) = &self.arguments {
+            write!(f, "({})", arguments)?;
+        }
+        write!(f, "]")
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]

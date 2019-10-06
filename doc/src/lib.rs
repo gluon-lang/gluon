@@ -69,6 +69,7 @@ pub struct Field {
     pub args: Vec<Argument>,
     #[serde(rename = "type")]
     pub typ: String,
+    pub attributes: String,
     pub comment: String,
     pub definition_line: Option<u32>,
 }
@@ -168,11 +169,16 @@ pub fn record(
             .type_field_iter()
             .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| {
+                let attributes;
                 let comment;
                 let definition_line;
 
                 match meta.module.get(AsRef::<str>::as_ref(&field.name)) {
                     Some(meta) => {
+                        attributes = meta
+                            .attributes()
+                            .format_with("", |x, f| f(&format_args!("{}\n", x)))
+                            .to_string();
                         comment = meta
                             .comment
                             .as_ref()
@@ -182,6 +188,7 @@ pub fn record(
                         definition_line = None; // FIXME line_number(meta);
                     }
                     None => {
+                        attributes = "".to_string();
                         comment = "".to_string();
                         definition_line = None;
                     }
@@ -199,6 +206,7 @@ pub fn record(
                         })
                         .collect(),
                     typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),
+                    attributes,
                     comment,
                     definition_line,
                 }
@@ -210,11 +218,16 @@ pub fn record(
             .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| {
                 let args;
+                let attributes;
                 let comment;
                 let definition_line;
 
                 match meta.module.get(AsRef::<str>::as_ref(&field.name)) {
                     Some(meta) => {
+                        attributes = meta
+                            .attributes()
+                            .format_with("", |x, f| f(&format_args!("{}\n", x)))
+                            .to_string();
                         args = meta
                             .args
                             .iter()
@@ -233,6 +246,7 @@ pub fn record(
                     }
                     _ => {
                         args = Vec::new();
+                        attributes = "".to_string();
                         comment = "".to_string();
                         definition_line = None;
                     }
@@ -242,6 +256,7 @@ pub fn record(
                     name: field.name.definition_name().to_string(),
                     args,
                     typ: print_type(current_module, &field.typ),
+                    attributes,
                     comment,
                     definition_line,
                 }
