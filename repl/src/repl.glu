@@ -217,7 +217,8 @@ let do_command commands line : Commands -> String -> Eff (ReplEffect r) ReplActi
         | Some command -> command.action arg
         | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     | Err err ->
-        io.println "Expected a command such as `:h`" *> wrap Continue
+        io.println "Expected a command such as `:h`"
+            *> wrap Continue
 
 let loop _ : () -> Eff (ReplEffect r) () =
     do repl = ask
