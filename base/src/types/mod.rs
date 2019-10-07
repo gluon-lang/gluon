@@ -19,11 +19,11 @@ use smallvec::SmallVec;
 use itertools::Itertools;
 
 use crate::{
-    ast::{Commented, EmptyEnv, IdentEnv},
+    ast::{EmptyEnv, HasMetadata, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
     merge::{merge, merge_collect},
-    metadata::Comment,
+    metadata::Metadata,
     pos::{BytePos, HasSpan, Span},
     source::Source,
     symbol::{Name, Symbol, SymbolRef},
@@ -1434,8 +1434,8 @@ impl<Id> HasSpan for ArcType<Id> {
     }
 }
 
-impl<Id> Commented for ArcType<Id> {
-    fn comment(&self) -> Option<&Comment> {
+impl<Id> HasMetadata for ArcType<Id> {
+    fn metadata(&self) -> Option<&Metadata> {
         None
     }
 }
@@ -1598,7 +1598,7 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
     where
         Self::Id: AsRef<str> + 'a,
         A: Clone,
-        Self: Commented + HasSpan,
+        Self: HasMetadata + HasSpan,
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
@@ -2312,7 +2312,7 @@ const INDENT: usize = 4;
 
 impl<'a, I, T> DisplayType<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
     I: AsRef<str> + 'a,
 {
     pub fn pretty<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
@@ -2705,7 +2705,7 @@ pub fn pretty_print<'a, I, T, A>(
 ) -> DocBuilder<'a, Arena<'a, A>, A>
 where
     I: AsRef<str> + 'a,
-    T: Deref<Target = Type<I, T>> + HasSpan + Commented,
+    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata,
     A: Clone,
 {
     dt(Prec::Top, typ).pretty(printer)

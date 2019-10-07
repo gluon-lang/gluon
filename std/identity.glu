@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! The identity functor and monad.
 
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative

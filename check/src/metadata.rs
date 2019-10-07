@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::base::ast::Visitor;
 use crate::base::ast::{
-    self, Argument, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+    self, Argument, AstType, Expr, HasMetadata, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
 };
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::{Metadata, MetadataEnv};
@@ -199,7 +199,7 @@ pub fn metadata(
                     }
                     for field in types {
                         if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            // FIXME Shouldn't need to insert this metadata twice
+                            // TODO Shouldn't need to insert this metadata twice
                             if let Some(type_field) = typ
                                 .type_field_iter()
                                 .find(|type_field| type_field.name.name_eq(&field.name.value))
@@ -356,7 +356,7 @@ pub fn metadata(
                         );
 
                         if metadata.has_data() {
-                            // FIXME Shouldn't need to insert this metadata twice
+                            // TODO Shouldn't need to insert this metadata twice
                             self.stack_var(bind.alias.value.name.clone(), metadata.clone());
                             self.stack_var(bind.name.value.clone(), metadata);
                         }
@@ -383,10 +383,10 @@ pub fn metadata(
             let module: BTreeMap<_, _> = row_iter(typ)
                 .filter_map(|field| {
                     let field_metadata = Self::metadata_of_type(&field.typ);
-                    let field_metadata = match field.typ.comment() {
-                        Some(comment) => {
+                    let field_metadata = match field.typ.metadata() {
+                        Some(other_metadata) => {
                             let mut metadata = field_metadata.unwrap_or_default();
-                            metadata.comment = Some(comment.clone());
+                            metadata.merge_with_ref(other_metadata);
                             Some(metadata)
                         }
                         None => field_metadata,

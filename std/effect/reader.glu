@@ -1,8 +1,10 @@
+//! Implementation of the `Reader` effect
 let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
 
+/// The `Reader` effects provides a shared, immutable environment for the effectful functions using it
 type Reader s r a =
     | Ask : Reader s r s
     .. r
@@ -11,12 +13,15 @@ let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s r a 
 
 let send_reader f : Reader s r a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! reader f) Pure
 
+/// Retrieve the value from the environment
 let ask : forall s . Eff [| reader : Reader s | r |] s =
     send_reader Ask
 
+/// Retrieve the value from the environment while applying `f` to it
 let asks f : forall s . (s -> a) -> Eff [| reader : Reader s | r |] a =
     map f ask
 
+/// Runs a computation in a modified environment.
 let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
     do s = asks f
     let s : s = s // FIXME Remove after this does not affect inference
@@ -31,6 +36,7 @@ let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Ef
                 Impure (inject_rest rest) (loop << f)
     loop eff
 
+/// Eliminates the `Reader` effect
 let run_reader s eff : forall s . s -> Eff [| reader : Reader s | r |] a -> Eff [| | r |] a =
     let loop reader ve : s -> Eff [| reader : Reader s | r |] a -> Eff [| | r |] a =
         match ve with

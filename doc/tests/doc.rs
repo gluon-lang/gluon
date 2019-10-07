@@ -45,6 +45,7 @@ let test x = x
                     name: "x".to_string(),
                 }],
                 typ: handlebars::html_escape("forall a . a -> a"),
+                attributes: "".to_string(),
                 comment: "This is the test function".to_string(),
                 definition_line: None,
             }],

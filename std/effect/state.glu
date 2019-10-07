@@ -1,8 +1,11 @@
+//! Implementation of the `State` effect
+
 let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
 
+/// The `State` effect provides an updatable state
 type State s r a =
     | Get : State s r s
     | Put : s -> State s r ()
@@ -12,19 +15,24 @@ let extract_state x : forall s . [| state : State s | r |] a -> State s r a = co
 
 let send_state f : State s r a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
 
+/// Retreive the current value.
 let get : forall s . Eff [| state : State s | r |] s =
     send_state Get
 
+/// Retreive the current value and applied `f` to it.
 let gets f : forall s . (s -> a) -> Eff [| state : State s | r |] a =
     map f get
 
+/// Store `s` as the new value of the state.
 let put s : s -> Eff [| state : State s | r |] () =
     send_state (Put s)
 
+/// Update the state by applying `f`.
 let modify f : (s -> s) -> Eff [| state : State s | r |] () =
     do s = get
     put (f s)
 
+/// Eliminate the `State` effect and return the state and the computed value
 let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
     let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
         match ve with
@@ -39,9 +47,11 @@ let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| 
                 Impure (inject_rest rest) (loop state << f)
     loop s eff
 
+/// Eliminate the `State` effect and return the state
 let exec_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] s =
     map (\r -> r.state) (run_state s eff)
 
+/// Eliminate the `State` effect and return the computed value
 let eval_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] a =
     map (\r -> r.value) (run_state s eff)
 

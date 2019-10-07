@@ -113,8 +113,8 @@ let some ?alt x : [Alternative f] -> f a -> f (List a) =
 
 let alternative : Alternative List = {
     applicative = applicative,
-    or = semigroup.append,
     empty = Nil,
+    or = semigroup.append,
 }
 
 let monad : Monad List =

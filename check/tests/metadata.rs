@@ -337,7 +337,7 @@ let x ?test : [Test a] -> a = test.x
 }
 
 #[test]
-fn propagate_metadata_through_implicits() {
+fn propagate_metadata_through_implicits1() {
     let _ = env_logger::try_init();
 
     let text = r#"
@@ -349,6 +349,40 @@ type Test a = {
 type Wrap a = | Wrap a
 
 let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x").map(|m| &**m),
+        Some(&Metadata {
+            definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
+            attributes: vec![Attribute {
+                name: "attribute".into(),
+                arguments: None,
+            }],
+            args: vec![Argument::implicit(intern("test@9_8"))],
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_implicits2() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    #[attribute]
+    x : a,
+}
+
+type Wrap a = | Wrap a
+
+let x ?test : [Test a] -> a = test.x
 { x }
 "#;
     let (mut expr, result) = support::typecheck_expr(text);

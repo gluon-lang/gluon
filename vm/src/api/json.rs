@@ -133,7 +133,7 @@ impl VmType for Value {
 }
 
 #[derive(VmType)]
-#[gluon(vm_type = "std.json.value.Value")]
+#[gluon(vm_type = "std.json.Value")]
 #[gluon(gluon_vm)]
 pub struct JsonValue(crate::vm::RootedValue<RootedThread>);
 

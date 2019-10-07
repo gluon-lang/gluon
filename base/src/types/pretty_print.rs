@@ -5,7 +5,7 @@ use std::ops::Deref;
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
-use crate::ast::{is_operator_char, Commented};
+use crate::ast::{is_operator_char, HasMetadata};
 use crate::metadata::{Comment, CommentType};
 use crate::pos::{BytePos, HasSpan, Span};
 use crate::source::Source;
@@ -129,7 +129,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 
     pub fn pretty(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
-        T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+        T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
         I: AsRef<str>,
         A: Clone,
     {
@@ -156,7 +156,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

@@ -1,9 +1,12 @@
+//! Implementation of the `Writer` effect
+
 let { Eff, inject_rest, ? } = import! std.effect
 let monoid @ { Monoid } = import! std.monoid
 let { (<>) } = import! std.semigroup
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
 
+/// The `Writer` effect allows the computations to output values of type `s`
 type Writer s r a =
     | Tell : s -> Writer s r ()
     .. r
@@ -14,9 +17,12 @@ let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s r a 
 #[inline(never)]
 let send_writer f : Writer s r a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! writer f) Pure
 
+/// Outputs `s`
 let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
     send_writer (Tell s)
 
+/// Eliminates `Writer`, returning the output and computed value. Each output through `tell` are
+/// joined via its `Monoid` instance
 let run_writer eff : forall s . [Monoid s] -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] { value : a, writer : s } =
     let loop writer ve : s -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] _ =
         match ve with
