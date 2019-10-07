@@ -7,75 +7,83 @@
 //! typechecking (`TypecheckValue`) can be used as input to the next stage, ensuring that it is
 //! difficult to forget a stage.
 
-use std::borrow::{Borrow, BorrowMut};
-use std::mem;
-use std::result::Result as StdResult;
-use std::sync::Arc;
+use std::{
+    borrow::{Borrow, BorrowMut, Cow},
+    result::Result as StdResult,
+    sync::Arc,
+};
 
 #[cfg(feature = "serde")]
 use either::Either;
-use futures::{future, Future};
+use futures::prelude::*;
+use salsa::ParallelDatabase;
 
-use crate::base::{
-    ast::{SpannedExpr, Typed},
-    error::{Errors, InFile},
-    fnv::FnvMap,
-    metadata::Metadata,
-    resolve,
-    symbol::{Name, NameBuf, Symbol, SymbolData, SymbolModule},
-    types::{ArcType, NullInterner, Type, TypeCache},
+use crate::{
+    base::{
+        ast::{SpannedExpr, Typed},
+        error::{Errors, InFile},
+        fnv::FnvMap,
+        metadata::Metadata,
+        resolve,
+        symbol::{Name, NameBuf, Symbol, SymbolModule},
+        types::{ArcType, NullInterner, Type, TypeCache},
+    },
+    check::{metadata, rename},
+    query::{Compilation, CompilerDatabase},
+    vm::{
+        compiler::CompiledModule,
+        core::{self, interpreter, CoreExpr},
+        macros::MacroExpander,
+        thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
+    },
+    Error, ModuleCompiler, Result,
 };
 
-use crate::check::{metadata, rename};
-
-use crate::vm::{
-    compiler::CompiledModule,
-    core::{self, interpreter, CoreExpr},
-    macros::MacroExpander,
-    thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
-};
-
-use crate::{query::Compilation, Error, ModuleCompiler, Result};
-
-pub type BoxFuture<'vm, T, E> = Box<dyn Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> =
+    std::pin::Pin<Box<dyn futures::Future<Output = StdResult<T, E>> + Send + 'vm>>;
 
 pub type SalvageResult<T, E = Error> = StdResult<T, (Option<T>, E)>;
 
-fn join_result<T, U, V>(
-    result: SalvageResult<T>,
-    f: impl FnOnce(&mut T) -> SalvageResult<V>,
-    join: impl FnOnce(T) -> U,
-) -> SalvageResult<U> {
-    let mut first_error = None;
-    let mut x = match result {
-        Ok(x) => x,
-        Err((Some(expr), err)) => {
-            first_error = Some(err);
-            expr
+fn call<T, U>(v: T, f: impl FnOnce(T) -> U) -> U {
+    f(v)
+}
+
+macro_rules! join_result {
+    ($result: expr, $f: expr, $join: expr $(,)?) => {{
+        let mut first_error = None;
+        let mut x = match $result {
+            Ok(x) => x,
+            Err((Some(expr), err)) => {
+                first_error = Some(err);
+                expr
+            }
+            Err((None, err)) => return Err((None, err)),
+        };
+        let result = call(&mut x, $f)
+            .await
+            .map(|_| ())
+            .map_err(|(value, err)| (value.map(|_| ()), err));
+        if let Err((value, err)) = result {
+            return Err((
+                value.map(|_| call(x, $join)),
+                if first_error.is_some() {
+                    Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>())
+                        .into()
+                } else {
+                    err
+                },
+            ));
         }
-        Err((None, err)) => return Err((None, err.into())),
-    };
-    let result = f(&mut x)
-        .map(|_| ())
-        .map_err(|(value, err)| (value.map(|_| ()), err));
-    if let Err((value, err)) = result {
-        return Err((
-            value.map(|_| join(x)),
-            if first_error.is_some() {
-                Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into()
-            } else {
-                err
-            },
-        ));
-    }
-    match first_error {
-        Some(err) => Err((Some(join(x)), err)),
-        None => Ok(join(x)),
-    }
+        let v = call(x, $join);
+        match first_error {
+            Some(err) => Err((Some(v), err)),
+            None => Ok(v),
+        }
+    }};
 }
 
 pub fn parse_expr(
-    compiler: &mut ModuleCompiler,
+    compiler: &mut ModuleCompiler<'_>,
     type_cache: &TypeCache<Symbol, ArcType>,
     file: &str,
     expr_str: &str,
@@ -99,82 +107,94 @@ pub struct MacroValue<E> {
     pub expr: E,
 }
 
+#[async_trait::async_trait]
 pub trait MacroExpandable {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
-    fn expand_macro(
+    async fn expand_macro(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
-        file: &str,
-        expr_str: &str,
-    ) -> SalvageResult<MacroValue<Self::Expr>>
-    where
-        Self: Sized,
-    {
-        let mut macros = MacroExpander::new(thread, compiler.database);
-        let expr = self.expand_macro_with(compiler, &mut macros, file, expr_str)?;
-        if let Err(err) = macros.finish() {
-            return Err((
-                Some(expr),
-                InFile::new(compiler.code_map().clone(), err).into(),
-            ));
-        }
-        Ok(expr)
-    }
-
-    fn expand_macro_with(
-        self,
-        compiler: &mut ModuleCompiler,
-        macros: &mut MacroExpander,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>>;
 }
 
+#[async_trait::async_trait]
 impl<'s> MacroExpandable for &'s str {
     type Expr = SpannedExpr<Symbol>;
 
-    fn expand_macro_with(
+    async fn expand_macro(
         self,
-        compiler: &mut ModuleCompiler,
-        macros: &mut MacroExpander,
+        compiler: &mut ModuleCompiler<'_>,
+        thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        join_result(
-            parse_expr(compiler, macros.vm.global_env().type_cache(), file, self)
+        join_result!(
+            parse_expr(compiler, thread.global_env().type_cache(), file, self)
                 .map_err(|(x, err)| (x, err.into())),
             |expr| {
-                expr.expand_macro_with(compiler, macros, file, expr_str)
-                    .map(|_| ())
-                    .map_err(|(opt, err)| (opt.map(|_| ()), err))
+                async move {
+                    expr.expand_macro(compiler, thread, file, expr_str)
+                        .map_ok(|_| ())
+                        .map_err(|(opt, err)| (opt.map(|_| ()), err))
+                        .await
+                }
             },
             |expr| MacroValue { expr },
         )
     }
 }
 
+#[async_trait::async_trait]
 impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
     type Expr = &'s mut SpannedExpr<Symbol>;
 
-    fn expand_macro_with(
+    async fn expand_macro(
         self,
-        compiler: &mut ModuleCompiler,
-        macros: &mut MacroExpander,
+        compiler: &mut ModuleCompiler<'_>,
+        thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         if compiler.compiler_settings().implicit_prelude
             && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE")
         {
-            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
+            compiler.include_implicit_prelude(thread.global_env().type_cache(), file, self);
         }
-        let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-        macros.run(&mut compiler.symbols, self);
-        let errors = mem::replace(&mut macros.errors, prev_errors);
+
+        let result = {
+            struct Forker<'a>(salsa::Forker<'a, CompilerDatabase>);
+            impl vm::macros::MacroUserdata for Forker<'_> {
+                fn fork(&self, thread: RootedThread) -> Box<dyn std::any::Any> {
+                    Box::new(self.0.db.fork(self.0.state.clone(), thread))
+                }
+            }
+            let mut forker = Forker(compiler.database.forker());
+
+            let spawn = if tokio_executor::enter().is_err() {
+                struct TokioSpawn;
+                impl futures::task::Spawn for TokioSpawn {
+                    fn spawn_obj(
+                        &self,
+                        future: futures::task::FutureObj<'static, ()>,
+                    ) -> StdResult<(), futures::task::SpawnError> {
+                        tokio::spawn(future);
+                        Ok(())
+                    }
+                }
+                Some(&TokioSpawn as &(dyn futures::task::Spawn + Send + Sync))
+            } else {
+                None
+            };
+
+            let mut macros = MacroExpander::new(thread, &mut forker, spawn);
+            macros.run(&mut compiler.symbols, self).await;
+            macros.finish()
+        };
         let value = MacroValue { expr: self };
-        if errors.has_errors() {
+        if let Err(errors) = result {
             Err((
                 Some(value),
                 InFile::new(compiler.code_map().clone(), errors).into(),
@@ -185,18 +205,20 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
     }
 }
 
+#[async_trait::async_trait]
 impl MacroExpandable for SpannedExpr<Symbol> {
     type Expr = SpannedExpr<Symbol>;
 
-    fn expand_macro_with(
+    async fn expand_macro(
         mut self,
-        compiler: &mut ModuleCompiler,
-        macros: &mut MacroExpander,
+        compiler: &mut ModuleCompiler<'_>,
+        thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         let result = (&mut self)
-            .expand_macro_with(compiler, macros, file, expr_str)
+            .expand_macro(compiler, thread, file, expr_str)
+            .await
             .map(|_| ())
             .map_err(|(_, err)| err);
 
@@ -212,39 +234,42 @@ pub struct Renamed<E> {
     pub expr: E,
 }
 
+#[async_trait::async_trait]
 pub trait Renameable: Sized {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
-    fn rename(
+    async fn rename(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<Renamed<Self::Expr>>;
 }
 
+#[async_trait::async_trait]
 impl<T> Renameable for T
 where
-    T: MacroExpandable,
+    T: MacroExpandable + Send,
+    T::Expr: Send,
 {
     type Expr = T::Expr;
 
-    fn rename(
+    async fn rename(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<Renamed<Self::Expr>> {
-        join_result(
-            self.expand_macro(compiler, thread, file, expr_str),
+        join_result!(
+            self.expand_macro(compiler, thread, file, expr_str).await,
             |MacroValue { expr }| {
                 MacroValue {
                     expr: expr.borrow_mut(),
                 }
                 .rename(compiler, thread, file, expr_str)
-                .map(|_| ())
+                .map_ok(|_| ())
                 .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
             |MacroValue { expr }| Renamed { expr },
@@ -252,15 +277,16 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<E> Renameable for MacroValue<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>>,
+    E: BorrowMut<SpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
-    fn rename(
+    async fn rename(
         mut self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         _thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -278,33 +304,36 @@ pub struct WithMetadata<E> {
     pub metadata: Arc<Metadata>,
 }
 
+#[async_trait::async_trait]
 pub trait MetadataExtractable: Sized {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
-    fn extract_metadata(
+    async fn extract_metadata(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>>;
 }
 
+#[async_trait::async_trait]
 impl<T> MetadataExtractable for T
 where
-    T: Renameable,
+    T: Renameable + Send,
+    T::Expr: Send,
 {
     type Expr = T::Expr;
 
-    fn extract_metadata(
+    async fn extract_metadata(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.rename(compiler, thread, file, expr_str) {
+        let expr = match self.rename(compiler, thread, file, expr_str).await {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);
@@ -312,7 +341,10 @@ where
             }
             Err((None, err)) => return Err((None, err)),
         };
-        match expr.extract_metadata(compiler, thread, file, expr_str) {
+        match expr
+            .extract_metadata(compiler, thread, file, expr_str)
+            .await
+        {
             Ok(value) => match macro_error {
                 Some(err) => return Err((Some(value), err)),
                 None => Ok(value),
@@ -325,20 +357,21 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<E> MetadataExtractable for Renamed<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>>,
+    E: BorrowMut<SpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
-    fn extract_metadata(
+    async fn extract_metadata(
         mut self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         _thread: &Thread,
         _file: &str,
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
-        let env = compiler.database;
+        let env = &*compiler.database;
         let (metadata, metadata_map) = metadata::metadata(env, self.expr.borrow_mut());
         Ok(WithMetadata {
             expr: self.expr,
@@ -355,33 +388,39 @@ pub struct InfixReparsed<E> {
     pub metadata: Arc<Metadata>,
 }
 
+#[async_trait::async_trait]
 pub trait InfixReparseable: Sized {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
-    fn reparse_infix(
+    async fn reparse_infix(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>>;
 }
 
+#[async_trait::async_trait]
 impl<T> InfixReparseable for T
 where
-    T: MetadataExtractable,
+    T: MetadataExtractable + Send,
+    T::Expr: Send,
 {
     type Expr = T::Expr;
 
-    fn reparse_infix(
+    async fn reparse_infix(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.extract_metadata(compiler, thread, file, expr_str) {
+        let expr = match self
+            .extract_metadata(compiler, thread, file, expr_str)
+            .await
+        {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);
@@ -389,7 +428,7 @@ where
             }
             Err((None, err)) => return Err((None, err)),
         };
-        match expr.reparse_infix(compiler, thread, file, expr_str) {
+        match expr.reparse_infix(compiler, thread, file, expr_str).await {
             Ok(value) => match macro_error {
                 Some(err) => return Err((Some(value), err)),
                 None => Ok(value),
@@ -402,15 +441,16 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<E> InfixReparseable for WithMetadata<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>>,
+    E: BorrowMut<SpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
-    fn reparse_infix(
+    async fn reparse_infix(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         _thread: &Thread,
         _file: &str,
         _expr_str: &str,
@@ -466,21 +506,23 @@ impl<E> TypecheckValue<E> {
     }
 }
 
+#[async_trait::async_trait]
 pub trait Typecheckable: Sized {
     type Expr: BorrowMut<SpannedExpr<Symbol>>;
 
-    fn typecheck(
+    async fn typecheck(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<TypecheckValue<Self::Expr>> {
         self.typecheck_expected(compiler, thread, file, expr_str, None)
+            .await
     }
-    fn typecheck_expected(
+    async fn typecheck_expected(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
@@ -488,22 +530,24 @@ pub trait Typecheckable: Sized {
     ) -> SalvageResult<TypecheckValue<Self::Expr>>;
 }
 
+#[async_trait::async_trait]
 impl<T> Typecheckable for T
 where
-    T: InfixReparseable,
+    T: InfixReparseable + Send,
+    T::Expr: Send,
 {
     type Expr = T::Expr;
 
-    fn typecheck_expected(
+    async fn typecheck_expected(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> SalvageResult<TypecheckValue<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.reparse_infix(compiler, thread, file, expr_str) {
+        let expr = match self.reparse_infix(compiler, thread, file, expr_str).await {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);
@@ -511,7 +555,10 @@ where
             }
             Err((None, err)) => return Err((None, err)),
         };
-        match expr.typecheck_expected(compiler, thread, file, expr_str, expected_type) {
+        match expr
+            .typecheck_expected(compiler, thread, file, expr_str, expected_type)
+            .await
+        {
             Ok(value) => match macro_error {
                 Some(err) => return Err((Some(value), err)),
                 None => Ok(value),
@@ -526,18 +573,18 @@ where
 
 fn typecheck_expr(
     expr: &mut SpannedExpr<Symbol>,
-    compiler: &mut ModuleCompiler,
+    compiler: &mut ModuleCompiler<'_>,
     thread: &Thread,
     file: &str,
     expected_type: Option<&ArcType>,
     metadata_map: &mut FnvMap<Symbol, Arc<Metadata>>,
 ) -> Result<ArcType> {
     use crate::check::typecheck::Typecheck;
-    let env = compiler.database;
+    let env = &*compiler.database;
     let mut tc = Typecheck::new(
         file.into(),
         &mut compiler.symbols,
-        &env,
+        &*env,
         &thread.global_env().type_cache(),
         metadata_map,
     );
@@ -546,15 +593,16 @@ fn typecheck_expr(
         .map_err(|err| InFile::new(compiler.database.state().code_map.clone(), err).into())
 }
 
+#[async_trait::async_trait]
 impl<E> Typecheckable for InfixReparsed<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>>,
+    E: BorrowMut<SpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
-    fn typecheck_expected(
+    async fn typecheck_expected(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         _expr_str: &str,
@@ -582,7 +630,7 @@ where
                     Some(TypecheckValue {
                         typ: expr
                             .borrow_mut()
-                            .try_type_of(&compiler.database)
+                            .try_type_of(&*compiler.database)
                             .unwrap_or_else(|_| thread.global_env().type_cache().error()),
                         expr,
                         metadata_map,
@@ -595,8 +643,8 @@ where
 
         // Some metadata requires typechecking so recompute it if full metadata is required
         let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
-            let env = compiler.database;
-            metadata::metadata(&env, expr.borrow_mut())
+            let env = &*compiler.database;
+            metadata::metadata(&*env, expr.borrow_mut())
         } else {
             (metadata, metadata_map)
         };
@@ -639,53 +687,68 @@ impl<E> CompileValue<E> {
     }
 }
 
+#[async_trait::async_trait]
 pub trait Compileable<Extra> {
     type Expr;
 
-    fn compile(
+    async fn compile(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> Result<CompileValue<Self::Expr>>;
+    ) -> Result<CompileValue<Self::Expr>>
+    where
+        Extra: 'async_trait;
 }
+
+#[async_trait::async_trait]
 impl<'a, 'b, T> Compileable<Option<&'b ArcType>> for T
 where
-    T: Typecheckable,
+    T: Typecheckable + Send,
+    T::Expr: Send + Sync,
 {
     type Expr = T::Expr;
 
-    fn compile(
+    async fn compile(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         file: &str,
         expr_str: &str,
         expected_type: Option<&'b ArcType>,
     ) -> Result<CompileValue<Self::Expr>> {
-        self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            .map_err(|(_, err)| err)
-            .and_then(|tc_value| tc_value.compile(compiler, thread, file, expr_str, ()))
+        let tc_value = self
+            .typecheck_expected(compiler, thread, file, expr_str, expected_type)
+            .await
+            .map_err(|(_, err)| err)?;
+        tc_value.compile(compiler, thread, file, expr_str, ()).await
     }
 }
+
+#[async_trait::async_trait]
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
 where
-    E: Borrow<SpannedExpr<Symbol>>,
+    E: Borrow<SpannedExpr<Symbol>> + Send + Sync,
+    Extra: Send,
 {
     type Expr = E;
 
-    fn compile(
+    async fn compile(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         filename: &str,
         expr_str: &str,
         extra: Extra,
-    ) -> Result<CompileValue<Self::Expr>> {
+    ) -> Result<CompileValue<Self::Expr>>
+    where
+        Extra: 'async_trait,
+    {
         (&self)
             .compile(compiler, thread, filename, expr_str, extra)
+            .await
             .map(|value| value.map(|_| ()))
             .map(
                 |CompileValue {
@@ -705,20 +768,25 @@ where
     }
 }
 
+#[async_trait::async_trait]
 impl<'e, E, Extra> Compileable<Extra> for &'e TypecheckValue<E>
 where
-    E: Borrow<SpannedExpr<Symbol>>,
+    E: Borrow<SpannedExpr<Symbol>> + Send + Sync,
+    Extra: Send,
 {
     type Expr = &'e E;
 
-    fn compile(
+    async fn compile(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         thread: &Thread,
         filename: &str,
         _expr_str: &str,
         _: Extra,
-    ) -> Result<CompileValue<Self::Expr>> {
+    ) -> Result<CompileValue<Self::Expr>>
+    where
+        Extra: 'async_trait,
+    {
         use crate::vm::compiler::Compiler;
 
         info!("Compile `{}`", filename);
@@ -728,9 +796,9 @@ where
         let core_expr;
 
         let mut module = {
-            let env = compiler.database;
+            let env = &*compiler.database;
 
-            core_expr = core::with_translator(&env, |translator| {
+            core_expr = core::with_translator(&*env, |translator| {
                 let expr = translator.translate_expr(self.expr.borrow());
 
                 debug!("Translation returned: {}", expr);
@@ -759,7 +827,7 @@ where
             );
 
             let mut compiler = Compiler::new(
-                &env,
+                &*env,
                 thread.global_env(),
                 symbols,
                 &source,
@@ -791,87 +859,103 @@ where
     pub value: RootedValue<T>,
 }
 
+#[async_trait::async_trait]
 pub trait Executable<'vm, Extra> {
     type Expr;
 
-    fn run_expr<T>(
+    async fn run_expr<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         name: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFuture<'vm, ExecuteValue<RootedThread, Self::Expr>, Error>
+    ) -> Result<ExecuteValue<RootedThread, Self::Expr>>
     where
-        T: Send + VmRoot<'vm>;
+        T: Send + Sync + VmRoot<'vm>,
+        Extra: 'async_trait,
+        'vm: 'async_trait;
 
-    fn load_script<T>(
+    async fn load_script<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         filename: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFuture<'vm, (), Error>
+    ) -> Result<()>
     where
-        T: Send + VmRoot<'vm>;
+        T: Send + Sync + VmRoot<'vm>,
+        Extra: 'async_trait,
+        'vm: 'async_trait;
 }
+
+#[async_trait::async_trait]
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
 where
-    C: Compileable<Extra>,
+    C: Compileable<Extra> + Send,
     C::Expr: Send + 'vm,
+    Extra: Send,
 {
     type Expr = C::Expr;
 
-    fn run_expr<T>(
+    async fn run_expr<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         name: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFuture<'vm, ExecuteValue<RootedThread, Self::Expr>, Error>
+    ) -> Result<ExecuteValue<RootedThread, Self::Expr>>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        'vm: 'async_trait,
+        Extra: 'async_trait,
     {
-        match self.compile(compiler, &vm, name, expr_str, arg) {
-            Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()),
-            Err(err) => Box::new(future::err(err)),
+        match self.compile(compiler, &vm, name, expr_str, arg).await {
+            Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()).await,
+            Err(err) => Err(err),
         }
     }
-    fn load_script<T>(
+
+    async fn load_script<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         filename: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFuture<'vm, (), Error>
+    ) -> Result<()>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        Extra: 'async_trait,
+        'vm: 'async_trait,
     {
-        match self.compile(compiler, &vm, filename, expr_str, arg) {
-            Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()),
-            Err(err) => Box::new(future::err(err)),
+        match self.compile(compiler, &vm, filename, expr_str, arg).await {
+            Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()).await,
+            Err(err) => Err(err),
         }
     }
 }
+
+#[async_trait::async_trait]
 impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
 where
     E: Send + 'vm,
 {
     type Expr = E;
 
-    fn run_expr<T>(
+    async fn run_expr<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         name: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFuture<'vm, ExecuteValue<RootedThread, Self::Expr>, Error>
+    ) -> Result<ExecuteValue<RootedThread, Self::Expr>>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        'vm: 'async_trait,
     {
         let CompileValue {
             expr,
@@ -883,49 +967,50 @@ where
         let run_io = compiler.database.compiler_settings().run_io;
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
-        let closure = try_future!(vm.global_env().new_global_thunk(&vm, module));
+        let closure = vm.global_env().new_global_thunk(&vm, module)?;
 
         let vm1 = vm.clone();
-        Box::new(
-            vm1.call_thunk_top(&closure)
-                .map(move |value| ExecuteValue {
-                    id: module_id,
-                    expr,
-                    typ,
-                    value,
-                    metadata,
-                })
-                .map_err(Error::from)
-                .and_then(move |v| {
+        vm1.call_thunk_top(&closure)
+            .map_ok(move |value| ExecuteValue {
+                id: module_id,
+                expr,
+                typ,
+                value,
+                metadata,
+            })
+            .map_err(Error::from)
+            .and_then(move |v| {
+                async move {
                     if run_io {
-                        future::Either::B(crate::compiler_pipeline::run_io(vm, v))
+                        crate::compiler_pipeline::run_io(vm, v).await
                     } else {
-                        future::Either::A(future::ok(v))
+                        Ok(v)
                     }
-                }),
-        )
+                }
+            })
+            .await
     }
-    fn load_script<T>(
+
+    async fn load_script<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         _vm: T,
         filename: &str,
         expr_str: &str,
         _: (),
-    ) -> BoxFuture<'vm, (), Error>
+    ) -> Result<()>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        'vm: 'async_trait,
     {
         let filename = filename.to_string();
 
         compiler
             .state()
             .inline_modules
-            .insert(filename.clone(), expr_str.into());
+            .insert(filename.clone(), Arc::new(Cow::Owned(expr_str.into())));
 
-        Box::new(future::result(
-            compiler.database.import(filename.into()).map(|_| ()),
-        ))
+        compiler.database.import(filename.into()).await.map(|_| ())
     }
 }
 
@@ -961,88 +1046,89 @@ pub struct Module {
 }
 
 #[cfg(feature = "serde")]
-impl<'vm, 'de, D> Executable<'vm, ()> for Precompiled<D>
+#[async_trait::async_trait]
+impl<'vm, D> Executable<'vm, ()> for Precompiled<D>
 where
-    D: crate::serde::Deserializer<'de>,
+    D: crate::serde::Deserializer<'vm> + Send,
 {
     type Expr = ();
 
-    fn run_expr<T>(
+    async fn run_expr<T>(
         self,
-        _compiler: &mut ModuleCompiler,
+        _compiler: &mut ModuleCompiler<'_>,
         vm: T,
         filename: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFuture<'vm, ExecuteValue<RootedThread, Self::Expr>, Error>
+    ) -> Result<ExecuteValue<RootedThread, Self::Expr>>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        'vm: 'async_trait,
     {
         use crate::vm::serialization::DeSeed;
 
-        let module: Module = try_future!(DeSeed::new(&vm, &mut vm.current_context())
+        let module: Module = DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
-            .map_err(|err| err.to_string()));
+            .map_err(|err| err.to_string())?;
         let module_id = module.module.function.id.clone();
         if filename != module_id.as_ref() {
-            return Box::new(future::err(
-                format!("filenames do not match `{}` != `{}`", filename, module_id).into(),
-            ));
+            return Err(format!("filenames do not match `{}` != `{}`", filename, module_id).into());
         }
 
         let typ = module.typ;
         let metadata = module.metadata;
-        let closure = try_future!(vm.global_env().new_global_thunk(&vm, module.module));
-        Box::new(
-            vm.call_thunk_top(&closure)
-                .map(move |value| ExecuteValue {
-                    id: module_id,
-                    expr: (),
-                    typ: typ,
-                    metadata,
-                    value,
-                })
-                .map_err(Error::from),
-        )
+        let closure = vm.global_env().new_global_thunk(&vm, module.module)?;
+        vm.call_thunk_top(&closure)
+            .map_ok(move |value| ExecuteValue {
+                id: module_id,
+                expr: (),
+                typ: typ,
+                metadata,
+                value,
+            })
+            .map_err(Error::from)
+            .await
     }
 
-    fn load_script<T>(
+    async fn load_script<T>(
         self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: T,
         name: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFuture<'vm, (), Error>
+    ) -> Result<()>
     where
-        T: Send + VmRoot<'vm>,
+        T: Send + Sync + VmRoot<'vm>,
+        'vm: 'async_trait,
     {
         use crate::vm::internal::Global;
         use crate::vm::serialization::DeSeed;
+        use base::symbol::SymbolData;
 
         let Global {
             metadata,
             typ,
             value,
             id: _,
-        } = try_future!(DeSeed::new(&vm, &mut vm.current_context())
+        } = DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
-            .map_err(|err| err.to_string()));
+            .map_err(|err| err.to_string())?;
         let id = compiler.symbols.symbol(SymbolData {
             global: true,
             location: None,
             name: name,
         });
-        try_future!(vm.set_global(id, typ, metadata.clone(), &value,));
+        vm.set_global(id, typ, metadata.clone(), &value)?;
         info!("Loaded module `{}`", name);
-        Box::new(future::ok(()))
+        Ok(())
     }
 }
 
 #[cfg(feature = "serde")]
-pub fn compile_to<S, T, E>(
+pub async fn compile_to<S, T, E>(
     self_: T,
-    compiler: &mut ModuleCompiler,
+    compiler: &mut ModuleCompiler<'_>,
     thread: &Thread,
     file: &str,
     expr_str: &str,
@@ -1064,6 +1150,7 @@ where
         module,
     } = self_
         .compile(compiler, thread, file, expr_str, arg)
+        .await
         .map_err(Error::from)
         .map_err(Either::Left)?;
     let module = Module {
@@ -1076,10 +1163,10 @@ where
         .map_err(Either::Right)
 }
 
-pub fn run_io<'vm, T, E>(
+pub async fn run_io<'vm, T, E>(
     vm: T,
     v: ExecuteValue<RootedThread, E>,
-) -> impl Future<Item = ExecuteValue<RootedThread, E>, Error = Error>
+) -> Result<ExecuteValue<RootedThread, E>>
 where
     E: Send + 'vm,
     T: Send + VmRoot<'vm>,
@@ -1098,27 +1185,25 @@ where
         } = v;
 
         let vm1 = vm.clone();
-        future::Either::B(
-            vm1.execute_io_top(value.get_variant())
-                .map(move |value| {
-                    // The type of the new value will be `a` instead of `IO a`
-                    let actual =
-                        resolve::remove_aliases_cow(&vm.get_env(), &mut NullInterner, &typ);
-                    let actual = match **actual {
-                        Type::App(_, ref arg) => arg[0].clone(),
-                        _ => ice!("ICE: Expected IO type found: `{}`", actual),
-                    };
-                    ExecuteValue {
-                        id,
-                        expr,
-                        value,
-                        metadata,
-                        typ: actual,
-                    }
-                })
-                .map_err(Error::from),
-        )
+        vm1.execute_io_top(value.get_variant())
+            .map_ok(move |value| {
+                // The type of the new value will be `a` instead of `IO a`
+                let actual = resolve::remove_aliases_cow(&vm.get_env(), &mut NullInterner, &typ);
+                let actual = match **actual {
+                    Type::App(_, ref arg) => arg[0].clone(),
+                    _ => ice!("ICE: Expected IO type found: `{}`", actual),
+                };
+                ExecuteValue {
+                    id,
+                    expr,
+                    value,
+                    metadata,
+                    typ: actual,
+                }
+            })
+            .map_err(Error::from)
+            .await
     } else {
-        future::Either::A(future::ok(v))
+        Ok(v)
     }
 }

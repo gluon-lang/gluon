@@ -28,9 +28,8 @@ gluon_format = { version = "0.13.1", path = "../format" } # GLUON
 gluon_doc = { version = "0.13.1", path = "../doc" } # GLUON
 
 app_dirs = "1.0.0"
-futures = "0.1.11"
-futures-cpupool = "0.1"
-tokio = "0.1"
+futures = { version = "0.3", features = ["compat"] }
+tokio = "0.2.0-alpha.6"
 tokio-signal = "0.2"
 clap = "2.22.0"
 structopt = "0.3"

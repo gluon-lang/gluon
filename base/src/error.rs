@@ -327,7 +327,7 @@ where
     }
 }
 
-impl AsDiagnostic for Box<dyn::std::error::Error + Send + Sync> {
+impl AsDiagnostic for Box<dyn ::std::error::Error + Send + Sync> {
     fn as_diagnostic(&self) -> Diagnostic {
         Diagnostic::new_error(self.to_string())
     }

@@ -206,9 +206,6 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find(&mut self, id: &Symbol) -> TcResult<ModType> {
-        if id.declared_name().contains("test") {
-            "".to_string();
-        }
         match self.environment.find_mod_type(id).map(|t| t.to_owned()) {
             Some(typ) => {
                 self.named_variables.clear();

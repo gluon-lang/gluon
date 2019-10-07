@@ -11,9 +11,13 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
-use futures::future;
+use async_trait::async_trait;
+use futures::{
+    future::{self, BoxFuture},
+    prelude::*,
+    task::SpawnExt,
+};
 use itertools::Itertools;
-use salsa::ParallelDatabase;
 
 use crate::base::{
     ast::{expr_to_path, Expr, Literal, SpannedExpr},
@@ -73,10 +77,11 @@ impl base::error::AsDiagnostic for Error {
 
 include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 
+#[async_trait]
 pub trait Importer: Any + Clone + Sync + Send {
-    fn import(
+    async fn import(
         &self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         modulename: &str,
     ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
@@ -84,16 +89,18 @@ pub trait Importer: Any + Clone + Sync + Send {
 
 #[derive(Clone)]
 pub struct DefaultImporter;
+#[async_trait]
 impl Importer for DefaultImporter {
-    fn import(
+    async fn import(
         &self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         _vm: &Thread,
         modulename: &str,
     ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
         let value = compiler
             .database
             .global(modulename.to_string())
+            .await
             .map_err(|err| (None, err))?;
         Ok(value.typ)
     }
@@ -101,7 +108,7 @@ impl Importer for DefaultImporter {
 
 enum UnloadedModule {
     Source,
-    Extern(ExternModule),
+    Extern(Vec<String>),
 }
 
 pub struct DatabaseSnapshot {
@@ -112,6 +119,29 @@ impl Deref for DatabaseSnapshot {
     type Target = CompilerDatabase;
     fn deref(&self) -> &Self::Target {
         self.snapshot.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for DatabaseSnapshot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.snapshot.as_mut().unwrap()
+    }
+}
+
+pub struct DatabaseFork {
+    fork: Option<salsa::Fork<CompilerDatabase>>,
+}
+
+impl Deref for DatabaseFork {
+    type Target = CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        self.fork.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for DatabaseFork {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.fork.as_mut().unwrap()
     }
 }
 
@@ -144,22 +174,29 @@ impl DerefMut for DatabaseMut {
     }
 }
 
-pub(crate) trait ImportApi {
+#[async_trait]
+pub(crate) trait ImportApi: Send + Sync {
     fn get_module_source(
         &self,
         use_standard_lib: bool,
         module: &str,
         filename: &str,
     ) -> Result<Cow<'static, str>, Error>;
-    fn load_module(
+    async fn load_module(
         &self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
     ) -> Result<ArcType, (Option<ArcType>, MacroError)>;
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
+    fn fork(
+        &self,
+        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        thread: RootedThread,
+    ) -> DatabaseFork;
 }
 
+#[async_trait]
 impl<I> ImportApi for Import<I>
 where
     I: Importer,
@@ -172,16 +209,23 @@ where
     ) -> Result<Cow<'static, str>, Error> {
         Self::get_module_source(self, use_standard_lib, module, filename)
     }
-    fn load_module(
+    async fn load_module(
         &self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
     ) -> Result<ArcType, (Option<ArcType>, MacroError)> {
-        Self::load_module(self, compiler, vm, module_id)
+        Self::load_module(self, compiler, vm, module_id).await
     }
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         Self::snapshot(self, thread)
+    }
+    fn fork(
+        &self,
+        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        thread: RootedThread,
+    ) -> DatabaseFork {
+        Self::fork(self, forker, thread)
     }
 }
 
@@ -251,30 +295,31 @@ impl<I> Import<I> {
     }
 
     pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
-        self.snapshot_(Some(thread))
-    }
-
-    fn snapshot_(&self, thread: Option<RootedThread>) -> DatabaseSnapshot {
-        let mut compiler = self.compiler.lock().unwrap();
-
-        compiler.thread = thread;
-        let snapshot = compiler.snapshot();
-        compiler.thread = None;
+        let snapshot = self.compiler.lock().unwrap().snapshot(thread);
 
         DatabaseSnapshot {
             snapshot: Some(snapshot),
         }
     }
 
-    fn get_unloaded_module(&self, vm: &Thread, module: &str) -> Result<UnloadedModule, MacroError> {
+    pub fn fork(
+        &self,
+        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        thread: RootedThread,
+    ) -> DatabaseFork {
+        let fork = self.compiler.lock().unwrap().fork(forker, thread);
+
+        DatabaseFork { fork: Some(fork) }
+    }
+
+    fn get_unloaded_module(&self, module: &str) -> UnloadedModule {
         {
-            let mut loaders = self.loaders.write().unwrap();
-            if let Some(loader) = loaders.get_mut(module) {
-                let value = loader(vm).map_err(MacroError::new)?;
-                return Ok(UnloadedModule::Extern(value));
+            let loaders = self.loaders.read().unwrap();
+            if let Some(loader) = loaders.get(module) {
+                return UnloadedModule::Extern(loader.dependencies.clone());
             }
         }
-        Ok(UnloadedModule::Source)
+        UnloadedModule::Source
     }
 
     pub(crate) fn get_module_source(
@@ -324,9 +369,9 @@ impl<I> Import<I> {
         })
     }
 
-    pub fn load_module(
+    pub async fn load_module(
         &self,
-        compiler: &mut ModuleCompiler,
+        compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
     ) -> Result<ArcType, (Option<ArcType>, MacroError)>
@@ -337,16 +382,32 @@ impl<I> Import<I> {
         let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let unloaded_module = self
-            .get_unloaded_module(vm, &modulename)
-            .map_err(|err| (None, MacroError::new(err)))?;
+        let unloaded_module = self.get_unloaded_module(&modulename);
 
         Ok(match unloaded_module {
-            UnloadedModule::Extern(ExternModule {
-                value,
-                typ,
-                metadata,
-            }) => {
+            UnloadedModule::Extern(dependencies) => {
+                for dep in dependencies {
+                    let dep_id = Symbol::from(if dep.starts_with('@') {
+                        dep
+                    } else {
+                        format!("@{}", dep)
+                    });
+                    self.load_module_boxed(compiler, vm, &dep_id).await?;
+                }
+
+                let ExternModule {
+                    value,
+                    typ,
+                    metadata,
+                } = (self
+                    .loaders
+                    .write()
+                    .unwrap()
+                    .get_mut(modulename)
+                    .expect("bug: Missing loader but it was already seen in get_unloaded_module")
+                    .load_fn)(vm)
+                .map_err(|err| (None, MacroError::new(err)))?;
+
                 vm.set_global(
                     module_id.clone(),
                     typ.clone(),
@@ -359,8 +420,21 @@ impl<I> Import<I> {
             UnloadedModule::Source => self
                 .importer
                 .import(compiler, vm, &modulename)
+                .await
                 .map_err(|(t, err)| (t, MacroError::new(err)))?,
         })
+    }
+
+    fn load_module_boxed<'a, 'b>(
+        &'a self,
+        compiler: &'a mut ModuleCompiler<'b>,
+        vm: &'a Thread,
+        module_id: &'a Symbol,
+    ) -> BoxFuture<'a, Result<ArcType, (Option<ArcType>, MacroError)>>
+    where
+        I: Importer,
+    {
+        self.load_module(compiler, vm, module_id).boxed()
     }
 }
 
@@ -410,7 +484,32 @@ pub fn add_extern_module<F>(thread: &Thread, name: &str, loader: F)
 where
     F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
 {
-    add_extern_module_(thread, name, Box::new(loader))
+    add_extern_module_(
+        thread,
+        name,
+        ExternLoader {
+            load_fn: Box::new(loader),
+            dependencies: Vec::new(),
+        },
+    )
+}
+
+pub fn add_extern_module_with_deps<F>(
+    thread: &Thread,
+    name: &str,
+    loader: F,
+    dependencies: Vec<String>,
+) where
+    F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
+{
+    add_extern_module_(
+        thread,
+        name,
+        ExternLoader {
+            load_fn: Box::new(loader),
+            dependencies,
+        },
+    )
 }
 
 fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
@@ -431,10 +530,16 @@ macro_rules! add_extern_module_if {
     (
         #[cfg($($features: tt)*)],
         available_if = $msg: expr,
+        $(dependencies = $dependencies: expr,)?
         args($vm: expr, $mod_name: expr, $loader: path)
     ) => {{
         #[cfg($($features)*)]
-        $crate::import::add_extern_module($vm, $mod_name, $loader);
+        $crate::import::add_extern_module_with_deps(
+            $vm,
+            $mod_name,
+            $loader,
+            None.into_iter() $( .chain($dependencies.iter().cloned()) )? .map(|s: &str| s.into()).collect::<Vec<String>>()
+        );
 
         #[cfg(not($($features)*))]
         $crate::import::add_extern_module($vm, $mod_name, |_: &::vm::thread::Thread| -> ::vm::Result<::vm::ExternModule> {
@@ -483,7 +588,11 @@ where
         }
     }
 
-    fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+    fn expand<'a>(
+        &self,
+        macros: &mut MacroExpander<'a>,
+        args: Vec<SpannedExpr<Symbol>>,
+    ) -> MacroFuture<'a> {
         fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, Error> {
             if args.len() != 1 {
                 return Err(Error::String("Expected import to get 1 argument".into()).into());
@@ -511,23 +620,45 @@ where
 
         let modulename = match get_module_name(&args).map_err(MacroError::new) {
             Ok(modulename) => modulename,
-            Err(err) => return Box::new(future::err(err)),
+            Err(err) => return Box::pin(future::err(err)),
         };
 
         info!("import! {}", modulename);
 
-        let db = try_future!(macros
-            .user_data
-            .downcast_ref::<CompilerDatabase>()
-            .ok_or_else(|| MacroError::new(Error::String(
+        let mut db = try_future!(macros
+            .userdata
+            .fork(macros.vm.root_thread())
+            .downcast::<salsa::Fork<CompilerDatabase>>()
+            .map_err(|_| MacroError::new(Error::String(
                 "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
             ))));
 
-        Box::new(future::result(
-            db.import(modulename)
-                .map_err(|err| MacroError::message(err.to_string()))
-                .map(|expr| pos::spanned(args[0].span, expr)),
-        ))
+        let span = args[0].span;
+
+        if let Some(spawn) = macros.spawn {
+            let (tx, rx) = tokio_sync::oneshot::channel();
+            spawn
+                .spawn(Box::pin(async move {
+                    let result = db
+                        .import(modulename)
+                        .map_err(|err| MacroError::message(err.to_string()))
+                        .map_ok(move |expr| pos::spanned(span, expr))
+                        .await;
+                    drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
+                    let _ = tx.send(result);
+                }))
+                .unwrap();
+            Box::pin(rx.map(|r| {
+                r.unwrap_or_else(|err| Err(MacroError::new(Error::String(err.to_string()))))
+            }))
+        } else {
+            Box::pin(async move {
+                db.import(modulename)
+                    .map_err(|err| MacroError::message(err.to_string()))
+                    .map_ok(move |expr| pos::spanned(span, expr))
+                    .await
+            })
+        }
     }
 }
 

@@ -5,10 +5,9 @@ use crate::real_std::{
     sync::Mutex,
 };
 
-use futures::{
-    future::{self, Either},
-    Future,
-};
+use futures::prelude::*;
+
+use futures::Future;
 
 use crate::vm::{
     self,
@@ -23,7 +22,7 @@ use crate::vm::{
     ExternModule, Result,
 };
 
-use crate::{compiler_pipeline::*, Error, ThreadExt};
+use crate::{compiler_pipeline::*, Error, ModuleCompiler, ThreadExt};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -235,37 +234,39 @@ fn read_line() -> IO<String> {
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
     mut catch: OwnedFunction<fn(String) -> IO<OpaqueValue<RootedThread, A>>>,
-) -> impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = vm::Error> {
+) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> + Send {
     let vm = action.vm().root_thread();
     let frame_level = vm.context().frame_level();
     let mut action: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
         Getable::from_value(&vm, action.get_variant());
 
-    action.call_fast_async(()).then(move |result| match result {
-        Ok(value) => Either::A(future::ok(IO::Value(value))),
-        Err(err) => {
-            {
-                let mut context = vm.context();
+    async move {
+        match action.call_async(()).await {
+            Ok(value) => IO::Value(value),
+            Err(err) => {
                 {
-                    let stack = context.stack_frame::<stack::State>();
+                    let mut context = vm.context();
+                    {
+                        let stack = context.stack_frame::<stack::State>();
 
-                    if let Err(err) = crate::vm::thread::reset_stack(stack, frame_level) {
-                        return Either::A(future::ok(IO::Exception(err.to_string().into())));
+                        if let Err(err) = crate::vm::thread::reset_stack(stack, frame_level) {
+                            return IO::Exception(err.to_string().into());
+                        }
                     }
+
+                    let mut stack = context.stack_frame::<stack::State>();
+                    let len = stack.len();
+                    stack.pop_many(len - 3);
                 }
 
-                let mut stack = context.stack_frame::<stack::State>();
-                let len = stack.len();
-                stack.pop_many(len - 2);
-            }
-            Either::B(catch.call_fast_async(format!("{}", err)).then(|result| {
-                Ok(match result {
+                let err = format!("{}", err);
+                match catch.call_async(err).await {
                     Ok(value) => value,
                     Err(err) => IO::Exception(format!("{}", err)),
-                })
-            }))
+                }
+            }
         }
-    })
+    }
 }
 
 fn throw(msg: String) -> IO<OpaqueValue<RootedThread, A>> {
@@ -291,51 +292,55 @@ field_decl! { value, typ }
 #[allow(dead_code)]
 type RunExpr = record_type! { value => String, typ => String };
 
-fn run_expr(
-    WithVM { vm, value: expr }: WithVM<&str>,
-) -> impl Future<Item = IO<RunExpr>, Error = vm::Error> {
+fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO<RunExpr>> {
     let vm = vm.root_thread();
-
     let vm1 = vm.clone();
-    let db = vm.get_database();
-    expr.run_expr(&mut vm.module_compiler(&db), vm1, "<top>", expr, None)
-        .then(move |run_result| {
-            let mut context = vm.context();
-            let stack = context.stack_frame::<stack::State>();
-            Ok(match run_result {
-                Ok(execute_value) => {
-                    let env = vm.get_env();
-                    let typ = execute_value.typ;
-                    let debug_level = vm.global_env().get_debug_level();
-                    IO::Value(record_no_decl!{
-                        value => ValuePrinter::new(&env, &typ, execute_value.value.get_variant(), &debug_level).width(80).to_string(),
-                        typ => typ.to_string()
-                    })
+    let expr = expr.to_owned(); // FIXME
+    crate::sendify(async move {
+        let mut db = vm.get_database();
+        expr.run_expr(&mut ModuleCompiler::new(&mut db), vm1, "<top>", &expr, None)
+            .map(|run_result| {
+                let mut context = vm.context();
+                let stack = context.stack_frame::<stack::State>();
+                match run_result {
+                    Ok(execute_value) => {
+                        let env = vm.get_env();
+                        let typ = execute_value.typ;
+                        let debug_level = vm.global_env().get_debug_level();
+                        IO::Value(record_no_decl!{
+                            value => ValuePrinter::new(&env, &typ, execute_value.value.get_variant(), &debug_level).width(80).to_string(),
+                            typ => typ.to_string()
+                        })
+                    }
+                    Err(err) => clear_frames(err, stack),
                 }
-                Err(err) => clear_frames(err, stack),
-            })
-        })
+            }).await
+    })
 }
 
 fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
-) -> impl Future<Item = IO<String>, Error = vm::Error> {
+) -> impl Future<Output = IO<String>> {
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();
+    let expr = expr.to_owned(); // FIXME
 
-    let db = vm.get_database();
-    expr.load_script(&mut vm.module_compiler(&db), vm1, &name, expr, None)
-        .then(move |run_result| {
-            let mut context = vm.context();
-            let stack = context.stack_frame::<stack::State>();
-            let io = match run_result {
-                Ok(()) => IO::Value(format!("Loaded {}", name)),
-                Err(err) => clear_frames(err, stack),
-            };
-            Ok(io)
-        })
+    crate::sendify(async move {
+        let mut db = vm.get_database();
+        expr.load_script(&mut ModuleCompiler::new(&mut db), vm1, &name, &expr, None)
+            .map(|run_result| {
+                let mut context = vm.context();
+                let stack = context.stack_frame::<stack::State>();
+                let io = match run_result {
+                    Ok(()) => IO::Value(format!("Loaded {}", name)),
+                    Err(err) => clear_frames(err, stack),
+                };
+                io
+            })
+            .await
+    })
 }
 
 mod std {

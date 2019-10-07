@@ -15,6 +15,7 @@ documentation = "https://docs.rs/gluon"
 clap = "2.22.0"
 env_logger = "0.7"
 failure = { version = "0.1", features = ["backtrace"] }
+futures = "0.3"
 handlebars = "2"
 itertools = "0.8"
 lazy_static = "1"

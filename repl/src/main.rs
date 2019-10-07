@@ -23,7 +23,6 @@ use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use futures::future;
 use tokio::runtime::Runtime;
 
 use gluon::{base, parser, vm};
@@ -158,18 +157,20 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
+async fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
     let thread = new_vm();
     thread.get_database_mut().use_standard_lib(!opt.no_std);
 
-    Ok(thread.format_expr(
-        &mut gluon_format::Formatter::default(),
-        file,
-        file_map.src(),
-    )?)
+    Ok(thread
+        .format_expr_async(
+            &mut gluon_format::Formatter::default(),
+            file,
+            file_map.src(),
+        )
+        .await?)
 }
 
-fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
+async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     use std::fs::File;
     use std::io::Read;
 
@@ -182,7 +183,7 @@ fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     let module_name = filename_to_module(&name.display().to_string());
     let mut code_map = codespan::CodeMap::new();
     let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
-    let formatted = format(&module_name, file_map.clone(), opt)?;
+    let formatted = format(&module_name, file_map.clone(), opt).await?;
 
     // Avoid touching the .glu file if it did not change
     if file_map.src() != formatted {
@@ -198,7 +199,7 @@ fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     Ok(())
 }
 
-fn fmt_stdio(opt: &Opt) -> Result<()> {
+async fn fmt_stdio(opt: &Opt) -> Result<()> {
     use std::io::{stdin, stdout, Read};
 
     let mut buffer = String::new();
@@ -207,12 +208,12 @@ fn fmt_stdio(opt: &Opt) -> Result<()> {
     let mut code_map = codespan::CodeMap::new();
     let file_map = code_map.add_filemap("STDIN".into(), buffer);
 
-    let formatted = format("STDIN", file_map, opt)?;
+    let formatted = format("STDIN", file_map, opt).await?;
     stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }
 
-fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::Error> {
+async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -238,10 +239,10 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
                 gluon_files.dedup();
 
                 for file in gluon_files {
-                    fmt_file(&file, opt)?;
+                    fmt_file(&file, opt).await?;
                 }
             } else {
-                fmt_stdio(opt)?;
+                fmt_stdio(opt).await?;
             }
         }
         Some(SubOpt::Doc(ref doc_opt)) => {
@@ -252,13 +253,10 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
         }
         None => {
             if opt.interactive {
-                let mut runtime = Runtime::new()?;
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                runtime.block_on(future::lazy(move || {
-                    repl::run(color, &prompt, debug_level, use_std_lib)
-                }))?;
+                repl::run(color, &prompt, debug_level, use_std_lib).await?;
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input)?;
             } else {
@@ -280,11 +278,14 @@ fn main() {
         .use_standard_lib(!opt.no_std)
         .run_io(true);
 
-    if let Err(err) = run(&opt, opt.color, &vm) {
+    let runtime = Runtime::new().unwrap();
+    let color = opt.color;
+    let result = runtime.block_on(run(&opt, opt.color, &vm));
+    if let Err(err) = result {
         match err {
             Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
             _ => {
-                let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
+                let mut stderr = termcolor::StandardStream::stderr(color.into());
                 if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
                     eprintln!("{}", err);
                 } else {

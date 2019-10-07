@@ -42,7 +42,11 @@ where
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
 pub fn make_vm() -> RootedThread {
-    let vm = ::gluon::VmBuilder::new().build();
+    futures::executor::block_on(make_vm_async())
+}
+
+pub async fn make_vm_async() -> RootedThread {
+    let vm = ::gluon::VmBuilder::new().build_async().await;
     let import = vm.get_macros().get("import");
     import
         .as_ref()

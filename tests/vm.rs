@@ -782,10 +782,10 @@ g 10
     }
 }
 
-#[test]
-fn completion_with_prelude() {
+#[tokio::test]
+async fn completion_with_prelude() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let source = r#"
 let prelude  = import! std.prelude
@@ -813,7 +813,8 @@ let from f : (Int -> Option a) -> Stream a =
 "#;
 
     let (expr, _) = vm
-        .typecheck_str("example", source, None)
+        .typecheck_str_async("example", source, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
@@ -827,15 +828,16 @@ let from f : (Int -> Option a) -> Stream a =
     assert_eq!(result, Ok(Type::int()));
 }
 
-#[test]
-fn completion_with_prelude_at_0() {
+#[tokio::test]
+async fn completion_with_prelude_at_0() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1";
 
     let (expr, _) = vm
-        .typecheck_str("example", expr, None)
+        .typecheck_str_async("example", expr, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let file_map = vm.get_database().get_filemap("example").expect("file_map");
@@ -844,15 +846,16 @@ fn completion_with_prelude_at_0() {
     assert_eq!(result, Ok(Type::int()));
 }
 
-#[test]
-fn suggestion_from_implicit_prelude() {
+#[tokio::test]
+async fn suggestion_from_implicit_prelude() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1 ";
 
     let (expr, _) = vm
-        .typecheck_str("example", expr, None)
+        .typecheck_str_async("example", expr, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
@@ -867,14 +870,15 @@ fn suggestion_from_implicit_prelude() {
 
 /// Would cause panics in `Source` as the spans from the implicit prelude were used with the
 /// `Source` from the normal expression
-#[test]
-fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
+#[tokio::test]
+async fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1";
 
-    vm.typecheck_str("example", expr, Some(&Type::float()))
+    vm.typecheck_str_async("example", expr, Some(&Type::float()))
+        .await
         .unwrap_err();
 }
 
@@ -1074,7 +1078,7 @@ r#"
 rec
 type Eff (r : Type -> Type) a =
     | Pure a
-    | Impure : forall x . Arr r x a -> Eff r a 
+    | Impure : forall x . Arr r x a -> Eff r a
 
 type Arr r a b = a -> Eff r b
 in

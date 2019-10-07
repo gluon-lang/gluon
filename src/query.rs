@@ -1,13 +1,11 @@
 use std::{
     borrow::Cow,
+    collections::hash_map,
     result::Result as StdResult,
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use {
-    futures::{future, Future},
-    salsa::Database,
-};
+use {futures::prelude::*, salsa::Database};
 
 use {
     base::{
@@ -32,7 +30,7 @@ use {
     },
 };
 
-use crate::{compiler_pipeline::*, Error, Result, Settings, ThreadExt};
+use crate::{compiler_pipeline::*, Error, ModuleCompiler, Result, Settings};
 
 pub use {crate::import::DatabaseSnapshot, salsa};
 
@@ -76,7 +74,7 @@ pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 #[derive(Default)]
 pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
-    pub(crate) inline_modules: FnvMap<String, String>,
+    pub(crate) inline_modules: FnvMap<String, Arc<Cow<'static, str>>>,
     pub(crate) index_map: FnvMap<String, BytePos>,
 }
 
@@ -145,8 +143,30 @@ pub struct CompilerDatabase {
     pub(crate) thread: Option<RootedThread>,
 }
 
+impl CompilerDatabase {
+    pub fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
+            runtime: self.runtime.snapshot(self),
+            state: self.state.clone(),
+            thread: Some(thread),
+        })
+    }
+
+    pub fn fork(
+        &self,
+        state: Arc<salsa::ForkState<Self>>,
+        thread: RootedThread,
+    ) -> salsa::Fork<Self> {
+        salsa::Fork::new(Self {
+            runtime: self.runtime.fork(self, state),
+            state: self.state.clone(),
+            thread: Some(thread),
+        })
+    }
+}
+
 impl crate::query::CompilationBase for CompilerDatabase {
-    fn compiler(&self) -> &Self {
+    fn compiler(&mut self) -> &mut Self {
         self
     }
 
@@ -159,14 +179,45 @@ impl crate::query::CompilationBase for CompilerDatabase {
     fn add_module(&mut self, module: String, contents: &str) {
         let state = self.state.clone();
         let mut state = state.lock().unwrap();
-        state.add_filemap(&module, &contents[..]);
-        if state
-            .inline_modules
-            .insert(module.clone(), contents.into())
-            .is_some()
-        {
-            self.query_mut(ModuleTextQuery).invalidate(&module);
+
+        match state.inline_modules.entry(module.clone()) {
+            hash_map::Entry::Occupied(entry) => {
+                let entry = entry.into_mut();
+                if &**entry != contents {
+                    let entry_contents = Arc::make_mut(entry).to_mut();
+                    entry_contents.clear();
+                    entry_contents.push_str(contents);
+                    self.query_mut(ModuleTextQuery).invalidate(&module);
+                } else {
+                    return;
+                }
+            }
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(Arc::new(Cow::Owned(contents.into())));
+            }
         }
+        state.add_filemap(&module, &contents[..]);
+    }
+
+    fn peek_typechecked_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>> {
+        self.query(TypecheckedModuleQuery)
+            .peek(&(key.into(), None))
+            .and_then(|r| r.ok())
+    }
+    fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>> {
+        self.query(CoreExprQuery)
+            .peek(&(key.into(), None))
+            .and_then(|r| r.ok())
+    }
+
+    fn peek_global(&self, key: &str) -> Option<DatabaseGlobal> {
+        self.query(GlobalInnerQuery)
+            .peek(&key.into())
+            .and_then(|r| r.ok())
+            .map(|global| unsafe { root_global_with(global, self.thread().root_thread()) })
     }
 }
 
@@ -174,15 +225,19 @@ impl salsa::Database for CompilerDatabase {
     fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
         &self.runtime
     }
+
+    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
+        &mut self.runtime
+    }
 }
 
 impl salsa::ParallelDatabase for CompilerDatabase {
     fn snapshot(&self) -> salsa::Snapshot<Self> {
-        salsa::Snapshot::new(Self {
-            runtime: self.runtime.snapshot(self),
-            state: self.state.clone(),
-            thread: self.thread.clone(),
-        })
+        panic!("Call CompilerDatabase::snapshot(&self, &Thread)")
+    }
+
+    fn fork(&self, _state: Arc<salsa::ForkState<Self>>) -> salsa::Fork<Self> {
+        panic!("Call CompilerDatabase::fork(&self, &Thread)")
     }
 }
 
@@ -231,7 +286,7 @@ impl CompilerDatabase {
         self.state().add_filemap(file, source)
     }
 
-    pub(crate) fn collect_garbage(&self) {
+    pub(crate) fn collect_garbage(&mut self) {
         let strategy = salsa::SweepStrategy::default()
             .discard_values()
             .sweep_all_revisions();
@@ -244,22 +299,29 @@ impl CompilerDatabase {
 }
 
 pub trait CompilationBase: salsa::Database {
-    fn compiler(&self) -> &CompilerDatabase;
+    fn compiler(&mut self) -> &mut CompilerDatabase;
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
+
+    fn peek_typechecked_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>;
+    fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
+    fn peek_global(&self, key: &str) -> Option<DatabaseGlobal>;
 }
 
 #[salsa::query_group(CompileStorage)]
 pub trait Compilation: CompilationBase {
     #[salsa::input]
-    fn compiler_settings(&self) -> Settings;
+    fn compiler_settings(&mut self) -> Settings;
 
     #[salsa::dependencies]
-    fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
+    fn module_text(&mut self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
-    fn typechecked_module(
-        &self,
+    async fn typechecked_module(
+        &mut self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<
@@ -267,38 +329,53 @@ pub trait Compilation: CompilationBase {
         (Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>, Error),
     >;
 
-    #[salsa::cycle(recover_cycle)]
-    fn core_expr(&self, module: String) -> StdResult<interpreter::Global<CoreExpr>, Error>;
-
-    #[salsa::cycle(recover_cycle)]
-    #[salsa::dependencies]
-    fn compiled_module(
-        &self,
+    #[salsa::cycle(recover_cycle_expected_type)]
+    async fn core_expr(
+        &mut self,
         module: String,
+        expected_type: Option<ArcType>,
+    ) -> StdResult<interpreter::Global<CoreExpr>, Error>;
+
+    #[salsa::cycle(recover_cycle_expected_type)]
+    #[salsa::dependencies]
+    async fn compiled_module(
+        &mut self,
+        module: String,
+        expected_type: Option<ArcType>,
     ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
+    async fn import(&mut self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
     #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
-    fn global_(&self, name: String) -> Result<UnrootedGlobal>;
+    async fn global_inner(&mut self, name: String) -> Result<UnrootedGlobal>;
 
     #[salsa::transparent]
     #[salsa::cycle(recover_cycle)]
-    fn global(&self, name: String) -> Result<DatabaseGlobal>;
+    async fn global(&mut self, name: String) -> Result<DatabaseGlobal>;
 }
 
 fn recover_cycle_typecheck<T>(
-    db: &impl Compilation,
+    db: &mut impl Compilation,
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
 ) -> StdResult<T, (Option<T>, Error)> {
     recover_cycle(db, cycle, module).map_err(|err| (None, err))
 }
+
+fn recover_cycle_expected_type<T>(
+    db: &mut impl Compilation,
+    cycle: &[String],
+    module: &String,
+    _: &Option<ArcType>,
+) -> StdResult<T, Error> {
+    recover_cycle(db, cycle, module)
+}
+
 fn recover_cycle<T>(
-    _db: &impl Compilation,
+    _db: &mut impl Compilation,
     cycle: &[String],
     module: &String,
 ) -> StdResult<T, Error> {
@@ -318,19 +395,24 @@ fn recover_cycle<T>(
     .into())
 }
 
-fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
-    db.salsa_runtime()
+fn module_text(
+    db: &mut impl Compilation,
+    module: String,
+) -> StdResult<Arc<Cow<'static, str>>, Error> {
+    db.salsa_runtime_mut()
         .report_synthetic_read(salsa::Durability::LOW);
 
-    let contents = if let Some(contents) = db.compiler().state().inline_modules.get(&module) {
-        Arc::new(contents.to_string().into()) // FIXME Avoid copying
+    let opt = { db.compiler().state().inline_modules.get(&module).cloned() };
+    let contents = if let Some(contents) = opt {
+        contents
     } else {
         let mut filename = module.replace(".", "/");
         filename.push_str(".glu");
 
+        let use_standard_lib = db.compiler_settings().use_standard_lib;
         Arc::new(
             crate::get_import(db.thread())
-                .get_module_source(db.compiler_settings().use_standard_lib, &module, &filename)
+                .get_module_source(use_standard_lib, &module, &filename)
                 .map_err(macros::Error::new)?,
         )
     };
@@ -338,46 +420,49 @@ fn module_text(db: &impl Compilation, module: String) -> StdResult<Arc<Cow<'stat
     Ok(contents)
 }
 
-fn typechecked_module(
-    db: &impl Compilation,
+async fn typechecked_module(
+    db: &mut impl Compilation,
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<
     TypecheckValue<Arc<SpannedExpr<Symbol>>>,
     (Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>, Error),
 > {
-    db.salsa_runtime().report_untracked_read();
+    db.salsa_runtime_mut().report_untracked_read();
 
     let text = db.module_text(module.clone()).map_err(|err| (None, err))?;
 
-    let thread = db.thread();
-    let mut compiler = thread.module_compiler(db.compiler());
+    let thread = db.thread().root_thread();
+    let mut compiler = ModuleCompiler::new(db.compiler());
     let value = text
         .typecheck_expected(
             &mut compiler,
-            thread,
+            &thread,
             &module,
             &text,
             expected_type.as_ref(),
         )
-        .map_err(|(opt, err)| (opt.map(|value| value.map(Arc::new)), err))?;
+        .map_err(|(opt, err)| (opt.map(|value| value.map(Arc::new)), err))
+        .await?;
 
     Ok(value.map(Arc::new))
 }
 
-fn core_expr(
-    db: &impl Compilation,
+async fn core_expr(
+    db: &mut impl Compilation,
     module: String,
+    expected_type: Option<ArcType>,
 ) -> StdResult<interpreter::Global<CoreExpr>, Error> {
-    db.salsa_runtime().report_untracked_read();
+    db.salsa_runtime_mut().report_untracked_read();
 
     let value = db
-        .typechecked_module(module.clone(), None)
-        .map_err(|(_, err)| err)?;
+        .typechecked_module(module.clone(), expected_type)
+        .map_err(|(_, err)| err)
+        .await?;
     let settings = db.compiler_settings();
 
     let env = db.compiler();
-    Ok(core::with_translator(&env, |translator| {
+    Ok(core::with_translator(&*env, |translator| {
         let expr = translator.translate_expr(&value.expr);
 
         debug!("Translation returned: {}", expr);
@@ -396,17 +481,15 @@ fn core_expr(
     }))
 }
 
-fn compiled_module(
-    db: &impl Compilation,
+async fn compiled_module(
+    db: &mut impl Compilation,
     module: String,
+    expected_type: Option<ArcType>,
 ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error> {
-    let core_expr = db.core_expr(module.clone())?;
+    let core_expr = db.core_expr(module.clone(), expected_type).await?;
     let settings = db.compiler_settings();
 
-    let thread = db.thread();
-    let env = db.compiler();
-
-    let mut compiler = thread.module_compiler(db.compiler());
+    let mut compiler = ModuleCompiler::new(db.compiler());
 
     let source = compiler
         .get_filemap(&module)
@@ -418,9 +501,10 @@ fn compiled_module(
         &mut compiler.symbols,
     );
 
+    let env = db.compiler();
     let mut compiler = vm::compiler::Compiler::new(
-        &env,
-        thread.global_env(),
+        &*env,
+        env.thread().global_env(),
         symbols,
         &source,
         module.clone(),
@@ -430,24 +514,26 @@ fn compiled_module(
     let mut compiled_module = compiler.compile_expr(core_expr.value.expr())?;
     let module_id = Symbol::from(format!("@{}", name));
     compiled_module.function.id = module_id.clone();
-    let closure = thread
+    let closure = env
+        .thread()
         .global_env()
-        .new_global_thunk(&thread, compiled_module)?;
+        .new_global_thunk(&env.thread(), compiled_module)?;
 
     Ok(closure)
 }
 
-fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
+async fn import(db: &mut impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
+    let thread = db.thread().root_thread();
     let compiler = db.compiler();
-    let thread = db.thread();
 
     let name = Symbol::from(if modulename.starts_with('@') {
         modulename.clone()
     } else {
         format!("@{}", modulename)
     });
-    let result = crate::get_import(thread)
-        .load_module(&mut thread.module_compiler(compiler), thread, &name)
+    let result = crate::get_import(&thread)
+        .load_module(&mut ModuleCompiler::new(compiler), &thread, &name)
+        .await
         .map_err(|(_, err)| err);
 
     compiler.collect_garbage();
@@ -457,26 +543,19 @@ fn import(db: &impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, 
     Ok(Expr::Ident(TypedIdent { name, typ }))
 }
 
-fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
-    let vm = db.thread();
-
+async fn global_inner(db: &mut impl Compilation, name: String) -> Result<UnrootedGlobal> {
     let TypecheckValue { metadata, typ, .. } = db
         .typechecked_module(name.clone(), None)
-        .map_err(|(_, err)| err)?;
-    let closure = db.compiled_module(name.clone())?;
+        .map_err(|(_, err)| err)
+        .await?;
+    let closure = db.compiled_module(name.clone(), None).await?;
 
     let module_id = closure.function.name.clone();
 
-    let vm1 = vm.clone();
-    let ExecuteValue {
-        id,
-        metadata,
-        typ,
-        value,
-        ..
-    } = vm1
+    let vm = db.thread();
+    let v = vm
         .call_thunk_top(&closure)
-        .map(move |value| ExecuteValue {
+        .map_ok(move |value| ExecuteValue {
             id: module_id,
             expr: (),
             typ,
@@ -484,15 +563,22 @@ fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
             metadata,
         })
         .map_err(Error::from)
-        .and_then(move |v| {
-            if db.compiler_settings().run_io {
-                future::Either::B(crate::compiler_pipeline::run_io(vm, v))
-            } else {
-                future::Either::A(future::ok(v))
-            }
-        })
-        .wait()?;
+        .await?;
 
+    let ExecuteValue {
+        id,
+        metadata,
+        typ,
+        value,
+        ..
+    } = if db.compiler_settings().run_io {
+        let vm = db.thread();
+        crate::compiler_pipeline::run_io(vm, v).await?
+    } else {
+        v
+    };
+
+    let vm = db.thread();
     let mut gc = vm.global_env().gc.lock().unwrap();
     let mut cloner = vm::internal::Cloner::new(vm, &mut gc);
     let value = cloner.deep_clone(&value)?;
@@ -507,8 +593,9 @@ fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
     })
 }
 
-fn global(db: &impl Compilation, name: String) -> Result<DatabaseGlobal> {
-    db.global_(name)
+async fn global(db: &mut impl Compilation, name: String) -> Result<DatabaseGlobal> {
+    db.global_inner(name)
+        .await
         .map(|global| unsafe { root_global_with(global, db.thread().root_thread()) })
 }
 
@@ -577,8 +664,7 @@ impl PrimitiveEnv for CompilerDatabase {
 impl MetadataEnv for CompilerDatabase {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         if id.is_global() {
-            self.typechecked_module(id.definition_name().into(), None)
-                .ok()
+            self.peek_typechecked_module(id.definition_name())
                 .map(|v| v.metadata.clone())
         } else {
             None
@@ -589,7 +675,7 @@ impl MetadataEnv for CompilerDatabase {
 impl OptimizeEnv for CompilerDatabase {
     fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
         if id.is_global() {
-            self.core_expr(id.definition_name().into()).ok()
+            self.peek_core_expr(id.definition_name().into())
         } else {
             None
         }
@@ -614,7 +700,7 @@ impl VmEnv for CompilerDatabase {
                 metadata: global.metadata.clone(),
                 value: self.thread().root_value(global.value.get_variants()),
             })
-            .or_else(|| self.global(module.as_str().into()).ok())
+            .or_else(|| self.peek_global(module.as_str().into()))
     }
 }
 
@@ -709,7 +795,7 @@ impl CompilerDatabase {
                     metadata: global.metadata.clone(),
                     value: self.thread().root_value(global.value.get_variants()),
                 })
-                .or_else(|| self.global(module.as_str().into()).ok())
+                .or_else(|| self.peek_global(module.as_str().into()))
             {
                 break g;
             }

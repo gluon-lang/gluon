@@ -21,13 +21,14 @@ use crate::base::{
 use crate::{
     forget_lifetime,
     gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
+    stack::Lock,
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
     Error, Result, Variants,
 };
-use futures::{Async, Future};
+use futures::{task::Poll, Future};
 
 pub use self::{
     function::*,
@@ -470,24 +471,33 @@ pub trait AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact.
     ///
-    /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
+    /// If the value must be computed asynchronously `Poll::Pending` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex)
-        -> Result<Async<()>>;
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        frame_index: VmIndex,
+    ) -> Poll<Result<()>>;
 
-    fn async_status_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex) -> Status
+    fn async_status_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        frame_index: VmIndex,
+    ) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(context, frame_index) {
-            Ok(Async::Ready(())) => Status::Ok,
-            Ok(Async::NotReady) => Status::Yield,
-            Err(err) => {
+        match self.async_push(context, lock, frame_index) {
+            Poll::Ready(Ok(())) => Status::Ok,
+            Poll::Ready(Err(err)) => {
                 let mut context = context.context();
                 let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
                 context.stack.push(Variants::from(msg));
                 Status::Error
             }
+            Poll::Pending => Status::Yield,
         }
     }
 }
@@ -496,8 +506,14 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, _: VmIndex) -> Result<Async<()>> {
-        self.push(context).map(Async::Ready)
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        _: VmIndex,
+    ) -> Poll<Result<()>> {
+        context.stack().release_lock(lock);
+        Poll::Ready(self.push(context))
     }
 }
 
@@ -1434,11 +1450,10 @@ impl<'vm, 'value, T: Getable<'vm, 'value>, E: Getable<'vm, 'value>> Getable<'vm,
 pub struct FutureResult<F>(pub F);
 
 impl<F> FutureResult<F> {
-    #[inline]
     pub fn new<'vm>(f: F) -> Self
     where
-        F: Future<Error = Error> + Send + 'static,
-        F::Item: Pushable<'vm>,
+        F: Future + Send + 'vm,
+        F::Output: Pushable<'vm>,
     {
         FutureResult(f)
     }
@@ -1447,35 +1462,37 @@ impl<F> FutureResult<F> {
 impl<F> VmType for FutureResult<F>
 where
     F: Future,
-    F::Item: VmType,
+    F::Output: VmType,
 {
-    type Type = <F::Item as VmType>::Type;
+    type Type = <F::Output as VmType>::Type;
     fn make_type(vm: &Thread) -> ArcType {
-        <F::Item>::make_type(vm)
+        <F::Output>::make_type(vm)
     }
     fn extra_args() -> VmIndex {
-        <F::Item>::extra_args()
+        <F::Output>::extra_args()
     }
 }
 
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
 where
-    F: Future<Error = Error> + Send + 'static,
-    F::Item: Pushable<'vm>,
+    F: Future + Send + 'vm,
+    F::Output: Pushable<'vm>,
 {
     fn async_push(
         self,
         context: &mut ActiveThread<'vm>,
+        lock: Lock,
         frame_index: VmIndex,
-    ) -> Result<Async<()>> {
+    ) -> Poll<Result<()>> {
         unsafe {
-            context.return_future(self.0, frame_index);
+            context.return_future(self.0, lock, frame_index);
         }
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 }
 
-pub enum RuntimeResult<T, E> {
+#[derive(Clone)]
+pub enum RuntimeResult<T, E = String> {
     Return(T),
     Panic(E),
 }

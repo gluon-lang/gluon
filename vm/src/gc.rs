@@ -506,7 +506,6 @@ where
     }
 }
 
-
 deref_trace! { ['a, T: Trace] Borrow<'a, T> }
 
 unsafe impl<'a, T> DataDef for Borrow<'a, T>
@@ -756,8 +755,8 @@ pub trait CollectScope {
 /// A type unsafe implementing Trace must call trace on each of its fields
 /// which in turn contains `GcPtr`
 pub unsafe trait Trace {
-    unsafe fn root(&mut self) { }
-    unsafe fn unroot(&mut self) { }
+    unsafe fn root(&mut self) {}
+    unsafe fn unroot(&mut self) {}
 
     fn trace(&self, gc: &mut Gc) {
         let _ = gc;
@@ -857,7 +856,6 @@ macro_rules! construct_gc {
     };
 }
 
-
 deref_trace! { ['a, T: ?Sized + Trace] &'a T }
 deref_trace_mut! { ['a, T: ?Sized + Trace] &'a mut T }
 deref_trace_mut! { ['a, T: ?Sized + Trace] Box<T> }
@@ -941,7 +939,7 @@ where
     }
 }
 
-    // Don't root/unroot the contents as an unrooted value could be moved out of the Mutex
+// Don't root/unroot the contents as an unrooted value could be moved out of the Mutex
 unsafe impl<T> Trace for sync::Mutex<T>
 where
     T: Trace,
@@ -951,7 +949,7 @@ where
     }
 }
 
-    // Don't root/unroot the contents as an unrooted value could be moved out of the RwLock
+// Don't root/unroot the contents as an unrooted value could be moved out of the RwLock
 unsafe impl<T> Trace for sync::RwLock<T>
 where
     T: Trace,
@@ -962,6 +960,24 @@ where
 }
 
 unsafe impl<T> Trace for sync::RwLockReadGuard<'_, T>
+where
+    T: Trace,
+{
+    fn trace(&self, gc: &mut Gc) {
+        (&**self).trace(gc)
+    }
+}
+
+unsafe impl<T> Trace for parking_lot::RwLock<T>
+where
+    T: Trace,
+{
+    fn trace(&self, gc: &mut Gc) {
+        self.read().trace(gc)
+    }
+}
+
+unsafe impl<T> Trace for parking_lot::RwLockReadGuard<'_, T>
 where
     T: Trace,
 {

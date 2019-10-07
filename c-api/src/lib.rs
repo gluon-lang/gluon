@@ -3,6 +3,8 @@
 
 use std::{slice, str};
 
+use futures::{executor::block_on, future};
+
 use gluon::{
     vm::{
         api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable},
@@ -83,8 +85,10 @@ pub unsafe extern "C" fn glu_load_script(
 
 #[no_mangle]
 pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
-    let context = thread.context();
-    match thread.call_function(context, args) {
+    match block_on(future::poll_fn(|cx| {
+        let context = thread.context();
+        thread.call_function(cx, context, args)
+    })) {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
     }

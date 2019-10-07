@@ -3,13 +3,14 @@ use std::{
     any::{Any, TypeId},
     error::Error as StdError,
     fmt, mem,
+    pin::Pin,
     sync::{Arc, RwLock},
 };
 
 use {
     codespan_reporting::Diagnostic,
     downcast_rs::{impl_downcast, Downcast},
-    futures::Future,
+    futures::{prelude::*, task::Spawn},
 };
 
 use gluon_codegen::Trace;
@@ -23,11 +24,15 @@ use crate::base::{
     symbol::{Symbol, Symbols},
 };
 
-use crate::{gc::Trace, thread::Thread};
+use crate::{
+    gc::Trace,
+    thread::{RootedThread, Thread},
+};
 
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
-pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
+pub type MacroFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<SpannedExpr<Symbol>, Error>> + Send + 'a>>;
 
 pub trait DowncastArc: Downcast {
     fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
@@ -196,7 +201,11 @@ pub trait Macro: Trace + DowncastArc + Send + Sync {
         None
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture;
+    fn expand<'a>(
+        &self,
+        env: &mut MacroExpander<'a>,
+        args: Vec<SpannedExpr<Symbol>>,
+    ) -> MacroFuture<'a>;
 }
 
 impl_downcast!(Macro);
@@ -215,6 +224,7 @@ impl dyn Macro {
     }
 }
 
+#[async_trait::async_trait]
 impl<M> Macro for Box<M>
 where
     M: Macro + ?Sized,
@@ -228,11 +238,16 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+    fn expand<'a>(
+        &self,
+        env: &mut MacroExpander<'a>,
+        args: Vec<SpannedExpr<Symbol>>,
+    ) -> MacroFuture<'a> {
         (**self).expand(env, args)
     }
 }
 
+#[async_trait::async_trait]
 impl<M> Macro for Arc<M>
 where
     M: Macro + ?Sized,
@@ -246,9 +261,17 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+    fn expand<'a>(
+        &self,
+        env: &mut MacroExpander<'a>,
+        args: Vec<SpannedExpr<Symbol>>,
+    ) -> MacroFuture<'a> {
         (**self).expand(env, args)
     }
+}
+
+pub trait MacroUserdata: Send + Sync {
+    fn fork(&self, thread: RootedThread) -> Box<dyn Any>;
 }
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
@@ -306,35 +329,52 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(
+    pub async fn run(
         &self,
         vm: &Thread,
-        user_data: &dyn Any,
+        userdata: &(dyn MacroUserdata + '_),
+        spawn: Option<&(dyn Spawn + Send + Sync + '_)>,
         symbols: &mut Symbols,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<(), Errors> {
-        let mut expander = MacroExpander::new(vm, user_data);
-        expander.run(symbols, expr);
+        let mut expander = MacroExpander::new(vm, userdata, spawn);
+        expander.run(symbols, expr).await;
         expander.finish()
     }
 }
 
 pub struct MacroExpander<'a> {
-    pub state: FnvMap<String, Box<dyn Any>>,
+    pub state: FnvMap<String, Box<dyn Any + Send>>,
     pub vm: &'a Thread,
     pub errors: Errors,
-    pub user_data: &'a dyn Any,
+    pub userdata: &'a (dyn MacroUserdata + 'a),
+    pub spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
     macros: &'a MacroEnv,
 }
 
 impl<'a> MacroExpander<'a> {
-    pub fn new(vm: &'a Thread, user_data: &'a dyn Any) -> MacroExpander<'a> {
+    pub fn new(
+        vm: &'a Thread,
+        userdata: &'a (dyn MacroUserdata + 'a),
+        spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
+    ) -> MacroExpander<'a> {
         MacroExpander {
             vm: vm,
-
             state: FnvMap::default(),
             macros: vm.get_macros(),
-            user_data,
+            userdata,
+            spawn,
+            errors: Errors::new(),
+        }
+    }
+
+    pub fn fork(&self) -> MacroExpander<'a> {
+        MacroExpander {
+            vm: self.vm,
+            state: FnvMap::default(),
+            macros: self.macros,
+            userdata: self.userdata,
+            spawn: self.spawn,
             errors: Errors::new(),
         }
     }
@@ -347,7 +387,7 @@ impl<'a> MacroExpander<'a> {
         }
     }
 
-    pub fn run(&mut self, symbols: &mut Symbols, expr: &mut SpannedExpr<Symbol>) {
+    pub async fn run(&mut self, symbols: &mut Symbols, expr: &mut SpannedExpr<Symbol>) {
         {
             let mut visitor = MacroVisitor {
                 expander: self,
@@ -358,21 +398,33 @@ impl<'a> MacroExpander<'a> {
             visitor.visit_expr(expr);
 
             while !visitor.exprs.is_empty() {
-                for (expr, future) in mem::replace(&mut visitor.exprs, Vec::new()) {
-                    match future.wait() {
-                        Ok(mut replacement) => {
-                            replacement.span = expr.span;
-                            replace_expr(expr, replacement);
-                            visitor.visit_expr(expr);
+                visitor
+                    .exprs
+                    .drain(..)
+                    .map(|(expr, future)| {
+                        async {
+                            let result = future.await;
+                            (expr, result)
                         }
-                        Err(err) => {
-                            let expr_span = expr.span;
-                            replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
+                    })
+                    .collect::<futures::stream::FuturesUnordered<_>>()
+                    .for_each(|(expr, result)| {
+                        match result {
+                            Ok(mut replacement) => {
+                                replacement.span = expr.span;
+                                replace_expr(expr, replacement);
+                                visitor.visit_expr(expr);
+                            }
+                            Err(err) => {
+                                let expr_span = expr.span;
+                                replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
 
-                            visitor.expander.errors.push(pos::spanned(expr.span, err));
+                                visitor.expander.errors.push(pos::spanned(expr.span, err));
+                            }
                         }
-                    }
-                }
+                        async {}
+                    })
+                    .await;
             }
         }
         if self.errors.has_errors() {
@@ -396,7 +448,7 @@ fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
 struct MacroVisitor<'a: 'b, 'b, 'c> {
     expander: &'b mut MacroExpander<'a>,
     symbols: &'c mut Symbols,
-    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroFuture)>,
+    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroFuture<'a>)>,
 }
 
 impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {

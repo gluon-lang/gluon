@@ -5,9 +5,7 @@
 //!
 //! [hyper]:https://hyper.rs
 
-use std::{env, fs::File, io::Read};
-
-use futures::{future, prelude::*};
+use std::{env, fs};
 
 use gluon::{
     new_vm,
@@ -15,7 +13,8 @@ use gluon::{
     Thread, ThreadExt,
 };
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
     let port = env::args()
@@ -24,27 +23,21 @@ fn main() {
         .unwrap_or(80);
 
     let thread = new_vm();
-    tokio::run(start(&thread, port).map_err(|err| panic!("{}", err)));
+    if let Err(err) = start(&thread, port).await {
+        panic!("{}", err)
+    }
 }
 
-fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = failure::Error> {
+async fn start(thread: &Thread, port: u16) -> Result<(), failure::Error> {
     let thread = thread.root_thread();
-    future::lazy(|| -> Result<_, failure::Error> {
-        // Last we run our `http_server.glu` module which returns a function which starts listening
-        // on the port we passed from the command line
-        let mut expr = String::new();
-        {
-            let mut file = File::open("examples/http/server.glu")?;
-            file.read_to_string(&mut expr)?;
-        }
-        Ok(expr)
-    })
-    .and_then(move |expr| {
-        thread
-            .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>("examples/http/server.glu", &expr)
-            .from_err()
-            .and_then(move |(mut listen, _)| listen.call_async(port).from_err().map(|_| ()))
-    })
+    // Last we run our `http_server.glu` module which returns a function which starts listening
+    // on the port we passed from the command line
+    let expr = fs::read_to_string("examples/http/server.glu")?;
+    let (mut listen, _) = thread
+        .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>("examples/http/server.glu", &expr)
+        .await?;
+    listen.call_async(port).await?;
+    Ok(())
 }
 
 #[cfg(test)]
