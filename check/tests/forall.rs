@@ -59,7 +59,7 @@ in f "123"
     let result = support::typecheck(text);
 
     assert!(result.is_err());
-    let errors: Vec<_> = result.unwrap_err().unwrap_check().errors().into();
+    let errors: Vec<_> = result.unwrap_err().unwrap_check().into_errors().into();
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].span,

@@ -171,21 +171,26 @@ impl Error {
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
 pub trait Macro: Trace + DowncastArc + Send + Sync {
-    fn get_capability<T>(&self, thread: &Thread) -> Option<Box<T>>
+    fn get_capability<T>(&self, thread: &Thread, arc_self: &Arc<dyn Macro>) -> Option<T>
     where
         Self: Sized,
-        T: ?Sized + Any,
+        T: Any,
     {
-        self.get_capability_impl(thread, TypeId::of::<T>())
+        self.get_capability_impl(thread, arc_self, TypeId::of::<T>())
             .map(|b| {
-                *b.downcast::<Box<T>>()
+                *b.downcast::<T>()
                     .ok()
                     .expect("get_capability_impl return an unexpected type")
             })
     }
 
-    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
-        let _ = (thread, id);
+    fn get_capability_impl(
+        &self,
+        thread: &Thread,
+        arc_self: &Arc<dyn Macro>,
+        id: TypeId,
+    ) -> Option<Box<dyn Any>> {
+        let _ = (thread, arc_self, id);
         None
     }
 
@@ -212,8 +217,13 @@ impl<M> Macro for Box<M>
 where
     M: Macro + ?Sized,
 {
-    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
-        (**self).get_capability_impl(thread, id)
+    fn get_capability_impl(
+        &self,
+        thread: &Thread,
+        arc_self: &Arc<dyn Macro>,
+        id: TypeId,
+    ) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, arc_self, id)
     }
 
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
@@ -225,8 +235,13 @@ impl<M> Macro for Arc<M>
 where
     M: Macro + ?Sized,
 {
-    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
-        (**self).get_capability_impl(thread, id)
+    fn get_capability_impl(
+        &self,
+        thread: &Thread,
+        arc_self: &Arc<dyn Macro>,
+        id: TypeId,
+    ) -> Option<Box<dyn Any>> {
+        (**self).get_capability_impl(thread, arc_self, id)
     }
 
     fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
@@ -266,15 +281,25 @@ impl MacroEnv {
         self.macros.read().unwrap().get(name).cloned()
     }
 
-    pub fn get_capabilities<T>(&self, thread: &Thread) -> Vec<Box<T>>
+    pub fn get_capabilities<T>(&self, thread: &Thread) -> Vec<T>
     where
-        T: ?Sized + Any,
+        T: Any,
     {
         let macros = self.macros.read().unwrap();
         macros
             .values()
-            .filter_map(|mac| mac.get_capability::<T>(thread))
+            .filter_map(|mac| mac.get_capability::<T>(thread, mac))
             .collect()
+    }
+
+    pub fn get_capability<T>(&self, thread: &Thread) -> Option<T>
+    where
+        T: Any,
+    {
+        let macros = self.macros.read().unwrap();
+        macros
+            .values()
+            .find_map(|mac| mac.get_capability::<T>(thread, mac))
     }
 
     pub fn clear(&self) {

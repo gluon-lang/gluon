@@ -367,7 +367,7 @@ let y = 1.0
 y
 "#;
     let result = support::typecheck_expr_expected(text, Some(&Type::int())).1;
-    let errors: Vec<_> = result.unwrap_err().unwrap_check().errors().into();
+    let errors: Vec<_> = result.unwrap_err().unwrap_check().into_errors().into();
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].span, Span::new(14.into(), 15.into()));
 }
@@ -495,8 +495,8 @@ f (Test (Test 1))
 - Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
 - Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
 "#,
-    "\n",
-    0
+        "\n",
+        0
     );
 }
 
