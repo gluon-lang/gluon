@@ -153,14 +153,13 @@ mod instant {
     #[gluon_trace(skip)]
     pub(crate) struct Instant(pub(crate) time::Instant);
 
-    pub(crate) fn now(_: ()) -> IO<Instant> {
+    pub(crate) fn now() -> IO<Instant> {
         IO::Value(Instant(time::Instant::now()))
     }
 
-    /// Returns `Some(later - earlier)` if `later` is the same as or later than `earlier`.
-    /// Returns None otherwise.
-    pub(crate) fn duration_since(later: &Instant, earlier: &Instant) -> Option<Duration> {
-        // Note: replace with checked_duration_since when 1.38 is stable
+    // Note: The parameters are reversed relative to the underlying standard library function
+    pub(crate) fn duration_since(earlier: &Instant, later: &Instant) -> Option<Duration> {
+        // Note: replace with checked_duration_since when it lands in Stable
         if later.0 >= earlier.0 {
             // should never panic
             Some(Duration(later.0.duration_since(earlier.0)))
@@ -200,7 +199,7 @@ mod system_time {
     #[gluon_trace(skip)]
     pub(crate) struct SystemTime(pub(crate) time::SystemTime);
 
-    pub(crate) fn now(_: ()) -> IO<SystemTime> {
+    pub(crate) fn now() -> IO<SystemTime> {
         IO::Value(SystemTime(time::SystemTime::now()))
     }
 
@@ -281,7 +280,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             instant => record! {
                 type std::time::Instant => instant::Instant,
 
-                now => primitive!(1, std::time::prim::instant::now),
+                now => primitive!(0, std::time::prim::instant::now),
                 duration_since => primitive!(2, std::time::prim::instant::duration_since),
                 elapsed => primitive!(1, std::time::prim::instant::elapsed),
 
@@ -296,7 +295,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
                 unix_epoch => system_time::SystemTime(time::UNIX_EPOCH),
 
-                now => primitive!(1, std::time::prim::system_time::now),
+                now => primitive!(0, std::time::prim::system_time::now),
                 duration_since => primitive!(2, std::time::prim::system_time::duration_since),
                 elapsed => primitive!(1, std::time::prim::system_time::elapsed),
 

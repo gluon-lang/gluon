@@ -1,4 +1,4 @@
-//! Time-related functionality
+//! A measurement of the system clock. Not as consistent as `Instant`, but can represent a specific moment in history.
 // Documentation in this module is mostly modified from Rust's std::time crate.
 
 let { Ordering } = import! std.types
@@ -27,16 +27,16 @@ let ord : Ord SystemTime =
     now = system_time.now,
     
     /// Docs
-    duration_since = system_time.duration_since
+    duration_since = system_time.duration_since,
 
     /// Docs
     elapsed = system_time.elapsed,
     
     /// Docs
-    checked_add = system_time.checked_add
+    checked_add = system_time.checked_add,
 
     /// Docs
-    checked_sub = system_time.checked_sub
+    checked_sub = system_time.checked_sub,
 
     eq,
     ord,

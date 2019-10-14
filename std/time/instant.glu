@@ -1,4 +1,4 @@
-//! Time-related functionality
+//! A measurement on a monotonically-nondecreasing clock. Opaque and useful only with `Duration`.
 // Documentation in this module is mostly modified from Rust's std::time crate.
 
 let { Ordering } = import! std.types
@@ -27,16 +27,16 @@ let ord : Ord Instant =
     now = instant.now,
     
     /// Docs
-    duration_since = instant.duration_since
+    duration_since = instant.duration_since,
 
     /// Docs
     elapsed = instant.elapsed,
     
     /// Docs
-    checked_add = instant.checked_add
+    checked_add = instant.checked_add,
 
     /// Docs
-    checked_sub = instant.checked_sub
+    checked_sub = instant.checked_sub,
 
     eq,
     ord,

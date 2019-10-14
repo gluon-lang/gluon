@@ -1,4 +1,4 @@
-//! Time-related functionality
+//! A `Duration` type for representing and working with spans of time
 // Documentation in this module is mostly modified from Rust's std::time crate.
 
 let { Ordering } = import! std.types
