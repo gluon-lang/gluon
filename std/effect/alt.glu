@@ -1,9 +1,12 @@
+//! Implementation of the `Alt` effect
+
 let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { Alternative } = import! std.alternative
 let { (<<), id } = import! std.function
 
+/// The `Alt` effect lets `Eff` implement `Alternative`
 type Alt r a =
     | Empty
     .. r
@@ -11,9 +14,6 @@ type Alt r a =
 let extract_alt x : forall s . [| alt : Alt | r |] a -> Alt r a = convert_variant! x
 
 let send_alt f : Alt r a -> Eff [| alt : Alt | r |] a = Impure (convert_effect! alt f) Pure
-
-let empty : forall s . Eff [| alt : Alt | r |] s =
-    send_alt Empty
 
 let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | s |] b =
     let loop next ve : (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> _ =
@@ -28,37 +28,41 @@ let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] 
     let loop_2 _ = loop fail eff_2
     loop loop_2 eff_1
 
-///
+let empty : forall s . Eff [| alt : Alt | r |] s =
+    send_alt Empty
+
+let alternative : Alternative (Eff [| alt : Alt | r |]) = {
+    applicative = (import! std.effect).applicative,
+    empty = empty,
+    or = \l r -> run_alt_inner id (\_ -> empty) l r,
+}
+
+/// Eliminates the `Alt` effect returning `None` if the `Alt` effect is `empty`, otherwise returns `Some a` with the value
+/// 
 /// ```
 /// let { assert_eq, ? } = import! std.test
-/// let alt = import! std.effect.alt
+/// let alt @ { ? } = import! std.effect.alt
 /// let state = import! std.effect.state
 /// let { (*>) } = import! std.applicative
+/// let { empty } = import! std.alternative
 /// let { Eff, run_pure, ? } = import! std.effect
 ///
 /// let incr = state.modify (\x -> x + 1)
 /// 
 /// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt incr incr))) (1)
 /// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> incr) incr))) (2)
-/// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> alt.empty *> incr) incr))) (2)
-/// assert_eq (run_pure (state.exec_state 0 (alt.run_alt alt.empty incr))) (1)
+/// seq assert_eq (run_pure (state.exec_state 0 (alt.run_alt (incr *> empty *> incr) incr))) (2)
+/// assert_eq (run_pure (state.exec_state 0 (alt.run_alt empty incr))) (1)
 /// 
 /// ```
 let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | r |] (Option a) =
     let fail _ = wrap None
     run_alt_inner Some fail eff_1 eff_2
 
-let alternative : Alternative (Eff [| alt : Alt | r |]) = {
-    applicative = (import! std.effect).applicative,
-    or = \l r -> run_alt_inner id (\_ -> empty) l r,
-    empty = empty
-}
-
 {
     Alt,
 
     alternative,
 
-    empty,
     run_alt,
 }

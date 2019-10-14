@@ -1,6 +1,8 @@
+//! A minimal library for writing HTTP servers.
+
 let prelude = import! std.prelude
 let function = import! std.function
-let io @ { ? } = import! std.io
+let { ? } = import! std.io
 let { (<<), (<|), ? } = import! std.function
 let string = import! std.string
 let { Bool } = import! std.bool
@@ -26,7 +28,7 @@ let {
     HttpEffect,
     HttpState,
     Uri, } = import! std.http.types
-let http_prim = import! std.http.prim
+let http_prim = lift_io! lift (import! std.http.prim)
 
 let status =
     let code : Int -> StatusCode = id 
@@ -91,14 +93,10 @@ let get_response_body : Eff (HttpEffect r) ResponseBody =
 /// Returns `OK` with an empty body
 let empty_response = { status = status.ok }
 
-/// Converts an `IO` into a `Handler`
-let io_handler action : IO a -> Eff (HttpEffect r) a =
-    lift action
-
 /// Write `bytes` to the http response
 let write_response bytes : Array Byte -> Eff (HttpEffect r) () =
     do response = get_response_body
-    io_handler (http_prim.write_response response bytes)
+    http_prim.write_response response bytes
 
 /// Throws an exception which aborts the current handler. Can be caught with `catch_error`
 let fail msg : String -> Eff (HttpEffect r) a =
@@ -119,7 +117,7 @@ let handle handler state : Eff (HttpEffect r) Response -> HttpState -> IO Respon
             run_alt handler empty
     match opt with
     | None -> 
-        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found, .. response }
+        run_lift (http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found, .. response })
     | Some response -> wrap response
 
 let show_uri: Show Uri = {
@@ -148,7 +146,6 @@ let default_listen_settings = { port = 80, tls_cert = None }
     post,
     path,
     is_match,
-    io_handler,
     fail,
     catch_error,
 

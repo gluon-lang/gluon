@@ -6,10 +6,15 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::vm::{self, ExternModule};
-use gluon::{import, Compiler, Thread};
-use init::new_vm;
 use std::sync::Arc;
+
+use gluon::{
+    import,
+    vm::{self, ExternModule},
+    Thread, ThreadExt,
+};
+
+use init::new_vm;
 
 #[derive(Userdata, Trace, Debug, VmType)]
 #[gluon(vm_type = "WindowHandle")]
@@ -48,7 +53,6 @@ fn metadata(hwnd: &WindowHandle) -> String {
 #[test]
 fn userdata() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
 
     import::add_extern_module(&vm, "hwnd", load_mod);
 
@@ -62,7 +66,7 @@ fn userdata() {
         assert (metadata hwnd == "Window1")
     "#;
 
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+    if let Err(why) = vm.run_expr::<()>("test", script) {
         panic!("{}", why);
     }
 }

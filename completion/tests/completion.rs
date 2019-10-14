@@ -417,7 +417,7 @@ let (+++) x y = 1
 
     let expected = Some(Metadata {
         comment: Some(line_comment("test".to_string())),
-        args: ["x:21", "y:23"]
+        args: ["x@3_11", "y@3_13"]
             .iter()
             .map(|arg| Argument::explicit(intern(arg)))
             .collect(),

@@ -16,7 +16,7 @@ use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
 use crate::resolve::remove_aliases_cow;
 use crate::symbol::Symbol;
 use crate::types::{
-    self, Alias, AliasData, ArcType, ArgType, NullInterner, Type, TypeEnv, TypeExt,
+    self, Alias, AliasData, ArcType, ArgType, Flags, NullInterner, Type, TypeEnv, TypeExt,
 };
 use ordered_float::NotNan;
 
@@ -69,7 +69,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 struct InnerAstType<Id> {
-    comment: Option<Comment>,
+    metadata: Option<Metadata>,
     typ: Spanned<Type<Id, AstType<Id>>, BytePos>,
 }
 
@@ -101,7 +101,10 @@ impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
 impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
     fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
         AstType {
-            _typ: Box::new(InnerAstType { comment: None, typ }),
+            _typ: Box::new(InnerAstType {
+                metadata: None,
+                typ,
+            }),
         }
     }
 }
@@ -109,6 +112,12 @@ impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
 impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
     fn from(typ: Type<Id, AstType<Id>>) -> Self {
         Self::from(pos::spanned2(0.into(), 0.into(), typ))
+    }
+}
+
+impl<Id> From<(Type<Id, AstType<Id>>, Flags)> for AstType<Id> {
+    fn from((typ, _): (Type<Id, AstType<Id>>, Flags)) -> AstType<Id> {
+        Self::from(typ)
     }
 }
 
@@ -133,34 +142,39 @@ where
     }
 }
 
-pub trait Commented {
-    fn comment(&self) -> Option<&Comment>;
+pub trait HasMetadata {
+    fn metadata(&self) -> Option<&Metadata>;
+
+    fn comment(&self) -> Option<&Comment> {
+        self.metadata()
+            .and_then(|metadata| metadata.comment.as_ref())
+    }
 }
 
-impl<Id> Commented for AstType<Id> {
-    fn comment(&self) -> Option<&Comment> {
-        self._typ.comment.as_ref()
+impl<Id> HasMetadata for AstType<Id> {
+    fn metadata(&self) -> Option<&Metadata> {
+        self._typ.metadata.as_ref()
     }
 }
 
 impl<Id> AstType<Id> {
-    pub fn with_comment<T>(comment: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
+    pub fn with_metadata<T>(metadata: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
     where
-        T: Into<Option<Comment>>,
+        T: Into<Option<Metadata>>,
     {
         AstType {
             _typ: Box::new(InnerAstType {
-                comment: comment.into(),
+                metadata: metadata.into(),
                 typ,
             }),
         }
     }
 
-    pub fn set_comment<T>(&mut self, comment: T)
+    pub fn set_metadata<T>(&mut self, metadata: T)
     where
-        T: Into<Option<Comment>>,
+        T: Into<Option<Metadata>>,
     {
-        self._typ.comment = comment.into();
+        self._typ.metadata = metadata.into();
     }
 
     pub fn into_inner(self) -> Type<Id, Self> {
@@ -181,7 +195,7 @@ impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
 pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
     pub typ: T,
     pub name: Id,
@@ -226,13 +240,13 @@ pub enum Literal {
 /// Pattern which contains a location
 pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PatternField<Id, P> {
     pub name: Spanned<Id, BytePos>,
     pub value: Option<P>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Pattern<Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
     As(Spanned<Id, BytePos>, Box<SpannedPattern<Id>>),
@@ -264,19 +278,19 @@ impl<Id> Default for Pattern<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Alternative<Id> {
     pub pattern: SpannedPattern<Id>,
     pub expr: SpannedExpr<Id>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Array<Id> {
     pub typ: ArcType<Id>,
     pub exprs: Vec<SpannedExpr<Id>>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
     pub args: Vec<Argument<SpannedIdent<Id>>>,
@@ -291,14 +305,14 @@ pub type SpannedAlias<Id> = Spanned<AliasData<Id, AstType<Id>>, BytePos>;
 
 pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Do<Id> {
     pub id: Option<SpannedPattern<Id>>,
     pub bound: Box<SpannedExpr<Id>>,
@@ -307,7 +321,7 @@ pub struct Do<Id> {
 }
 
 /// The representation of gluon's expression syntax
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Expr<Id> {
     /// Identifiers
     Ident(TypedIdent<Id>),
@@ -423,6 +437,18 @@ impl<Id> Default for Expr<Id> {
 }
 
 impl<Id> Expr<Id> {
+    pub fn app(func: SpannedExpr<Id>, args: Vec<SpannedExpr<Id>>) -> Self {
+        if args.is_empty() {
+            func.value
+        } else {
+            Expr::App {
+                func: func.into(),
+                implicit_args: Vec::new(),
+                args,
+            }
+        }
+    }
+
     // TODO Use impl Trait
     pub fn field_iter<'a>(
         &'a self,
@@ -447,7 +473,7 @@ impl<Id> Expr<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
@@ -461,7 +487,7 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
@@ -484,7 +510,7 @@ impl<Id> Argument<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ValueBindings<Id> {
     Plain(Box<ValueBinding<Id>>),
     Recursive(Vec<ValueBinding<Id>>),
@@ -536,7 +562,7 @@ impl<'a, Id> IntoIterator for &'a mut ValueBindings<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
     pub metadata: Metadata,
     pub name: SpannedPattern<Id>,
@@ -902,6 +928,7 @@ impl Typed for Expr<Symbol> {
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         match *self {
             Expr::Ident(ref id) => Ok(id.typ.clone()),
+            Expr::Tuple { ref elems, .. } if elems.len() == 1 => elems[0].try_type_of(env),
             Expr::Projection(_, _, ref typ)
             | Expr::Record { ref typ, .. }
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),

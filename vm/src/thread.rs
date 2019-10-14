@@ -49,7 +49,7 @@ use crate::{
         ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String},
         VariantDef,
     },
-    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnv},
+    vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnvInstance},
     BoxFuture, Error, Result, Variants,
 };
 
@@ -115,16 +115,15 @@ where
 
     // Returns `T` so that it can be reused by the caller
     fn poll(&mut self) -> Poll<Self::Item, Error> {
-        let thread = self
-            .0
-            .thread
-            .as_ref()
-            .expect("cannot poll Execute future after it has succeded")
-            .clone();
         match self.0.poll() {
             Ok(Async::Ready(x)) => Ok(Async::Ready(x)),
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(mut err) => {
+                let thread = self
+                    .0
+                    .thread
+                    .as_ref()
+                    .expect("cannot poll Execute future after it has succeded");
                 let mut context = thread.context();
                 let stack = StackFrame::<State>::current(&mut context.stack);
                 let new_trace = reset_stack(stack, 1)?;
@@ -262,7 +261,7 @@ where
         Variants::new(&self.value)
     }
 
-    pub fn vm(&self) -> &Thread {
+    pub fn vm(&self) -> &T {
         &self.vm
     }
 
@@ -602,10 +601,13 @@ impl Drop for RootedThread {
                     err.into_inner()
                 });
                 let mut gc_to_drop =
-                    ::std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
+                    std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
                 // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
                 // when the Gc is dropped
                 drop(gc_ref);
+
+                // Macros can contain unrooted thread references via the database so we must drop those first
+                self.global_state.get_macros().clear();
 
                 // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
                 // droppting the thread
@@ -716,9 +718,11 @@ impl RootedThread {
     }
 
     fn unroot_(&self) -> bool {
-        assert!(self.rooted.load());
         let root_count = {
             let mut roots = self.parent_threads();
+            if !self.rooted.load() {
+                return false;
+            }
             self.rooted.store(false);
             let (_, root_count) = &mut roots[self.thread_index];
             assert!(*root_count > 0);
@@ -797,45 +801,7 @@ impl Thread {
         }
     }
 
-    /// Creates a new global value at `name`.
-    /// Fails if a global called `name` already exists.
-    ///
-    /// # Examples
-    ///
-    /// Load the `factorial` rust function into gluon and evaluate `factorial 5`
-    ///
-    /// ```
-    /// # extern crate gluon;
-    /// # #[macro_use] extern crate gluon_vm;
-    /// # use gluon::{new_vm,Compiler};
-    /// # use gluon::base::types::Type;
-    /// fn factorial(x: i32) -> i32 {
-    ///     if x <= 1 { 1 } else { x * factorial(x - 1) }
-    /// }
-    /// # fn main() {
-    ///
-    /// # if ::std::env::var("GLUON_PATH").is_err() {
-    /// #     ::std::env::set_var("GLUON_PATH", "..");
-    /// # }
-    ///
-    /// let vm = new_vm();
-    ///
-    /// vm.define_global("factorial", primitive!(1, factorial)).unwrap();
-    ///
-    /// let result = Compiler::new()
-    ///     .run_expr::<i32>(&vm, "example", "factorial 5")
-    ///     .unwrap_or_else(|err| panic!("{}", err));
-    /// let expected = (120, Type::int());
-    ///
-    /// assert_eq!(result, expected);
-    /// # }
-    /// ```
-    ///
-    #[deprecated(
-        since = "0.7.0",
-        note = "Use `gluon::import::add_extern_module` instead"
-    )]
-    pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
+    pub(crate) fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
     where
         T: Pushable<'vm> + VmType,
     {
@@ -845,7 +811,7 @@ impl Thread {
             self.set_global(
                 Symbol::from(format!("@{}", name)),
                 T::make_forall_type(self),
-                Metadata::default(),
+                Default::default(),
                 &value,
             )
         }
@@ -859,8 +825,7 @@ impl Thread {
     /// to an `add` function in rust
     ///
     /// ```rust
-    /// # extern crate gluon;
-    /// # use gluon::{new_vm, Compiler, Thread};
+    /// # use gluon::{new_vm, Thread, ThreadExt};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
     /// # fn main() {
     ///
@@ -870,9 +835,7 @@ impl Thread {
     ///
     /// let vm = new_vm();
     ///
-    /// Compiler::new()
-    ///     .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example",
-    ///         r#" import! std.int "#)
+    /// vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
@@ -897,24 +860,24 @@ impl Thread {
         let (value, actual) = env.get_binding(name)?;
 
         // Finally check that type of the returned value is correct
-        if check_signature(&*env, &expected, &actual) {
-            Ok(T::from_value(self, value))
+        if check_signature(&env, &expected, &actual) {
+            Ok(T::from_value(self, Variants::new(&value)))
         } else {
-            Err(Error::WrongType(expected, actual.into_owned()))
+            Err(Error::WrongType(expected, actual))
         }
     }
 
     pub fn get_global_type(&self, name: &str) -> Result<ArcType> {
         let env = self.get_env();
         let (_value, actual) = env.get_binding(name)?;
-        Ok(actual.into_owned())
+        Ok(actual)
     }
 
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
-        env.find_type_info(name).map(|alias| alias.into_owned())
+        env.find_type_info(name)
     }
 
     /// Returns the gluon type that was bound to `T`
@@ -940,8 +903,13 @@ impl Thread {
     }
 
     /// Locks and retrieves the global environment of the vm
-    pub fn get_env<'b>(&'b self) -> sync::RwLockReadGuard<'b, VmEnv> {
-        self.global_env().get_env()
+    pub fn get_env<'b>(&'b self) -> VmEnvInstance<'b> {
+        self.global_env().get_env(self)
+    }
+
+    #[doc(hidden)]
+    pub fn get_lookup_env<'t>(&'t self) -> VmEnvInstance<'t> {
+        self.global_env().get_lookup_env(self)
     }
 
     /// Retrieves the macros defined for this vm
@@ -1066,7 +1034,10 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     fn unroot_vm(&self);
 
     /// Roots a value
-    unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self> {
+    unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
+    where
+        Self: Sized,
+    {
         RootedValue::new(self, value)
     }
 }
@@ -1116,12 +1087,12 @@ where
     /// Evaluates a zero argument function (a thunk)
     fn call_thunk<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> FutureValue<Execute<RootedThread>>;
 
     fn call_thunk_top<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
     where
         Self: Send + Sync,
@@ -1178,7 +1149,7 @@ where
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: &Value,
     ) -> Result<()>;
 
@@ -1206,16 +1177,16 @@ impl ThreadInternal for Thread {
 
     fn call_thunk<'vm>(
         &'vm self,
-        closure: GcPtr<ClosureData>,
+        closure: &GcPtr<ClosureData>,
     ) -> FutureValue<Execute<RootedThread>> {
         let mut context = self.owned_context();
         context.stack.push(construct_gc!(Closure(@&closure)));
         StackFrame::<State>::current(&mut context.stack).enter_scope(
             0,
-            &ClosureState {
-                closure,
+            &*construct_gc!(ClosureState {
+                @closure: gc::Borrow::new(closure),
                 instruction_index: 0,
-            },
+            }),
         );
         match try_future!(context.execute(), Either::A) {
             Async::Ready(context) => {
@@ -1278,7 +1249,7 @@ impl ThreadInternal for Thread {
         &self,
         name: Symbol,
         typ: ArcType,
-        metadata: Metadata,
+        metadata: Arc<Metadata>,
         value: &Value,
     ) -> Result<()> {
         let mut gc = self.global_env().gc.lock().unwrap();
@@ -2115,9 +2086,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         &*construct_gc!(String(@function.strings[string_index as usize].inner())),
                     );
                 }
-                PushFloat(f) => {
-                    self.stack.push(Float(f));
-                }
+                PushFloat(f) => self.stack.push(Float(f.into())),
                 Call(args) => {
                     self.stack
                         .set_instruction_index(program_counter.instruction_index);
@@ -2611,6 +2580,7 @@ where
         closure: &GcPtr<ClosureData>,
         excess: bool,
     ) -> ExecuteContext<'b, 'gc, State> {
+        info!("Call {} {:?}", closure.function.name, &self.stack[..]);
         self.enter_scope(
             closure.function.args,
             &*construct_gc!(ClosureState {
@@ -2628,8 +2598,7 @@ where
         excess: bool,
     ) -> ExecuteContext<'b, 'gc, State> {
         assert!(self.stack.len() >= ext.args + 1);
-        let function_index = self.stack.len() - ext.args - 1;
-        trace!("------- {} {:?}", function_index, &self.stack[..]);
+        info!("Call {} {:?}", ext.id, &self.stack[..]);
         self.enter_scope(ext.args, &*ExternState::new(ext), excess)
             .to_state()
     }

@@ -1,21 +1,16 @@
-extern crate env_logger;
-extern crate gluon;
-
-use gluon::{base, parser};
+use gluon::{
+    base, check::typecheck::TypeError, compiler_pipeline::*, parser, vm::Error as VMError, Error,
+    ThreadExt,
+};
 
 mod support;
-
-use gluon::check::typecheck::TypeError;
-use gluon::compiler_pipeline::*;
-use gluon::vm::Error as VMError;
-use gluon::{Compiler, Error};
 
 #[test]
 fn dont_panic_when_error_span_is_at_eof() {
     let _ = ::env_logger::try_init();
     let vm = support::make_vm();
     let text = r#"abc"#;
-    let result = Compiler::new().load_script(&vm, "test", text);
+    let result = vm.load_script("test", text);
     assert!(result.is_err());
 }
 
@@ -27,7 +22,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
         let { f } = import! tests.unrelated_type_error
         f x
     "#;
-    let error = Compiler::new().load_script(&vm, "test", text).unwrap_err();
+    let error = vm.load_script("test", text).unwrap_err();
 
     match error {
         Error::Multiple(errors) => {
@@ -55,7 +50,7 @@ fn panics_contain_stacktrace() {
     let _ = ::env_logger::try_init();
 
     let vm = support::make_vm();
-    let result = Compiler::new().run_expr::<i32>(&vm, "test", "error \"some error\"");
+    let result = vm.run_expr::<i32>("test", "error \"some error\"");
     match result {
         Err(Error::VM(VMError::Panic(_, Some(_)))) => (),
         _ => panic!("Expected error with stacktrace {:?}", result),
@@ -66,7 +61,7 @@ fn panics_contain_stacktrace() {
 fn undefined_infix() {
     let _ = ::env_logger::try_init();
 
-    use crate::base::pos::{self, BytePos};
+    use crate::base::pos;
     use crate::parser::{InfixError, ParseErrors};
 
     let expr = r#"
@@ -75,8 +70,11 @@ fn undefined_infix() {
     "#;
 
     let vm = support::make_vm();
+
+    vm.get_database_mut().implicit_prelude(false);
+
     let result = expr.reparse_infix(
-        &mut Compiler::new().implicit_prelude(false),
+        &mut vm.module_compiler(&vm.get_database()),
         &vm,
         "test",
         expr,
@@ -84,7 +82,8 @@ fn undefined_infix() {
     match result {
         Err((_, Error::Parse(err))) => {
             let error = parser::Error::Infix(InfixError::UndefinedFixity("+".to_string()));
-            let span = pos::span(BytePos::from(10), BytePos::from(13));
+            let map = vm.get_database().get_filemap("test").unwrap();
+            let span = map.span().subspan(9.into(), 12.into());
             assert_eq!(
                 err.errors(),
                 ParseErrors::from(vec![pos::spanned(span, error)])

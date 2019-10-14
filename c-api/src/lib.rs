@@ -10,7 +10,7 @@ use gluon::{
         thread::{RootedThread, Status, Thread, ThreadInternal},
         types::{VmIndex, VmInt},
     },
-    Compiler,
+    ThreadExt,
 };
 
 pub type Function = extern "C" fn(&Thread) -> Status;
@@ -51,7 +51,7 @@ pub unsafe extern "C" fn glu_run_expr(
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr);
+    let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>(module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn glu_load_script(
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().load_script(vm, module, expr);
+    let result = vm.load_script(module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

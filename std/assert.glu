@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Assertion functions.
 let { error } = import! std.prim
 
 let assert_msg x s = if x then () else error s

@@ -2,8 +2,7 @@ use std::{
     any::{Any, TypeId},
     cell::Cell,
     cmp::Ordering,
-    collections::hash_map::Entry,
-    collections::VecDeque,
+    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -932,6 +931,29 @@ where
 {
     impl_trace! { self, gc,
         mark(&self.as_slices(), gc)
+    }
+}
+
+unsafe impl<K, V, H> Trace for HashMap<K, V, H>
+where
+    K: Trace,
+    V: Trace,
+{
+    impl_trace! { self, gc,
+        for x in self.iter() {
+            mark(&x, gc);
+        }
+    }
+}
+
+unsafe impl<V, H> Trace for HashSet<V, H>
+where
+    V: Trace,
+{
+    impl_trace! { self, gc,
+        for x in self.iter() {
+            mark(x, gc);
+        }
     }
 }
 

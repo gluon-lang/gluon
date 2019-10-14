@@ -1,34 +1,28 @@
-extern crate env_logger;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate collect_mac;
-extern crate failure;
-#[macro_use]
-extern crate failure_derive;
-extern crate futures;
-extern crate futures_cpupool;
-extern crate gluon;
-extern crate pulldown_cmark;
-extern crate tensile;
-extern crate tokio;
-extern crate walkdir;
+use std::{
+    fs::File,
+    io::{self, Read},
+    path::{Path, PathBuf},
+};
 
-use gluon::base::ast::{Expr, Pattern, SpannedExpr};
-use gluon::base::filename_to_module;
-use gluon::base::symbol::Symbol;
-use gluon::base::types::{ArcType, Type};
+use {
+    collect_mac::collect,
+    failure_derive::Fail,
+    futures::{future, stream, Future, Stream},
+    serde_derive::Deserialize,
+    tokio::runtime::current_thread::Runtime,
+};
 
-use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO};
-
-use gluon::{new_vm, Compiler, RootedThread, Thread};
-
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
-
-use futures::{future, stream, Future, Stream};
-use tokio::runtime::current_thread::Runtime;
+use gluon::{
+    base::{
+        ast::{Expr, Pattern, SpannedExpr},
+        filename_to_module,
+        symbol::Symbol,
+        types::{ArcType, Type},
+    },
+    new_vm,
+    vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO},
+    RootedThread, Thread, ThreadExt,
+};
 
 #[derive(Debug, Fail)]
 enum Error {
@@ -103,9 +97,7 @@ macro_rules! define_test_type {
             fn make_type(vm: &Thread) -> ArcType {
                 let typ = concat!("std.test.", stringify!($name));
                 Type::app(
-                    (*vm.global_env().get_env().find_type_info(typ).unwrap())
-                        .clone()
-                        .into_type(),
+                    vm.get_env().find_type_info(typ).unwrap().into_type(),
                     collect![$($args::make_type(vm),)* Type::unit()],
                 )
             }
@@ -177,12 +169,10 @@ impl TestCase {
 }
 
 fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
-    let mut compiler = Compiler::new();
-
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    let (De(test), _) = compiler.run_expr(&vm, &name, &text)?;
+    let (De(test), _) = vm.run_expr(&name, &text)?;
     Ok(test)
 }
 
@@ -191,12 +181,10 @@ fn run_file<'t>(
     name: &str,
     filename: &Path,
 ) -> Result<(OpaqueValue<&'t Thread, Hole>, ArcType), Error> {
-    let mut compiler = Compiler::new();
-
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    Ok(compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)?)
+    Ok(vm.run_expr::<OpaqueValue<&Thread, Hole>>(&name, &text)?)
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
@@ -280,19 +268,14 @@ fn run_doc_tests<'t>(
     name: &str,
     filename: &Path,
 ) -> Result<Vec<tensile::Test<Error>>, Error> {
-    let mut compiler = Compiler::new();
-
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
 
-    let (expr, _, _) = compiler.extract_metadata(&vm, &name, &text)?;
+    let (expr, _, _) = vm.extract_metadata(&name, &text)?;
 
-    let (mut convert_test_fn, _) = compiler.run_expr::<OwnedFunction<fn(TestEff) -> TestFn>>(
-        &vm,
-        "convert_test_fn",
-        r"\x -> \_ -> x",
-    )?;
+    let (mut convert_test_fn, _) =
+        vm.run_expr::<OwnedFunction<fn(TestEff) -> TestFn>>("convert_test_fn", r"\x -> \_ -> x")?;
 
     let tests = gather_doc_tests(&expr);
     Ok(tests
@@ -300,8 +283,8 @@ fn run_doc_tests<'t>(
         .map(move |(test_name, test_source)| {
             let vm = vm.new_thread().unwrap();
 
-            match Compiler::new()
-                .run_expr::<TestEff>(&vm, &test_name, &test_source)
+            match vm
+                .run_expr::<TestEff>(&test_name, &test_source)
                 .and_then(|(test, _)| Ok(convert_test_fn.call(test)?))
             {
                 Ok(test) => make_tensile_test(test_name, test),
@@ -327,7 +310,7 @@ fn main_() -> Result<(), Error> {
     let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
 
     let vm = new_vm();
-    Compiler::new().load_file(&vm, "std/test.glu")?;
+    vm.load_file("std/test.glu")?;
 
     let iter = test_files("tests/pass")?.into_iter();
 

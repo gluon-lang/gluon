@@ -9,7 +9,7 @@ use crate::base::{
     symbol::Symbol,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub enum Error {
     InvalidRecursion { symbol: Symbol },
     LastExprMustBeConstructor,

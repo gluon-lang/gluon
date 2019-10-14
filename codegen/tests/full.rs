@@ -6,8 +6,11 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::vm::{self, ExternModule};
-use gluon::{import, Compiler, Thread};
+use gluon::{
+    import,
+    vm::{self, ExternModule},
+    Thread, ThreadExt,
+};
 use init::new_vm;
 
 #[derive(Debug, PartialEq, Getable, Pushable, VmType)]
@@ -36,7 +39,6 @@ fn new_struct(_: ()) -> Struct {
 #[test]
 fn normal_struct() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
     import::add_extern_module(&vm, "functions", load_struct_mod);
 
     let script = r#"
@@ -45,8 +47,8 @@ fn normal_struct() {
         new_struct ()
     "#;
 
-    let (s, _) = compiler
-        .run_expr::<Struct>(&vm, "test", script)
+    let (s, _) = vm
+        .run_expr::<Struct>("test", script)
         .unwrap_or_else(|why| panic!("{}", why));
 
     assert_eq!(
@@ -77,7 +79,6 @@ fn newtype_id(val: Newtype) -> Newtype {
 #[test]
 fn newtype() {
     let vm = new_vm();
-    let mut compiler = Compiler::new();
     import::add_extern_module(&vm, "functions", load_newtype_mod);
 
     // newtypes should map to the inner type
@@ -87,8 +88,8 @@ fn newtype() {
         newtype_id { string = "test", number = 42, vec = [1.0, 1.0, 2.0, 3.0, 5.0] }
     "#;
 
-    let (s, _) = compiler
-        .run_expr::<Newtype>(&vm, "test", script)
+    let (s, _) = vm
+        .run_expr::<Newtype>("test", script)
         .unwrap_or_else(|why| panic!("{}", why));
 
     assert_eq!(

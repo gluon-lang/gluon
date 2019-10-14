@@ -19,7 +19,7 @@ let _ =
             send sender l
             ())
 
-    resume thread
+    let _ = resume thread
     match recv receiver with
     | Ok x -> assert (force x == 1)
     | Err e -> error "Receive 1 error"
@@ -34,7 +34,7 @@ let _ =
             send sender (ref 3)
             ())
 
-    resume thread
+    let _ = resume thread
     match recv receiver with
     | Ok x -> assert (load x == 3)
     | Err e -> error "Receive 3 error"

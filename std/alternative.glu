@@ -1,19 +1,26 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Alternative` type
 let { Applicative } = import! std.applicative
 
 /// A monoid on applicative functors.
 #[implicit]
 type Alternative f = {
     applicative : Applicative f,
+    /// The identify of `or`
+    empty : forall a . f a,
+    /// An associative binary operation.
+    ///
+    /// Evaluates to the first argument if it is not `empty`, otherwise evaluates to the second argument.
     or : forall a . f a -> f a -> f a,
-    empty : forall a . f a
 }
 
 let empty ?alt : [Alternative f] -> f a = alt.empty
 
 let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
 
-/// Alias of `or`
+/// An associative binary operation. Alias of `or`.
+///
+/// Evaluates to the first argument if it is not `empty`, otherwise evaluates to the second argument.
 #[infix(left, 3)]
 let (<|>) : [Alternative f] -> f a -> f a -> f a = or
 

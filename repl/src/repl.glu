@@ -1,5 +1,6 @@
 let prelude = import! std.prelude
-let io @ { ? } = import! std.io
+let io = import! std.effect.io
+let mio @ { ? } = import! std.io
 let map @ { Map, empty, singleton, find, insert, ? } = import! std.map
 let { Bool } = import! std.bool
 let { Option } = import! std.option
@@ -8,7 +9,7 @@ let string = import! std.string
 let thread = import! std.thread
 let array @ { ? } = import! std.array
 let { ref, load, (<-) } = import! std.reference
-let rustyline = import! rustyline
+let rustyline @ { Editor, CpuPool } = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim @ { Color, Settings } = import! repl.prim
 let { (<<), (<|) } = import! std.function
@@ -43,8 +44,7 @@ let run_interruptible_io action :
     do cpu_pool = asks (\r -> r.cpu_pool)
     do eval_thread = lift <| thread.new_thread ()
     let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    lift
-        <| io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
+    io.catch (mio.functor.map Ok interruptible_action) (wrap << Err)
 
 
 let load_file filename : String -> Eff (ReplEffect r) String =
@@ -54,8 +54,8 @@ let load_file filename : String -> Eff (ReplEffect r) String =
         | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.len filename - 3)
     let action =
-        do expr = io.read_file_to_string filename
-        do result = io.load_script modulename expr
+        do expr = mio.read_file_to_string filename
+        do result = mio.load_script modulename expr
         wrap result
 
     do result = run_interruptible_io action
@@ -65,22 +65,20 @@ let load_file filename : String -> Eff (ReplEffect r) String =
 
 let run_file filename : String -> Eff (ReplEffect r) () =
     let action =
-        do expr = io.read_file_to_string filename
-        do result = io.run_expr expr
+        do expr = mio.read_file_to_string filename
+        do result = mio.run_expr expr
         wrap (result.value ++ " : " ++ result.typ)
 
     do result = run_interruptible_io action
-    lift
-        <| (match result with
-        | Ok _ -> io.println ""
-        | Err x -> io.println x)
+    match result with
+    | Ok _ -> io.println ""
+    | Err x -> io.println x
 
 let commands : Commands =
     let print_result result =
-        lift
-            <| (match result with
-            | Ok x -> io.println x
-            | Err x -> io.println x)
+        match result with
+        | Ok x -> io.println x
+        | Err x -> io.println x
 
     let commands = ref []
     let cmds : Array Cmd = [{
@@ -124,7 +122,7 @@ let commands : Commands =
             info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
             action
             = \arg ->
-                (load_file arg >>= (lift << io.println))
+                (load_file arg >>= io.println)
                     *> wrap Continue,
         },
         {
@@ -160,7 +158,7 @@ let commands : Commands =
                             { color,
                                 .. settings
                             })
-                    | Err msg -> lift <| io.println msg
+                    | Err msg -> io.println msg
                 wrap Continue,
         },
         {
@@ -177,10 +175,9 @@ let commands : Commands =
             alias = "h",
             info = "Print this help",
             action = \_ ->
-                let print_header = lift <| io.println "Available commands\n"
+                let print_header = io.println "Available commands\n"
                 let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
-                    lift
-                        (io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info))
+                    io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
 
                 print_header
                     *> array.traversable.traverse effect.applicative print_cmd (load commands)
@@ -218,10 +215,10 @@ let do_command commands line : Commands -> String -> Eff (ReplEffect r) ReplActi
     | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> lift <| io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
+        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     | Err err ->
-        lift
-            <| io.println "Expected a command such as `:h`" *> wrap Continue
+        io.println "Expected a command such as `:h`"
+            *> wrap Continue
 
 let loop _ : () -> Eff (ReplEffect r) () =
     do repl = ask
@@ -238,8 +235,7 @@ let loop _ : () -> Eff (ReplEffect r) () =
                 do eval_thread = thread.new_thread ()
                 let eval_action = repl_prim.eval_line settings.color line
                 repl_prim.finish_or_interrupt cpu_pool eval_thread eval_action
-            lift
-                <| io.catch action io.println *> wrap Continue
+            io.catch action mio.println *> wrap Continue
 
     do line_result = lift <| rustyline.readline repl.editor settings.prompt
     match line_result with
@@ -253,11 +249,11 @@ let loop _ : () -> Eff (ReplEffect r) () =
             seq lift <| rustyline.save_history repl.editor
             wrap ()
 
-let run settings : Settings -> IO () =
+let run settings : Settings -> Eff [| lift : Lift IO |] () =
     seq io.println "gluon (:h for help, :q to quit)"
-    do editor = rustyline.new_editor ()
-    do cpu_pool = repl_prim.new_cpu_pool 1
+    do editor = lift <| rustyline.new_editor ()
+    do cpu_pool = lift <| repl_prim.new_cpu_pool 1
     let repl = { commands, editor, cpu_pool }
-    run_lift (run_reader repl (eval_state settings (loop ())))
+    run_reader repl (eval_state settings (loop ()))
 
-run
+run_lift << run

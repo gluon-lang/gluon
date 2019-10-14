@@ -54,11 +54,12 @@ let { (*>), (<*), wrap } = import! std.applicative
 let alternative : Alternative Parser = {
     applicative,
 
+    empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
+
     or = \l r -> parser (\stream ->
             match parser l stream with
             | Ok a -> Ok a
             | Err _ -> parser r stream),
-    empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
 let { (<|>) } = import! std.alternative

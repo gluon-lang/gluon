@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Composable effect types
 let { error } = import! std.prim
 let option = import! std.option
 let { Result, ? } = import! std.result
@@ -11,8 +12,10 @@ let { Applicative, wrap } = import! std.applicative
 let { Monad } = import! std.monad
 
 rec
+/// An effectful function `a -> b`
 type Arr r a b = a -> Eff r b
 
+/// The `Eff` monad provides composable effect via a `Row` of effects (`r`) and produces a value of type `a`.
 type Eff r a =
     | Pure a
     | Impure : forall x . r x -> Arr r x a -> Eff r a 
@@ -48,6 +51,9 @@ type OpenVariant r a = .. r
 #[doc(hidden)]
 let inject_rest x : forall e . OpenVariant r a -> [| | r |] a = convert_effect! x
 
+/// Extracts the value of type `a` from an effectful computation. Can only be done once all other
+/// effects have been eliminated from the row (leaving `[| |]` as the empty effect). See each
+/// individual effects module on how to eliminate the effect.
 let run_pure eff : Eff [| |] a -> a =
     match eff with
     | Pure v -> v

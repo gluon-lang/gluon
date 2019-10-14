@@ -27,7 +27,7 @@ use crate::support::intern;
 struct MockEnv;
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<Arc<Metadata>> {
         None
     }
 }
@@ -58,7 +58,7 @@ id
         Metadata {
             definition: metadata.definition.clone(),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         }
     );
@@ -83,7 +83,7 @@ let id x = x
         Some(&Metadata {
             definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         })
     );
@@ -133,9 +133,9 @@ id
     assert_eq!(
         metadata,
         Metadata {
-            definition: Some(intern("id:32")),
+            definition: Some(intern("id@3_5")),
             comment: Some(line_comment("The identity function")),
-            args: vec![Argument::explicit(intern("x:35"))],
+            args: vec![Argument::explicit(intern("x@3_8"))],
             ..Metadata::default()
         }
     );
@@ -301,7 +301,7 @@ let x ?test : [Test a] -> a = test.x
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
-            args: vec![Argument::implicit(intern("test:55"))],
+            args: vec![Argument::implicit(intern("test@7_8"))],
             ..Metadata::default()
         })
     );
@@ -330,14 +330,14 @@ let x ?test : [Test a] -> a = test.x
         Some(&Metadata {
             definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
-            args: vec![Argument::implicit(intern("test:55"))],
+            args: vec![Argument::implicit(intern("test@7_8"))],
             ..Metadata::default()
         })
     );
 }
 
 #[test]
-fn propagate_metadata_through_implicits() {
+fn propagate_metadata_through_implicits1() {
     let _ = env_logger::try_init();
 
     let text = r#"
@@ -364,7 +364,41 @@ let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
                 name: "attribute".into(),
                 arguments: None,
             }],
-            args: vec![Argument::implicit(intern("test:76"))],
+            args: vec![Argument::implicit(intern("test@9_8"))],
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_implicits2() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    #[attribute]
+    x : a,
+}
+
+type Wrap a = | Wrap a
+
+let x ?test : [Test a] -> a = test.x
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x").map(|m| &**m),
+        Some(&Metadata {
+            definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
+            attributes: vec![Attribute {
+                name: "attribute".into(),
+                arguments: None,
+            }],
+            args: vec![Argument::implicit(intern("test@9_8"))],
             ..Metadata::default()
         })
     );

@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::mem;
 
 /// The fixity (associativity) of an infix operator
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Fixity {
     /// Left operator associativity.
     ///
@@ -44,7 +44,7 @@ impl fmt::Display for Fixity {
 }
 
 /// Metadata pertaining to an infix operator
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct OpMeta {
     /// The precedence of the operator
     pub precedence: i32,
@@ -264,7 +264,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Error {
     ConflictingFixities((String, OpMeta), (String, OpMeta)),
     UndefinedFixity(String),

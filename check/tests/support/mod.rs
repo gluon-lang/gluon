@@ -122,29 +122,29 @@ impl KindEnv for MockEnv {
 
 impl TypeEnv for MockEnv {
     type Type = ArcType;
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
+    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
         match id.definition_name() {
-            "False" | "True" => Some(&self.bool.as_type()),
+            "False" | "True" => Some(self.bool.as_type().clone()),
             _ => None,
         }
     }
 
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         match id.definition_name() {
-            "Bool" => Some(&self.bool),
+            "Bool" => Some(self.bool.clone()),
             _ => None,
         }
     }
 }
 
 impl PrimitiveEnv for MockEnv {
-    fn get_bool(&self) -> &ArcType {
-        &self.bool.as_type()
+    fn get_bool(&self) -> ArcType {
+        self.bool.as_type().clone()
     }
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Arc<Metadata>> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<Arc<Metadata>> {
         None
     }
 }

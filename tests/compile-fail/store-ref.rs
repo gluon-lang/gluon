@@ -5,12 +5,16 @@ extern crate gluon_codegen;
 
 use std::{fmt, sync::Mutex};
 
-use gluon::import::add_extern_module;
-use gluon::new_vm;
-use gluon::vm::api::{primitive_f, Userdata, VmType};
-use gluon::vm::gc::Trace;
-use gluon::vm::thread::{Status, Thread};
-use gluon::vm::ExternModule;
+use gluon::{
+    import::add_extern_module,
+    new_vm,
+    vm::{
+        api::{primitive_f, Userdata, VmType},
+        gc::Trace,
+        thread::{Status, Thread},
+        ExternModule,
+    },
+};
 
 #[derive(gluon_codegen::Trace)]
 #[gluon_trace(skip)]

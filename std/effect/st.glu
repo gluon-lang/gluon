@@ -1,3 +1,5 @@
+//! Implementation of the `st.State` effect
+
 let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
@@ -5,20 +7,31 @@ let { (<<) } = import! std.function
 let { Reference, ref, (<-), load } = import! std.reference
 
 type STRef s a = { __ref : Reference a }
+
+/// The `State` effect enables the use of mutable state. By branding the state with `s` the mutable
+/// values are prevented from escaping the monad.
 type State s r a =
     | New : forall b . b -> State s r (STRef s b)
     | Read : STRef s a -> State s r a
     | Write : forall b . b -> STRef s b -> State s r ()
     .. r
 
+#[inline(never)]
 let extract_state x : forall s . [| st : State s | r |] a -> State s r a = convert_variant! x
 
+#[inline(never)]
 let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a = Impure (convert_effect! st f) Pure
 
-let new_ST_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
-let read_ST_ref ref : forall s . STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)
-let write_ST_ref a ref : forall s . a -> STRef s a -> Eff [| st : State s | r |] () = send_state (Write a ref)
+/// Creates a new mutable reference that contains `a`.
+let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
 
+/// Reads the values stored in the reference.
+let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)
+
+/// Writes a new value into the reference.
+let write_ref a ref : forall s . a -> STRef s a -> Eff [| st : State s | r |] () = send_state (Write a ref)
+
+/// Eliminates the `State` effect
 let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a =
     let loop ve : forall s . Eff [| st : State s | r |] a -> Eff [| | r |] a =
         match ve with
@@ -41,8 +54,8 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
 {
     State,
 
-    new_ST_ref,
-    read_ST_ref,
-    write_ST_ref,
+    new_ref,
+    read_ref,
+    write_ref,
     run_state,
 }

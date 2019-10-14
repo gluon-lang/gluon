@@ -9,10 +9,9 @@ use syn::{
 
 fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
     if attr.path.segments.len() == 1
-        && (   attr.path.segments[0].ident == "gluon"
+        && (attr.path.segments[0].ident == "gluon"
             || attr.path.segments[0].ident == "gluon_trace"
-            || attr.path.segments[0].ident == "gluon_userdata"
-        )
+            || attr.path.segments[0].ident == "gluon_userdata")
     {
         match attr.interpret_meta() {
             Some(List(ref meta)) => Some(meta.nested.iter().cloned().collect()),

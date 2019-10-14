@@ -1,21 +1,13 @@
 #[macro_use]
 extern crate criterion;
 
-extern crate gluon;
-
-extern crate bincode;
-extern crate futures;
-extern crate serde_json;
-extern crate serde_state;
-
-use std::fs::File;
-use std::io::Read;
+use std::{fs::File, io::Read};
 
 use criterion::{Bencher, Criterion};
 
 use futures::Future;
-use gluon::compiler_pipeline::compile_to;
-use gluon::{new_vm, Compiler};
+
+use gluon::{compiler_pipeline::compile_to, new_vm, ThreadExt};
 
 fn precompiled_prelude(b: &mut Bencher) {
     let thread = new_vm();
@@ -32,7 +24,7 @@ fn precompiled_prelude(b: &mut Bencher) {
         let mut serializer = serde_json::Serializer::new(&mut serialized_prelude);
         compile_to(
             &prelude[..],
-            &mut Compiler::new(),
+            &mut thread.module_compiler(&thread.get_database()),
             &thread,
             "std.prelude",
             &prelude,
@@ -46,7 +38,13 @@ fn precompiled_prelude(b: &mut Bencher) {
 
         let mut deserializer = serde_json::Deserializer::from_slice(&serialized_prelude);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "std.prelude", "", ())
+            .run_expr(
+                &mut thread.module_compiler(&thread.get_database()),
+                &*thread,
+                "std.prelude",
+                "",
+                (),
+            )
             .wait()
             .unwrap()
     })
@@ -64,7 +62,7 @@ fn source_prelude(b: &mut Bencher) {
 
         prelude_source
             .run_expr(
-                &mut Compiler::new(),
+                &mut thread.module_compiler(&thread.get_database()),
                 &*thread,
                 "std.prelude",
                 &prelude_source,

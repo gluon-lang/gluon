@@ -63,7 +63,7 @@
                 <div class="row">
                     <div class="col-md-10">
                         <h4>
-                            <pre>type <a id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
+                            <pre>{{attributes}}type <a id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{{type~}}}
                             </pre>
                         </h4>
                     </div>
@@ -88,7 +88,7 @@
                 <div class="row">
                     <div class="col-md-10">
                         <h4>
-                        <pre>let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
+                        <pre>{{attributes}}let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
                             {{~#each args~}}
                                 {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
                             {{~/each}} : {{{type~}}}

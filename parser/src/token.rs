@@ -1,16 +1,21 @@
-use crate::base::ast::is_operator_byte;
-use crate::base::metadata::{Comment, CommentType};
-use crate::base::pos::{self, BytePos, Column, Line, Location, Spanned};
-
 use std::{fmt, str};
 
 use codespan::ByteOffset;
 
+use ordered_float::NotNan;
+
 use self::Error::*;
 
-use crate::str_suffix::{self, StrSuffix};
+use crate::{
+    base::{
+        ast::is_operator_byte,
+        metadata::{Comment, CommentType},
+        pos::{self, BytePos, Column, Line, Location, Spanned},
+    },
+    str_suffix::{self, StrSuffix},
+};
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub enum Token<'input> {
     ShebangLine(&'input str),
     Identifier(&'input str),
@@ -20,7 +25,7 @@ pub enum Token<'input> {
     CharLiteral(char),
     IntLiteral(i64),
     ByteLiteral(u8),
-    FloatLiteral(f64),
+    FloatLiteral(NotNan<f64>),
     DocComment(Comment<&'input str>),
 
     Rec,
@@ -122,7 +127,7 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 pub enum StringLiteral<'input> {
     Escaped(&'input str),
     Raw(&'input str),
@@ -165,7 +170,7 @@ pub type SpError = Spanned<Error, Location>;
 pub type Result<T, E = SpError> = std::result::Result<T, E>;
 
 quick_error! {
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum Error {
         EmptyCharLiteral {
             description("empty char literal")
@@ -559,7 +564,11 @@ impl<'input> Tokenizer<'input> {
                         let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
                         return self.error(end, UnexpectedChar(ch));
                     }
-                    _ => (start, end, Token::FloatLiteral(float.parse().unwrap())),
+                    _ => (
+                        start,
+                        end,
+                        Token::FloatLiteral(NotNan::new(float.parse().unwrap()).unwrap()),
+                    ),
                 }
             }
             Some((_, b'x')) => {
@@ -1137,9 +1146,18 @@ mod test {
         test(
             r#"03.1415 1036.2 -0.0"#,
             vec![
-                (r#"~~~~~~~            "#, FloatLiteral(3.1415)),
-                (r#"        ~~~~~~     "#, FloatLiteral(1036.2)),
-                (r#"               ~~~~"#, FloatLiteral(-0.0)),
+                (
+                    r#"~~~~~~~            "#,
+                    FloatLiteral(NotNan::new(3.1415).unwrap()),
+                ),
+                (
+                    r#"        ~~~~~~     "#,
+                    FloatLiteral(NotNan::new(1036.2).unwrap()),
+                ),
+                (
+                    r#"               ~~~~"#,
+                    FloatLiteral(NotNan::new(-0.0).unwrap()),
+                ),
             ],
         );
     }

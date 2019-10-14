@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::base::ast::Visitor;
 use crate::base::ast::{
-    self, Argument, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+    self, Argument, AstType, Expr, HasMetadata, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
 };
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::{Metadata, MetadataEnv};
@@ -199,7 +199,7 @@ pub fn metadata(
                     }
                     for field in types {
                         if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            // FIXME Shouldn't need to insert this metadata twice
+                            // TODO Shouldn't need to insert this metadata twice
                             if let Some(type_field) = typ
                                 .type_field_iter()
                                 .find(|type_field| type_field.name.name_eq(&field.name.value))
@@ -249,11 +249,12 @@ pub fn metadata(
             self.env.stack.insert(id, arc_metadata);
         }
 
-        fn metadata(&self, id: &Symbol) -> Option<&Arc<Metadata>> {
+        fn metadata(&self, id: &Symbol) -> Option<Arc<Metadata>> {
             debug!("Lookup {}", id);
             self.env
                 .stack
                 .get(id)
+                .cloned()
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
@@ -265,7 +266,6 @@ pub fn metadata(
                     .typ
                     .alias_ident()
                     .and_then(|id| self.metadata(id))
-                    .cloned()
                 {
                     let mut type_metadata =
                         Arc::try_unwrap(type_metadata).unwrap_or_else(|arc| (*arc).clone());
@@ -281,7 +281,7 @@ pub fn metadata(
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> MaybeMetadata {
             match expr.value {
-                Expr::Ident(ref id) => self.metadata(&id.name).cloned().into(),
+                Expr::Ident(ref id) => self.metadata(&id.name).into(),
                 Expr::Record {
                     ref exprs,
                     ref types,
@@ -292,7 +292,7 @@ pub fn metadata(
                     for field in exprs {
                         let maybe_metadata = match field.value {
                             Some(ref expr) => self.metadata_expr(expr),
-                            None => self.metadata(&field.name.value).cloned().into(),
+                            None => self.metadata(&field.name.value).into(),
                         };
                         let maybe_metadata = MaybeMetadata::merge(&field.metadata, &maybe_metadata);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata {
@@ -302,7 +302,7 @@ pub fn metadata(
                     }
 
                     for field in types {
-                        let maybe_metadata = self.metadata(&field.name.value).cloned();
+                        let maybe_metadata = self.metadata(&field.name.value);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
                             let name = Name::new(field.name.value.as_ref()).name().as_str();
                             module.insert(String::from(name), metadata);
@@ -356,7 +356,7 @@ pub fn metadata(
                         );
 
                         if metadata.has_data() {
-                            // FIXME Shouldn't need to insert this metadata twice
+                            // TODO Shouldn't need to insert this metadata twice
                             self.stack_var(bind.alias.value.name.clone(), metadata.clone());
                             self.stack_var(bind.name.value.clone(), metadata);
                         }
@@ -383,10 +383,10 @@ pub fn metadata(
             let module: BTreeMap<_, _> = row_iter(typ)
                 .filter_map(|field| {
                     let field_metadata = Self::metadata_of_type(&field.typ);
-                    let field_metadata = match field.typ.comment() {
-                        Some(comment) => {
+                    let field_metadata = match field.typ.metadata() {
+                        Some(other_metadata) => {
                             let mut metadata = field_metadata.unwrap_or_default();
-                            metadata.comment = Some(comment.clone());
+                            metadata.merge_with_ref(other_metadata);
                             Some(metadata)
                         }
                         None => field_metadata,

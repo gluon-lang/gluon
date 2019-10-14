@@ -1,4 +1,4 @@
-use gluon::{new_vm, vm::api::FunctionRef, Compiler};
+use gluon::{new_vm, vm::api::FunctionRef, ThreadExt};
 
 fn fib(n: u64) -> u64 {
     if n <= 1 {
@@ -21,8 +21,7 @@ fn main() {
                 else fib (n #Int- 1) #Int+ fib (n #Int- 2)
             fib
             "#;
-        Compiler::new()
-            .load_script(&vm, "fib", text)
+        vm.load_script("fib", text)
             .unwrap_or_else(|err| panic!("{}", err));
         let mut fib: FunctionRef<fn(u64) -> u64> =
             vm.get_global("fib").unwrap_or_else(|err| panic!("{}", err));

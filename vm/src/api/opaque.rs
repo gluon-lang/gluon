@@ -4,10 +4,10 @@ use crate::base::types::ArcType;
 
 use crate::{
     api::{Getable, Pushable, ValueRef, VmType},
-    gc::{GcRef, Trace},
+    gc::{GcPtr, GcRef, Trace},
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
-    value::{ArrayRepr, Value, ValueArray},
+    value::{ArrayRepr, ClosureData, Value, ValueArray, ValueRepr},
     vm, Result, Variants,
 };
 
@@ -163,6 +163,20 @@ where
         match self.0.as_value_ref() {
             ValueRef::Userdata(data) => data.downcast_ref::<V>().unwrap(),
             _ => ice!("ValueRef is not an Userdata"),
+        }
+    }
+}
+
+impl<'s, 'value, T> Deref for Opaque<T, GcPtr<ClosureData>>
+where
+    T: AsVariant<'s, 'value>,
+{
+    type Target = GcPtr<ClosureData>;
+
+    fn deref(&self) -> &Self::Target {
+        match self.0.get_value().get_repr() {
+            ValueRepr::Closure(data) => data,
+            _ => ice!("Opaque is not a closure"),
         }
     }
 }
@@ -353,8 +367,7 @@ where
 impl<'s, 'value, 'vm, T, V> Pushable<'vm> for Opaque<T, V>
 where
     T: Pushable<'vm>,
-    V: ?Sized + VmType,
-    V::Type: Sized,
+    V: ?Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         self.0.push(context)

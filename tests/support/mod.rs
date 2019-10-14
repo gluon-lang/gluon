@@ -4,16 +4,19 @@ pub extern crate futures;
 #[allow(unused_extern_crates)]
 extern crate gluon;
 
-use gluon::import::Import;
-use gluon::vm::api::{Getable, VmType};
-use gluon::vm::thread::{RootedThread, Thread};
-use gluon::Compiler;
+use gluon::{
+    import::Import,
+    vm::{
+        api::{Getable, VmType},
+        thread::{RootedThread, Thread},
+    },
+    ThreadExt,
+};
 
 #[allow(dead_code)]
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new()
-        .implicit_prelude(false)
-        .load_script(vm, filename, input)
+    vm.get_database_mut().set_implicit_prelude(false);
+    vm.load_script(filename, input)
 }
 
 #[allow(dead_code)]
@@ -21,10 +24,10 @@ pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
 where
     T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
 {
-    Compiler::new()
-        .run_io(true)
+    vm.get_database_mut()
         .implicit_prelude(implicit_prelude)
-        .run_expr(vm, "<top>", s)
+        .run_io(true);
+    vm.run_expr("<top>", s)
         .unwrap_or_else(|err| panic!("{}", err))
         .0
 }
@@ -67,14 +70,13 @@ macro_rules! test_expr {
     (io $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
-            use gluon::vm::api::IO;
+            use gluon::{vm::api::IO, ThreadExt};
 
             let _ = ::env_logger::try_init();
-            let mut vm = $crate::support::make_vm();
-            let (value, _) = ::gluon::Compiler::new()
-                .implicit_prelude(false)
-                .run_io(true)
-                .run_expr(&mut vm, "<top>", $expr)
+            let vm = $crate::support::make_vm();
+            vm.get_database_mut().implicit_prelude(false).run_io(true);
+            let (value, _) = vm
+                .run_expr("<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
             match value {
                 IO::Value(value) => {

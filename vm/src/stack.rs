@@ -1059,13 +1059,13 @@ where
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct StacktraceFrame {
     pub name: Symbol,
     pub line: Option<Line>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 pub struct Stacktrace {
     pub frames: Vec<Option<StacktraceFrame>>,
 }

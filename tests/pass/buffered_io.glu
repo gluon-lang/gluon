@@ -3,7 +3,7 @@
 //! `std.test`. With effects, this should be updated to run with `std.test`.
 
 let { assert_eq }  = import! std.test
-let { wrap } = import! std.applicative
+let { wrap, (<*) } = import! std.applicative
 let { (<|), (|>) } = import! std.function
 let { ? } = import! std.io
 let io_read @ { Read, default_read_to_end, read, read_to_end, ? } = import! std.io.read
@@ -46,7 +46,7 @@ let read_cursor : Read Cursor =
 let write_array_ref : Write (Reference (Array Byte)) = {
     write_slice = \array_ref buf start end ->
         let written = array.append (load array_ref) (array.slice buf start end)
-        array_ref <- written
+        let _ = array_ref <- written
         wrap (end - start),
         
     flush = \_ -> wrap ()
@@ -156,7 +156,7 @@ let test_write_slice = [
         do _ = lift <| flush writer
         assert_eq (load written) [],
 
-    test "slice" <| \_ ->
+    test "slice partial" <| \_ ->
         let written : Reference (Array Byte) = ref []
         let writer = written |> io_write.buffered_with_capacity 5
         do bytes_written = lift <| write_slice writer [1b, 2b, 3b, 4b] 1 3

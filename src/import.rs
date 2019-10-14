@@ -1,40 +1,46 @@
 //! Implementation of the `import!` macro.
 
-use std::any::Any;
-use std::borrow::Cow;
-use std::collections::hash_map::Entry;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-use std::mem;
-use std::path::PathBuf;
-use std::sync::{Mutex, RwLock};
+use std::{
+    any::{Any, TypeId},
+    borrow::Cow,
+    fs::File,
+    io::Read,
+    mem,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+    sync::{Arc, Mutex, MutexGuard, RwLock},
+};
 
-use futures::sync::oneshot;
-use futures::{future, Future};
-
+use futures::future;
 use itertools::Itertools;
+use salsa::ParallelDatabase;
 
-use crate::base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
-use crate::base::error::{Errors, InFile};
-use crate::base::filename_to_module;
-use crate::base::fnv::FnvMap;
-use crate::base::pos::{self, BytePos, Span};
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    ast::{expr_to_path, Expr, Literal, SpannedExpr},
+    filename_to_module,
+    fnv::FnvMap,
+    pos,
+    symbol::Symbol,
+    types::ArcType,
+};
 
 use crate::vm::{
     self,
+    gc::Trace,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
-    thread::{Thread, ThreadInternal},
+    thread::{RootedThread, Thread, ThreadInternal},
+    vm::VmEnv,
     ExternLoader, ExternModule,
 };
 
-use super::Compiler;
+use crate::{
+    query::{Compilation, CompilerDatabase},
+    IoError, ModuleCompiler,
+};
 
 quick_error! {
     /// Error type for the import macro
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub enum Error {
         /// The importer found a cyclic dependency when loading files
         CyclicDependency(module: String, cycle: Vec<String>) {
@@ -51,7 +57,7 @@ quick_error! {
             display("{}", message)
         }
         /// The importer could not load the imported file
-        IO(err: io::Error) {
+        IO(err: IoError) {
             description(err.description())
             display("{}", err)
             from()
@@ -59,20 +65,21 @@ quick_error! {
     }
 }
 
-pub const COMPILER_KEY: &str = "Compiler";
+impl base::error::AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
+        codespan_reporting::Diagnostic::new_error(self.to_string())
+    }
+}
 
 include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 
 pub trait Importer: Any + Clone + Sync + Send {
     fn import(
         &self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: &Thread,
-        earlier_errors_exist: bool,
         modulename: &str,
-        input: &str,
-        expr: SpannedExpr<Symbol>,
-    ) -> Result<(), (Option<ArcType>, MacroError)>;
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
 }
 
 #[derive(Clone)]
@@ -80,47 +87,61 @@ pub struct DefaultImporter;
 impl Importer for DefaultImporter {
     fn import(
         &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
-        earlier_errors_exist: bool,
+        compiler: &mut ModuleCompiler,
+        _vm: &Thread,
         modulename: &str,
-        input: &str,
-        mut expr: SpannedExpr<Symbol>,
-    ) -> Result<(), (Option<ArcType>, MacroError)> {
-        use crate::compiler_pipeline::*;
-
-        let result = {
-            let result = MacroValue { expr: &mut expr }
-                .typecheck(compiler, vm, modulename, input)
-                .map_err(|err| err.into());
-
-            if result.is_ok() && earlier_errors_exist {
-                trace!(
-                    "Typechecked {} but earlier errors exist, bailing",
-                    modulename
-                );
-                // We must not pass error patterns or expressions to the core translator so break
-                // early. An error will be returned by the macro expander so we can just return Ok
-                return Err((
-                    Some(expr.env_type_of(&*vm.get_env())),
-                    Box::new(crate::Error::Multiple(Errors::default())),
-                ));
-            }
-
-            result.and_then(|value| {
-                value
-                    .load_script(compiler, vm, modulename, input, ())
-                    .wait()
-            })
-        };
-
-        result.map_err(|err| (Some(expr.env_type_of(&*vm.get_env())), err.into()))
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
+        let value = compiler
+            .database
+            .global(modulename.to_string())
+            .map_err(|err| (None, err))?;
+        Ok(value.typ)
     }
 }
 
 enum UnloadedModule {
-    Source(Cow<'static, str>),
+    Source,
     Extern(ExternModule),
+}
+
+pub struct DatabaseSnapshot {
+    snapshot: Option<salsa::Snapshot<CompilerDatabase>>,
+}
+
+impl Deref for DatabaseSnapshot {
+    type Target = CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        self.snapshot.as_ref().unwrap()
+    }
+}
+
+pub struct CompilerLock<I = DefaultImporter> {
+    // Only needed to ensure that the the `Compiler` the guard points to lives long enough
+    _import: Arc<Import<I>>,
+    // This isn't actually static but relies on `import` to live longer than the guard
+    compiler: Option<MutexGuard<'static, CompilerDatabase>>,
+}
+
+impl<I> Drop for CompilerLock<I> {
+    fn drop(&mut self) {
+        // The compiler moves back to only be owned by the import so we need to remove the thread
+        // to break the cycle
+        self.thread = None;
+        self.compiler.take();
+    }
+}
+
+impl<I> Deref for CompilerLock<I> {
+    type Target = CompilerDatabase;
+    fn deref(&self) -> &Self::Target {
+        self.compiler.as_ref().unwrap()
+    }
+}
+
+impl<I> DerefMut for CompilerLock<I> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.compiler.as_mut().unwrap()
+    }
 }
 
 /// Macro which rewrites occurances of `import! "filename"` to a load of that file if it is not
@@ -130,8 +151,7 @@ pub struct Import<I = DefaultImporter> {
     pub loaders: RwLock<FnvMap<String, ExternLoader>>,
     pub importer: I,
 
-    /// Map of modules currently being loaded
-    loading: Mutex<FnvMap<String, future::Shared<oneshot::Receiver<()>>>>,
+    compiler: Mutex<CompilerDatabase>,
 }
 
 impl<I> Import<I> {
@@ -140,8 +160,8 @@ impl<I> Import<I> {
         Import {
             paths: RwLock::new(vec![PathBuf::from(".")]),
             loaders: RwLock::default(),
+            compiler: CompilerDatabase::new_base(None).into(),
             importer: importer,
-            loading: Mutex::default(),
         }
     }
 
@@ -169,33 +189,69 @@ impl<I> Import<I> {
             .collect()
     }
 
-    fn get_unloaded_module(
+    pub fn compiler_lock(self_: Arc<Self>, thread: RootedThread) -> CompilerLock<I> {
+        // Since `self` lives longer than the lifetime in the mutex guard this is safe
+        let mut compiler = unsafe {
+            CompilerLock {
+                compiler: Some(mem::transmute::<
+                    MutexGuard<CompilerDatabase>,
+                    MutexGuard<CompilerDatabase>,
+                >(self_.compiler.lock().unwrap())),
+                _import: self_,
+            }
+        };
+
+        compiler.thread = Some(thread);
+
+        compiler
+    }
+
+    pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
+        self.snapshot_(Some(thread))
+    }
+
+    fn snapshot_(&self, thread: Option<RootedThread>) -> DatabaseSnapshot {
+        let mut compiler = self.compiler.lock().unwrap();
+
+        compiler.thread = thread;
+        let snapshot = compiler.snapshot();
+        compiler.thread = None;
+
+        DatabaseSnapshot {
+            snapshot: Some(snapshot),
+        }
+    }
+
+    fn get_unloaded_module(&self, vm: &Thread, module: &str) -> Result<UnloadedModule, MacroError> {
+        {
+            let mut loaders = self.loaders.write().unwrap();
+            if let Some(loader) = loaders.get_mut(module) {
+                let value = loader(vm).map_err(MacroError::new)?;
+                return Ok(UnloadedModule::Extern(value));
+            }
+        }
+        Ok(UnloadedModule::Source)
+    }
+
+    pub(crate) fn get_module_source(
         &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
+        db: &impl Compilation,
         module: &str,
         filename: &str,
-    ) -> Result<UnloadedModule, MacroError> {
+    ) -> Result<Cow<'static, str>, Error> {
         let mut buffer = String::new();
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
 
-        let std_file = if compiler.settings.use_standard_lib {
+        let std_file = if db.compiler_settings().use_standard_lib {
             STD_LIBS.iter().find(|tup| tup.0 == module)
         } else {
             None
         };
         Ok(match std_file {
-            Some(tup) => UnloadedModule::Source(Cow::Borrowed(tup.1)),
+            Some(tup) => Cow::Borrowed(tup.1),
             None => {
-                {
-                    let mut loaders = self.loaders.write().unwrap();
-                    if let Some(loader) = loaders.get_mut(module) {
-                        let value = loader(vm)?;
-                        return Ok(UnloadedModule::Extern(value));
-                    }
-                }
                 let paths = self.paths.read().unwrap();
                 let file = paths
                     .iter()
@@ -217,158 +273,50 @@ impl<I> Import<I> {
                             .format(", ")
                     ))
                 })?;
-                file.read_to_string(&mut buffer)?;
-                UnloadedModule::Source(Cow::Owned(buffer))
+                file.read_to_string(&mut buffer)
+                    .map_err(|err| Error::IO(err.into()))?;
+                Cow::Owned(buffer)
             }
         })
     }
 
     pub fn load_module(
         &self,
-        compiler: &mut Compiler,
+        compiler: &mut ModuleCompiler,
         vm: &Thread,
-        macros: &mut MacroExpander,
         module_id: &Symbol,
-        span: Span<BytePos>,
-    ) -> Result<Option<impl Future<Item = (), Error = ()>>, (Option<ArcType>, MacroError)>
+    ) -> Result<ArcType, (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
         assert!(module_id.is_global());
         let modulename = module_id.name().definition_name();
-        let mut filename = modulename.replace(".", "/");
-        filename.push_str(".glu");
-        {
-            let state = get_state(macros);
-            if state.visited.iter().any(|m| **m == *filename) {
-                let cycle = state
-                    .visited
-                    .iter()
-                    .skip_while(|m| **m != *filename)
-                    .cloned()
-                    .collect();
-                return Err((
-                    None,
-                    Error::CyclicDependency(filename.clone(), cycle).into(),
-                ));
-            }
-            state.visited.push(filename.clone());
-        }
-
-        // Prevent any other threads from importing this module while we compile it
-        let sender = {
-            let mut loading = self.loading.lock().unwrap();
-            match loading.entry(module_id.to_string()) {
-                Entry::Occupied(entry) => {
-                    get_state(macros).visited.pop();
-                    return Ok(Some(entry.get().clone().map(|_| ()).map_err(|_| ())));
-                }
-                Entry::Vacant(entry) => {
-                    let (sender, receiver) = oneshot::channel();
-                    entry.insert(receiver.shared());
-                    sender
-                }
-            }
-        };
-        if vm.global_env().global_exists(module_id.definition_name()) {
-            let _ = sender.send(());
-            get_state(macros).visited.pop();
-            return Ok(None);
-        }
-
-        let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
-
-        if let Err((ref typ, ref err)) = result {
-            debug!("Import error {}: {}", module_id, err);
-            if let Some(typ) = typ {
-                debug!("Import got type {}", typ);
-            }
-        }
-
-        let _ = sender.send(());
-
-        get_state(macros).visited.pop();
-        self.loading.lock().unwrap().remove(module_id.as_ref());
-
-        result.map(|_| None)
-    }
-
-    fn load_module_(
-        &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
-        macros: &mut MacroExpander,
-        module_id: &Symbol,
-        filename: &str,
-        span: Span<BytePos>,
-    ) -> Result<(), (Option<ArcType>, MacroError)>
-    where
-        I: Importer,
-    {
-        use crate::compiler_pipeline::*;
-
-        let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
         let unloaded_module = self
-            .get_unloaded_module(compiler, vm, &modulename, &filename)
-            .map_err(|err| (None, err.into()))?;
+            .get_unloaded_module(vm, &modulename)
+            .map_err(|err| (None, MacroError::new(err)))?;
 
-        match unloaded_module {
+        Ok(match unloaded_module {
             UnloadedModule::Extern(ExternModule {
                 value,
                 typ,
                 metadata,
             }) => {
-                vm.set_global(module_id.clone(), typ, metadata, value.get_value())
-                    .map_err(|err| (None, err.into()))?;
+                vm.set_global(
+                    module_id.clone(),
+                    typ.clone(),
+                    metadata.into(),
+                    value.get_value(),
+                )
+                .map_err(|err| (None, MacroError::new(err)))?;
+                typ
             }
-            UnloadedModule::Source(file_contents) => {
-                // Modules marked as this would create a cyclic dependency if they included the implicit
-                // prelude
-                let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
-                compiler.set_implicit_prelude(implicit_prelude);
-
-                let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-
-                let result =
-                    file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
-
-                let has_errors =
-                    macros.errors.has_errors() || result.is_err() || macros.error_in_expr;
-                let errors = mem::replace(&mut macros.errors, prev_errors);
-                if errors.has_errors() {
-                    macros.errors.push(pos::spanned(
-                        span,
-                        Box::new(crate::Error::Macro(InFile::new(
-                            compiler.code_map().clone(),
-                            errors,
-                        ))),
-                    ));
-                }
-
-                let macro_result = match result {
-                    Ok(m) => m,
-                    Err((None, err)) => {
-                        return Err((None, err.into()));
-                    }
-                    Err((Some(m), err)) => {
-                        macros.errors.push(pos::spanned(span, err.into()));
-                        m
-                    }
-                };
-
-                self.importer.import(
-                    compiler,
-                    vm,
-                    has_errors,
-                    &modulename,
-                    &file_contents,
-                    macro_result.expr,
-                )?;
-            }
-        }
-        Ok(())
+            UnloadedModule::Source => self
+                .importer
+                .import(compiler, vm, &modulename)
+                .map_err(|(t, err)| (t, MacroError::new(err)))?,
+        })
     }
 }
 
@@ -380,7 +328,7 @@ impl<I> Import<I> {
 /// extern crate gluon_vm;
 ///
 /// use gluon::vm::{self, ExternModule};
-/// use gluon::{Compiler, Thread};
+/// use gluon::{Thread, ThreadExt};
 /// use gluon::import::add_extern_module;
 ///
 /// fn yell(s: &str) -> String {
@@ -404,7 +352,7 @@ impl<I> Import<I> {
 ///         let module = import! "my_module"
 ///         module.yell module.message
 ///     "#;
-///     let (result, _) = Compiler::new().run_expr::<String>(&thread, "example", script)?;
+///     let (result, _) = thread.run_expr::<String>("example", script)?;
 ///     assert_eq!(result, "HELLO WORLD!");
 ///     Ok(())
 /// }
@@ -457,31 +405,22 @@ macro_rules! add_extern_module_if {
     }};
 }
 
-fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
-    macros
-        .state
-        .entry(String::from("import"))
-        .or_insert_with(|| {
-            Box::new(State {
-                visited: Vec::new(),
-                modules_with_errors: FnvMap::default(),
-            })
-        })
-        .downcast_mut::<State>()
-        .unwrap()
-}
-
-struct State {
-    visited: Vec<String>,
-    modules_with_errors: FnvMap<String, Expr<Symbol>>,
-}
-
 impl<I> Macro for Import<I>
 where
     I: Importer,
 {
+    fn get_capability_impl(&self, thread: &Thread, id: TypeId) -> Option<Box<dyn Any>> {
+        if id == TypeId::of::<dyn VmEnv>() {
+            Some(Box::new(
+                Box::new(self.snapshot(thread.root_thread())) as Box<dyn VmEnv>
+            ))
+        } else {
+            None
+        }
+    }
+
     fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
-        fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, MacroError> {
+        fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, Error> {
             if args.len() != 1 {
                 return Err(Error::String("Expected import to get 1 argument".into()).into());
             }
@@ -506,72 +445,28 @@ where
             Ok(modulename)
         }
 
-        let modulename = match get_module_name(&args) {
+        let modulename = match get_module_name(&args).map_err(MacroError::new) {
             Ok(modulename) => modulename,
             Err(err) => return Box::new(future::err(err)),
         };
 
         info!("import! {}", modulename);
 
-        let vm = macros.vm;
-        // Prefix globals with @ so they don't shadow any local variables
-        let name = Symbol::from(if modulename.starts_with('@') {
-            modulename.clone()
-        } else {
-            format!("@{}", modulename)
-        });
+        let db = try_future!(macros
+            .user_data
+            .downcast_ref::<CompilerDatabase>()
+            .ok_or_else(|| MacroError::new(Error::String(
+                "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
+            ))));
 
-        // Only load the script if it is not already loaded
-        debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
-        if !vm.global_env().global_exists(&modulename) {
-            if let Some(expr) = get_state(macros)
-                .modules_with_errors
-                .get(&modulename)
-                .cloned()
-            {
-                macros.error_in_expr = true;
-                trace!("Marking error due to {} import", modulename);
-                return Box::new(future::ok(pos::spanned(args[0].span, expr)));
-            }
-
-            let mut compiler = macros
-                .state
-                .get(COMPILER_KEY)
-                .and_then(|any| any.downcast_ref::<Compiler>())
-                .expect("No `Compiler` in the macro state")
-                .split();
-
-            match self.load_module(&mut compiler, vm, macros, &name, args[0].span) {
-                Ok(Some(future)) => {
-                    let span = args[0].span;
-                    return Box::new(
-                        future
-                            .map_err(|_| unreachable!())
-                            .map(move |_| pos::spanned(span, Expr::Ident(TypedIdent::new(name)))),
-                    );
-                }
-                Ok(None) => (),
-                Err((typ, err)) => {
-                    macros.errors.push(pos::spanned(args[0].span, err));
-
-                    trace!(
-                        "Marking error for {}: {}",
-                        modulename,
-                        typ.clone().unwrap_or_else(Type::hole)
-                    );
-
-                    let expr = Expr::Error(typ);
-                    get_state(macros)
-                        .modules_with_errors
-                        .insert(modulename, expr.clone());
-
-                    return Box::new(future::ok(pos::spanned(args[0].span, expr)));
-                }
-            }
-        }
-        Box::new(future::ok(pos::spanned(
-            args[0].span,
-            Expr::Ident(TypedIdent::new(name)),
-        )))
+        Box::new(future::result(
+            db.import(modulename)
+                .map_err(|err| MacroError::message(err.to_string()))
+                .map(|expr| pos::spanned(args[0].span, expr)),
+        ))
     }
+}
+
+unsafe impl<I> Trace for Import<I> {
+    impl_trace! { self, _gc, () }
 }
