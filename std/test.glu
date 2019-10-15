@@ -2,21 +2,23 @@
 
 let string = import! std.string
 let { wrap } = import! std.applicative
-let prelude @ { Semigroup } = import! std.prelude
+let { flat_map } = import! std.monad
 let float = import! std.float
 let int = import! std.int
 let list @ { List, ? } = import! std.list
 let { Foldable, foldl } = import! std.foldable
 let { Option } = import! std.option
-let { (<>) } = import! std.semigroup
+let { Result } = import! std.result
+let { Semigroup, (<>) } = import! std.semigroup
 let { error } = import! std.prim
-let { id } = import! std.function
+let { (>>), id } = import! std.function
 let { ? } = import! std.io
 
 let { assert } = import! std.assert
 
 let effect @ { Eff, ? } = import! std.effect
 let { Writer, run_writer, tell } = import! std.effect.writer
+let { Error, run_error } = import! std.effect.error
 let { Lift, run_lift } = import! std.effect.lift
 
 
@@ -37,6 +39,22 @@ let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] 
 let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] () =
     if l /= r then wrap ()
     else tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
+
+let assert_ok res : [Show e] -> Result e a -> Eff [| writer : Test | r |] () =
+    match res with
+    | Ok _ -> wrap ()
+    | Err e -> tell (Cons ("Assertion failed: found error " <> show e) Nil)
+
+let assert_err res : [Show a] -> Result e a -> Eff [| writer : Test | r |] () =
+    match res with
+    | Ok x -> tell (Cons ("Assertion failed: expected error, found " <> show x) Nil)
+    | Err _ -> wrap ()
+
+let assert_errorless : [Show e] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] () =
+    run_error >> flat_map assert_ok
+
+let assert_erroring : forall e . [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] () =
+    run_error >> flat_map assert_err
 
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
     do test = run_writer test
@@ -63,6 +81,10 @@ rec let run_io test : TestEffIO r a -> IO () =
     assert,
     assert_eq,
     assert_neq,
+    assert_ok,
+    assert_err,
+    assert_errorless,
+    assert_erroring,
 
     run_raw,
     run,

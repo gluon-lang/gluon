@@ -2,6 +2,7 @@
 
 let { Eff, inject_rest, ? } = import! std.effect
 let { Result } = import! std.result
+let { Option } = import! std.option
 let { (<<) } = import! std.function
 let { wrap } = import! std.applicative
 
@@ -22,6 +23,11 @@ let ok_or_throw r : Result e t -> Eff [| error : Error e | r |] t =
     match r with
     | Ok t -> wrap t
     | Err e -> throw e
+
+let some_or_throw e o : e -> Option a -> Eff [| error : Error e | r |] a =
+    match o with
+    | Some x -> wrap x
+    | None -> throw e
 
 /// Eliminates the `Error` effect and returns a `Result`
 let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
@@ -56,5 +62,6 @@ let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff 
     catch,
     throw,
     ok_or_throw,
+    some_or_throw,
     run_error,
 }
