@@ -30,7 +30,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
             assert!(
                 errors.into_iter().any(|err| match err {
                     Error::Typecheck(errors) => {
-                        let errors: Vec<_> = errors.errors().into();
+                        let errors: Vec<_> = errors.into_errors().into();
                         match errors[0].value.error {
                             TypeError::UndefinedVariable(..) => true,
                             _ => false,
@@ -85,7 +85,7 @@ fn undefined_infix() {
             let map = vm.get_database().get_filemap("test").unwrap();
             let span = map.span().subspan(9.into(), 12.into());
             assert_eq!(
-                err.errors(),
+                err.into_errors(),
                 ParseErrors::from(vec![pos::spanned(span, error)])
             );
         }

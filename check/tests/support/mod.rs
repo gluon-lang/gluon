@@ -436,7 +436,7 @@ macro_rules! assert_err {
             Err(err) => {
                 let errors = match err {
                     $crate::support::Error::Parser(ref err) => panic!("{}", err),
-                    $crate::support::Error::Check(err) => err.errors(),
+                    $crate::support::Error::Check(err) => err.into_errors(),
                 };
                 let mut iter = (&errors).into_iter();
                 $(
@@ -497,7 +497,7 @@ macro_rules! assert_multi_unify_err {
             Err(err) => {
                 let errors = match err {
                     $crate::support::Error::Parser(ref err) => panic!("{}", err),
-                    $crate::support::Error::Check(err) => err.errors(),
+                    $crate::support::Error::Check(err) => err.into_errors(),
                 };
                 let mut errors_iter = (&errors).into_iter().enumerate();
                 $(

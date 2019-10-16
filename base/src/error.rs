@@ -208,7 +208,11 @@ impl<E: fmt::Display> InFile<E> {
             .name()
     }
 
-    pub fn errors(self) -> Errors<Spanned<E, BytePos>> {
+    pub fn errors(&self) -> &Errors<Spanned<E, BytePos>> {
+        &self.error
+    }
+
+    pub fn into_errors(self) -> Errors<Spanned<E, BytePos>> {
         self.error
     }
 
@@ -323,7 +327,7 @@ where
     }
 }
 
-impl AsDiagnostic for Box<dyn ::std::error::Error + Send + Sync> {
+impl AsDiagnostic for Box<dyn::std::error::Error + Send + Sync> {
     fn as_diagnostic(&self) -> Diagnostic {
         Diagnostic::new_error(self.to_string())
     }
