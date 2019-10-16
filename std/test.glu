@@ -59,18 +59,25 @@ let assert_gte l r : [Show a] -> [Ord a] -> a -> a -> Eff [| writer : Test | r |
 let assert_ok res : [Show e] -> Result e a -> Eff [| writer : Test | r |] () =
     match res with
     | Ok _ -> wrap ()
-    | Err e -> tell (Cons ("Assertion failed: found error " <> show e) Nil)
+    | Err e -> tell (Cons ("Assertion failed: found error: " <> show e) Nil)
 
 let assert_err res : [Show a] -> Result e a -> Eff [| writer : Test | r |] () =
     match res with
     | Ok x -> tell (Cons ("Assertion failed: expected error, found " <> show x) Nil)
     | Err _ -> wrap ()
 
-let assert_errorless : [Show e] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] () =
-    run_error >> flat_map assert_ok
+let assert_success : [Show e]
+        -> Eff [| error : Error e, writer : Test | r |] a
+        -> Eff [| writer : Test | r |] ()
+    =
+    run_error
+        >> flat_map assert_ok
 
-let assert_erroring : forall e . [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] () =
-    run_error >> flat_map assert_err
+let assert_throws : forall e .
+    [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+    =
+    run_error
+        >> flat_map assert_err
 
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
     do test = run_writer test
@@ -99,8 +106,8 @@ rec let run_io test : TestEffIO r a -> IO () =
     assert_neq,
     assert_ok,
     assert_err,
-    assert_errorless,
-    assert_erroring,
+    assert_success,
+    assert_throws,
 
     run_raw,
     run,
