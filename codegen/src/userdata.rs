@@ -26,7 +26,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
 fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
-        quote! { #ty: 'static + ::std::fmt::Debug + Sync + Send }
+        quote! { #ty: 'static + ::std::fmt::Debug + _gluon_gc::Trace + Sync + Send }
     });
 
     let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });

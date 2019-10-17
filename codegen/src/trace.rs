@@ -95,7 +95,7 @@ fn derive_enum(
 
         cons = quote! {
 
-            match self {
+            match *self {
                 #(#variants,)*
             }
         };
@@ -174,8 +174,8 @@ fn gen_variant_match(ident: &Ident, variant: &Variant) -> TokenStream {
     let variant_ident = &variant.ident;
 
     let pattern = match &variant.fields {
-        Fields::Named(_) => quote! { #ident::#variant_ident{ #(#field_idents2),* } },
-        Fields::Unnamed(_) => quote! { #ident::#variant_ident( #(#field_idents2),* ) },
+        Fields::Named(_) => quote! { #ident::#variant_ident{ #(ref #field_idents2),* } },
+        Fields::Unnamed(_) => quote! { #ident::#variant_ident( #(ref #field_idents2),* ) },
         Fields::Unit => quote! { #ident::#variant_ident },
     };
 

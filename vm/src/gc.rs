@@ -11,7 +11,7 @@ use std::{
     ptr::{self, NonNull},
     rc::Rc,
     result::Result as StdResult,
-    sync::Arc,
+    sync::{self, Arc},
 };
 
 use crate::{
@@ -911,6 +911,30 @@ where
 {
     impl_trace! { self, gc,
         mark(&self.get(), gc)
+    }
+}
+
+unsafe impl<T> Trace for sync::Mutex<T>
+where
+    T: Trace,
+{
+    // Don't root/unroot the contents as an unrooted value could be moved out of the Mutex
+    unsafe fn root(&self) {}
+    unsafe fn unroot(&self) {}
+    fn trace(&self, gc: &mut Gc) {
+        self.lock().unwrap_or_else(|err| err.into_inner()).trace(gc)
+    }
+}
+
+unsafe impl<T> Trace for sync::RwLock<T>
+where
+    T: Trace,
+{
+    // Don't root/unroot the contents as an unrooted value could be moved out of the RwLock
+    unsafe fn root(&self) {}
+    unsafe fn unroot(&self) {}
+    fn trace(&self, gc: &mut Gc) {
+        self.read().unwrap_or_else(|err| err.into_inner()).trace(gc)
     }
 }
 

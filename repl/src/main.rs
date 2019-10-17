@@ -259,9 +259,9 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                runtime.block_on(
-                    future::lazy(move || repl::run(color, &prompt, debug_level, use_std_lib))
-                )?;
+                runtime.block_on(future::lazy(move || {
+                    repl::run(color, &prompt, debug_level, use_std_lib)
+                }))?;
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input)?;
             } else {

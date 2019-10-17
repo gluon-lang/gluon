@@ -14,6 +14,7 @@ type State s r a =
     | New : forall b . b -> State s r (STRef s b)
     | Read : STRef s a -> State s r a
     | Write : forall b . b -> STRef s b -> State s r ()
+    | Call : forall b . (() -> b) -> State s r b
     .. r
 
 #[inline(never)]
@@ -24,6 +25,8 @@ let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a = Impu
 
 /// Creates a new mutable reference that contains `a`.
 let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
+
+let make_call = Call
 
 /// Reads the values stored in the reference.
 let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)
@@ -46,6 +49,8 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
             | Write a r ->
                 r.__ref <- a
                 loop (f ())
+            | Call g ->
+                loop (f (g ()))
             | rest ->
                 Impure (inject_rest rest) (loop << f)
     loop eff
@@ -53,9 +58,12 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
 
 {
     State,
+    
+    send_state,
 
     new_ref,
     read_ref,
     write_ref,
     run_state,
+    make_call,
 }
