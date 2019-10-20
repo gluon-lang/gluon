@@ -33,10 +33,9 @@ futures-cpupool = "0.1"
 tokio = "0.1"
 tokio-signal = "0.2"
 clap = "2.22.0"
-structopt = "0.2"
-structopt-derive = "0.2"
+structopt = "0.3"
 log = "0.4"
-env_logger = { version = "0.6", optional = true }
+env_logger = { version = "0.7", optional = true }
 lazy_static = "1"
 rustyline = "5.0.1"
 walkdir = "2"

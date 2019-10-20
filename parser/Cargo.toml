@@ -30,7 +30,7 @@ codespan = "0.3"
 codespan-reporting = "0.3"
 
 [dev-dependencies]
-env_logger = "0.6"
+env_logger = "0.7"
 difference = "2"
 pretty_assertions = "0.6"
 

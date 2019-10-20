@@ -17,7 +17,6 @@ documentation = "https://docs.rs/gluon"
 travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
-backtrace = "0.3"
 bitflags = "1.0.0"
 codespan = "0.3"
 codespan-reporting = "0.3"
@@ -55,7 +54,7 @@ lalrpop = { version = "0.17", optional = true }
 
 [dev-dependencies]
 difference = "2"
-env_logger = "0.6"
+env_logger = "0.7"
 pretty_assertions = "0.6"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon

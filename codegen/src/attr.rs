@@ -3,8 +3,8 @@ use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use syn::{
     self,
     parse::{self, Parse},
-    Ident,
     Meta::*,
+    Path,
 };
 
 fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
@@ -13,8 +13,8 @@ fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
             || attr.path.segments[0].ident == "gluon_trace"
             || attr.path.segments[0].ident == "gluon_userdata")
     {
-        match attr.interpret_meta() {
-            Some(List(ref meta)) => Some(meta.nested.iter().cloned().collect()),
+        match attr.parse_meta() {
+            Ok(List(ref meta)) => Some(meta.nested.iter().cloned().collect()),
             _ => None,
         }
     } else {
@@ -50,30 +50,30 @@ impl Container {
             for meta_item in meta_items {
                 match meta_item {
                     // Parse `#[gluon(crate_name = "foo")]`
-                    Meta(NameValue(ref m)) if m.ident == "crate_name" => {
-                        if let Ok(path) = parse_lit_into_path(&m.ident, &m.lit) {
+                    Meta(NameValue(ref m)) if m.path.is_ident("crate_name") => {
+                        if let Ok(path) = parse_lit_into_path(&m.path, &m.lit) {
                             crate_name = CrateName::Some(path);
                         }
                     }
 
                     // Parse `#[gluon(gluon_vm)]`
-                    Meta(Word(ref w)) if w == "gluon_vm" => {
+                    Meta(Path(ref w)) if w.is_ident("gluon_vm") => {
                         crate_name = CrateName::GluonVm;
                     }
 
-                    Meta(Word(ref w)) if w == "newtype" => {
+                    Meta(Path(ref w)) if w.is_ident("newtype") => {
                         newtype = true;
                     }
 
-                    Meta(NameValue(ref m)) if m.ident == "vm_type" => {
-                        vm_type = Some(get_lit_str(&m.ident, &m.ident, &m.lit).unwrap().value())
+                    Meta(NameValue(ref m)) if m.path.is_ident("vm_type") => {
+                        vm_type = Some(get_lit_str(&m.path, &m.path, &m.lit).unwrap().value())
                     }
 
-                    Meta(Word(ref w)) if w == "skip" => {
+                    Meta(Path(ref w)) if w.is_ident("skip") => {
                         skip = true;
                     }
 
-                    Meta(Word(ref w)) if w == "clone" => {
+                    Meta(Path(ref w)) if w.is_ident("clone") => {
                         clone = true;
                     }
 
@@ -93,18 +93,18 @@ impl Container {
 }
 
 fn get_lit_str<'a>(
-    attr_name: &Ident,
-    _meta_item_name: &Ident,
+    attr_name: &Path,
+    _meta_item_name: &Path,
     lit: &'a syn::Lit,
 ) -> Result<&'a syn::LitStr, ()> {
     if let syn::Lit::Str(ref lit) = *lit {
         Ok(lit)
     } else {
-        panic!("Expected attribute `{}` to be a string", attr_name)
+        panic!("Expected attribute `{:?}` to be a string", attr_name)
     }
 }
 
-fn parse_lit_into_path(attr_name: &Ident, lit: &syn::Lit) -> Result<syn::Path, ()> {
+fn parse_lit_into_path(attr_name: &Path, lit: &syn::Lit) -> Result<syn::Path, ()> {
     let string = get_lit_str(attr_name, attr_name, lit)?;
     parse_lit_str(string).map_err(|_| panic!("failed to parse path: {:?}", string.value()))
 }

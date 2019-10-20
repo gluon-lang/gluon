@@ -3,8 +3,6 @@ extern crate clap;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
-extern crate structopt;
-#[macro_use]
 extern crate lazy_static;
 
 #[macro_use]
@@ -25,6 +23,7 @@ use {
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
     serde::Deserialize,
+    structopt::StructOpt,
 };
 
 use gluon::{
@@ -707,10 +706,7 @@ impl From<&'_ Opt> for Options {
 
 const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 #[derive(StructOpt)]
-#[structopt(
-    about = "Documents gluon source code",
-    raw(long_version = "LONG_VERSION")
-)]
+#[structopt(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {
     #[structopt(long = "open")]
     #[structopt(help = "Opens the documentation after it has been generated")]

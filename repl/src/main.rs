@@ -5,9 +5,6 @@
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-#[allow(unused_imports)]
-#[macro_use]
-extern crate structopt_derive;
 
 #[macro_use]
 extern crate gluon_vm;
@@ -102,7 +99,7 @@ pub enum SubOpt {
 const LONG_VERSION: &str = concat!(clap::crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 
 #[derive(StructOpt)]
-#[structopt(about = "executes gluon programs", raw(long_version = "LONG_VERSION"))]
+#[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
 pub struct Opt {
     #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
     interactive: bool,
@@ -259,9 +256,9 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                runtime.block_on(
-                    future::lazy(move || repl::run(color, &prompt, debug_level, use_std_lib))
-                )?;
+                runtime.block_on(future::lazy(move || {
+                    repl::run(color, &prompt, debug_level, use_std_lib)
+                }))?;
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input)?;
             } else {
