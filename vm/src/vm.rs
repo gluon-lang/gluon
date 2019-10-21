@@ -720,12 +720,19 @@ impl GlobalVmState {
 
     /// Returns a borrowed structure which implements `CompilerEnv`
     pub fn get_env<'t>(&'t self, thread: &'t Thread) -> VmEnvInstance<'t> {
-        let capabilities = self.macros.get_capabilities::<dyn VmEnv>(thread);
+        let capabilities = self.macros.get_capabilities::<Box<dyn VmEnv>>(thread);
         VmEnvInstance {
             vm_envs: capabilities,
             globals: self.env.read().unwrap(),
             thread,
         }
+    }
+
+    pub fn get_capability<'t, T>(&'t self, thread: &'t Thread) -> Option<T>
+    where
+        T: Any,
+    {
+        self.macros.get_capability(thread)
     }
 
     #[doc(hidden)]

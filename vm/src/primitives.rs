@@ -2,17 +2,19 @@
 use crate::real_std::{
     ffi::OsStr,
     fs, io,
+    marker::PhantomData,
     path::{self, Path},
     result::Result as StdResult,
     str::FromStr,
     string::String as StdString,
+    sync::Mutex,
 };
 
 use crate::base::types::ArcType;
 
 use crate::{
     api::{
-        generic::{self, A},
+        generic::{self, A, S},
         primitive, Array, Getable, Opaque, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
         VmType, WithVM, IO,
     },
@@ -347,6 +349,13 @@ mod std {
     }
     pub mod path {
         pub type prim = ::std::path::Path;
+    }
+    pub mod effect {
+        pub mod st {
+            pub mod string {
+                pub use crate::primitives::st_string as prim;
+            }
+        }
     }
 }
 
@@ -686,6 +695,51 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
             is_alphanumeric => primitive!(1, std::char::prim::is_alphanumeric),
             is_control => primitive!(1, std::char::prim::is_control),
             is_numeric => primitive!(1, std::char::prim::is_numeric),
+        },
+    )
+}
+
+pub mod st_string {
+    use super::*;
+
+    pub(crate) fn len(buf: &StringBuf<S>) -> usize {
+        buf.0.lock().unwrap().len()
+    }
+
+    pub(crate) fn slice(
+        buf: &StringBuf<S>,
+        start: usize,
+        end: usize,
+    ) -> RuntimeResult<String, String> {
+        string::slice(&buf.0.lock().unwrap(), start, end).map(|s| s.to_string())
+    }
+
+    pub(crate) fn pop(buf: &StringBuf<S>) -> Option<char> {
+        buf.0.lock().unwrap().pop()
+    }
+
+    pub(crate) fn push_str(buf: &StringBuf<S>, s: &str) {
+        buf.0.lock().unwrap().push_str(s)
+    }
+}
+
+#[derive(Debug, Default, VmType, Userdata, Trace)]
+#[gluon(vm_type = "std.effect.st.string.StringBuf")]
+#[gluon(gluon_vm)]
+pub(crate) struct StringBuf<S>(Mutex<String>, PhantomData<S>);
+
+pub fn load_string_buf(vm: &Thread) -> Result<ExternModule> {
+    vm.register_type::<StringBuf<S>>("std.effect.st.string.StringBuf", &["s"])?;
+
+    ExternModule::new(
+        vm,
+        record! {
+            type StringBuf s => StringBuf<S>,
+            len => primitive!(1, std::effect::st::string::prim::len),
+            new => primitive!(1, "std.effect.st.string.new", |()| StringBuf(Default::default(), PhantomData::<S>)),
+            slice => primitive!(3, std::effect::st::string::prim::slice),
+            pop => primitive!(1, std::effect::st::string::prim::pop),
+            push_str => primitive!(2, std::effect::st::string::prim::push_str)
         },
     )
 }

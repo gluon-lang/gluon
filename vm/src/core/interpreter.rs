@@ -1490,7 +1490,7 @@ pub(crate) mod tests {
 
     fn from_lalrpop<T, U>(
         err: lalrpop_util::ParseError<usize, T, U>,
-    ) -> Spanned<Box<dyn::std::error::Error + Send + Sync>, BytePos>
+    ) -> Spanned<Box<dyn ::std::error::Error + Send + Sync>, BytePos>
     where
         T: fmt::Display,
         U: fmt::Display,
