@@ -101,8 +101,14 @@ rec let run_io test : TestEffIO r a -> IO () =
     group,
 
     assert,
+    
     assert_eq,
     assert_neq,
+    assert_lt,
+    assert_lte,
+    assert_gt,
+    assert_gte,
+ 
     assert_ok,
     assert_err,
     assert_success,
