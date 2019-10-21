@@ -13,7 +13,7 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 clap = "2.22.0"
-env_logger = "0.6"
+env_logger = "0.7"
 failure = { version = "0.1", features = ["backtrace"] }
 handlebars = "2"
 itertools = "0.8"
@@ -21,10 +21,10 @@ lazy_static = "1"
 log = "0.4"
 opener = "0.4"
 pretty = "0.5"
-pulldown-cmark = "0.5"
+pulldown-cmark = "0.6"
 rayon = "1"
 regex = "1"
-structopt = "0.2"
+structopt = "0.3"
 walkdir = "2"
 
 serde = "1.0.0"

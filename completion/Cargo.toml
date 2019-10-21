@@ -21,7 +21,7 @@ gluon_base = { path = "../base", version = "0.12.0" } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
-env_logger = "0.6"
+env_logger = "0.7"
 
 gluon_check = { path = "../check", version = "0.12.0" } # GLUON
 gluon_parser = { path = "../parser", version = "0.12.0" } # GLUON

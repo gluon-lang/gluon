@@ -280,7 +280,7 @@ type Result<T> = ::std::result::Result<T, Error<RcType>>;
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Functor)]
 pub struct Error<T> {
     pub kind: ErrorKind<T>,
-    pub reason: rpds::List<T>,
+    pub reason: rpds::ListSync<T>,
 }
 
 impl<I: fmt::Display + Clone> fmt::Display for Error<I> {
@@ -345,7 +345,7 @@ impl<I: fmt::Display> fmt::Display for ErrorKind<I> {
 }
 
 struct Demand {
-    reason: rpds::List<RcType>,
+    reason: rpds::ListSync<RcType>,
     constraint: RcType,
 }
 
@@ -377,7 +377,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             implicit_bindings_level,
             &mut to_resolve,
             &Demand {
-                reason: rpds::List::new(),
+                reason: Default::default(),
                 constraint: id.typ.clone(),
             },
         ) {
@@ -420,7 +420,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                                 kind: ErrorKind::MissingImplicit(id.typ.clone()),
                                 reason: to_resolve
                                     .first()
-                                    .map_or_else(rpds::List::new, |demand| demand.reason.clone()),
+                                    .map_or_else(Default::default, |demand| demand.reason.clone()),
                             })
                             .into(),
                         });
