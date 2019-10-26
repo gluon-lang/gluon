@@ -168,8 +168,8 @@ mod instant {
         }
     }
 
-    pub(crate) fn elapsed(earlier: &Instant) -> IO<Duration> {
-        IO::Value(Duration(earlier.0.elapsed()))
+    pub(crate) fn elapsed(earlier: &Instant) -> IO<Option<Duration>> {
+        IO::Value(duration_since(earlier, &Instant(time::Instant::now())))
     }
 
     pub(crate) fn checked_add(moment: &Instant, dur: &Duration) -> Option<Instant> {
