@@ -1,5 +1,5 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.13.0")] // # GLUON
 
 use std::{slice, str};
 
