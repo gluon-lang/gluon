@@ -660,9 +660,10 @@ impl OptimizeEnv for DatabaseSnapshot {
     }
 }
 
+
 unsafe impl Trace for DatabaseSnapshot {
-    impl_trace! { self, gc,
-        mark(&**self, gc)
+    fn trace(&self, gc: &mut vm::gc::Gc) {
+        (**self).trace(gc)
     }
 }
 

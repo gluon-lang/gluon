@@ -11,7 +11,7 @@ use base::types::ArcType;
 
 use crate::{
     api::{Opaque, OpaqueValue, Pushable, VmType},
-    gc::Trace,
+    gc::{Gc, Trace},
     thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
     value::Userdata,
     Result,
@@ -188,11 +188,10 @@ unsafe impl<T, M> Trace for Scoped<T, M>
 where
     T: Trace,
 {
-    impl_trace! { self, gc,
-        #[allow(unused_unsafe)]
-        unsafe {
-            if let Some(v) = *self.ptr.read().unwrap() {
-                mark(v.as_ref(), gc);
+    fn trace(&self, gc: &mut Gc) {
+        if let Some(v) = *self.ptr.read().unwrap() {
+            unsafe {
+                v.as_ref().trace(gc);
             }
         }
     }

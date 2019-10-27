@@ -136,7 +136,7 @@ where
 }
 
 unsafe impl<T: VmRootInternal + Trace, F> Trace for Function<T, F> {
-    impl_trace! { self, gc, mark(&self.value, gc) }
+    impl_trace_fields! { self, gc; value }
 }
 
 #[cfg(feature = "serde")]

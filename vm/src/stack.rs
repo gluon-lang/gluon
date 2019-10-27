@@ -410,9 +410,7 @@ pub struct Stack {
 }
 
 unsafe impl Trace for Stack {
-    impl_trace! { self, gc,
-        mark(&self.values, gc)
-    }
+    impl_trace_fields! { self, gc; values }
 }
 
 impl Stack {

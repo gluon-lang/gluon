@@ -45,8 +45,8 @@ pub(crate) type ThreadSlab = slab::Slab<(GcPtr<Thread>, usize)>;
 
 unsafe impl Trace for ThreadSlab {
     impl_trace! { self, gc,
-        for x in self {
-            mark(&x, gc);
+        for (_, (x, _)) in self {
+            mark(x, gc);
         }
     }
 }
@@ -184,9 +184,7 @@ unsafe impl<V> Trace for Global<V>
 where
     V: Trace,
 {
-    impl_trace! { self, gc,
-        mark(&self.value, gc)
-    }
+    impl_trace_fields! { self, gc; value }
 }
 
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
@@ -237,17 +235,40 @@ pub struct GlobalVmState {
 }
 
 unsafe impl Trace for GlobalVmState {
-    impl_trace! { self, gc, {
-        for g in self.env.read().unwrap().globals.values() {
-            mark(g, gc);
+    unsafe fn root(&mut self) {
+        for g in self.env.get_mut().unwrap().globals.values_mut() {
+            g.root();
         }
 
-        mark(&self.macros, gc);
+        self.macros.root();
 
         // Also need to check the interned string table
-        mark(&*self.interner.read().unwrap(), gc);
-        mark(&*self.generation_0_threads.read().unwrap(), gc);
-    } }
+        self.interner.get_mut().unwrap().root();
+        self.generation_0_threads.get_mut().unwrap().root();
+    }
+    unsafe fn unroot(&mut self) {
+        for g in self.env.get_mut().unwrap().globals.values_mut() {
+            g.unroot();
+        }
+
+        self.macros.unroot();
+
+        // Also need to check the interned string table
+        self.interner.get_mut().unwrap().unroot();
+        self.generation_0_threads.get_mut().unwrap().unroot();
+    }
+
+    fn trace(&self, gc: &mut Gc) {
+        for g in self.env.read().unwrap().globals.values() {
+            g.trace(gc);
+        }
+
+        self.macros.trace(gc);
+
+        // Also need to check the interned string table
+        self.interner.read().unwrap().trace(gc);
+        self.generation_0_threads.read().unwrap().trace(gc);
+    }
 }
 
 #[derive(Debug, Default)]
@@ -271,9 +292,7 @@ pub struct Globals {
 }
 
 unsafe impl Trace for Globals {
-    impl_trace! { self, gc, {
-        mark(&self.globals, gc);
-    } }
+    impl_trace_fields! { self, gc; globals }
 }
 
 pub trait VmEnv:
@@ -290,10 +309,7 @@ pub struct VmEnvInstance<'a> {
 }
 
 unsafe impl Trace for VmEnvInstance<'_> {
-    impl_trace! { self, gc, {
-        mark(&self.vm_envs, gc);
-        mark(&*self.globals, gc);
-    } }
+    impl_trace_fields! { self, gc; vm_envs, globals }
 }
 
 impl<'a> OptimizeEnv for VmEnvInstance<'a> {

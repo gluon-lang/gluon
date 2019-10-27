@@ -290,7 +290,8 @@ where
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Trace, PartialEq)]
+#[gluon(gluon_vm)]
 pub(crate) struct Unrooted<T: ?Sized>(Value, PhantomData<T>);
 
 impl<T: ?Sized> From<Value> for Unrooted<T> {
@@ -320,12 +321,6 @@ impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(self.0);
         Ok(())
-    }
-}
-
-unsafe impl<T> Trace for Unrooted<T> {
-    impl_trace! { self, gc,
-        mark(&self.0, gc)
     }
 }
 
