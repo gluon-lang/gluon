@@ -1,3 +1,84 @@
+<a name="v0.13.0"></a>
+## v0.13.0 (2019-10-27)
+
+
+#### Performance
+
+*   Only do one hash lookup when creating a Symbol ([a709c712](https://github.com/gluon-lang/gluon/commit/a709c7120ff151d368128cf7c0a89d667c91015c))
+*   Shrink Type's size to 48 bytes (from 64) ([178180f8](https://github.com/gluon-lang/gluon/commit/178180f8b4555c8ae831d428fc464cb0a4179455))
+*   Avoid RefCell in Fixed* structurs (-1%) ([de32dbd6](https://github.com/gluon-lang/gluon/commit/de32dbd631beb0958c7c0fcb655807fda874a2a7))
+*   Avoid recursion in implicits.rs ([89eb836a](https://github.com/gluon-lang/gluon/commit/89eb836afbd2e5d43324c141fad52b761816c754))
+*   Only mark types with unbound generics as HAS_GENERICS ([3d835a8a](https://github.com/gluon-lang/gluon/commit/3d835a8adaf2b3c63ef31d512780c9b6de2be5d8))
+*   Avoid computing the plain name in name_eq (-3%) ([a7ac9f80](https://github.com/gluon-lang/gluon/commit/a7ac9f800d7f1ad944d81140dfe6be99d59f7943))
+* **check:**
+  *  Use RefCell::get_mut when possible ([12441438](https://github.com/gluon-lang/gluon/commit/1244143838ed56fcc7d257ef6f9288d38754f60d))
+  *  Remove redundant operations in union ([f3d4203a](https://github.com/gluon-lang/gluon/commit/f3d4203a44074467e40240afc2cbf5547403efcc))
+  *  No need to lookup the type again before querying the level ([5e4efe37](https://github.com/gluon-lang/gluon/commit/5e4efe37386f4d937fa8afa8b8d06b4aed7c738e))
+  *  Remove some branches in the occurs check¨ ([03e7c3b4](https://github.com/gluon-lang/gluon/commit/03e7c3b4b22e5abd53b2af64f09849ba0ca43b32))
+  *  Only initialize the variable generator when it is necessary (-3%) ([793b6580](https://github.com/gluon-lang/gluon/commit/793b658082f71f016655f7f4f3e44432814116fa))
+  *  Only do one lookup/insertion on the implicit definition map ([0ea13ff1](https://github.com/gluon-lang/gluon/commit/0ea13ff1923527bbc69a5fa44ce905fe2a4c593d))
+  *  Narrow down the implicit parititioning further (-10%) ([a9c965b4](https://github.com/gluon-lang/gluon/commit/a9c965b418cbff642d5c8a0c9c3c7821b610eb12))
+  *  Avoid looking through metadata when checking for an implicit type ([4a3662e9](https://github.com/gluon-lang/gluon/commit/4a3662e9e108b902ed61f17d9e2da204d29e54bf))
+  *  Only add implicit fields if the binding is implicit ([da861eba](https://github.com/gluon-lang/gluon/commit/da861ebad00a6f336d7fc7cbc99bf8703cd4b567), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+* **optimize:**  Allocate core syntax directly into arenas ([723ec4d6](https://github.com/gluon-lang/gluon/commit/723ec4d6e2026865ac3cfca29253786dc6bbee49))
+* **parser:**
+  *  Shrink the Token type and remove it's need to Drop ([3016f251](https://github.com/gluon-lang/gluon/commit/3016f251b35f01da81ab8ea51e2ea8f62c1ac870))
+  *  Simplify tokenization iterators ([c7061c7b](https://github.com/gluon-lang/gluon/commit/c7061c7bef60b3ab3367dd06399d3bf5b8deae84))
+* **vm:**
+  *  Add function inlining ([5093137a](https://github.com/gluon-lang/gluon/commit/5093137a42f2b9ad757f5b712ad9a1a192b22b5e))
+  *  Eliminate redundant match expressions ([945fb83d](https://github.com/gluon-lang/gluon/commit/945fb83df71a2fdca4353aedf9ff1349aa53ea01))
+  *  Implement inter-module dead code elimination ([ab1b1b80](https://github.com/gluon-lang/gluon/commit/ab1b1b806fa4a99f1955ff1a2896b81cdd7b016d))
+  *  Avoid tracing global values unless we are in the root gc (-7%) ([48a5313e](https://github.com/gluon-lang/gluon/commit/48a5313ebea8751a3815d2664a1ab001b399a8cb))
+  *  Avoid the bounds check when fetching instructions ([c2778e7f](https://github.com/gluon-lang/gluon/commit/c2778e7fda9f424d710e9ac96f0d10051766e6f1))
+  *  Faster updates to the stack frame ([2b94a3af](https://github.com/gluon-lang/gluon/commit/2b94a3af600a8bea64478384535fe378ba74a08d))
+  *  Cache the frame offset for the stack (-20%) ([0469cb2e](https://github.com/gluon-lang/gluon/commit/0469cb2ef5bad94c3d52b52fd8186aa424c035e5))
+  *  Copy instead of clone unrooted gc values ([a0396f40](https://github.com/gluon-lang/gluon/commit/a0396f4039641ad228b3cce2b0bfa0f443742c57))
+
+#### Breaking Changes
+
+*   Replace Compiler with the ThreadExt trait ([c16132eb](https://github.com/gluon-lang/gluon/commit/c16132eb2c817926aba6a89b33f63b917bb71458), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+* **check:**  Only add implicit fields if the binding is implicit ([da861eba](https://github.com/gluon-lang/gluon/commit/da861ebad00a6f336d7fc7cbc99bf8703cd4b567), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+#### Bug Fixes
+
+*   Don't leak implicit bindings into adjacent scopes ([5681ffc5](https://github.com/gluon-lang/gluon/commit/5681ffc5c611dfbad235256f053b11525b91542c), closes [#783](https://github.com/gluon-lang/gluon/issues/783))
+*   ignore formatting in std.test due to a bug ([bdccee6f](https://github.com/gluon-lang/gluon/commit/bdccee6f53411d113b9bd8dd1e89cbb5dff9ace4))
+*   rerefix formatting ([31166161](https://github.com/gluon-lang/gluon/commit/31166161c78e4f38dca50daa695c0af994d70bbe))
+*   refix formatting ([fcb7f0bb](https://github.com/gluon-lang/gluon/commit/fcb7f0bb56343f314b3d126b5ebfa95f572f9ee0))
+*   fix formatting and apply naming suggesions ([6bb0d87c](https://github.com/gluon-lang/gluon/commit/6bb0d87cabf329f0a2585efd0e8daec4eca2c3ca))
+*   Make the behaviour consistent for `Show Char` ([0ff89870](https://github.com/gluon-lang/gluon/commit/0ff89870fe064c3b8c524e862f07a5faaa85dd14))
+*   Avoid infinite loops/extremely slow optimization ([dc7ec72a](https://github.com/gluon-lang/gluon/commit/dc7ec72ab053de68533f794621ea756fe66c35b0))
+*   Expand macros inside macros ([5a294330](https://github.com/gluon-lang/gluon/commit/5a2943300b9010acf3913c535c983f10af4c9ec7))
+*   Invalidate text properly so rexpect tests work ([92e45081](https://github.com/gluon-lang/gluon/commit/92e4508172607ae99e3de5d75a3874832682c470))
+*   Don't depend on ansi_term in windows to make windows 7 work ([58e2a8b9](https://github.com/gluon-lang/gluon/commit/58e2a8b940f89abcdaaf0e0beafcc9f6bf04cabf), closes [#777](https://github.com/gluon-lang/gluon/issues/777))
+*   Add tests and fix the regression with clone_userdata ([df078725](https://github.com/gluon-lang/gluon/commit/df078725965297c2920403d5ffc1c230273058d5))
+*   Ensure that threads are dropped when using child threads ([b9efb513](https://github.com/gluon-lang/gluon/commit/b9efb513527c0ce51eef648f69b48e2252929365))
+* **check:**  Handle aliases better in `do` ([770e52ea](https://github.com/gluon-lang/gluon/commit/770e52ea202d9fe1648b36f90cb9bab64d09b906), closes [#766](https://github.com/gluon-lang/gluon/issues/766))
+* **repl:**  make the REPL respect --no-std ([e7974706](https://github.com/gluon-lang/gluon/commit/e79747067ca6538581ee4c3d2fe6631a087db53d))
+* **std:**  export missing assertions in std.test ([41f4fc52](https://github.com/gluon-lang/gluon/commit/41f4fc524c00243b71a1fce01a134a2a08ce145f))
+* **vm:**
+  *  Don't (rust) panic in string.split_at ([50f937b3](https://github.com/gluon-lang/gluon/commit/50f937b3598adc52f8ec5eec19f6701d38c2fd38), closes [#757](https://github.com/gluon-lang/gluon/issues/757))
+  *  Accept trailing comma in record macros ([f35c0b96](https://github.com/gluon-lang/gluon/commit/f35c0b96c255d209daf3b9e33362af4c5e1cdb38), closes [#770](https://github.com/gluon-lang/gluon/issues/770))
+
+#### Features
+
+*   Use implicit Monoids in std.foldable ([295b8c3d](https://github.com/gluon-lang/gluon/commit/295b8c3dfc3db3e4d5bd17e5b14ed4fdf4eb0362))
+*   Add a mutable string type to the ST monad ([9ec946b4](https://github.com/gluon-lang/gluon/commit/9ec946b418842c6ac136406230d96e102d86b7fe))
+*   Allow attributes to be specified on fields inside types ([fb35db51](https://github.com/gluon-lang/gluon/commit/fb35db5153161d1ee393ae29bc9adfc1db553458))
+*   Provide std.effect.io as a mirror of std.io ([66e49b37](https://github.com/gluon-lang/gluon/commit/66e49b37196db18c36909900c46ccdc69254a7b0))
+*   Replace Compiler with the ThreadExt trait ([c16132eb](https://github.com/gluon-lang/gluon/commit/c16132eb2c817926aba6a89b33f63b917bb71458), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Use salsa for incremental compilation ([7bc82532](https://github.com/gluon-lang/gluon/commit/7bc82532f5aa7f9787d385ce97f0a769594b8064))
+*   Add history hints and bracket highlight to the REPL ([10ef8cdf](https://github.com/gluon-lang/gluon/commit/10ef8cdf39baa5ad0cc7dd6817e59b8ea04f028f))
+*   Use line/column numbers in lambda names ([201fdfb9](https://github.com/gluon-lang/gluon/commit/201fdfb9ed132adfca8055abae84a9ea8f00dcf8))
+* **codegen:**  Map Rust's struct enums to records in Gluon. ([afb682e5](https://github.com/gluon-lang/gluon/commit/afb682e55d6115748a9861ff3086c934fe74afcf))
+* **repl:**  add --no-std option to gluon.exe ([f2c1819f](https://github.com/gluon-lang/gluon/commit/f2c1819f9fc5ba3cb8d5d005b5ae61c1c74af658))
+* **std:**
+  *  add ordering assertions ([3efac996](https://github.com/gluon-lang/gluon/commit/3efac9963deb031e78462d00e49d090ab911cbd4))
+  *  add a few functions to std.test & std.effect.error ([58e00431](https://github.com/gluon-lang/gluon/commit/58e00431a815ebdd7dae94a4d58a0c621d22aafd))
+* **vm:**  Make macro errors implement PartialEq, Eq, Hash and Clone ([039825ab](https://github.com/gluon-lang/gluon/commit/039825abebc4fcd445c08574bd3cc0dd6f97a69f))
+
+
+
 <a name="v0.12.0"></a>
 ## v0.12.0 (2019-07-06)
 

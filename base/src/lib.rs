@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/gluon_base/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_base/0.13.0")] // # GLUON
 #![allow(unknown_lints)]
 //! The base crate contains pervasive types used in the compiler such as type representations, the
 //! AST and some basic containers.
