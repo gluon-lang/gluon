@@ -356,11 +356,13 @@ impl<'a> Typecheck<'a> {
     fn enter_scope(&mut self) {
         self.environment.stack.enter_scope();
         self.environment.stack_types.enter_scope();
+        self.implicit_resolver.enter_scope();
     }
 
     fn exit_scope(&mut self) {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
+        self.implicit_resolver.exit_scope();
     }
 
     fn generalize_binding(
@@ -1872,7 +1874,6 @@ impl<'a> Typecheck<'a> {
 
         let mut types = Vec::new();
         for (i, bind) in bindings.iter_mut().enumerate() {
-            self.implicit_resolver.enter_scope();
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let typ = if !is_recursive {
@@ -1977,11 +1978,6 @@ impl<'a> Typecheck<'a> {
 
             debug!("End generalize recursive");
         }
-        // Update the implicit bindings with the generalized types we just created
-        let stack = &self.environment.stack;
-        self.implicit_resolver
-            .implicit_bindings
-            .update(|name| stack.get(name).map(|b| b.typ.concrete.clone()));
 
         debug!("Typecheck `in`");
         self.environment.type_variables.exit_scope();
@@ -3253,10 +3249,6 @@ fn generalize_binding(
     binding: &mut ValueBinding<Symbol>,
 ) {
     crate::implicits::resolve(generalizer.tc, &mut binding.expr);
-    generalizer
-        .tc
-        .implicit_resolver
-        .exit_scope(&generalizer.tc.subs);
 
     generalizer.generalize_type_top(resolved_type);
 }

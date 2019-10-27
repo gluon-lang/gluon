@@ -75,7 +75,7 @@ f 42
 "#;
     let (expr, result) = support::typecheck_expr(text);
 
-    assert_eq!(result, Ok(Type::int()));
+    assert_req!(result, Ok(Type::int()));
     assert_eq!(
         r#"let f ?__implicit_arg y : [Int] -> Int -> Int = y
 #[implicit]
@@ -220,7 +220,7 @@ f (Test ())
     let result = support::typecheck(text);
 
     let test = support::alias_variant_implicit("Test", &[], &[("Test", &[Type::unit()])], true);
-    assert_eq!(result, Ok(test));
+    assert_req!(result, Ok(test));
 }
 
 test_check! {
@@ -1143,4 +1143,36 @@ let x : TestInt =
 x
 "#,
 "test.TestInt"
+}
+
+test_check! {
+implicits_in_multiple_scopes,
+r#"
+#[implicit]
+type Test a = { x : a }
+
+let module =
+    let test: Test Int = { x = 0 }
+    { test }
+
+let module2 =
+    let test: Test Int = { x = 1 }
+    { test }
+
+let test ?t : [Test a] -> a = t.x
+
+[
+    (\_ ->
+        let { ? } = module
+        let x: Int = test
+        x
+    ),
+    (\_ ->
+        let { ? } = module2
+        let x: Int = test
+        x
+    ),
+]
+"#,
+"forall a . Array (a -> Int)"
 }
