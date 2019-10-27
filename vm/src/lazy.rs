@@ -71,10 +71,10 @@ enum Lazy_ {
 
 unsafe impl<T> Trace for Lazy<T> {
     impl_trace! { self, gc,
-        match *self.value.lock().unwrap() {
+        match &mut *self.value.lock().unwrap() {
             Lazy_::Blackhole(..) => (),
-            Lazy_::Thunk(ref value) => mark(value, gc),
-            Lazy_::Value(ref value) => mark(value, gc),
+            Lazy_::Thunk(value) => mark(value, gc),
+            Lazy_::Value(value) => mark(value, gc),
         }
     }
 }

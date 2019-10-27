@@ -109,8 +109,13 @@ pub struct Interner {
 
 unsafe impl Trace for Interner {
     impl_trace! { self, gc,
-        for (_, v) in self.indexes.iter() {
-            mark::<GcStr>(&v.0, gc);
+        match self {
+            Self { indexes, .. } =>
+                for (_, v) in indexes {
+                    match v {
+                        InternedStr(x) => mark::<GcStr>(x, gc),
+                    }
+                },
         }
     }
 }

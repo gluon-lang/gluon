@@ -17,7 +17,6 @@ use std::{
 };
 
 use {
-    crossbeam_utils::atomic::AtomicCell,
     futures::{
         future::{self, Either, FutureResult},
         try_ready, Async, Future, Poll,
@@ -71,7 +70,7 @@ where
         }
     }
 
-    pub fn root(&self) -> Execute<RootedThread> {
+    pub fn root(&mut self) -> Execute<RootedThread> {
         Execute {
             thread: self.thread.as_ref().map(|t| t.root_thread()),
         }
@@ -152,7 +151,7 @@ where
     T: VmRootInternal,
 {
     vm: T,
-    rooted: AtomicCell<bool>,
+    rooted: bool,
     value: Value,
 }
 
@@ -170,10 +169,10 @@ unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         self.root_();
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -206,7 +205,7 @@ where
     T: VmRootInternal,
 {
     fn drop(&mut self) {
-        if self.rooted.load() {
+        if self.rooted {
             self.unroot_();
         }
     }
@@ -248,7 +247,7 @@ where
             .push(value.clone_unrooted());
         RootedValue {
             vm,
-            rooted: AtomicCell::new(true),
+            rooted: true,
             value: value.clone_unrooted(),
         }
     }
@@ -300,18 +299,18 @@ where
         self.vm.root_value(self.get_variant())
     }
 
-    unsafe fn root_(&self) {
+    unsafe fn root_(&mut self) {
         self.vm.root_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        assert!(!self.rooted.load());
-        self.rooted.store(true);
+        assert!(self.rooted);
+        self.rooted = true;
         rooted_values.push(self.value.clone_unrooted());
     }
 
-    fn unroot_(&self) {
+    fn unroot_(&mut self) {
         self.vm.unroot_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        self.rooted.store(false);
+        self.rooted = false;
         let i = rooted_values
             .iter()
             .position(|p| p.obj_eq(&self.value))
@@ -331,10 +330,10 @@ struct Roots<'b> {
     stack: &'b Stack,
 }
 unsafe impl<'b> Trace for Roots<'b> {
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         unreachable!()
     }
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         unreachable!()
     }
 
@@ -394,11 +393,12 @@ impl<'b> Roots<'b> {
                 continue;
             }
 
-            let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
-            let child_threads = thread.child_threads.read().unwrap();
-            stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
+            let thread = &*(&*thread_ptr as *const Thread);
 
             let context = thread.context.lock().unwrap();
+
+            let child_threads = thread.child_threads.read().unwrap();
+            stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
 
             // Since we locked the context we need to scan the thread using `Roots` rather than
             // letting it be scanned normally
@@ -474,10 +474,10 @@ impl VmType for Thread {
 }
 
 unsafe impl Trace for Thread {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         // Thread is always behind a `GcPtr`
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         // Ditto
     }
     fn trace(&self, gc: &mut Gc) {
@@ -526,12 +526,8 @@ pub struct RootedThread {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     thread: GcPtr<Thread>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    rooted: AtomicCell<bool>,
+    rooted: bool,
 }
-
-// TODO Remove when crossbeam implements this for AtomicCell
-impl std::panic::RefUnwindSafe for RootedThread {}
-impl std::panic::UnwindSafe for RootedThread {}
 
 #[cfg(feature = "serde_derive")]
 impl<'de, 'gc> serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc>>
@@ -590,7 +586,7 @@ impl Drop for Thread {
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
-        if self.rooted.load() {
+        if self.rooted {
             let is_empty = self.unroot_();
             if is_empty {
                 // The last RootedThread was dropped, there is no way to refer to the global state any
@@ -633,10 +629,10 @@ impl Clone for RootedThread {
 }
 
 unsafe impl Trace for RootedThread {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         self.root_();
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -694,7 +690,7 @@ impl RootedThread {
     /// Converts a `RootedThread` into a raw pointer allowing to be passed through a C api.
     /// The reference count for the thread is not modified
     pub fn into_raw(self) -> *const Thread {
-        assert!(self.rooted.load());
+        assert!(self.rooted);
         let ptr: *const Thread = &*self.thread;
         ::std::mem::forget(self);
         ptr
@@ -706,24 +702,24 @@ impl RootedThread {
     pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
         RootedThread {
             thread: GcPtr::from_raw(ptr),
-            rooted: AtomicCell::new(true),
+            rooted: true,
         }
     }
 
-    fn root_(&self) {
+    fn root_(&mut self) {
+        assert!(!self.rooted);
+        self.rooted = true;
         let mut parent_threads_lock = self.parent_threads();
-        assert!(!self.rooted.load());
-        self.rooted.store(true);
         parent_threads_lock[self.thread_index].1 += 1;
     }
 
-    fn unroot_(&self) -> bool {
+    fn unroot_(&mut self) -> bool {
         let root_count = {
-            let mut roots = self.parent_threads();
-            if !self.rooted.load() {
+            if !self.rooted {
                 return false;
             }
-            self.rooted.store(false);
+            self.rooted = false;
+            let mut roots = self.parent_threads();
             let (_, root_count) = &mut roots[self.thread_index];
             assert!(*root_count > 0);
             *root_count -= 1;
@@ -796,7 +792,7 @@ impl Thread {
             self.parent_threads()[self.thread_index].1 += 1;
             RootedThread {
                 thread,
-                rooted: AtomicCell::new(true),
+                rooted: true,
             }
         }
     }
@@ -1029,9 +1025,9 @@ pub trait VmRoot<'a>: VmRootInternal + 'a {
 }
 
 pub trait VmRootInternal: Deref<Target = Thread> + Clone {
-    fn root_vm(&self);
+    fn root_vm(&mut self);
 
-    fn unroot_vm(&self);
+    fn unroot_vm(&mut self);
 
     /// Roots a value
     unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
@@ -1049,9 +1045,9 @@ impl<'a> VmRoot<'a> for &'a Thread {
 }
 
 impl<'a> VmRootInternal for &'a Thread {
-    fn root_vm(&self) {}
+    fn root_vm(&mut self) {}
 
-    fn unroot_vm(&self) {}
+    fn unroot_vm(&mut self) {}
 }
 
 impl<'a> VmRoot<'a> for RootedThread {
@@ -1061,11 +1057,11 @@ impl<'a> VmRoot<'a> for RootedThread {
 }
 
 impl VmRootInternal for RootedThread {
-    fn root_vm(&self) {
+    fn root_vm(&mut self) {
         self.root_();
     }
 
-    fn unroot_vm(&self) {
+    fn unroot_vm(&mut self) {
         self.unroot_();
     }
 }

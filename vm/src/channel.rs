@@ -66,9 +66,7 @@ impl<T> Sender<T> {
 }
 
 unsafe impl<T> Trace for Receiver<T> {
-    impl_trace! { self, gc,
-        mark(&*self.queue.lock().unwrap(), gc)
-    }
+    impl_trace_fields! { self, gc; queue }
 }
 
 pub struct Receiver<T> {

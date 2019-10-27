@@ -12,6 +12,8 @@ use {
     futures::Future,
 };
 
+use gluon_codegen::Trace;
+
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
     error::{AsDiagnostic, Errors as BaseErrors},
@@ -251,13 +253,10 @@ where
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
-#[derive(Default)]
+#[derive(Trace, Default)]
+#[gluon(gluon_vm)]
 pub struct MacroEnv {
     macros: RwLock<FnvMap<String, Arc<dyn Macro>>>,
-}
-
-unsafe impl Trace for MacroEnv {
-    impl_trace! { self, gc, mark(&*self.macros.read().unwrap(), gc) }
 }
 
 impl MacroEnv {
