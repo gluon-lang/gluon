@@ -16,11 +16,9 @@ use std::{
     usize,
 };
 
-use {
-    futures::{
-        future::{self, Either, FutureResult},
-        try_ready, Async, Future, Poll,
-    },
+use futures::{
+    future::{self, Either, FutureResult},
+    try_ready, Async, Future, Poll,
 };
 
 use crate::base::{
@@ -264,6 +262,10 @@ where
         &self.vm
     }
 
+    pub fn vm_mut(&mut self) -> &mut T {
+        &mut self.vm
+    }
+
     pub fn clone_vm(&self) -> T
     where
         T: Clone,
@@ -384,7 +386,7 @@ impl<'b> Roots<'b> {
         let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
         let child_threads = self.vm.child_threads.read().unwrap();
-        stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
+        stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
         while let Some(thread_ptr) = stack.pop() {
             if locks.iter().any(|&(_, _, ref lock_thread)| {
@@ -398,7 +400,7 @@ impl<'b> Roots<'b> {
             let context = thread.context.lock().unwrap();
 
             let child_threads = thread.child_threads.read().unwrap();
-            stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
+            stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
             // Since we locked the context we need to scan the thread using `Roots` rather than
             // letting it be scanned normally
@@ -579,37 +581,32 @@ impl Drop for Thread {
         }
 
         let mut parent_threads = self.parent_threads();
-        debug_assert!(parent_threads[self.thread_index].1 == 0);
         parent_threads.remove(self.thread_index);
     }
 }
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
-        if self.rooted {
-            let is_empty = self.unroot_();
-            if is_empty {
-                // The last RootedThread was dropped, there is no way to refer to the global state any
-                // longer so drop everything
-                let mut gc_ref = self.thread.global_state.gc.lock().unwrap_or_else(|err| {
-                    // Ignore poisoning since we don't need to interact with the Gc values, only
-                    // drop them
-                    err.into_inner()
-                });
-                let mut gc_to_drop =
-                    std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
-                // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
-                // when the Gc is dropped
-                drop(gc_ref);
+        if self.rooted && self.unroot_() {
+            // The last RootedThread was dropped, there is no way to refer to the global state any
+            // longer so drop everything
+            let mut gc_ref = self.thread.global_state.gc.lock().unwrap_or_else(|err| {
+                // Ignore poisoning since we don't need to interact with the Gc values, only
+                // drop them
+                err.into_inner()
+            });
+            let mut gc_to_drop = std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
+            // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
+            // when the Gc is dropped
+            drop(gc_ref);
 
-                // Macros can contain unrooted thread references via the database so we must drop those first
-                self.global_state.get_macros().clear();
+            // Macros can contain unrooted thread references via the database so we must drop those first
+            self.global_state.get_macros().clear();
 
-                // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
-                // droppting the thread
-                unsafe {
-                    gc_to_drop.clear();
-                }
+            // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
+            // droppting the thread
+            unsafe {
+                gc_to_drop.clear();
             }
         }
     }
@@ -673,7 +670,7 @@ impl RootedThread {
             let entry = parent_threads.vacant_entry();
             ptr.thread_index = entry.key();
             let ptr = GcPtr::from(ptr);
-            entry.insert((ptr.unrooted(), 0));
+            entry.insert(ptr.unrooted());
             ptr
         };
 
@@ -709,8 +706,9 @@ impl RootedThread {
     fn root_(&mut self) {
         assert!(!self.rooted);
         self.rooted = true;
-        let mut parent_threads_lock = self.parent_threads();
-        parent_threads_lock[self.thread_index].1 += 1;
+        self.global_state
+            .thread_reference_count
+            .fetch_add(1, atomic::Ordering::Relaxed);
     }
 
     fn unroot_(&mut self) -> bool {
@@ -719,33 +717,15 @@ impl RootedThread {
                 return false;
             }
             self.rooted = false;
-            let mut roots = self.parent_threads();
-            let (_, root_count) = &mut roots[self.thread_index];
-            assert!(*root_count > 0);
-            *root_count -= 1;
-            *root_count
+            let root_count = self
+                .global_state
+                .thread_reference_count
+                .fetch_sub(1, atomic::Ordering::Release);
+            assert!(root_count > 0);
+            root_count - 1
         };
 
-        if root_count == 0 {
-            fn is_unrooted(thread: &Thread) -> bool {
-                let child_threads = thread.child_threads.read().unwrap();
-                child_threads
-                    .iter()
-                    .all(|(_, (t, count))| *count == 0 && is_unrooted(t))
-            }
-
-            let mut top = &**self;
-            while let Some(thread) = &top.parent {
-                top = thread;
-            }
-
-            let child_threads = top.parent_threads_read();
-            child_threads
-                .iter()
-                .all(|(_, (t, count))| *count == 0 && is_unrooted(t))
-        } else {
-            false
-        }
+        root_count == 0
     }
 }
 
@@ -776,7 +756,7 @@ impl Thread {
                 let entry = parent_threads.vacant_entry();
                 ptr.thread_index = entry.key();
                 let ptr = GcRef::from(ptr).unrooted();
-                entry.insert((ptr.clone_unrooted(), 0));
+                entry.insert(ptr.clone_unrooted());
                 ptr
             }
         };
@@ -789,7 +769,20 @@ impl Thread {
     pub fn root_thread(&self) -> RootedThread {
         unsafe {
             let thread = GcPtr::from_raw(self);
-            self.parent_threads()[self.thread_index].1 += 1;
+
+            // Using a relaxed ordering is alright here, as knowledge of the
+            // original reference prevents other threads from erroneously deleting
+            // the object.
+            let old_count = self
+                .global_state
+                .thread_reference_count
+                .fetch_add(1, atomic::Ordering::Relaxed);
+
+            const MAX_REFCOUNT: usize = std::isize::MAX as usize;
+            if old_count > MAX_REFCOUNT {
+                std::process::abort();
+            }
+
             RootedThread {
                 thread,
                 rooted: true,
@@ -984,13 +977,6 @@ impl Thread {
         match self.parent {
             Some(ref parent) => parent.child_threads.write().unwrap(),
             None => self.global_state.generation_0_threads.write().unwrap(),
-        }
-    }
-
-    fn parent_threads_read(&self) -> sync::RwLockReadGuard<ThreadSlab> {
-        match self.parent {
-            Some(ref parent) => parent.child_threads.read().unwrap(),
-            None => self.global_state.generation_0_threads.read().unwrap(),
         }
     }
 

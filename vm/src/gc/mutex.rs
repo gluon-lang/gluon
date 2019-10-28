@@ -110,7 +110,11 @@ where
         self.mutex.get_mut()
     }
 
-    fn new_guard<'a>(&'a self, rooted: bool, mut value: sync::MutexGuard<'a, T>) -> MutexGuard<'a, T> {
+    fn new_guard<'a>(
+        &'a self,
+        rooted: bool,
+        mut value: sync::MutexGuard<'a, T>,
+    ) -> MutexGuard<'a, T> {
         if !rooted {
             unsafe {
                 value.root();
@@ -232,7 +236,7 @@ mod tests {
     #[test]
     fn unrooted() {
         let rooted = Cell::new(true);
-        let mutex = Mutex::new(Rooted(&rooted));
+        let mut mutex = Mutex::new(Rooted(&rooted));
         // Emulate this `Mutex` being unrooted (stored in another root)
         unsafe {
             mutex.unroot();
@@ -249,7 +253,7 @@ mod tests {
     #[test]
     fn unroot_during_lock() {
         let rooted = Cell::new(true);
-        let mutex = Mutex::new(Rooted(&rooted));
+        let mut mutex = Mutex::new(Rooted(&rooted));
 
         assert!(rooted.get());
         {

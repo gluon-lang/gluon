@@ -2,7 +2,7 @@ use std::{
     any::{Any, TypeId},
     result::Result as StdResult,
     string::String as StdString,
-    sync::{self, Arc, Mutex, RwLock, RwLockReadGuard},
+    sync::{self, atomic::AtomicUsize, Arc, Mutex, RwLock, RwLockReadGuard},
     usize,
 };
 
@@ -41,11 +41,11 @@ pub use crate::{
     value::Userdata,
 };
 
-pub(crate) type ThreadSlab = slab::Slab<(GcPtr<Thread>, usize)>;
+pub(crate) type ThreadSlab = slab::Slab<GcPtr<Thread>>;
 
 unsafe impl Trace for ThreadSlab {
     impl_trace! { self, gc,
-        for (_, (x, _)) in self {
+        for (_, x) in self {
             mark(x, gc);
         }
     }
@@ -232,6 +232,13 @@ pub struct GlobalVmState {
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     debug_level: RwLock<DebugLevel>,
+
+    /// Tracks how many `RootedThread`s exist that refer to this global state.
+    /// Only when all `RootedThread`s are dropped are we sure that we can drop any thread without
+    /// resorting to garbage collection
+    // The references gets added automatically when recreating the threads
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    pub(crate) thread_reference_count: AtomicUsize,
 }
 
 unsafe impl Trace for GlobalVmState {
@@ -545,6 +552,7 @@ impl GlobalVmStateBuilder {
             type_cache: TypeCache::default(),
             generation_0_threads: Default::default(),
             debug_level: RwLock::new(DebugLevel::default()),
+            thread_reference_count: Default::default(),
         };
         vm.add_types().unwrap();
         vm
