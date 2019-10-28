@@ -401,7 +401,7 @@ fn handlebars() -> Result<Handlebars> {
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
-        let relative_path = current_module.split('.').map(|_| "../").format("");
+        let relative_path = current_module.split('.').skip(1).map(|_| "../").format("");
 
         out.write(&format!(r#"
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
