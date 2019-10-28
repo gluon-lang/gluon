@@ -83,8 +83,7 @@ SingleComma: () = {
 };
 
 Sep<Rule, Separator>: Vec<Rule> =
-    <rules: (<Rule> Separator)*> <last: Rule?> => {
-        let mut rules = rules;
+    <mut rules: (<Rule> Separator)*> <last: Rule?> => {
         rules.extend(last);
         rules
     };
@@ -155,7 +154,7 @@ Any: () = {
     "[" AttributeContents "]",
     "{" AttributeContents "}",
 };
- 
+
 AttributeContents: () = {
     Any*
 };
@@ -275,8 +274,7 @@ VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
         (Vec::new(), row, rest)
     },
 
-    "forall" <args: Ident+> "." "(" <ty: VariantType> ")" => {
-        let mut ty = ty;
+    "forall" <args: Ident+> "." "(" <mut ty: VariantType> ")" => {
         ty.0.extend(args);
         ty
     }
@@ -611,8 +609,7 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
 };
 
 ValueBinding: Box<ValueBinding<Id>> = {
-    <metadata: Metadata?> <bind: PlainValueBinding> => {
-        let mut bind = bind;
+    <metadata: Metadata?> <mut bind: PlainValueBinding> => {
         bind.metadata = metadata.unwrap_or_default();
         bind
     }
@@ -859,8 +856,7 @@ DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
 };
 
 BlockExpr: Expr<Id> = {
-    "block open" <exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
-        let mut exprs = exprs;
+    "block open" <mut exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
         exprs.push(last);
         Expr::Block(exprs)
     },
