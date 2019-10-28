@@ -249,27 +249,4 @@ mod tests {
         }
         assert!(!rooted.get());
     }
-
-    #[test]
-    fn unroot_during_lock() {
-        let rooted = Cell::new(true);
-        let mut mutex = Mutex::new(Rooted(&rooted));
-
-        assert!(rooted.get());
-        {
-            let _lock = mutex.lock().unwrap();
-            assert!(rooted.get());
-
-            // Emulate this `Mutex` being unrooted (stored in another root)
-            unsafe {
-                mutex.unroot();
-            }
-            assert!(!*mutex.rooted.lock().unwrap());
-            assert!(
-                rooted.get(),
-                "We should not be able to unroot the inner value since it is locked"
-            );
-        }
-        assert!(!rooted.get(), "Must be unrooted after the lock releases");
-    }
 }
