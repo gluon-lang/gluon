@@ -18,5 +18,5 @@ declare -a PROJECTS=(
 for PROJECT in "${PROJECTS[@]}"
 do
     sleep 4
-    (cd $PROJECT && cargo check && cargo publish $@)
+    (cd $PROJECT && cargo publish $@)
 done

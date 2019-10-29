@@ -36,6 +36,8 @@ main() {
     cd $src
 
     rm -rf $stage
+
+    mv $src/$CRATE_NAME-$TRAVIS_TAG-$TARGET.tar.gz target/
 }
 
 main
