@@ -705,7 +705,7 @@ impl PostDeserialize for Thread {
         ptr.thread_index = entry.key();
         let ptr = GcRef::from(ptr);
         unsafe {
-            entry.insert((ptr.clone().unrooted(), 0));
+            entry.insert(ptr.clone().unrooted());
         }
         ptr
     }

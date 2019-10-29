@@ -24,17 +24,17 @@ pub mod mutex;
 #[macro_export]
 macro_rules! impl_trace {
     ($self_: tt, $gc: ident, $body: expr) => {
-        unsafe fn root(&$self_) {
+        unsafe fn root(&mut $self_) {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) {
                 Trace::root(this)
             }
             let $gc = ();
             $body
         }
-        unsafe fn unroot(&$self_) {
+        unsafe fn unroot(&mut $self_) {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &T, _: ()) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) {
                 Trace::unroot(this)
             }
             let $gc = ();
@@ -46,6 +46,46 @@ macro_rules! impl_trace {
                 Trace::trace(this, gc)
             }
             $body
+        }
+    }
+}
+
+macro_rules! deref_trace_mut {
+    ([$($params: tt)*] $ty: ty) => {
+        unsafe impl<$($params)*> Trace for $ty {
+            unsafe fn root(&mut self) {
+                (**self).root();
+            }
+            unsafe fn unroot(&mut self) {
+                (**self).unroot();
+            }
+            fn trace(&self, gc: &mut Gc) {
+                (**self).trace(gc);
+            }
+        }
+    };
+}
+
+macro_rules! deref_trace {
+    ([$($params: tt)*] $ty: ty) => {
+        unsafe impl<$($params)*> Trace for $ty {
+            fn trace(&self, gc: &mut Gc) {
+                (**self).trace(gc);
+            }
+        }
+    };
+}
+
+macro_rules! impl_trace_fields {
+    ($self_: tt, $gc: ident;  $($field: ident),*) => {
+        impl_trace!{ $self_, $gc,
+            match $self_ {
+                Self { $($field,)* .. } => {
+                    $(
+                        mark($field, $gc);
+                    )*
+                }
+            }
         }
     }
 }
@@ -466,12 +506,8 @@ where
     }
 }
 
-unsafe impl<T> Trace for Borrow<'_, T>
-where
-    T: Trace,
-{
-    impl_trace! { self, gc, mark(&**self, gc) }
-}
+
+deref_trace! { ['a, T: Trace] Borrow<'a, T> }
 
 unsafe impl<'a, T> DataDef for Borrow<'a, T>
 where
@@ -720,8 +756,8 @@ pub trait CollectScope {
 /// A type unsafe implementing Trace must call trace on each of its fields
 /// which in turn contains `GcPtr`
 pub unsafe trait Trace {
-    unsafe fn root(&self);
-    unsafe fn unroot(&self);
+    unsafe fn root(&mut self) { }
+    unsafe fn unroot(&mut self) { }
 
     fn trace(&self, gc: &mut Gc) {
         let _ = gc;
@@ -821,22 +857,13 @@ macro_rules! construct_gc {
     };
 }
 
-macro_rules! deref_trace {
-    ([$($params: tt)*] $ty: ty) => {
-        unsafe impl<$($params)*> Trace for $ty {
-            impl_trace! { self, gc,
-                mark(&**self, gc)
-            }
-        }
-    };
-}
 
 deref_trace! { ['a, T: ?Sized + Trace] &'a T }
-deref_trace! { ['a, T: ?Sized + Trace] &'a mut T }
-deref_trace! { ['a, T: ?Sized + Trace] Box<T> }
+deref_trace_mut! { ['a, T: ?Sized + Trace] &'a mut T }
+deref_trace_mut! { ['a, T: ?Sized + Trace] Box<T> }
 deref_trace! { ['a, T: ?Sized + Trace] Arc<T> }
 deref_trace! { ['a, T: ?Sized + Trace] Rc<T> }
-deref_trace! { ['a, T: Trace] Vec<T> }
+deref_trace_mut! { ['a, T: Trace] Vec<T> }
 
 macro_rules! tuple_trace {
     () => {};
@@ -910,31 +937,36 @@ where
     T: Trace + Copy,
 {
     impl_trace! { self, gc,
-        mark(&self.get(), gc)
+        mark(&mut self.get(), gc)
     }
 }
 
+    // Don't root/unroot the contents as an unrooted value could be moved out of the Mutex
 unsafe impl<T> Trace for sync::Mutex<T>
 where
     T: Trace,
 {
-    // Don't root/unroot the contents as an unrooted value could be moved out of the Mutex
-    unsafe fn root(&self) {}
-    unsafe fn unroot(&self) {}
     fn trace(&self, gc: &mut Gc) {
         self.lock().unwrap_or_else(|err| err.into_inner()).trace(gc)
     }
 }
 
+    // Don't root/unroot the contents as an unrooted value could be moved out of the RwLock
 unsafe impl<T> Trace for sync::RwLock<T>
 where
     T: Trace,
 {
-    // Don't root/unroot the contents as an unrooted value could be moved out of the RwLock
-    unsafe fn root(&self) {}
-    unsafe fn unroot(&self) {}
     fn trace(&self, gc: &mut Gc) {
         self.read().unwrap_or_else(|err| err.into_inner()).trace(gc)
+    }
+}
+
+unsafe impl<T> Trace for sync::RwLockReadGuard<'_, T>
+where
+    T: Trace,
+{
+    fn trace(&self, gc: &mut Gc) {
+        (&**self).trace(gc)
     }
 }
 
@@ -943,7 +975,7 @@ where
     U: Trace,
 {
     impl_trace! { self, gc,
-        for x in self.iter() {
+        for x in self {
             mark(x, gc);
         }
     }
@@ -954,18 +986,17 @@ where
     T: Trace,
 {
     impl_trace! { self, gc,
-        mark(&self.as_slices(), gc)
+        mark(&mut self.as_slices(), gc)
     }
 }
 
 unsafe impl<K, V, H> Trace for HashMap<K, V, H>
 where
-    K: Trace,
     V: Trace,
 {
     impl_trace! { self, gc,
-        for x in self.iter() {
-            mark(&x, gc);
+        for (_, x) in self {
+            mark(x, gc);
         }
     }
 }
@@ -974,9 +1005,9 @@ unsafe impl<V, H> Trace for HashSet<V, H>
 where
     V: Trace,
 {
-    impl_trace! { self, gc,
+    fn trace(&self, gc: &mut Gc) {
         for x in self.iter() {
-            mark(x, gc);
+            x.trace(gc);
         }
     }
 }
@@ -986,10 +1017,10 @@ unsafe impl<T: ?Sized> Trace for GcPtr<T>
 where
     T: Trace,
 {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         // Anything inside a `GcPtr` is implicitly rooted by the pointer itself being rooted
     }
     fn trace(&self, gc: &mut Gc) {
@@ -1188,8 +1219,8 @@ impl Gc {
             // that the pointer was initialized
             assert!(ret == p);
             self.values = Some(ptr);
-            let ptr = OwnedPtr(NonNull::new_unchecked(p));
-            D::Value::unroot(&ptr);
+            let mut ptr = OwnedPtr(NonNull::new_unchecked(p));
+            D::Value::unroot(&mut ptr);
             OwnedGcRef::with_root(ptr, self)
         }
     }

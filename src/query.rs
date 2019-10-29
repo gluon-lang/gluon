@@ -42,9 +42,9 @@ pub struct UnrootedValue(RootedValue<RootedThread>);
 
 impl Clone for UnrootedValue {
     fn clone(&self) -> Self {
-        let value = self.0.clone();
+        let mut value = self.0.clone();
         unsafe {
-            self.0.vm().unroot();
+            value.vm_mut().unroot();
         }
         UnrootedValue(value)
     }
@@ -497,8 +497,8 @@ fn global_(db: &impl Compilation, name: String) -> Result<UnrootedGlobal> {
     let mut cloner = vm::internal::Cloner::new(vm, &mut gc);
     let value = cloner.deep_clone(&value)?;
 
-    let value: RootedValue<RootedThread> = vm.root_value(value);
-    unsafe { value.vm().unroot() };
+    let mut value: RootedValue<RootedThread> = vm.root_value(value);
+    unsafe { value.vm_mut().unroot() };
     Ok(UnrootedGlobal {
         id,
         typ,
@@ -661,8 +661,8 @@ impl OptimizeEnv for DatabaseSnapshot {
 }
 
 unsafe impl Trace for DatabaseSnapshot {
-    impl_trace! { self, gc,
-        mark(&**self, gc)
+    fn trace(&self, gc: &mut vm::gc::Gc) {
+        (**self).trace(gc)
     }
 }
 
