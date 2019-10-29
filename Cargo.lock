@@ -869,7 +869,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "gluon"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "bincode 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -883,13 +883,13 @@ dependencies = [
  "failure_derive 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.13.0",
- "gluon_check 0.13.0",
- "gluon_codegen 0.13.0",
- "gluon_completion 0.13.0",
- "gluon_format 0.13.0",
- "gluon_parser 0.13.0",
- "gluon_vm 0.13.0",
+ "gluon_base 0.13.1",
+ "gluon_check 0.13.1",
+ "gluon_codegen 0.13.1",
+ "gluon_completion 0.13.1",
+ "gluon_format 0.13.1",
+ "gluon_parser 0.13.1",
+ "gluon_vm 0.13.1",
  "http 0.1.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.12.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_base"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anymap 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -945,15 +945,15 @@ dependencies = [
 
 [[package]]
 name = "gluon_c-api"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
- "gluon 0.13.0",
+ "gluon 0.13.1",
  "libc 0.2.65 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "gluon_check"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -961,10 +961,10 @@ dependencies = [
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ena 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.13.0",
- "gluon_codegen 0.13.0",
- "gluon_format 0.13.0",
- "gluon_parser 0.13.0",
+ "gluon_base 0.13.1",
+ "gluon_codegen 0.13.1",
+ "gluon_format 0.13.1",
+ "gluon_parser 0.13.1",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -977,11 +977,11 @@ dependencies = [
 
 [[package]]
 name = "gluon_codegen"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon 0.13.0",
- "gluon_vm 0.13.0",
+ "gluon 0.13.1",
+ "gluon_vm 0.13.1",
  "proc-macro2 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.101 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -991,29 +991,29 @@ dependencies = [
 
 [[package]]
 name = "gluon_completion"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.13.0",
- "gluon_check 0.13.0",
- "gluon_parser 0.13.0",
+ "gluon_base 0.13.1",
+ "gluon_check 0.13.1",
+ "gluon_parser 0.13.1",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.2.9 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "gluon_doc"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "cargo-deadlinks 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon 0.13.0",
- "gluon_completion 0.13.0",
+ "gluon 0.13.1",
+ "gluon_completion 0.13.1",
  "handlebars 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1032,13 +1032,13 @@ dependencies = [
 
 [[package]]
 name = "gluon_format"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon 0.13.0",
- "gluon_base 0.13.0",
+ "gluon 0.13.1",
+ "gluon_base 0.13.1",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1047,14 +1047,14 @@ dependencies = [
 
 [[package]]
 name = "gluon_parser"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon_base 0.13.0",
+ "gluon_base 0.13.1",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop 0.17.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop-util 0.17.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_repl"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "ansi_term 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "app_dirs 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1077,12 +1077,12 @@ dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon 0.13.0",
- "gluon_codegen 0.13.0",
- "gluon_completion 0.13.0",
- "gluon_doc 0.13.0",
- "gluon_format 0.13.0",
- "gluon_vm 0.13.0",
+ "gluon 0.13.1",
+ "gluon_codegen 0.13.1",
+ "gluon_completion 0.13.1",
+ "gluon_doc 0.13.1",
+ "gluon_format 0.13.1",
+ "gluon_vm 0.13.1",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty_assertions 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_vm"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1110,11 +1110,11 @@ dependencies = [
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "frunk_core 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.29 (registry+https://github.com/rust-lang/crates.io-index)",
- "gluon 0.13.0",
- "gluon_base 0.13.0",
- "gluon_check 0.13.0",
- "gluon_codegen 0.13.0",
- "gluon_parser 0.13.0",
+ "gluon 0.13.1",
+ "gluon_base 0.13.1",
+ "gluon_check 0.13.1",
+ "gluon_codegen 0.13.1",
+ "gluon_parser 0.13.1",
  "itertools 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop 0.17.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop-util 0.17.2 (registry+https://github.com/rust-lang/crates.io-index)",

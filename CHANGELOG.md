@@ -1,3 +1,14 @@
+<a name="v0.13.1"></a>
+### v0.13.1 (2019-10-29)
+
+
+#### Bug Fixes
+
+*   Don't deadlock when collecting and cloning a thread concurrently ([d7368950](https://github.com/gluon-lang/gluon/commit/d7368950d9310f383cebcbaf841382181701da00))
+* **doc:**  Correct the style.css path ([2cee5cff](https://github.com/gluon-lang/gluon/commit/2cee5cffab0c1df604a45e3272e92f69624e6b41))
+
+
+
 <a name="v0.13.0"></a>
 ## v0.13.0 (2019-10-27)
 
