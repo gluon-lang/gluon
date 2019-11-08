@@ -35,6 +35,16 @@ impl Macro for LiftIo {
         env.run(&mut symbols, &mut module);
         let typ = module.env_type_of(&EmptyEnv::default());
 
+        match *typ {
+            Type::Record(_) => (),
+            _ => {
+                return Box::new(future::err(macros::Error::message(format!(
+                    "The second argument to `lift_io!` must be a record. Found: `{}`",
+                    typ
+                ))))
+            }
+        }
+
         let span = module.span;
 
         let vm = env.vm;
