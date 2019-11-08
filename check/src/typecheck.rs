@@ -1656,7 +1656,7 @@ impl<'a> Typecheck<'a> {
                             );
                             // We still define the type so that any uses later on in the program
                             // won't error on UndefinedType
-                            let hole = self.subs.hole();
+                            let hole = self.subs.error();
                             alias = self.new_alias(name.clone(), Vec::new(), hole);
                             &alias
                         }

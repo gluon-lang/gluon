@@ -1653,6 +1653,12 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
         Self: fmt::Display,
         Self::Id: fmt::Display,
     {
+        // If the alias was just hiding an error then any application is also an error as we have
+        // no way of knowing how many arguments it should take
+        if let Type::Error = &**self {
+            return Some((self.clone(), &[]));
+        }
+
         let typ = if params.len() == args.len() {
             Cow::Borrowed(self)
         } else {

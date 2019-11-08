@@ -801,3 +801,38 @@ match reverse (Cons 1 Nil) with
 "#,
 Unification(..)
 }
+
+test_check_err! {
+    missing_type_field,
+    r#"
+type Alternative f = {
+    empty : forall a . f a,
+}
+
+rec
+type Arr r a b = a -> Eff r b
+
+type Eff r a =
+    | Pure a
+    | Impure : forall x . r x -> Arr r x a -> Eff r a
+in
+
+let any x = any x
+
+let { HttpEffect } = ()
+
+let alt =
+    type Alt r a =
+        | Empty
+        .. r
+    let alternative : Alternative (Eff [| alt : Alt | r |]) = {
+        empty = any (),
+    }
+    { alternative }
+
+let alternative : Alternative (Eff (HttpEffect r)) = alt.alternative
+
+()
+"#,
+UndefinedField(..)
+}
