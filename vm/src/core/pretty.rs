@@ -202,13 +202,15 @@ impl<'a> Expr<'a> {
                         let doc = chain![
                             arena,
                             "match ",
-                            expr.pretty(arena, Prec::Top),
+                            expr.pretty(arena, Prec::Top).nest(INDENT),
                             " with",
-                            arena.hardline(),
+                            arena.newline(),
                             chain![arena, "| ", alt.pattern.pretty(arena), arena.space(), "->"]
                                 .group(),
-                            arena.hardline(),
-                            alt.expr.pretty(arena, Prec::Top).group()
+                            arena.newline(),
+                            alt.expr.pretty(arena, Prec::Top).group(),
+                            arena.newline(),
+                            "end"
                         ]
                         .group();
                         prec.enclose(arena, doc)
@@ -218,8 +220,9 @@ impl<'a> Expr<'a> {
                     let doc = chain![
                         arena,
                         "match ",
-                        expr.pretty(arena, Prec::Top),
+                        expr.pretty(arena, Prec::Top).nest(INDENT),
                         " with",
+<<<<<<< HEAD
                         arena.hardline(),
                         arena.concat(
                             alts.iter()
@@ -236,6 +239,20 @@ impl<'a> Expr<'a> {
                                 })
                                 .intersperse(arena.hardline())
                         )
+=======
+                        arena.newline(),
+                        arena.concat(alts.iter().map(|alt| {
+                            chain![arena;
+                                "| ",
+                                alt.pattern.pretty(arena),
+                                " ->",
+                                arena.space(),
+                                alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
+                            ].nest(INDENT)
+                        }).intersperse(arena.newline())),
+                        arena.newline(),
+                        "end"
+>>>>>>> a
                     ]
                     .group();
                     prec.enclose(arena, doc)

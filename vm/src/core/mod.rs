@@ -61,6 +61,20 @@ pub struct Closure<'a> {
     pub expr: &'a Expr<'a>,
 }
 
+impl fmt::Display for Closure<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            ClosureRef {
+                id: &self.name,
+                args: &self.args,
+                body: self.expr
+            }
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Named<'a> {
     Recursive(Vec<Closure<'a>>),
@@ -1199,17 +1213,19 @@ impl<'a, 'e> Translator<'a, 'e> {
         projected_type: &ArcType,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
+        // Id should be distinct from the field so bindings aren't shadowed
+        let projection_id = Symbol::from(projection.as_str());
         let alt = Alternative {
             pattern: Pattern::Record(vec![(
                 TypedIdent {
-                    name: projection.clone(),
+                    name: projection_id.clone(),
                     typ: projected_type.clone(),
                 },
                 None,
             )]),
             expr: arena.alloc(Expr::Ident(
                 TypedIdent {
-                    name: projection.clone(),
+                    name: projection_id.clone(),
                     typ: projected_type.clone(),
                 },
                 span,

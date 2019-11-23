@@ -275,7 +275,7 @@ pub fn optimize<'a>(
 
     let f = |symbol: &Symbol| {
         env.find_expr(symbol)
-            .map(crate::core::interpreter::Binding::Expr)
+            .map(crate::core::interpreter::Binding::from)
     };
     let mut interpreter = crate::core::interpreter::Compiler::new(allocator, &f)
         .costs(costs)

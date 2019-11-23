@@ -8,10 +8,17 @@ use crate::core::{
     Allocator, CExpr, Expr, Named, Pattern,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Pureness {
-    Call,
+    None,
     Load,
+    Call,
+}
+
+impl Pureness {
+    fn merge(&mut self, pureness: Pureness) {
+        *self = (*self).min(pureness);
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -31,7 +38,7 @@ pub fn purity<'a>(expr: CExpr<'a>) -> PurityMap {
     let mut pure_symbols = PurityMap(FnvMap::default());
 
     let mut visitor = Pure {
-        is_pure: true,
+        is_pure: Pureness::Call,
         pure_symbols: &mut pure_symbols,
     };
 
@@ -41,20 +48,20 @@ pub fn purity<'a>(expr: CExpr<'a>) -> PurityMap {
 }
 
 struct Pure<'b> {
-    is_pure: bool,
+    is_pure: Pureness,
     pure_symbols: &'b mut PurityMap,
 }
 
 impl Pure<'_> {
-    fn is_pure(&mut self, symbol: &Symbol, expr: CExpr) -> bool {
+    fn is_pure(&mut self, symbol: &Symbol, expr: CExpr) -> Pureness {
         let mut visitor = Pure {
-            is_pure: true,
+            is_pure: Pureness::Call,
             pure_symbols: self.pure_symbols,
         };
         visitor.visit_expr(expr);
         let is_pure = visitor.is_pure;
-        if is_pure {
-            self.pure_symbols.0.insert(symbol.clone(), Pureness::Call);
+        if is_pure != Pureness::None {
+            self.pure_symbols.0.insert(symbol.clone(), is_pure);
         }
         is_pure
     }
@@ -94,11 +101,11 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
                     if self.pure_symbols.pure_call(&*id.name) || id.name.is_primitive() {
                         walk_expr(self, expr);
                     } else {
-                        self.is_pure = false;
+                        self.is_pure = Pureness::None;
                     }
                 }
                 _ => {
-                    self.is_pure = false;
+                    self.is_pure = Pureness::None;
                 }
             },
 
@@ -107,7 +114,7 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
                     && !id.name.is_primitive()
                     && !id.name.is_global()
                 {
-                    self.is_pure = false;
+                    self.is_pure.merge(Pureness::Load);
                 }
             }
 
@@ -123,7 +130,8 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
                         }
                     }
                     Named::Expr(expr) => {
-                        self.is_pure &= self.is_pure(&bind.name.name, expr);
+                        let is_pure = self.is_pure(&bind.name.name, expr);
+                        self.is_pure.merge(is_pure);
                     }
                 }
                 self.visit_expr(expr);
@@ -132,13 +140,13 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
             Expr::Match(scrutinee, alts) => {
                 let is_pure = self.is_pure;
 
-                self.is_pure = true;
+                self.is_pure = Pureness::Call;
                 self.visit_expr(scrutinee);
                 let scrutinee_is_pure = self.is_pure;
 
-                self.is_pure &= is_pure;
+                self.is_pure.merge(is_pure);
 
-                if scrutinee_is_pure {
+                if scrutinee_is_pure != Pureness::None {
                     for alt in alts {
                         self.mark_pure(&alt.pattern);
                     }
@@ -156,5 +164,30 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
     }
     fn detach_allocator(&self) -> Option<&'l Allocator<'l>> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::Arc;
+
+    use base::symbol::Symbols;
+
+    use crate::core::interpreter::tests::parse_expr;
+
+    #[test]
+    fn pure_global() {
+        let mut symbols = Symbols::new();
+
+        let allocator = Arc::new(Allocator::new());
+
+        let expr = parse_expr(&mut symbols, &allocator, "let x = global in x");
+
+        assert_eq!(
+            purity(expr).0,
+            collect![(symbols.simple_symbol("x"), Pureness::Load)]
+        );
     }
 }

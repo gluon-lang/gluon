@@ -1,0 +1,39 @@
+//@NO-IMPLICIT-PRELUDE
+
+#[implicit]
+type Num a = {
+    /// The addition operator
+    (+) : a -> a -> a,
+    /// The subtraction operator
+    (-) : a -> a -> a,
+    /// The multiplication operator
+    (*) : a -> a -> a,
+    /// The division operator
+    (/) : a -> a -> a,
+}
+
+let num : Num Int = {
+    (+) = \l r -> l #Int+ r,
+    (-) = \l r -> l #Int- r,
+    (*) = \l r -> l #Int* r,
+    (/) = \l r -> l #Int/ r,
+}
+
+
+#[infix(left, 6)]
+let (+) ?num : [Num a] -> a -> a -> a = num.(+)
+#[infix(left, 6)]
+let (-) ?num : [Num a] -> a -> a -> a = num.(-)
+#[infix(left, 7)]
+let (*) ?num : [Num a] -> a -> a -> a = num.(*)
+#[infix(left, 7)]
+let (/) ?num : [Num a] -> a -> a -> a = num.(/)
+
+{
+    Num,
+
+    (+), (-), (*), (/),
+
+    num,
+}
+

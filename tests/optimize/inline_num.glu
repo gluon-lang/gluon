@@ -1,0 +1,12 @@
+let additive =
+    let semigroup = {
+        append = \x y -> x #Int+ y
+    }
+
+    { semigroup }
+
+
+{
+    (+) = additive.semigroup.append,
+    additive,
+}
