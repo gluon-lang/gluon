@@ -228,3 +228,47 @@ fn roundtrip_thread() {
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &Into::<Result<_, _>>::into(value).unwrap());
 }
+
+#[test]
+fn issue_805_no_deadlock_in_deserialize() {
+    fn serialize_value(value: gluon::vm::Variants) -> Box<[u8]> {
+        let mut buffer = Vec::new();
+        {
+            let mut ser = serde_json::Serializer::new(&mut buffer);
+            let ser_state = gluon::vm::serialization::SeSeed::new();
+            value.serialize_state(&mut ser, &ser_state).unwrap();
+        }
+        buffer.into_boxed_slice()
+    }
+
+    fn deserialize_value(
+        thread: &gluon::RootedThread,
+        serialized: &[u8],
+    ) -> Result<gluon::vm::thread::RootedValue<gluon::vm::thread::RootedThread>, serde_json::Error>
+    {
+        let mut de = serde_json::Deserializer::from_slice(&serialized);
+        gluon::vm::serialization::DeSeed::new(thread, &mut thread.current_context())
+            .deserialize(&mut de)
+    }
+
+    let vm = gluon::new_vm();
+    let script = r#"
+        let concat a b = a ++ b
+        concat"#;
+    vm.load_script("test", script).unwrap();
+
+    let (program, _) = vm
+        .run_expr::<gluon::vm::api::OpaqueValue<&gluon::Thread, gluon::vm::api::Hole>>(
+            "program",
+            "import! test",
+        )
+        .unwrap_or_else(|e| panic!("fail to parse program: {}", e));
+    let variant = program.get_variant();
+    let serialized_client = serialize_value(variant);
+
+    let vm2 = gluon::new_vm();
+    assert!(deserialize_value(&vm2, &serialized_client)
+        .unwrap_err()
+        .to_string()
+        .contains("is not defined"));
+}
