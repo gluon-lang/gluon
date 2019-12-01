@@ -551,8 +551,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
-        let x = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
-        match **x.remove_forall() {
+        let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
+        self.find_resolved_tag(&typ, constructor)
+    }
+
+    fn find_resolved_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
+        match **typ {
             Type::Variant(ref row) => {
                 let mut iter = row.row_iter();
                 match iter.position(|field| field.name.name_eq(constructor)) {
@@ -783,22 +787,21 @@ impl<'a> Compiler<'a> {
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
+                let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ.remove_forall());
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag =
-                                self.find_tag(typ.remove_forall(), &id.name)
-                                    .unwrap_or_else(|| {
-                                        ice!(
-                                            "ICE: Could not find tag for {}::{} when matching on \
-                                             expression:\n{}",
-                                            typ,
-                                            self.symbols.string(&id.name),
-                                            expr
-                                        )
-                                    });
+                            let tag = self.find_resolved_tag(&typ, &id.name).unwrap_or_else(|| {
+                                ice!(
+                                    "ICE: Could not find tag for {}::{} when matching on \
+                                     expression:\n{}",
+                                    typ,
+                                    self.symbols.string(&id.name),
+                                    expr
+                                )
+                            });
 
                             match tag {
                                 FieldAccess::Index(tag) => function.emit(TestTag(tag)),
