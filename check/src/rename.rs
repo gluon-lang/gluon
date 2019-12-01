@@ -311,7 +311,7 @@ pub fn rename<'s>(
         }
     }
 
-    impl<'a, 'b, 'c, 's> MutVisitor<'c> for RenameVisitor<'a, 'b, 's> {
+    impl<'a, 'b, 'c, 's> MutVisitor<'c, '_> for RenameVisitor<'a, 'b, 's> {
         type Ident = Symbol;
 
         fn visit_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {

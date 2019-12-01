@@ -278,26 +278,26 @@ impl<Id> Default for Pattern<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Alternative<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Alternative<'ast, Id> {
     pub pattern: SpannedPattern<Id>,
-    pub expr: SpannedExpr<Id>,
+    pub expr: SpannedExpr<'ast, Id>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Array<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Array<'ast, Id> {
     pub typ: ArcType<Id>,
-    pub exprs: Vec<SpannedExpr<Id>>,
+    pub exprs: Vec<SpannedExpr<'ast, Id>>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Lambda<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Lambda<'ast, Id> {
     pub id: TypedIdent<Id>,
     pub args: Vec<Argument<SpannedIdent<Id>>>,
-    pub body: Box<SpannedExpr<Id>>,
+    pub body: &'ast mut SpannedExpr<'ast, Id>,
 }
 
-pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
+pub type SpannedExpr<'ast, Id> = Spanned<Expr<'ast, Id>, BytePos>;
 
 pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
@@ -305,79 +305,79 @@ pub type SpannedAlias<Id> = Spanned<AliasData<Id, AstType<Id>>, BytePos>;
 
 pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Do<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Do<'ast, Id> {
     pub id: Option<SpannedPattern<Id>>,
-    pub bound: Box<SpannedExpr<Id>>,
-    pub body: Box<SpannedExpr<Id>>,
-    pub flat_map_id: Option<Box<SpannedExpr<Id>>>,
+    pub bound: &'ast mut SpannedExpr<'ast, Id>,
+    pub body: &'ast mut SpannedExpr<'ast, Id>,
+    pub flat_map_id: Option<&'ast mut SpannedExpr<'ast, Id>>,
 }
 
 /// The representation of gluon's expression syntax
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Expr<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub enum Expr<'ast, Id> {
     /// Identifiers
     Ident(TypedIdent<Id>),
     /// Literal values
     Literal(Literal),
     /// Function application, eg. `f x`
     App {
-        func: Box<SpannedExpr<Id>>,
-        implicit_args: Vec<SpannedExpr<Id>>,
-        args: Vec<SpannedExpr<Id>>,
+        func: &'ast mut SpannedExpr<'ast, Id>,
+        implicit_args: Vec<SpannedExpr<'ast, Id>>,
+        args: Vec<SpannedExpr<'ast, Id>>,
     },
     /// Lambda abstraction, eg. `\x y -> x * y`
-    Lambda(Lambda<Id>),
+    Lambda(Lambda<'ast, Id>),
     /// If-then-else conditional
     IfElse(
-        Box<SpannedExpr<Id>>,
-        Box<SpannedExpr<Id>>,
-        Box<SpannedExpr<Id>>,
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut SpannedExpr<'ast, Id>,
     ),
     /// Pattern match expression
-    Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
+    Match(&'ast mut SpannedExpr<'ast, Id>, Vec<Alternative<'ast, Id>>),
     /// Infix operator expression eg. `f >> g`
     Infix {
-        lhs: Box<SpannedExpr<Id>>,
+        lhs: &'ast mut SpannedExpr<'ast, Id>,
         op: SpannedIdent<Id>,
-        rhs: Box<SpannedExpr<Id>>,
-        implicit_args: Vec<SpannedExpr<Id>>,
+        rhs: &'ast mut SpannedExpr<'ast, Id>,
+        implicit_args: Vec<SpannedExpr<'ast, Id>>,
     },
     /// Record field projection, eg. `value.field`
-    Projection(Box<SpannedExpr<Id>>, Id, ArcType<Id>),
+    Projection(&'ast mut SpannedExpr<'ast, Id>, Id, ArcType<Id>),
     /// Array construction
-    Array(Array<Id>),
+    Array(Array<'ast, Id>),
     /// Record construction
     Record {
         typ: ArcType<Id>,
         types: Vec<ExprField<Id, ArcType<Id>>>,
-        exprs: Vec<ExprField<Id, SpannedExpr<Id>>>,
-        base: Option<Box<SpannedExpr<Id>>>,
+        exprs: Vec<ExprField<Id, SpannedExpr<'ast, Id>>>,
+        base: Option<&'ast mut SpannedExpr<'ast, Id>>,
     },
     /// Tuple construction
     Tuple {
         typ: ArcType<Id>,
-        elems: Vec<SpannedExpr<Id>>,
+        elems: Vec<SpannedExpr<'ast, Id>>,
     },
     /// Declare a series of value bindings
-    LetBindings(ValueBindings<Id>, Box<SpannedExpr<Id>>),
+    LetBindings(ValueBindings<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>),
     /// Declare a series of type aliases
-    TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
+    TypeBindings(Vec<TypeBinding<Id>>, &'ast mut SpannedExpr<'ast, Id>),
     /// A group of sequenced expressions
-    Block(Vec<SpannedExpr<Id>>),
-    Do(Do<Id>),
+    Block(Vec<SpannedExpr<'ast, Id>>),
+    Do(Do<'ast, Id>),
     MacroExpansion {
-        original: Box<SpannedExpr<Id>>,
-        replacement: Box<SpannedExpr<Id>>,
+        original: &'ast mut SpannedExpr<'ast, Id>,
+        replacement: &'ast mut SpannedExpr<'ast, Id>,
     },
-    Annotated(Box<SpannedExpr<Id>>, ArcType<Id>),
+    Annotated(&'ast mut SpannedExpr<'ast, Id>, ArcType<Id>),
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -385,22 +385,29 @@ pub enum Expr<Id> {
     ),
 }
 
-impl<Id> Expr<Id> {
+impl<'ast, Id> Expr<'ast, Id> {
     pub fn rec_let_bindings(
-        binds: Vec<ValueBinding<Id>>,
-        expr: impl Into<Box<SpannedExpr<Id>>>,
+        binds: Vec<ValueBinding<'ast, Id>>,
+        expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
     ) -> Self {
         Expr::LetBindings(ValueBindings::Recursive(binds), expr.into())
     }
 
-    pub fn annotated<'a>(expr: SpannedExpr<Id>, typ: ArcType<Id>) -> SpannedExpr<Id>
+    pub fn annotated<'a>(
+        arena: ArenaRef<'ast, Id>,
+        expr: SpannedExpr<'ast, Id>,
+        typ: ArcType<Id>,
+    ) -> SpannedExpr<'ast, Id>
     where
         Id: From<&'a str> + Clone,
     {
-        pos::spanned(expr.span, Expr::Annotated(expr.into(), typ))
+        pos::spanned(expr.span, Expr::Annotated(arena.alloc(expr), typ))
     }
 
-    pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
+    pub fn let_binding(
+        bind: ValueBinding<'ast, Id>,
+        expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
+    ) -> Self {
         Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
     }
 
@@ -430,19 +437,23 @@ impl<Id> Expr<Id> {
     }
 }
 
-impl<Id> Default for Expr<Id> {
+impl<'ast, Id> Default for Expr<'ast, Id> {
     fn default() -> Self {
         Expr::Error(None)
     }
 }
 
-impl<Id> Expr<Id> {
-    pub fn app(func: SpannedExpr<Id>, args: Vec<SpannedExpr<Id>>) -> Self {
+impl<'ast, Id> Expr<'ast, Id> {
+    pub fn app(
+        arena: ArenaRef<'ast, Id>,
+        func: SpannedExpr<'ast, Id>,
+        args: Vec<SpannedExpr<'ast, Id>>,
+    ) -> Self {
         if args.is_empty() {
             func.value
         } else {
             Expr::App {
-                func: func.into(),
+                func: arena.alloc(func),
                 implicit_args: Vec::new(),
                 args,
             }
@@ -453,7 +464,7 @@ impl<Id> Expr<Id> {
     pub fn field_iter<'a>(
         &'a self,
     ) -> impl Iterator<
-        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>,
+        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<'ast, Id>>>,
     > + 'a {
         let (types, exprs) = match *self {
             Expr::Record {
@@ -510,13 +521,13 @@ impl<Id> Argument<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum ValueBindings<Id> {
-    Plain(Box<ValueBinding<Id>>),
-    Recursive(Vec<ValueBinding<Id>>),
+#[derive(Eq, PartialEq, Debug)]
+pub enum ValueBindings<'ast, Id> {
+    Plain(Box<ValueBinding<'ast, Id>>),
+    Recursive(Vec<ValueBinding<'ast, Id>>),
 }
 
-impl<Id> ValueBindings<Id> {
+impl<'ast, Id> ValueBindings<'ast, Id> {
     pub fn is_recursive(&self) -> bool {
         match self {
             ValueBindings::Plain(ref bind) => !bind.args.is_empty(),
@@ -525,8 +536,8 @@ impl<Id> ValueBindings<Id> {
     }
 }
 
-impl<Id> Deref for ValueBindings<Id> {
-    type Target = [ValueBinding<Id>];
+impl<'ast, Id> Deref for ValueBindings<'ast, Id> {
+    type Target = [ValueBinding<'ast, Id>];
     fn deref(&self) -> &Self::Target {
         match self {
             ValueBindings::Plain(bind) => slice::from_ref(&**bind),
@@ -535,7 +546,7 @@ impl<Id> Deref for ValueBindings<Id> {
     }
 }
 
-impl<Id> DerefMut for ValueBindings<Id> {
+impl<'ast, Id> DerefMut for ValueBindings<'ast, Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             ValueBindings::Plain(bind) => slice::from_mut(&mut **bind),
@@ -544,35 +555,35 @@ impl<Id> DerefMut for ValueBindings<Id> {
     }
 }
 
-impl<'a, Id> IntoIterator for &'a ValueBindings<Id> {
-    type IntoIter = slice::Iter<'a, ValueBinding<Id>>;
-    type Item = &'a ValueBinding<Id>;
+impl<'a, 'ast, Id> IntoIterator for &'a ValueBindings<'ast, Id> {
+    type IntoIter = slice::Iter<'a, ValueBinding<'ast, Id>>;
+    type Item = &'a ValueBinding<'ast, Id>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a, Id> IntoIterator for &'a mut ValueBindings<Id> {
-    type IntoIter = slice::IterMut<'a, ValueBinding<Id>>;
-    type Item = &'a mut ValueBinding<Id>;
+impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
+    type IntoIter = slice::IterMut<'a, ValueBinding<'ast, Id>>;
+    type Item = &'a mut ValueBinding<'ast, Id>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct ValueBinding<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct ValueBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
     pub args: Vec<Argument<SpannedIdent<Id>>>,
-    pub expr: SpannedExpr<Id>,
+    pub expr: SpannedExpr<'ast, Id>,
 }
 
-impl<T> Default for ValueBinding<T>
+impl<T> Default for ValueBinding<'_, T>
 where
     T: PartialEq,
 {
@@ -588,7 +599,7 @@ where
     }
 }
 
-impl<Id> ValueBinding<Id> {
+impl<'ast, Id> ValueBinding<'ast, Id> {
     pub fn span(&self) -> Span<BytePos> {
         Span::new(self.name.span.start(), self.expr.span.end())
     }
@@ -600,11 +611,11 @@ macro_rules! visitor {
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
 /// default the `visit_*` functions just walk the tree. If they are overridden the user will need to
 /// call `walk_*` to continue traversing the tree.
-pub trait $trait_name<'a> {
-    type Ident: 'a;
+pub trait $trait_name<'a, 'ast> {
+    type Ident: 'a + 'ast;
 
-    fn visit_expr(&mut self, e: &'a $($mut)* SpannedExpr<Self::Ident>) {
-        walk_expr(self, e);
+    fn visit_expr(&mut self, e: &'a $($mut)* SpannedExpr<'ast, Self::Ident>) {
+        walk_expr(self, e)
     }
 
     fn visit_pattern(&mut self, e: &'a $($mut)* SpannedPattern<Self::Ident>) {
@@ -629,14 +640,18 @@ pub trait $trait_name<'a> {
     }
 }
 
-pub fn walk_alias<'a, V: ?Sized + $trait_name<'a>>(
+pub fn walk_alias<'a, 'ast, V>(
     v: &mut V,
     alias: &'a $($mut)* SpannedAlias<V::Ident>,
-) {
+)
+    where V: ?Sized + $trait_name<'a, 'ast>,
+{
     v.visit_ast_type(&$($mut)* alias.value.$unresolved_type()._typ.typ);
 }
 
-pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* SpannedExpr<V::Ident>) {
+pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Ident>)
+    where V: ?Sized + $trait_name<'a, 'ast>,
+{
     match e.value {
         Expr::IfElse(ref $($mut)* pred, ref $($mut)* if_true, ref $($mut)* if_false) => {
             v.visit_expr(pred);
@@ -778,7 +793,7 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_pattern<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, p: &'a $($mut)* Pattern<V::Ident>) {
+pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'a $($mut)* Pattern<V::Ident>) {
     match *p {
         Pattern::As(ref $($mut)* id, ref $($mut)* pat) => {
             v.visit_spanned_ident(id);
@@ -817,7 +832,7 @@ pub fn walk_pattern<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, p: &'a $($mut)* 
     }
 }
 
-pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
+pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
     v: &mut V,
     s: &'a $($mut)* SpannedAstType<V::Ident>,
 ) {
@@ -922,7 +937,7 @@ impl Typed for Literal {
     }
 }
 
-impl Typed for Expr<Symbol> {
+impl Typed for Expr<'_, Symbol> {
     type Ident = Symbol;
 
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
@@ -1055,4 +1070,101 @@ pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(),
         }
         _ => Err("Expected a string literal or path to import"),
     }
+}
+
+use std::mem;
+use std::sync::Arc;
+
+#[derive(Clone)]
+pub struct Arena<'ast, Id>(Arc<typed_arena::Arena<SpannedExpr<'ast, Id>>>);
+pub type ArenaRef<'ast, Id> = &'ast Arena<'ast, Id>;
+
+impl<'ast, Id> Deref for Arena<'ast, Id> {
+    type Target = typed_arena::Arena<SpannedExpr<'ast, Id>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'ast, Id> Arena<'ast, Id> {
+    pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
+        Arena(Arc::new(typed_arena::Arena::new()))
+    }
+}
+
+pub struct RootSpannedExpr<Id: 'static> {
+    // Only used to keep `expr` alive
+    #[allow(dead_code)]
+    arena: Arena<'static, Id>,
+    expr: *mut SpannedExpr<'static, Id>,
+}
+
+impl<Id: PartialEq> PartialEq for RootSpannedExpr<Id> {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr() == other.expr()
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for RootSpannedExpr<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.expr().fmt(f)
+    }
+}
+
+impl<Id> RootSpannedExpr<Id> {
+    pub fn new<'ast>(arena: Arena<'ast, Id>, expr: &'ast mut SpannedExpr<'ast, Id>) -> Self {
+        // SAFETY Arena<'ast> can only be constructed with an invariant lifetime which means that
+        // `expr` must come from that arena. This locks the lifetime of `expr` to `arena` so that
+        // the expression won't be dropped before the arena is
+        unsafe {
+            Self {
+                arena: mem::transmute::<Arena<Id>, Arena<Id>>(arena),
+                expr: mem::transmute::<*mut SpannedExpr<Id>, *mut SpannedExpr<Id>>(expr),
+            }
+        }
+    }
+
+    pub fn with_arena<R>(
+        &mut self,
+        f: impl for<'ast> FnOnce(&'ast Arena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,
+    ) -> R {
+        unsafe {
+            f(
+                mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena),
+                &mut *self.expr,
+            )
+        }
+    }
+
+    pub fn expr(&self) -> &SpannedExpr<'_, Id> {
+        unsafe { mem::transmute::<&SpannedExpr<Id>, &SpannedExpr<Id>>(&*self.expr) }
+    }
+
+    pub fn expr_mut(&mut self) -> &mut SpannedExpr<'_, Id> {
+        unsafe { mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr) }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Default)]
+pub struct InvariantLifetime<'a>(std::marker::PhantomData<fn(&'a ()) -> &'a ()>);
+
+// Copied from the compact_arena crate
+#[macro_export]
+macro_rules! mk_ast_arena {
+    ($name: ident) => {
+        let tag = $crate::ast::InvariantLifetime::default();
+        let $name = unsafe { $crate::ast::Arena::new(&tag) };
+        let _guard;
+        // this doesn't make it to MIR, but ensures that borrowck will not
+        // unify the lifetimes of two macro calls by binding the lifetime to
+        // drop scope
+        if false {
+            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
+            impl<'tag> ::core::ops::Drop for Guard<'tag> {
+                fn drop(&mut self) {}
+            }
+            _guard = Guard(&tag);
+        }
+    };
 }

@@ -377,7 +377,7 @@ pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
     pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b>,
 }
 
-impl<'a, 'b, 'c, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'd> MutVisitor<'d, '_> for ReplaceVisitor<'a, 'b, 'c> {
     type Ident = Symbol;
 
     fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {

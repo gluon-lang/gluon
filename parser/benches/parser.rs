@@ -6,6 +6,7 @@ use std::fs;
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use crate::base::{
+    ast, mk_ast_arena,
     symbol::{SymbolModule, Symbols},
     types::TypeCache,
 };
@@ -16,8 +17,11 @@ fn parse_file(b: &mut Bencher, file: &str) {
     b.iter(|| {
         let mut symbols = Symbols::new();
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
-        parser::parse_expr(&mut symbols, &TypeCache::default(), &text)
-            .unwrap_or_else(|err| panic!("{:?}", err))
+        mk_ast_arena!(arena);
+        let expr = parser::parse_expr(&arena, &mut symbols, &TypeCache::default(), &text)
+            .unwrap_or_else(|err| panic!("{:?}", err));
+        let expr = arena.alloc(expr);
+        ast::RootSpannedExpr::new(arena.clone(), expr)
     })
 }
 

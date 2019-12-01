@@ -24,7 +24,9 @@ extern crate pretty_assertions;
 use std::{fmt, hash::Hash, sync::Arc};
 
 use crate::base::{
-    ast::{AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding},
+    ast::{
+        self, AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding,
+    },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
     metadata::Metadata,
@@ -231,9 +233,13 @@ pub enum FieldPattern<Id> {
     Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
 }
 
-pub enum FieldExpr<Id> {
+pub enum FieldExpr<'ast, Id> {
     Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
-    Value(Metadata, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
+    Value(
+        Metadata,
+        Spanned<Id, BytePos>,
+        Option<SpannedExpr<'ast, Id>>,
+    ),
 }
 
 pub enum Variant<Id> {
@@ -287,11 +293,12 @@ impl ParserSource for codespan::FileMap {
     }
 }
 
-pub fn parse_partial_expr<Id, S>(
+pub fn parse_partial_expr<'ast, Id, S>(
+    arena: ast::ArenaRef<'ast, Id>,
     symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
-) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
+) -> Result<SpannedExpr<'ast, Id>, (Option<SpannedExpr<'ast, Id>>, ParseErrors)>
 where
     Id: Clone + AsRef<str>,
     S: ?Sized + ParserSource,
@@ -300,8 +307,14 @@ where
 
     let mut parse_errors = Errors::new();
 
-    let result =
-        grammar::TopExprParser::new().parse(&input, type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::TopExprParser::new().parse(
+        &input,
+        type_cache,
+        arena,
+        symbols,
+        &mut parse_errors,
+        layout,
+    );
 
     match result {
         Ok(expr) => {
@@ -318,24 +331,26 @@ where
     }
 }
 
-pub fn parse_expr(
+pub fn parse_expr<'ast>(
+    arena: ast::ArenaRef<'ast, Symbol>,
     symbols: &mut dyn IdentEnv<Ident = Symbol>,
     type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
-) -> Result<SpannedExpr<Symbol>, ParseErrors> {
-    parse_partial_expr(symbols, type_cache, input).map_err(|t| t.1)
+) -> Result<SpannedExpr<'ast, Symbol>, ParseErrors> {
+    parse_partial_expr(arena, symbols, type_cache, input).map_err(|t| t.1)
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ReplLine<Id> {
-    Expr(SpannedExpr<Id>),
-    Let(ValueBinding<Id>),
+pub enum ReplLine<'ast, Id> {
+    Expr(SpannedExpr<'ast, Id>),
+    Let(ValueBinding<'ast, Id>),
 }
 
-pub fn parse_partial_repl_line<Id, S>(
+pub fn parse_partial_repl_line<'ast, Id, S>(
+    arena: ast::ArenaRef<'ast, Id>,
     symbols: &mut dyn IdentEnv<Ident = Id>,
     input: &S,
-) -> Result<Option<ReplLine<Id>>, (Option<ReplLine<Id>>, ParseErrors)>
+) -> Result<Option<ReplLine<'ast, Id>>, (Option<ReplLine<'ast, Id>>, ParseErrors)>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
@@ -349,6 +364,7 @@ where
     let result = grammar::ReplLineParser::new().parse(
         &input,
         &type_cache,
+        arena,
         symbols,
         &mut parse_errors,
         layout,
@@ -370,10 +386,11 @@ where
     }
 }
 
-pub fn reparse_infix<Id>(
+pub fn reparse_infix<'ast, Id>(
+    arena: ast::ArenaRef<'ast, Id>,
     metadata: &FnvMap<Id, Arc<Metadata>>,
     symbols: &dyn IdentEnv<Ident = Id>,
-    expr: &mut SpannedExpr<Id>,
+    expr: &'ast mut SpannedExpr<'ast, Id>,
 ) -> Result<(), ParseErrors>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
@@ -446,9 +463,9 @@ where
             }
         }
     }
-    impl<'a, 'b, Id> Visitor<'a> for CheckInfix<'b, Id>
+    impl<'a, 'b, 'ast, Id> Visitor<'a, 'ast> for CheckInfix<'b, Id>
     where
-        Id: Clone + Eq + Hash + AsRef<str> + 'a,
+        Id: Clone + Eq + Hash + AsRef<str> + 'a + 'ast,
     {
         type Ident = Id;
 
@@ -476,7 +493,7 @@ where
     }
     .visit_expr(expr);
 
-    let mut reparser = Reparser::new(op_table, symbols);
+    let mut reparser = Reparser::new(arena, op_table, symbols);
     match reparser.reparse(expr) {
         Err(reparse_errors) => {
             errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::from)));

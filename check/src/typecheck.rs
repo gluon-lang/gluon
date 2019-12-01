@@ -485,7 +485,9 @@ impl<'a> Typecheck<'a> {
         expr: &mut SpannedExpr<Symbol>,
         expected_type: Option<&RcType>,
     ) -> Result<RcType, Error> {
-        fn tail_expr(e: &mut SpannedExpr<Symbol>) -> &mut SpannedExpr<Symbol> {
+        fn tail_expr<'ast>(
+            e: &'ast mut SpannedExpr<'ast, Symbol>,
+        ) -> &'ast mut SpannedExpr<'ast, Symbol> {
             match e.value {
                 Expr::LetBindings(_, ref mut b) | Expr::TypeBindings(_, ref mut b) => tail_expr(b),
                 _ => e,
@@ -539,7 +541,7 @@ impl<'a> Typecheck<'a> {
                 tc: &'b mut Typecheck<'a>,
             }
 
-            impl<'a, 'b, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b> {
+            impl<'a, 'b, 'd> MutVisitor<'d, '_> for ReplaceVisitor<'a, 'b> {
                 type Ident = Symbol;
 
                 fn visit_typ(&mut self, typ: &mut ArcType) {
@@ -1248,11 +1250,11 @@ impl<'a> Typecheck<'a> {
         &mut self,
         span: Span<BytePos>,
         func_type: ModType,
-        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
+        implicit_args: &mut Vec<SpannedExpr<'_, Symbol>>,
         args: I,
-    ) -> TcResult<(ModType, Vec<SpannedExpr<Symbol>>)>
+    ) -> TcResult<(ModType, Vec<SpannedExpr<'_, Symbol>>)>
     where
-        I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
+        I: IntoIterator<Item = &'e mut SpannedExpr<'_, Symbol>>,
         I::IntoIter: ExactSizeIterator,
     {
         self.typecheck_application_(span, func_type, implicit_args, &mut args.into_iter())

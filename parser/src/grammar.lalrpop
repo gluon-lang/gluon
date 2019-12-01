@@ -1,7 +1,7 @@
 use crate::itertools::{Either, Itertools};
 
 use crate::base::{
-    ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
+    ast::{self, Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
     kind::{ArcKind, Kind},
     pos::{self, BytePos, HasSpan, Spanned},
@@ -17,7 +17,13 @@ use crate::ordered_float::NotNan;
 
 use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(input: &'input dyn crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, 'ast, Id>(
+    input: &'input dyn crate::ParserSource,
+    type_cache: &TypeCache<Id, ArcType<Id>>,
+    arena: ast::ArenaRef<'ast, Id>,
+    env: MutIdentEnv<'env, Id>,
+    errors: ErrorEnv<'env, 'input>
+)
     where Id: Clone + AsRef<str>;
 
 extern {
@@ -554,7 +560,7 @@ Literal: Literal = {
     "float literal" => Literal::Float(<>),
 };
 
-Alternative: Alternative<Id> = {
+Alternative: Alternative<'ast, Id> = {
     "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
         Alternative {
             pattern: pat,
@@ -579,7 +585,7 @@ Alternative: Alternative<Id> = {
     },
 };
 
-FieldExpr: Box<FieldExpr<Id>> = {
+FieldExpr: Box<FieldExpr<'ast, Id>> = {
     <metadata: Metadata?> <id: Sp<Ident>> "=" <body: SpExpr> => {
         Box::new(FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body)))
     },
@@ -608,14 +614,14 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
     }
 };
 
-ValueBinding: Box<ValueBinding<Id>> = {
+ValueBinding: Box<ValueBinding<'ast, Id>> = {
     <metadata: Metadata?> <mut bind: PlainValueBinding> => {
         bind.metadata = metadata.unwrap_or_default();
         bind
     }
 };
 
-PlainValueBinding: Box<ValueBinding<Id>> = {
+PlainValueBinding: Box<ValueBinding<'ast, Id>> = {
     "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
         Box::new(ValueBinding {
             metadata: Metadata::default(),
@@ -656,7 +662,7 @@ PlainValueBinding: Box<ValueBinding<Id>> = {
     }
 };
 
-RecursiveValueBinding: Box<ValueBinding<Id>> = {
+RecursiveValueBinding: Box<ValueBinding<'ast, Id>> = {
     <metadata: Metadata?> "let" <name: Sp<Ident>> <args: ValueArgument*> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         Box::new(ValueBinding {
             metadata: metadata.unwrap_or_default(),
@@ -668,12 +674,12 @@ RecursiveValueBinding: Box<ValueBinding<Id>> = {
         }),
 };
 
-RecordExprBase: Option<SpannedExpr<Id>> = {
+RecordExprBase: Option<SpannedExpr<'ast, Id>> = {
     ".." <SpExpr> => Some(<>),
     => None
 };
 
-AtomicExpr: Expr<Id> = {
+AtomicExpr: Expr<'ast, Id> = {
     <id: Ident> =>
         Expr::Ident(new_ident(type_cache, id)),
 
@@ -685,11 +691,11 @@ AtomicExpr: Expr<Id> = {
     //     Expr::Getter(id),
 
     <expr: SpAtomicExpr> "." <id: Ident> =>
-        Expr::Projection(Box::new(expr), id, type_cache.hole()),
+        Expr::Projection(arena.alloc(expr), id, type_cache.hole()),
 
     <expr: SpAtomicExpr> "." <err: !> => {
         errors.push(err.error);
-        Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
+        Expr::Projection(arena.alloc(expr), env.from_str(""), type_cache.hole())
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
@@ -732,16 +738,16 @@ AtomicExpr: Expr<Id> = {
             typ: type_cache.hole(),
             types: types,
             exprs: values,
-            base: base.map(Box::new),
+            base: base.map(|e| arena.alloc(e)),
         }
     },
 };
 
-SpAtomicExpr: SpannedExpr<Id> = {
+SpAtomicExpr: SpannedExpr<'ast, Id> = {
     <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
 };
 
-ImplicitArg: SpannedExpr<Id> = {
+ImplicitArg: SpannedExpr<'ast, Id> = {
     "?" <arg: Sp<AtomicExpr>> => arg
 };
 
@@ -749,10 +755,10 @@ AppExpr = {
     AtomicExpr,
 
     <expr: SpAtomicExpr> <implicit_args: ImplicitArg+> =>
-        Expr::App { func: Box::new(expr), implicit_args, args: Vec::new() },
+        Expr::App { func: arena.alloc(expr), implicit_args, args: Vec::new() },
 
     <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
-        Expr::App { func: Box::new(expr), implicit_args, args },
+        Expr::App { func: arena.alloc(expr), implicit_args, args },
 };
 
 
@@ -769,15 +775,15 @@ InfixExpr = {
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
             args,
-            body: Box::new(body),
+            body: arena.alloc(body),
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
+        Expr::Infix { lhs: arena.alloc(lhs), op, rhs: arena.alloc(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
 };
 
 
-InExpr: SpannedExpr<Id> = {
+InExpr: SpannedExpr<'ast, Id> = {
     "in" <SpExpr>,
     <err: Sp<!>> => {
         errors.push(err.value.error);
@@ -785,21 +791,21 @@ InExpr: SpannedExpr<Id> = {
     }
 };
 
-Expr: Expr<Id> = {
+Expr: Expr<'ast, Id> = {
     InfixExpr,
 
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
-        Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
+        Expr::IfElse(arena.alloc(pred), arena.alloc(if_true), arena.alloc(if_false)),
 
     "match" <body: SpExpr> "with" <arms: Alternative+> =>
-        Expr::Match(Box::new(body), arms),
+        Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(ValueBindings::Plain(binding), Box::new(body))
+        Expr::LetBindings(ValueBindings::Plain(binding), arena.alloc(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
-        Expr::TypeBindings(vec![*binding], Box::new(body))
+        Expr::TypeBindings(vec![*binding], arena.alloc(body))
     },
 
     <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
@@ -807,7 +813,7 @@ Expr: Expr<Id> = {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
-        Expr::LetBindings(ValueBindings::Recursive(bindings), Box::new(body))
+        Expr::LetBindings(ValueBindings::Recursive(bindings), arena.alloc(body))
     },
 
     <metadata: Metadata?> "rec" <bindings: TypeBinding+> <body: InExpr> => {
@@ -815,7 +821,7 @@ Expr: Expr<Id> = {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
-        Expr::TypeBindings(bindings, Box::new(body))
+        Expr::TypeBindings(bindings, arena.alloc(body))
     },
 
     DoExpression,
@@ -828,19 +834,19 @@ Expr: Expr<Id> = {
     }
 };
 
-DoExpression: Expr<Id> = {
+DoExpression: Expr<'ast, Id> = {
     "do" <bind: DoBinding> <body: SpExpr> => {
         let bind = *bind;
-        Expr::Do(Do { id: Some(bind.0), bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
+        Expr::Do(Do { id: Some(bind.0), bound: arena.alloc(bind.1), body: arena.alloc(body), flat_map_id: None })
     },
 
     "seq" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(Do { id: None, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
+        Expr::Do(Do { id: None, bound: arena.alloc(bound), body: arena.alloc(body), flat_map_id: None })
     },
 };
 
 
-DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
+DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<'ast, Id>)> = {
     <id: Sp<Pattern>> "=" <bound: SpExpr> "in" => Box::new((id, bound)),
 
     // Error recovery
@@ -855,22 +861,22 @@ DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
     },
 };
 
-BlockExpr: Expr<Id> = {
+BlockExpr: Expr<'ast, Id> = {
     "block open" <mut exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
         exprs.push(last);
         Expr::Block(exprs)
     },
 };
 
-SpExpr: SpannedExpr<Id> = {
+SpExpr: SpannedExpr<'ast, Id> = {
     <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
 };
 
-pub TopExpr: SpannedExpr<Id> = {
+pub TopExpr: SpannedExpr<'ast, Id> = {
     "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
-pub ReplLine: Option<Box<ReplLine<Id>>> = {
+pub ReplLine: Option<Box<ReplLine<'ast, Id>>> = {
     <TopExpr> => Some(Box::new(ReplLine::Expr(<>))),
     "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(*<>))),
     => None,

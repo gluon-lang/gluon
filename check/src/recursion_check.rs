@@ -128,7 +128,7 @@ impl Checker {
 
     fn taint_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         struct TaintPattern<'a>(&'a mut Checker);
-        impl<'a, 'b> Visitor<'a> for TaintPattern<'b> {
+        impl<'a, 'b> Visitor<'a, '_> for TaintPattern<'b> {
             type Ident = Symbol;
             fn visit_ident(&mut self, id: &TypedIdent<Symbol>) {
                 self.0
@@ -167,7 +167,7 @@ impl Checker {
     }
 }
 
-impl<'a> Visitor<'a> for Checker {
+impl<'a> Visitor<'a, '_> for Checker {
     type Ident = Symbol;
 
     fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {

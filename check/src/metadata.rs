@@ -406,7 +406,7 @@ pub fn metadata(
         }
     }
 
-    impl<'a, 'b> Visitor<'a> for MetadataVisitor<'b> {
+    impl<'a, 'b> Visitor<'a, '_> for MetadataVisitor<'b> {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {

@@ -622,7 +622,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     }
 }
 
-impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
+impl<'a, 'b, 'c> MutVisitor<'c, '_> for ResolveImplicitsVisitor<'a, 'b> {
     type Ident = Symbol;
 
     fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {

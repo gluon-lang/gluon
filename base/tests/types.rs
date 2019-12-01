@@ -10,7 +10,7 @@ use std::{cell::RefCell, ops::Deref, rc::Rc};
 use pretty::{Arena, DocAllocator};
 
 use base::{
-    ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent},
+    ast::{self, Expr, Literal, SpannedExpr, Typed, TypedIdent},
     kind::{ArcKind, Kind, KindEnv},
     pos::{self, BytePos, Span, Spanned},
     resolve,
@@ -356,7 +356,7 @@ impl TypeEnv for MockEnv {
     }
 }
 
-pub type SpExpr = SpannedExpr<Symbol>;
+pub type SpExpr<'ast> = SpannedExpr<'ast, Symbol>;
 
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
     thread_local!(static INTERNER: Rc<RefCell<Symbols>>
@@ -373,22 +373,28 @@ pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
     pos::spanned(Span::default(), value)
 }
 
-pub fn int(i: i64) -> SpExpr {
+pub fn int<'ast>(i: i64) -> SpExpr<'ast> {
     no_loc(Expr::Literal(Literal::Int(i)))
 }
 
-pub fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
+pub fn binop<'ast>(
+    arena: ast::ArenaRef<'ast, Symbol>,
+    l: SpExpr<'ast>,
+    s: &str,
+    r: SpExpr<'ast>,
+) -> SpExpr<'ast> {
     no_loc(Expr::Infix {
-        lhs: Box::new(l),
+        lhs: arena.alloc(l),
         op: no_loc(TypedIdent::new(intern(s))),
-        rhs: Box::new(r),
+        rhs: arena.alloc(r),
         implicit_args: Vec::new(),
     })
 }
 
 #[test]
 fn take_implicits_into_account_on_infix_type() {
-    let mut expr = binop(int(1), "+", int(2));
+    base::mk_ast_arena!(arena);
+    let mut expr = binop(&arena, int(1), "+", int(2));
     if let Expr::Infix { ref mut op, .. } = expr.value {
         op.value.typ = Type::function_implicit(
             vec![Type::int()],
