@@ -403,7 +403,10 @@ impl<'a> Typecheck<'a> {
                 | Message(_) => (),
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
-                | PatternError(ref mut typ, _)
+                | PatternError {
+                    constructor_type: ref mut typ,
+                    ..
+                }
                 | InvalidProjection(ref mut typ)
                 | TypeConstructorReturnsWrongType {
                     actual: ref mut typ,
@@ -1721,16 +1724,23 @@ impl<'a> Typecheck<'a> {
     fn typecheck_pattern_rec(
         &mut self,
         args: &mut [SpannedPattern<Symbol>],
-        mut typ: &RcType,
+        typ: &RcType,
     ) -> TcResult<RcType> {
-        let len = args.len();
-        for arg_pattern in args {
-            match typ.as_function() {
-                Some((arg, ret)) => {
+        let pattern_args = args.len();
+        let mut pattern_iter = args.iter_mut();
+        let mut type_iter = typ.arg_iter();
+        loop {
+            match (pattern_iter.next(), type_iter.next()) {
+                (Some(arg_pattern), Some(arg)) => {
                     self.typecheck_pattern(arg_pattern, ModType::wobbly(arg.clone()), arg.clone());
-                    typ = ret;
                 }
-                None => return Err(TypeError::PatternError(typ.clone(), len)),
+                (None, Some(_)) | (Some(_), None) => {
+                    return Err(TypeError::PatternError {
+                        constructor_type: typ.clone(),
+                        pattern_args,
+                    })
+                }
+                (None, None) => break,
             }
         }
         Ok(typ.clone())

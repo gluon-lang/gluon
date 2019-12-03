@@ -836,3 +836,14 @@ let alternative : Alternative (Eff (HttpEffect r)) = alt.alternative
 "#,
 UndefinedField(..)
 }
+
+test_check_err! {
+    issue_807_pattern_match_arg_mismatch,
+    r#"
+type Test = | Test Int
+
+match Test 0 with
+| Test -> ()
+"#,
+PatternError { .. }
+}
