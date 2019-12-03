@@ -1,12 +1,9 @@
-#[macro_use]
-extern crate criterion;
-
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
 use std::fs;
 
-use criterion::{Bencher, Criterion};
+use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
 use crate::base::{
     symbol::{SymbolModule, Symbols},
@@ -25,10 +22,12 @@ fn parse_file(b: &mut Bencher, file: &str) {
 }
 
 fn parse_benchmark(c: &mut Criterion) {
-    c.bench_function("std/prelude", |b| parse_file(b, "std/prelude.glu"));
-    c.bench_function("examples/lisp", |b| parse_file(b, "examples/lisp/lisp.glu"));
+    c.bench_function("std/prelude", |b| parse_file(b, "../std/prelude.glu"));
+    c.bench_function("examples/lisp", |b| {
+        parse_file(b, "../examples/lisp/lisp.glu")
+    });
     c.bench_function("examples/http", |b| {
-        parse_file(b, "examples/http/server.glu")
+        parse_file(b, "../examples/http/server.glu")
     });
 }
 
