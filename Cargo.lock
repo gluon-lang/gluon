@@ -1052,6 +1052,7 @@ dependencies = [
  "codespan 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "criterion 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon_base 0.13.1",

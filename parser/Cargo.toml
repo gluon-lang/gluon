@@ -30,9 +30,14 @@ codespan = "0.3"
 codespan-reporting = "0.3"
 
 [dev-dependencies]
+criterion = "0.3"
 env_logger = "0.7"
 difference = "2"
 pretty_assertions = "0.6"
 
 [build-dependencies]
 lalrpop = "0.17.2"
+
+[[bench]]
+name = "parser"
+harness = false
