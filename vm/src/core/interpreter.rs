@@ -1218,7 +1218,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 if *cost <= 10 && !self.contains_unbound_variables(e.as_ref()) {
                     true
                 } else {
-                    trace!("Unable to optimize: {}", e);
+                    trace!("Unable to optimize {}: {}", cost, e);
                     false
                 }
             })
@@ -1406,29 +1406,51 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             })
                         })
                     }
-                    Expr::Match(match_expr, alts) if alts.len() == 1 => {
-                        let alt = &alts[0];
-                        match (&alt.pattern, &alt.expr) {
-                            (Pattern::Record(fields), Expr::Ident(id, _))
-                                if fields.len() == 1
-                                    && id.name
-                                        == *fields[0].1.as_ref().unwrap_or(&fields[0].0.name) =>
-                            {
-                                let field = &fields[0];
-                                let match_expr = self.peek_reduced_expr(resolver.wrap(match_expr));
-                                let projected =
-                                    self.project_reduced(&field.0.name, match_expr.clone())?;
-                                Some(CostBinding {
-                                    cost: 0,
-                                    bind: Binding::Expr(projected),
-                                })
+                    Expr::Match(match_expr, alts) => {
+                        let match_expr = self.peek_reduced_expr(resolver.wrap(match_expr));
+
+                        if alts.len() == 1 {
+                            let alt = &alts[0];
+                            match (&alt.pattern, &alt.expr) {
+                                (Pattern::Record(fields), Expr::Ident(id, _))
+                                    if fields.len() == 1
+                                        && id.name
+                                            == *fields[0]
+                                                .1
+                                                .as_ref()
+                                                .unwrap_or(&fields[0].0.name) =>
+                                {
+                                    let field = &fields[0];
+                                    let projected =
+                                        self.project_reduced(&field.0.name, match_expr.clone())?;
+                                    return Some(CostBinding {
+                                        cost: 0,
+                                        bind: Binding::Expr(projected),
+                                    });
+                                }
+                                (Pattern::Record(_), _) | (Pattern::Ident(_), _) => {
+                                    return Some(CostBinding {
+                                        cost: 0,
+                                        bind: Binding::Expr(resolver.wrap(alt.expr)),
+                                    })
+                                }
+                                _ => (),
                             }
-                            (Pattern::Record(_), _) | (Pattern::Ident(_), _) => Some(CostBinding {
-                                cost: 0,
-                                bind: Binding::Expr(resolver.wrap(alt.expr)),
-                            }),
-                            _ => None,
                         }
+                        match_expr.with(self.allocator, |_, match_expr| match match_expr {
+                            Expr::Data(id, ..) => alts
+                                .iter()
+                                .find(|alt| match &alt.pattern {
+                                    Pattern::Constructor(ctor_id, _) => ctor_id.name == id.name,
+                                    Pattern::Ident(_) => true,
+                                    _ => false,
+                                })
+                                .map(|alt| CostBinding {
+                                    cost: 0,
+                                    bind: Binding::Expr(resolver.wrap(alt.expr)),
+                                }),
+                            _ => None,
+                        })
                     }
                     peek if !ptr::eq::<Expr>(peek, expr) => Some(CostBinding {
                         cost: 0,

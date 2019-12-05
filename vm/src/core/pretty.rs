@@ -204,12 +204,12 @@ impl<'a> Expr<'a> {
                             "match ",
                             expr.pretty(arena, Prec::Top).nest(INDENT),
                             " with",
-                            arena.newline(),
+                            arena.hardline(),
                             chain![arena, "| ", alt.pattern.pretty(arena), arena.space(), "->"]
                                 .group(),
-                            arena.newline(),
+                            arena.hardline(),
                             alt.expr.pretty(arena, Prec::Top).group(),
-                            arena.newline(),
+                            arena.hardline(),
                             "end"
                         ]
                         .group();
@@ -222,37 +222,18 @@ impl<'a> Expr<'a> {
                         "match ",
                         expr.pretty(arena, Prec::Top).nest(INDENT),
                         " with",
-<<<<<<< HEAD
                         arena.hardline(),
-                        arena.concat(
-                            alts.iter()
-                                .map(|alt| {
-                                    chain![
-                                        arena,
-                                        "| ",
-                                        alt.pattern.pretty(arena),
-                                        " ->",
-                                        arena.space(),
-                                        alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
-                                    ]
-                                    .nest(INDENT)
-                                })
-                                .intersperse(arena.hardline())
-                        )
-=======
-                        arena.newline(),
                         arena.concat(alts.iter().map(|alt| {
-                            chain![arena;
+                            chain![arena,
                                 "| ",
                                 alt.pattern.pretty(arena),
                                 " ->",
                                 arena.space(),
                                 alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
                             ].nest(INDENT)
-                        }).intersperse(arena.newline())),
-                        arena.newline(),
+                        }).intersperse(arena.hardline())),
+                        arena.hardline(),
                         "end"
->>>>>>> a
                     ]
                     .group();
                     prec.enclose(arena, doc)

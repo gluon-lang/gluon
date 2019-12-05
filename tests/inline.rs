@@ -210,3 +210,63 @@ mod.(+) (no_inline 1) 2
     "#;
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
+
+#[test]
+fn inline_match() {
+    let _ = env_logger::try_init();
+
+    let thread = make_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
+
+    thread
+        .load_script(
+            "test",
+            r#"
+type Test = | A | B
+match A with
+| A -> 1
+| B -> 2
+        "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let db = thread.get_database();
+    let core_expr = db
+        .core_expr("test".into())
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected_str = r#"
+        1
+    "#;
+    check_expr_eq(core_expr.value.expr(), expected_str);
+}
+
+#[test]
+fn inline_cmp() {
+    let _ = env_logger::try_init();
+
+    let thread = make_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
+
+    thread
+        .load_script(
+            "test",
+            r#"
+let mod @ { Option } = import! tests.optimize.cmp
+let m = mod.mk_ord {
+    (<) = Some (\l r -> l #Int< r),
+}
+m.(<)
+        "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let db = thread.get_database();
+    let core_expr = db
+        .core_expr("test".into())
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected_str = r#"
+        rec let lt l r = (#Int<) l r
+        in lt
+    "#;
+    check_expr_eq(core_expr.value.expr(), expected_str);
+}
