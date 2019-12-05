@@ -11,7 +11,7 @@ use std::{
 use itertools::Itertools;
 
 use crate::base::{
-    ast::TypedIdent,
+    ast::{Typed, TypedIdent},
     fnv::FnvMap,
     kind::{ArcKind, KindEnv},
     merge::{merge, merge_collect},
@@ -25,8 +25,8 @@ use crate::{
         self,
         costs::{Cost, Costs},
         optimize::{
-            self, walk_expr, walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime,
-            Visitor,
+            self, walk_expr, walk_expr_alloc, DifferentLifetime, ExprProducer, OptimizeEnv,
+            SameLifetime, Visitor,
         },
         purity::PurityMap,
         Allocator, Alternative, ArenaExt, CExpr, Closure, ClosureRef, CoreClosure, CoreExpr, Expr,
@@ -434,6 +434,12 @@ where
     }
 }
 
+impl<'l, 'g, C> From<CExpr<'l>> for Binding<ReducedExpr<'l>, C> {
+    fn from(expr: CExpr<'l>) -> Self {
+        Binding::Expr(Reduced::Local(expr))
+    }
+}
+
 impl<'l, 'g, C> From<ReducedExpr<'l>> for Binding<ReducedExpr<'l>, C> {
     fn from(expr: ReducedExpr<'l>) -> Self {
         Binding::Expr(expr)
@@ -497,7 +503,13 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
         match *expr {
             Expr::Call(f, _) => {
                 match *f {
-                    Expr::Ident(ref id, ..) => {
+                    Expr::Ident(ref id, ..)
+                        if self
+                            .1
+                            .pure_symbols
+                            .as_ref()
+                            .map_or(false, |p| p.pure_call(&id.name)) =>
+                    {
                         match self.1.find(&id.name) {
                             Some(variable) => match &variable.bind {
                                 Binding::Expr(expr) => {
@@ -595,6 +607,7 @@ impl<'l, 'g> FunctionEnv<'l, 'g> {
 pub struct Compiler<'a, 'e> {
     allocator: &'e Allocator<'e>,
     globals: &'a dyn Fn(&Symbol) -> Option<GlobalBinding>,
+    env: &'a dyn OptimizeEnv<Type = ArcType>,
     local_bindings: FnvMap<Symbol, Option<CostBinding<'e>>>,
     inlined_global_bindings: RefCell<FnvMap<Symbol, Option<CostBinding<'e>>>>,
     bindings_in_scope: ScopedMap<Symbol, ()>,
@@ -627,10 +640,12 @@ impl<'a, 'e> Compiler<'a, 'e> {
     pub fn new(
         allocator: &'e Allocator<'e>,
         globals: &'a dyn Fn(&Symbol) -> Option<GlobalBinding>,
+        env: &'a dyn OptimizeEnv<Type = ArcType>,
     ) -> Compiler<'a, 'e> {
         Compiler {
             allocator,
             globals,
+            env,
             local_bindings: FnvMap::default(),
             inlined_global_bindings: Default::default(),
             bindings_in_scope: ScopedMap::default(),
@@ -1148,6 +1163,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Option<CExpr<'e>> {
         let mut replaced_expr = Vec::new();
+        trace!("Optimizing: {}", expr);
         let mut expr = Reduced::Local(expr);
         for _ in 0..10 {
             let replaced_expr_len = replaced_expr.len();
@@ -1198,7 +1214,14 @@ impl<'a, 'e> Compiler<'a, 'e> {
         replaced_expr
             .into_iter()
             .rev()
-            .find(|(cost, e)| *cost <= 10 && !self.contains_unbound_variables(e.as_ref()))
+            .find(|(cost, e)| {
+                if *cost <= 10 && !self.contains_unbound_variables(e.as_ref()) {
+                    true
+                } else {
+                    trace!("Unable to optimize: {}", e);
+                    false
+                }
+            })
             .map(|(_, e)| {
                 e.into_local(
                     &mut self.inlined_global_bindings.borrow_mut(),
@@ -1249,26 +1272,40 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         self.allocator,
                     );
 
-                    let mut inline = true;
-
                     self.bindings_in_scope.enter_scope();
+
+                    let mut no_inline_args = Vec::new();
 
                     for (name, value) in closure_args
                         .iter()
                         .zip(args.by_ref().map(|arg| resolver.wrap(arg)))
                     {
-                        if !self.push_inline_stack_var(name.name.clone(), Some(value.into())) {
-                            // If we aren't able to inline all variables we can't inline (right
-                            // now, it causes unbound variable errors due to variables of the
-                            // inlined function not being replaced)
-                            inline = false;
-                            trace!("Could not inline argument {}", name.name);
-                            break;
+                        if !self
+                            .push_inline_stack_var(name.name.clone(), Some(value.clone().into()))
+                        {
+                            let typed_ident = TypedIdent {
+                                name: Symbol::from("inline_bind"),
+                                typ: value.as_ref().env_type_of(&self.env),
+                            };
+                            let expr = &*self
+                                .allocator
+                                .arena
+                                .alloc(Expr::Ident(typed_ident.clone(), value.as_ref().span()));
+                            self.bindings_in_scope.insert(typed_ident.name.clone(), ());
+                            no_inline_args.push((typed_ident, value));
+                            self.local_bindings.insert(
+                                name.name.clone(),
+                                Some(CostBinding {
+                                    cost: 0,
+                                    bind: expr.into(),
+                                }),
+                            );
                         }
                     }
 
-                    let expr = if inline {
-                        self.compile(closure_body, function).map(|new_expr| {
+                    let expr = self
+                        .compile(closure_body, function)
+                        .map(|new_expr| {
                             let args = self.allocator.arena.alloc_fixed(args.map(|e| {
                                 resolver
                                     .produce(&mut self.inlined_global_bindings.borrow_mut(), e)
@@ -1284,9 +1321,25 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             trace!("INLINED {} ==>> {}", expr, new_expr);
                             new_expr
                         })
-                    } else {
-                        None
-                    };
+                        .map(|body| {
+                            no_inline_args
+                                .into_iter()
+                                .rev()
+                                .fold(body, |body, (name, expr)| {
+                                    let expr = expr.into_local(
+                                        &mut self.inlined_global_bindings.borrow_mut(),
+                                        &self.allocator,
+                                    );
+                                    &*self.allocator.arena.alloc(Expr::Let(
+                                        self.allocator.let_binding_arena.alloc(LetBinding {
+                                            name,
+                                            span_start: expr.span().start(),
+                                            expr: Named::Expr(expr),
+                                        }),
+                                        body,
+                                    ))
+                                })
+                        });
 
                     self.bindings_in_scope.exit_scope();
 
@@ -1421,6 +1474,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         symbol: &Symbol,
         expr: ReducedExpr<'e>,
     ) -> Option<ReducedExpr<'e>> {
+        trace!("Project {} . {}", expr, symbol);
         match self
             .peek_identifier(expr.clone())
             .map(|b| b.bind)
@@ -1434,6 +1488,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         .zip(*fields)
                         .find(|(field, _)| field.name.declared_name() == symbol.declared_name())
                         .unwrap_or_else(|| ice!("Missing record field {} in {}", symbol, id.typ));
+                    trace!("Projected: {}", projected_expr);
                     Some(resolver.wrap(projected_expr))
                 }
                 _ => None,
@@ -1443,7 +1498,6 @@ impl<'a, 'e> Compiler<'a, 'e> {
     }
 
     fn peek_identifier(&mut self, expr: ReducedExpr<'e>) -> Option<CostBinding<'e>> {
-        trace!("Peek {}", expr);
         expr.with(self.allocator, |resolver, expr| {
             match peek_through_lets(expr) {
                 Expr::Ident(id, ..) => Some(match self.load_identifier(resolver, &id.name) {
@@ -1742,7 +1796,8 @@ pub(crate) mod tests {
 
         let costs = crate::core::costs::analyze_costs(&cyclic_bindings, actual_expr);
 
-        let mut interpreter = Compiler::new(&allocator, globals)
+        let env = base::ast::EmptyEnv::default();
+        let mut interpreter = Compiler::new(&allocator, globals, &env)
             .costs(costs)
             .pure_symbols(&pure_symbols);
         let actual_expr = interpreter.compile_expr(actual_expr).unwrap();
@@ -1926,33 +1981,6 @@ pub(crate) mod tests {
         let expected = r#"
             rec let f x = f x
             in f
-        "#;
-        assert_eq_expr!(expr, expected);
-    }
-
-    #[test]
-    fn abort_on_self_recursive_function_2() {
-        let _ = ::env_logger::try_init();
-
-        let expr = r#"
-            rec let no_inline x =
-                match (#Int<) x 0 with
-                | True -> no_inline x
-                | False -> x
-                end
-            in
-            rec let f x = x
-            in f (no_inline 1)
-        "#;
-        let expected = r#"
-            rec let no_inline x =
-                match (#Int<) x 0 with
-                | True -> no_inline x
-                | False -> x
-                end
-            in
-            rec let f x = x
-            in f (no_inline 1)
         "#;
         assert_eq_expr!(expr, expected);
     }

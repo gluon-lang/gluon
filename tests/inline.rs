@@ -145,7 +145,8 @@ fn prune_factorial() {
         .load_script(
             "test",
             r#"
-            let { (-), (*), (<) } = import! std.prelude
+            let { (-), (*) } = import! std.num
+            let { (<) } = import! std.cmp
             let { ? } = import! std.int
             let factorial n =
                 if n < 2
@@ -164,7 +165,9 @@ fn prune_factorial() {
         rec let factorial n =
             match (#Int<) n 2 with
             | True -> 1
-            | False -> (#Int*) n (factorial ( (#Int-) n 1))
+            | False ->
+                let inline_bind = factorial ( (#Int-) n 1) in
+                (#Int*) n  inline_bind
             end
         in
         factorial
@@ -195,7 +198,15 @@ mod.(+) (no_inline 1) 2
         .core_expr("test".into())
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
-        3
+        rec let no_inline x =
+            match (#Int==) x 0 with
+            | True -> no_inline x
+            | False -> x
+            end
+        in
+        let inline_bind = no_inline 1
+        in
+        (#Int+) inline_bind 2
     "#;
     check_expr_eq(core_expr.value.expr(), expected_str);
 }

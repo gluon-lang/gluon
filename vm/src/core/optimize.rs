@@ -20,6 +20,12 @@ pub trait OptimizeEnv: TypeEnv {
     fn find_expr(&self, id: &Symbol) -> Option<Global<CoreExpr>>;
 }
 
+impl OptimizeEnv for base::ast::EmptyEnv<Symbol> {
+    fn find_expr(&self, _: &Symbol) -> Option<Global<CoreExpr>> {
+        None
+    }
+}
+
 pub trait Produce<'a, 'b, P, Input> {
     fn produce_with(input: &'b Input, producer: &mut P) -> Self;
 }
@@ -277,7 +283,7 @@ pub fn optimize<'a>(
         env.find_expr(symbol)
             .map(crate::core::interpreter::Binding::from)
     };
-    let mut interpreter = crate::core::interpreter::Compiler::new(allocator, &f)
+    let mut interpreter = crate::core::interpreter::Compiler::new(allocator, &f, env)
         .costs(costs)
         .pure_symbols(&pure_symbols);
     let expr = interpreter.compile_expr(expr).ok().unwrap_or(expr);
