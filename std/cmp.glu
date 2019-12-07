@@ -1,7 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functionality for ordering and comparison.
 
-let { Bool, Ordering, Option } = import! std.types
+let { Bool, Ordering } = import! std.types
 let { Semigroup } = import! std.semigroup
 let { Monoid } = import! std.monoid
 
@@ -25,76 +25,41 @@ type Ord a = {
     eq : Eq a,
     /// Compares two values and returns wheter the first is less than, equal or greater than the second.
     compare : a -> a -> Ordering,
-    (<): a -> a -> Bool,
-    (<=): a -> a -> Bool,
-    (>=): a -> a -> Bool,
-    (>): a -> a -> Bool,
 }
 
 let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
 
-#[infix(left, 4)]
-let (=?) opt y : Option b -> b -> b =
-    match opt with
-    | Some x -> x
-    | None -> y
-
-let mk_ord builder : _ -> Ord a =
-    let compare = builder.compare
-    let eq = builder.eq
-
-    #[infix(left, 4)]
-    let (<=) l r : a -> a -> Bool =
-        match compare l r with
-        | LT -> True
-        | EQ -> True
-        | GT -> False
-
-    #[infix(left, 4)]
-    let (<) l r : a -> a -> Bool =
-        match compare l r with
-        | LT -> True
-        | EQ -> False
-        | GT -> False
-
-    #[infix(left, 4)]
-    let (>) l r : a -> a -> Bool =
-        match compare l r with
-        | LT -> False
-        | EQ -> False
-        | GT -> True
-
-    #[infix(left, 4)]
-    let (>=) l r : a -> a -> Bool =
-        match compare l r with
-        | LT -> False
-        | EQ -> True
-        | GT -> True
-
-    {
-        eq,
-        compare,
-        (<) = builder.(<) =? (<),
-        (<=) = builder.(<=) =? (<=),
-        (>=) = builder.(>=) =? (>=),
-        (>) = builder.(>) =? (>),
-    }
-
 /// Returns whether `l` is less than or equal to `r`.
 #[infix(left, 4)]
-let (<=) ?ord : [Ord a] -> a -> a -> Bool = ord.(<=)
+let (<=) l r : [Ord a] -> a -> a -> Bool =
+    match compare l r with
+    | LT -> True
+    | EQ -> True
+    | GT -> False
 
 /// Returns whether `l` is less than `r`.
 #[infix(left, 4)]
-let (<) ?ord : [Ord a] -> a -> a -> Bool = ord.(<)
+let (<) l r : [Ord a] -> a -> a -> Bool =
+    match compare l r with
+    | LT -> True
+    | EQ -> False
+    | GT -> False
 
 /// Returns whether `l` is greater than `r`.
 #[infix(left, 4)]
-let (>) ?ord : [Ord a] -> a -> a -> Bool = ord.(>)
+let (>) l r : [Ord a] -> a -> a -> Bool =
+    match compare l r with
+    | LT -> False
+    | EQ -> False
+    | GT -> True
 
 /// Returns whether `l` is greater than or equal to `r`.
 #[infix(left, 4)]
-let (>=) ?ord : [Ord a] -> a -> a -> Bool = ord.(>=)
+let (>=) l r : [Ord a] -> a -> a -> Bool =
+    match compare l r with
+    | LT -> False
+    | EQ -> True
+    | GT -> True
 
 let min l r : [Ord a] -> a -> a -> a =
     if l <= r then l
@@ -131,8 +96,6 @@ let monoid : Monoid Ordering = {
     (>),
     min,
     max,
-
-    mk_ord,
 
     Ordering,
 

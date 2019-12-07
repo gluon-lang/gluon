@@ -561,11 +561,23 @@ where
                 .spawn(Box::pin(async move {
                     let result = {
                         let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
-                        db.import(modulename)
+                        std::panic::AssertUnwindSafe(db.import(modulename))
+                            .catch_unwind()
                             .await
-                            .map_err(|err| MacroError::message(err.to_string()))
+                            .map(|r| r.map_err(|err| MacroError::message(err.to_string())))
+                            .unwrap_or_else(|err| {
+                                Err(MacroError::message(
+                                    err.downcast::<String>()
+                                        .map(|s| *s)
+                                        .or_else(|e| {
+                                            e.downcast::<&str>().map(|s| String::from(&s[..]))
+                                        })
+                                        .unwrap_or_else(|_| "Unknown panic".to_string()),
+                                ))
+                            })
                     };
-                    drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
+                    // Drop the database before sending the result, otherwise the forker may drop before the forked database
+                    drop(db);
                     let _ = tx.send(result);
                 }))
                 .unwrap();

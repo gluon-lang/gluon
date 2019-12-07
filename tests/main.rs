@@ -329,14 +329,19 @@ async fn run_doc_tests<'t>(
 
 async fn main_(options: &Opt) -> Result<(), Error> {
     let _ = ::env_logger::try_init();
-    let filter = if options.filter.len() > 1 {
-        options.filter.last()
-    } else {
-        None
-    };
+    let filter = options.filter.last();
 
     let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
     let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
+
+    let filter_fn = |filename: PathBuf| {
+        let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
+
+        match filter {
+            Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+            _ => Some((filename, name)),
+        }
+    };
 
     let vm = new_vm_async().await;
     vm.load_file_async("std/test.glu").await?;
@@ -356,14 +361,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
     let pool = TokioSpawn;
     let pass_tests_future = iter
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
@@ -385,14 +383,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
     let fail_tests = test_files("tests/fail")?
         .into_iter()
         .filter(|filename| !filename.to_string_lossy().contains("deps"))
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
@@ -410,14 +401,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
     let doc_tests_future = test_files("std")?
         .into_iter()
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
             pool.spawn_with_handle(async move {

@@ -1,4 +1,4 @@
-#![cfg(features = "test")]
+#![cfg(feature = "test")]
 use support::*;
 
 mod support;
@@ -23,9 +23,9 @@ async fn inline_cross_module() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
         .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
@@ -34,8 +34,8 @@ async fn inline_cross_module() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn inline_with_record_pattern_in_module() {
+#[tokio::test]
+async fn inline_with_record_pattern_in_module() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -68,9 +68,10 @@ num.(+) 3
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         3
@@ -78,8 +79,8 @@ num.(+) 3
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn inline_across_two_modules() {
+#[tokio::test]
+async fn inline_across_two_modules() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -96,9 +97,10 @@ fn inline_across_two_modules() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         3
@@ -106,8 +108,8 @@ fn inline_across_two_modules() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn prune_prelude() {
+#[tokio::test]
+async fn prune_prelude() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -124,9 +126,10 @@ fn prune_prelude() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         3
@@ -134,8 +137,8 @@ fn prune_prelude() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn prune_factorial() {
+#[tokio::test]
+async fn prune_factorial() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -157,9 +160,10 @@ fn prune_factorial() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         rec let factorial n =
@@ -175,8 +179,8 @@ fn prune_factorial() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn inline_num() {
+#[tokio::test]
+async fn inline_num() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -193,9 +197,10 @@ mod.(+) (no_inline 1) 2
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         rec let no_inline x =
@@ -211,8 +216,8 @@ mod.(+) (no_inline 1) 2
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn inline_match() {
+#[tokio::test]
+async fn inline_match() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -230,9 +235,10 @@ match A with
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         1
@@ -240,8 +246,8 @@ match A with
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
-#[test]
-fn inline_cmp() {
+#[tokio::test]
+async fn inline_cmp() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -260,13 +266,46 @@ m.(<)
         )
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let db = thread.get_database();
+    let mut db = thread.get_database();
     let core_expr = db
-        .core_expr("test".into())
+        .core_expr("test".into(), None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         rec let lt l r = (#Int<) l r
         in lt
+    "#;
+    check_expr_eq(core_expr.value.expr(), expected_str);
+}
+
+#[tokio::test]
+async fn inline_option() {
+    let _ = env_logger::try_init();
+
+    let thread = make_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
+
+    thread
+        .load_script(
+            "test",
+            r#"
+type Option = | None | Some Int
+let f opt =
+    match opt with
+    | Some x -> x
+    | None -> 0
+f (Some 1)
+        "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let mut db = thread.get_database();
+    let core_expr = db
+        .core_expr("test".into(), None)
+        .await
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected_str = r#"
+        1
     "#;
     check_expr_eq(core_expr.value.expr(), expected_str);
 }

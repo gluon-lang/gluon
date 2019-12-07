@@ -32,11 +32,15 @@ impl Costs {
     pub fn data(&self, s: &SymbolRef) -> Data {
         self.0.get(s).cloned().unwrap_or_default()
     }
+
+    pub fn insert(&mut self, s: Symbol, data: Data) {
+        self.0.insert(s, data);
+    }
 }
 
 struct AnalyzeCost<'a, 'b> {
     cyclic_bindings: &'b FnvSet<&'a SymbolRef>,
-    costs: Costs,
+    costs: &'b mut Costs,
     bind_stack: FnvSet<&'a SymbolRef>,
     current: Vec<Cost>,
 }
@@ -163,12 +167,13 @@ impl<'a> Visitor<'a, 'a> for AnalyzeCost<'a, '_> {
 }
 
 pub(crate) fn analyze_costs<'a>(cyclic_bindings: &FnvSet<&'a SymbolRef>, expr: CExpr<'a>) -> Costs {
+    let mut costs = Costs::default();
     let mut visitor = AnalyzeCost {
         cyclic_bindings,
-        costs: Costs::default(),
+        costs: &mut costs,
         current: vec![0],
         bind_stack: FnvSet::default(),
     };
     visitor.visit_expr(expr);
-    visitor.costs
+    costs
 }

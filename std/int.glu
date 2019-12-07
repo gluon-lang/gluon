@@ -1,11 +1,10 @@
 //@NO-IMPLICIT-PRELUDE
 //! The signed 64-bit integer type.
 
-let { Option } = import! std.types
 let { Semigroup } = import! std.semigroup
 let { Monoid } = import! std.monoid
 let { Group } = import! std.group
-let { Eq, Ord, Ordering, mk_ord } = import! std.cmp
+let { Eq, Ord, Ordering } = import! std.cmp
 let { Num } = import! std.num
 let { Show } = import! std.show
 
@@ -42,13 +41,9 @@ let eq : Eq Int = {
     (==) = \l r -> l #Int== r,
 }
 
-let ord : Ord Int = mk_ord {
+let ord : Ord Int = {
     eq = eq,
     compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT,
-    (<) = Some (\l r -> l #Int< r),
-    (<=) = None,
-    (>=) = None,
-    (>) = None,
 }
 
 let num : Num Int = {

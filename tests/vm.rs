@@ -729,6 +729,7 @@ in
 g 10
 "#;
     let vm = make_vm();
+    vm.get_database_mut().set_optimize(false);
     let result = vm.run_expr::<i32>("<top>", text);
     match result {
         Err(Error::VM(vm::Error::Panic(_, Some(stacktrace)))) => {

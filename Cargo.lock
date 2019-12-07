@@ -1370,6 +1370,7 @@ dependencies = [
  "env_logger 0.7.1",
  "frunk_core",
  "futures 0.3.5",
+ "gluon",
  "gluon_base",
  "gluon_check",
  "gluon_codegen",

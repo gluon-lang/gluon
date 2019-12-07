@@ -4473,7 +4473,7 @@ where
     T: Clone + 'a,
     R: FromIterator<T>,
 {
-    merge_collect(state, types, f, Clone::clone)
+    merge_collect(state, types, f, |_, e| e.clone())
 }
 
 pub fn translate_alias<Id, T, U, F, I>(

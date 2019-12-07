@@ -71,7 +71,7 @@ impl Pure<'_> {
             Pattern::Ident(id) => {
                 self.pure_symbols.0.insert(id.name.clone(), Pureness::Load);
             }
-            Pattern::Record(fields) => {
+            Pattern::Record { fields, .. } => {
                 for field in fields {
                     self.pure_symbols.0.insert(
                         field.1.as_ref().unwrap_or(&field.0.name).clone(),

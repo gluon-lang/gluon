@@ -47,7 +47,7 @@ f 42
                     ref implicit_args, ..
                 } => match (&implicit_args[0].value, &bind[0].name.value) {
                     (&Expr::Ident(ref arg), &Pattern::Ident(ref bind_id)) => {
-                        assert_eq!(arg.name, bind_id.name)
+                        assert_eq!(arg.name, bind_id.name);
                     }
                     _ => panic!(),
                 },

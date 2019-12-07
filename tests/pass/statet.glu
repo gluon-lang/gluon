@@ -40,6 +40,6 @@ group "statet" [
         #[derive(Eq, Show)]
         type StateOut s a = { value : a, state : s }
         test "put get run_state_t" <| \_ -> (assert_eq (run_state_t (put "hello" *> get) "") <| Some {value = "hello", state = "hello"}),
-        test "gets eval_state_t" <| \_ -> (assert_eq (eval_state_t (gets <| (::) 1) (2 :: 3 :: Nil)) <| Some (1 :: 2 :: 3 :: Nil)),
+        test "gets eval_state_t" <| \_ -> (assert_eq (eval_state_t (gets <| (::) 1) (Cons 2 (Cons 3 Nil))) <| Some (1 :: 2 :: 3 :: Nil)),
     ],
 ]
