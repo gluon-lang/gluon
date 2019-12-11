@@ -423,15 +423,24 @@ fn marshal_json(thread: &Thread) -> Result<()> {
         let { Value } = import! std.json
         let de @ { Deserialize, ? } = import! std.json.de
 
+        #[derive(Deserialize, Show)]
+        type Nested = {
+            float: Float,
+        }
+
         #[derive(Deserialize)]
         type MyValue = {
             bool: Bool,
             string: String,
+            nested: Nested,
+            array: Array Int,
         }
         let consumer value : Value -> Eff [| error : Error String, lift: Lift IO |] () =
             do my_value = ok_or_throw <| de.run value
             seq io.println ("bool = " ++ show my_value.bool)
-            io.println ("string = " ++ show my_value.string)
+            seq io.println ("string = " ++ show my_value.string)
+            seq io.println ("nested = " ++ show my_value.nested)
+            io.println ("array = " ++ show my_value.array)
 
         \value -> run_lift <| run_error <| consumer value
         "#;
@@ -445,6 +454,10 @@ fn marshal_json(thread: &Thread) -> Result<()> {
         .call(serde_json::json! {{
             "bool": true,
             "string": "hello",
+            "nested": {
+                "float": 3.14,
+            },
+            "array": [1, 2, 3]
         }})?
         .into_result()??;
 
