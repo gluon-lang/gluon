@@ -335,6 +335,7 @@ fn load_mod(thread: &gluon::Thread) -> vm::Result<ExternModule> {
     thread.register_type::<WindowHandle>("WindowHandle", &[])?;
 
     let module = record! {
+        type WindowHandle => WindowHandle,
         create_hwnd => primitive!(2, create_hwnd),
         id => primitive!(1, id),
         metadata => primitive!(1, metadata),
@@ -367,8 +368,8 @@ fn marshal_userdata(thread: &Thread) -> Result<()> {
 
     let script = r#"
         let { assert } = import! std.test
-        let { create_hwnd, id, metadata } = import! hwnd
-        let hwnd = create_hwnd 0 "Window1"
+        let { WindowHandle, create_hwnd, id, metadata } = import! hwnd
+        let hwnd : WindowHandle = create_hwnd 0 "Window1"
         assert (id hwnd == 0)
         assert (metadata hwnd == "Window1")
         hwnd
