@@ -465,9 +465,9 @@ make_vm_function!(A, B, C, D, E);
 make_vm_function!(A, B, C, D, E, F);
 make_vm_function!(A, B, C, D, E, F, G);
 
-impl<T, F> Function<T, F>
+impl<'vm, T, F> Function<T, F>
 where
-    T: VmRootInternal,
+    T: VmRootInternal + 'vm,
     F: VmType,
 {
     pub fn cast<F2>(self) -> Result<Function<T, F2>>
@@ -482,6 +482,52 @@ where
             })
         } else {
             Err(Error::Message("Function cast is not compatible".into()))
+        }
+    }
+
+    /// Calls `self` with a number of arguments that is only known at runtime.
+    ///
+    /// WARNING: No check is done that the number of arguments is correct. The VM may return an
+    /// error or panic if an incorrect number of arguments is passed.
+    pub fn call_any<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<R>
+    where
+        A: Pushable<'vm>,
+        R: for<'value> Getable<'vm, 'value> + VmType,
+    {
+        match self.call_any_first(args)? {
+            Async::Ready(value) => Ok(value),
+            Async::NotReady => Err(Error::Message("Unexpected async".into())),
+        }
+    }
+
+    fn call_any_first<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<Async<R>>
+    where
+        A: Pushable<'vm>,
+        R: for<'value> Getable<'vm, 'value> + VmType,
+    {
+        let vm = self.value.vm();
+        let mut context = vm.current_context();
+        context.push(self.value.get_variant());
+
+        let mut arg_count = R::extra_args();
+        for arg in args {
+            arg_count += 1;
+            arg.push(&mut context)?;
+        }
+        for _ in 0..R::extra_args() {
+            0.push(&mut context).unwrap();
+        }
+        match vm.call_function(context.into_owned(), arg_count)? {
+            Async::Ready(context) => {
+                let mut context = context.unwrap();
+                let result = {
+                    let value = context.stack.last().unwrap();
+                    Ok(R::from_value(vm, value)).map(Async::Ready)
+                };
+                context.stack.pop();
+                result
+            }
+            Async::NotReady => Ok(Async::NotReady),
         }
     }
 }
