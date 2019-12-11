@@ -70,3 +70,7 @@ gluon_parser = { path = "../parser", version = "0.13.1" } # GLUON
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "serde_json", "gluon_base/serialization", "codespan/serialization"]
 test = ["difference", "lalrpop", "lalrpop-util", "regex", "serialization", "gluon_parser"]
+docs_rs = ["serialization"]
+
+[package.metadata.docs.rs]
+features = ["docs_rs"]

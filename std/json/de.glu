@@ -247,6 +247,8 @@ let run ?de value : [Deserialize a] -> Value -> Result Error a =
 #[doc(hidden)]
 let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
+let bool_deserializer : Deserialize Bool = { deserializer = bool }
+
 let int_deserializer : Deserialize Int = { deserializer = int }
 
 let float_deserializer : Deserialize Float = { deserializer = float }
@@ -297,6 +299,7 @@ let map_deserializer : [Deserialize a] -> Deserialize (Map String a) =
 
     deserializer,
 
+    bool_deserializer,
     int_deserializer,
     string_deserializer,
     float_deserializer,

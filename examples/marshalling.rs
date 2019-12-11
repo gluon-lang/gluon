@@ -197,7 +197,7 @@ fn marshal_generic() -> Result<()> {
         let either: forall r . Either String r = Left "hello rust!"
 
         // we can pass the generic Either to the Rust function without an issue
-        seq 
+        seq
             match flip either with
             | Left _ -> error "unreachable!"
             | Right val -> io.println ("Right is: " <> val)
@@ -423,6 +423,47 @@ fn marshal_recursive() -> Result<()> {
     Ok(())
 }
 
+fn marshal_json() -> Result<()> {
+    let vm = new_vm();
+
+    let source = r#"
+        let { Eff, ? } = import! std.effect
+        let io @ { ? } = import! std.effect.io
+        let { Lift, run_lift } = import! std.effect.lift
+        let { Error, run_error, ok_or_throw } = import! std.effect.error
+        let { (<|) } = import! std.function
+
+        let { Value } = import! std.json
+        let de @ { Deserialize, ? } = import! std.json.de
+
+        #[derive(Deserialize)]
+        type MyValue = {
+            bool: Bool,
+            string: String,
+        }
+        let consumer value : Value -> Eff [| error : Error String, lift: Lift IO |] () =
+            do my_value = ok_or_throw <| de.run value
+            seq io.println ("bool = " ++ show my_value.bool)
+            io.println ("string = " ++ show my_value.string)
+
+        \value -> run_lift <| run_error <| consumer value
+        "#;
+
+    vm.run_expr::<OpaqueValue<RootedThread, Hole>>("example", "import! std.json")?;
+
+    let (mut consumer, _) = vm.run_expr::<FunctionRef<
+        fn(serde_json::Value) -> IO<std::result::Result<(), String>>,
+    >>("example", source)?;
+    consumer
+        .call(serde_json::json! {{
+            "bool": true,
+            "string": "hello",
+        }})?
+        .into_result()??;
+
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -455,6 +496,11 @@ fn main() {
     }
 
     if let Err(err) = marshal_recursive() {
+        eprintln!("{}", err);
+        ::std::process::exit(1);
+    }
+
+    if let Err(err) = marshal_json() {
         eprintln!("{}", err);
         ::std::process::exit(1);
     }
