@@ -1,10 +1,13 @@
 //@NO-IMPLICIT-PRELUDE
 //! A dynamically sized contigous sequence.
 
-let prim = import! std.array.prim
+let prim @ { Array } = import! std.array.prim
 let int @ { ? } = import! std.int
 let { (++) } = import! std.string
-let prelude @ { Num, Eq, Ord, Show, Functor, (<), (==), (/=), (-), (+) } = import! std.prelude
+let { Num, (-), (+) } = import! std.num
+let { Eq, Ord, (<), (==), (/=) } = import! std.cmp
+let { Show } = import! std.show
+let { Functor } = import! std.functor
 let { Bool, Ordering, compare, min } = import! std.cmp
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
@@ -115,6 +118,8 @@ let monoid : Monoid (Array a) = { semigroup, empty = [] }
 let is_empty array = prim.len array == 0
 
 {
+    Array,
+
     eq,
     ord,
     show,

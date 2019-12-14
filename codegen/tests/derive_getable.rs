@@ -157,8 +157,10 @@ fn enum_generic_variants() {
         let { Either, left, extract_str } = import! functions
         let { assert } = import! std.test
 
-        assert (left (Left 42) == Some 42)
-        assert (left (Right 0.0) == None)
+        let l: Either Int Float  = Left 42
+        assert (left l == Some 42)
+        let r: Either Int Float  = Right 0.0
+        assert (left r == None)
 
         assert (extract_str (Left "left") == "left")
         assert (extract_str (Right "right") == "right")
@@ -190,7 +192,7 @@ fn derive_generates_same_type_as_gluon_define() {
         let test = import! test
 
         type Enum = | TestVariant | TestVariant2 Int
-        
+
         test TestVariant
         test (TestVariant2 123)
     "#;

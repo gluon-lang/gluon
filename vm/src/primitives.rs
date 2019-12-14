@@ -533,6 +533,7 @@ pub fn load_array(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            type Array a => Array<A>,
             len => primitive!(1, std::array::prim::len),
             index => primitive!(2, std::array::prim::index),
             append => primitive!(2, std::array::prim::append),

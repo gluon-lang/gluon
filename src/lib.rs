@@ -798,15 +798,17 @@ let { IO, Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = _
 
 let { (+), (-), (*), (/), negate, (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
 
-let __implicit_bool @ { ? } = import! std.bool
+let { ? } = import! std.bool
 
 let { ? } = import! std.option
 
-let __implicit_float @ { ? } = import! std.float
+let { ? } = import! std.float
 
-let __implicit_int @ { ? } = import! std.int
+let { ? } = import! std.int
 
-let __implicit_string @ { ? } = import! std.string
+let { ? } = import! std.string
+
+let { ? } = import! std.array
 
 let { error } = import! std.prim
 
