@@ -252,6 +252,7 @@ impl<'a> Data<'a> {
 }
 
 /// Marker type representing a hole
+#[derive(Clone)]
 pub struct Hole(());
 
 impl VmType for Hole {
