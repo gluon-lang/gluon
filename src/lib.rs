@@ -83,7 +83,7 @@ use crate::vm::{
 use crate::{
     compiler_pipeline::*,
     import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
-    query::{Compilation, CompilationBase},
+    query::{Compilation, CompilationBase, CompilationMut},
 };
 
 quick_error! {

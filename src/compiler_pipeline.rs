@@ -173,7 +173,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
             }
             let mut forker = Forker(compiler.database.forker());
 
-            let spawn = if tokio_executor::enter().is_err() {
+            let spawn = if std::panic::catch_unwind(|| tokio::spawn(async {})).is_ok() {
                 struct TokioSpawn;
                 impl futures::task::Spawn for TokioSpawn {
                     fn spawn_obj(

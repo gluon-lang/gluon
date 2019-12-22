@@ -154,10 +154,10 @@ impl CompilerDatabase {
 
     pub fn fork(
         &self,
-        state: Arc<salsa::ForkState<Self>>,
+        state: salsa::ForkState<Self>,
         thread: RootedThread,
-    ) -> salsa::Fork<Self> {
-        salsa::Fork::new(Self {
+    ) -> salsa::Snapshot<Self> {
+        salsa::Snapshot::new(Self {
             runtime: self.runtime.fork(self, state),
             state: self.state.clone(),
             thread: Some(thread),
@@ -236,7 +236,7 @@ impl salsa::ParallelDatabase for CompilerDatabase {
         panic!("Call CompilerDatabase::snapshot(&self, &Thread)")
     }
 
-    fn fork(&self, _state: Arc<salsa::ForkState<Self>>) -> salsa::Fork<Self> {
+    fn fork(&self, _state: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
         panic!("Call CompilerDatabase::fork(&self, &Thread)")
     }
 }
@@ -314,14 +314,14 @@ pub trait CompilationBase: salsa::Database {
 #[salsa::query_group(CompileStorage)]
 pub trait Compilation: CompilationBase {
     #[salsa::input]
-    fn compiler_settings(&mut self) -> Settings;
+    fn compiler_settings(&self) -> Settings;
 
     #[salsa::dependencies]
-    fn module_text(&mut self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
+    fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
     async fn typechecked_module(
-        &mut self,
+        &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<
@@ -331,7 +331,7 @@ pub trait Compilation: CompilationBase {
 
     #[salsa::cycle(recover_cycle_expected_type)]
     async fn core_expr(
-        &mut self,
+        &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<interpreter::Global<CoreExpr>, Error>;
@@ -339,21 +339,21 @@ pub trait Compilation: CompilationBase {
     #[salsa::cycle(recover_cycle_expected_type)]
     #[salsa::dependencies]
     async fn compiled_module(
-        &mut self,
+        &self,
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    async fn import(&mut self, module: String) -> StdResult<Expr<Symbol>, Error>;
+    async fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
 
     #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
-    async fn global_inner(&mut self, name: String) -> Result<UnrootedGlobal>;
+    async fn global_inner(&self, name: String) -> Result<UnrootedGlobal>;
 
     #[salsa::transparent]
     #[salsa::cycle(recover_cycle)]
-    async fn global(&mut self, name: String) -> Result<DatabaseGlobal>;
+    async fn global(&self, name: String) -> Result<DatabaseGlobal>;
 }
 
 fn recover_cycle_typecheck<T>(

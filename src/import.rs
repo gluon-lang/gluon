@@ -129,7 +129,7 @@ impl DerefMut for DatabaseSnapshot {
 }
 
 pub struct DatabaseFork {
-    fork: Option<salsa::Fork<CompilerDatabase>>,
+    fork: Option<salsa::Snapshot<CompilerDatabase>>,
 }
 
 impl Deref for DatabaseFork {
@@ -191,7 +191,7 @@ pub(crate) trait ImportApi: Send + Sync {
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
     fn fork(
         &self,
-        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        forker: salsa::ForkState<CompilerDatabase>,
         thread: RootedThread,
     ) -> DatabaseFork;
 }
@@ -222,7 +222,7 @@ where
     }
     fn fork(
         &self,
-        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        forker: salsa::ForkState<CompilerDatabase>,
         thread: RootedThread,
     ) -> DatabaseFork {
         Self::fork(self, forker, thread)
@@ -304,7 +304,7 @@ impl<I> Import<I> {
 
     pub fn fork(
         &self,
-        forker: Arc<salsa::ForkState<CompilerDatabase>>,
+        forker: salsa::ForkState<CompilerDatabase>,
         thread: RootedThread,
     ) -> DatabaseFork {
         let fork = self.compiler.lock().unwrap().fork(forker, thread);
@@ -628,7 +628,7 @@ where
         let mut db = try_future!(macros
             .userdata
             .fork(macros.vm.root_thread())
-            .downcast::<salsa::Fork<CompilerDatabase>>()
+            .downcast::<salsa::Snapshot<CompilerDatabase>>()
             .map_err(|_| MacroError::new(Error::String(
                 "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
             ))));
@@ -636,7 +636,7 @@ where
         let span = args[0].span;
 
         if let Some(spawn) = macros.spawn {
-            let (tx, rx) = tokio_sync::oneshot::channel();
+            let (tx, rx) = tokio::sync::oneshot::channel();
             spawn
                 .spawn(Box::pin(async move {
                     let result = db

@@ -7,16 +7,17 @@ use crate::real_std::{
 
 use {
     collect_mac::collect,
-    futures_preview::{
+    futures::{
         future::{self, BoxFuture},
         prelude::*,
-        ready, task, Future, Poll, Stream,
+        ready,
+        task::{self, Poll},
     },
     http::{
         header::{HeaderMap, HeaderName, HeaderValue},
         StatusCode,
     },
-    hyper::{Chunk, Server},
+    hyper::{body::Bytes, Server},
     pin_project::pin_project,
 };
 
@@ -107,7 +108,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 #[gluon_trace(skip)]
 // Representation of a http body that is in the prograss of being read
 pub struct Body(
-    Arc<Mutex<Pin<Box<dyn Stream<Item = Result<PushAsRef<Chunk, [u8]>, vm::Error>> + Send>>>>,
+    Arc<Mutex<Pin<Box<dyn Stream<Item = Result<PushAsRef<Bytes, [u8]>, vm::Error>> + Send>>>>,
 );
 
 // Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
@@ -119,7 +120,7 @@ impl fmt::Debug for Body {
 
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
 // into `&Body` argument
-fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Chunk, [u8]>>>> {
+fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Bytes, [u8]>>>> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
@@ -154,7 +155,7 @@ impl fmt::Debug for ResponseBody {
 fn write_response(response: &ResponseBody, bytes: &[u8]) -> impl Future<Output = IO<()>> {
     use futures::future::poll_fn;
 
-    // Turn `bytes´ into a `Chunk` which can be sent to the http body
+    // Turn `bytes´ into a `Bytes` which can be sent to the http body
     let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
     poll_fn(move |cx| {
@@ -346,7 +347,7 @@ async fn listen_(
 
         let http = hyper::server::conn::Http::new();
 
-        let listener = tokio_net::tcp::TcpListener::bind(&addr)
+        let mut listener = tokio::net::TcpListener::bind(&addr)
             .map_err(|err| vm::Error::Message(err.to_string()))
             .await?;
         let incoming = listener.incoming().err_into().and_then(|stream| {
@@ -442,7 +443,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             listen => primitive!(2, async fn std::http::prim::listen),
             read_chunk => primitive!(1, async fn std::http::prim::read_chunk),
             write_response => primitive!(2, async fn std::http::prim::write_response),
-            port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port_part().map(|p| p.as_u16())),
+            port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port().map(|p| p.as_u16())),
             uri => uri_binds!(path host query to_string)
         },
     )

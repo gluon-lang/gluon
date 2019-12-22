@@ -39,29 +39,25 @@ collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.8"
 futures = { version = "0.3.1", features = ["thread-pool"] }
-futures-preview = { version = "0.3.0-alpha.19", package = "futures-preview" }
 codespan = "0.3"
 codespan-reporting = "0.3"
 pin-project = "0.4"
-salsa = { version = "0.13.0", path = "../salsa" }
+salsa = { version = "0.14.0", path = "../salsa" }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4", optional = true }
 serde_derive_state = { version = "0.4.7", optional = true }
 
-tokio = "0.2.0-alpha.6"
-tokio-executor = "0.2.0-alpha.6"
-tokio-sync = "0.2.0-alpha.6"
+tokio = { version = "0.2", features = ["stream"] }
 
 # Binding crates
 regex = { version = "1", optional = true }
 # web
 tower-service = { version = "0.3.0-alpha.1", optional = true }
-http = { version = "0.1", optional = true }
-hyper = { version = "0.13.0-alpha.4", optional = true, features = ["unstable-stream"] }
+http = { version = "0.2", optional = true }
+hyper = { version = "0.13", optional = true, features = ["stream"] }
 native-tls = { version = "0.2", optional = true }
-tokio-tls = { version = "0.3.0-alpha.6", optional = true }
-tokio-net = { version = "0.2.0-alpha.6", optional = true, features = ["tcp", "async-traits"] }
+tokio-tls = { version = "0.3", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3.23", optional = true }
@@ -86,9 +82,8 @@ failure_derive = "0.1"
 pretty_assertions = "0.6"
 structopt = "0.3"
 tempfile = "3.0.4"
-tensile = { path = "../tensile", features = ["tokio-executor"] }
-tokio = "0.2.0-alpha.6"
-tokio-executor = "0.2.0-alpha.6"
+tensile = { path = "../tensile", features = ["tokio"] }
+tokio = "0.2"
 tokio-retry = "0.2"
 walkdir = "2"
 
@@ -107,7 +102,7 @@ gluon_codegen = { path = "codegen", version = "0.13.1" } # GLUON
 default = ["regex", "random"]
 random = ["rand", "rand_xorshift"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["hyper", "http", "tower-service", "native-tls", "tokio-net", "tokio-tls"]
+web = ["hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-tls"]
 
 docs_rs = ["serialization"]
 
