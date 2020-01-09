@@ -2,13 +2,7 @@ extern crate gluon_completion as completion;
 
 use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sync::Mutex};
 
-use futures::{
-    channel::oneshot,
-    compat::*,
-    future::{self},
-    prelude::*,
-    task::SpawnExt,
-};
+use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
     ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent},
@@ -43,17 +37,18 @@ use crate::Color;
 fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> {
     let WithVM { vm, value: args } = args;
     let args = args.to_string();
-    let vm = vm.root_thread();
+    let vm = vm.new_thread().unwrap(); // TODO Run on the same thread once that works
 
-    gluon::sendify(async move {
+    async move {
         IO::Value(match vm.typecheck_str_async("<repl>", &args, None).await {
             Ok((expr, _)) => {
+                eprintln!("typecheck");
                 let env = vm.get_env();
                 Ok(format!("{}", expr.env_type_of(&env)))
             }
             Err(msg) => Err(format!("{}", msg)),
         })
-    })
+    }
 }
 
 fn find_kind(args: WithVM<&str>) -> IO<Result<String, String>> {
@@ -253,13 +248,6 @@ struct Editor {
 
 impl_userdata! { Editor }
 
-#[derive(Userdata, Trace, VmType)]
-#[gluon(vm_type = "CpuPool")]
-#[gluon_trace(skip)]
-struct CpuPool(futures::executor::ThreadPool);
-
-impl_userdata! { CpuPool }
-
 #[derive(Serialize, Deserialize)]
 pub enum ReadlineError {
     Eof,
@@ -333,22 +321,13 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
     IO::Value(Ok(input))
 }
 
-fn new_cpu_pool(size: usize) -> IO<CpuPool> {
-    IO::from(
-        futures::executor::ThreadPool::builder()
-            .pool_size(size)
-            .create()
-            .map(CpuPool),
-    )
-}
-
 fn eval_line(
     De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
 ) -> impl Future<Output = IO<()>> {
-    let vm = vm.root_thread();
+    let vm = vm.new_thread().unwrap(); // TODO Reuse the current thread
     let line = line.to_string();
-    gluon::sendify(async move {
+    async move {
         eval_line_(vm.root_thread(), &line)
             .map(move |result| match result {
                 Ok(x) => IO::Value(x),
@@ -361,7 +340,7 @@ fn eval_line(
                 }
             })
             .await
-    })
+    }
 }
 
 async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
@@ -516,38 +495,30 @@ fn set_globals(
 }
 
 fn finish_or_interrupt(
-    cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
 ) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> {
     let (sender, receiver) = oneshot::channel();
 
     tokio::spawn(async move {
-        let mut signal_stream = tokio_signal::ctrl_c()
-            .compat()
-            .await
-            .unwrap_or_else(|err| panic!("Error installing signal handler: {}", err))
-            .compat();
-
         info!("Installed Ctrl-C handler");
-        if let Some(_) = signal_stream.next().await {
-            let _ = sender.send(());
-        }
+        tokio::signal::ctrl_c()
+            .await
+            .unwrap_or_else(|err| panic!("Error installing signal handler: {}", err));
+        let _ = sender.send(());
     });
 
     let mut action = OwnedFunction::<fn() -> IO<OpaqueValue<RootedThread, A>>>::from_value(
         &thread,
         action.get_variant(),
     );
-    let action_future = cpu_pool
-        .0
-        .spawn_with_handle(async move {
-            action
-                .call_async()
-                .await
-                .unwrap_or_else(|err| IO::Exception(err.to_string()))
-        })
-        .expect("Unable to spawn action on thread pool");
+    let action_future = tokio::spawn(async move {
+        action
+            .call_async()
+            .await
+            .unwrap_or_else(|err| IO::Exception(err.to_string()))
+    })
+    .map(|r| r.unwrap());
 
     let ctrl_c_future = receiver.map(move |next| {
         next.unwrap();
@@ -579,13 +550,11 @@ fn save_history(editor: &Editor) -> IO<()> {
 
 fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
-    vm.register_type::<CpuPool>("CpuPool", &[])?;
 
     vm::ExternModule::new(
         vm,
         record!(
             type Editor => Editor,
-            type CpuPool => CpuPool,
             new_editor => primitive!(1, new_editor),
             readline => primitive!(2, readline),
             save_history => primitive!(1, save_history)
@@ -611,8 +580,7 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             parse_color => primitive!(1, "parse_color", |s: &str| s.parse::<Color>()),
             switch_debug_level => primitive!(1, switch_debug_level),
             eval_line => primitive!(2, async fn eval_line),
-            finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
-            new_cpu_pool => primitive!(1, new_cpu_pool)
+            finish_or_interrupt => primitive!(2, async fn finish_or_interrupt),
         ),
     )
 }
@@ -639,7 +607,7 @@ pub async fn run(
     debug_level: DebugLevel,
     use_std_lib: bool,
 ) -> gluon::Result<()> {
-    let vm = gluon::VmBuilder::new().build();
+    let vm = gluon::VmBuilder::new().build_async().await;
     vm.global_env().set_debug_level(debug_level);
     vm.get_database_mut()
         .use_standard_lib(use_std_lib)

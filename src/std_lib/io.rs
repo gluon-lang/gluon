@@ -296,7 +296,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO
     let vm = vm.root_thread();
     let vm1 = vm.clone();
     let expr = expr.to_owned(); // FIXME
-    crate::sendify(async move {
+    async move {
         let mut db = vm.get_database();
         expr.run_expr(&mut ModuleCompiler::new(&mut db), vm1, "<top>", &expr, None)
             .map(|run_result| {
@@ -315,7 +315,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO
                     Err(err) => clear_frames(err, stack),
                 }
             }).await
-    })
+    }
 }
 
 fn load_script(
@@ -327,7 +327,7 @@ fn load_script(
     let name = name.to_string();
     let expr = expr.to_owned(); // FIXME
 
-    crate::sendify(async move {
+    async move {
         let mut db = vm.get_database();
         expr.load_script(&mut ModuleCompiler::new(&mut db), vm1, &name, &expr, None)
             .map(|run_result| {
@@ -340,7 +340,7 @@ fn load_script(
                 io
             })
             .await
-    })
+    }
 }
 
 mod std {

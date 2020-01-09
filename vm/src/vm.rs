@@ -242,6 +242,9 @@ pub struct GlobalVmState {
     // The references gets added automatically when recreating the threads
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     pub(crate) thread_reference_count: AtomicUsize,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
 }
 
 unsafe impl Trace for GlobalVmState {
@@ -534,11 +537,18 @@ impl<'a> VmEnvInstance<'a> {
 }
 
 #[derive(Default)]
-pub struct GlobalVmStateBuilder {}
+pub struct GlobalVmStateBuilder {
+    spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
+}
 
 impl GlobalVmStateBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn spawner(mut self, spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>) -> Self {
+        self.spawner = spawner;
+        self
     }
 
     pub fn build(self) -> GlobalVmState {
@@ -553,6 +563,7 @@ impl GlobalVmStateBuilder {
             generation_0_threads: Default::default(),
             debug_level: RwLock::new(DebugLevel::default()),
             thread_reference_count: Default::default(),
+            spawner: self.spawner,
         };
         vm.add_types().unwrap();
         vm
@@ -707,19 +718,15 @@ impl GlobalVmState {
     ) -> Result<ArcType> {
         let mut env = self.env.write();
         let type_infos = &mut env.type_infos;
-        if type_infos.id_to_type.contains_key(name.definition_name()) {
-            Err(Error::TypeAlreadyExists(name.definition_name().into()))
-        } else {
-            self.typeids
-                .write()
-                .unwrap()
-                .insert(id, alias.clone().into_type());
-            let t = alias.clone().into_type();
-            type_infos
-                .id_to_type
-                .insert(name.definition_name().into(), alias);
-            Ok(t)
-        }
+        self.typeids
+            .write()
+            .unwrap()
+            .insert(id, alias.clone().into_type());
+        let t = alias.clone().into_type();
+        type_infos
+            .id_to_type
+            .insert(name.definition_name().into(), alias);
+        Ok(t)
     }
 
     pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
@@ -779,5 +786,9 @@ impl GlobalVmState {
 
     pub fn set_debug_level(&self, debug_level: DebugLevel) {
         *self.debug_level.write().unwrap() = debug_level;
+    }
+
+    pub fn spawner(&self) -> Option<&(dyn futures::task::Spawn + Send + Sync)> {
+        self.spawner.as_ref().map(|s| &**s)
     }
 }

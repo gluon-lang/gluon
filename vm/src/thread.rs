@@ -810,6 +810,10 @@ impl Thread {
         }
     }
 
+    pub fn spawner(&self) -> Option<&(dyn futures::task::Spawn + Send + Sync)> {
+        self.global_env().spawner()
+    }
+
     /// Retrieves the global called `name`.
     ///
     /// # Examples

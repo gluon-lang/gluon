@@ -9,7 +9,7 @@ let string = import! std.string
 let thread = import! std.thread
 let array @ { ? } = import! std.array
 let { ref, load, (<-) } = import! std.reference
-let rustyline @ { Editor, CpuPool } = import! rustyline
+let rustyline @ { Editor } = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim @ { Color, Settings } = import! repl.prim
 let { (<<), (<|) } = import! std.function
@@ -25,7 +25,7 @@ let { (<>) } = import! std.prelude
 
 rec
 type ReplEffect r a = [| reader : Reader Repl, state : State Settings, lift : Lift IO | r |] a
-type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
+type Repl = { commands : Commands, editor : Editor }
 type ReplAction =
     | Continue
     | Quit
@@ -41,9 +41,8 @@ let run_interruptible_io action :
         IO String
         -> Eff (ReplEffect r) (Result String String)
     =
-    do cpu_pool = asks (\r -> r.cpu_pool)
     do eval_thread = lift <| thread.new_thread ()
-    let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
+    let interruptible_action = repl_prim.finish_or_interrupt eval_thread action
     io.catch (mio.functor.map Ok interruptible_action) (wrap << Err)
 
 
@@ -230,11 +229,10 @@ let loop _ : () -> Eff (ReplEffect r) () =
         else if string.starts_with line ":" then
             do_command repl.commands line
         else
-            do cpu_pool = asks (\r -> r.cpu_pool)
             let action =
                 do eval_thread = thread.new_thread ()
                 let eval_action = repl_prim.eval_line settings.color line
-                repl_prim.finish_or_interrupt cpu_pool eval_thread eval_action
+                repl_prim.finish_or_interrupt eval_thread eval_action
             io.catch action mio.println *> wrap Continue
 
     do line_result = lift <| rustyline.readline repl.editor settings.prompt
@@ -252,8 +250,7 @@ let loop _ : () -> Eff (ReplEffect r) () =
 let run settings : Settings -> Eff [| lift : Lift IO |] () =
     seq io.println "gluon (:h for help, :q to quit)"
     do editor = lift <| rustyline.new_editor ()
-    do cpu_pool = lift <| repl_prim.new_cpu_pool 1
-    let repl = { commands, editor, cpu_pool }
+    let repl = { commands, editor }
     run_reader repl (eval_state settings (loop ()))
 
 run_lift << run

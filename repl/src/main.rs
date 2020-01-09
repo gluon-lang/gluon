@@ -23,14 +23,13 @@ use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use tokio::runtime::Runtime;
-
 use gluon::{base, parser, vm};
 
 use crate::base::filename_to_module;
 
 use gluon::{
-    new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Error, Result, Thread, ThreadExt,
+    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Error, Result, Thread,
+    ThreadExt,
 };
 
 mod repl;
@@ -138,13 +137,13 @@ pub struct Opt {
     subcommand_opt: Option<SubOpt>,
 }
 
-fn run_files<I>(vm: &Thread, files: I) -> Result<()>
+async fn run_files<I>(vm: &Thread, files: I) -> Result<()>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
 {
     for file in files {
-        vm.load_file(file.as_ref())?;
+        vm.load_file_async(file.as_ref()).await?;
     }
     Ok(())
 }
@@ -158,7 +157,7 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 async fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
-    let thread = new_vm();
+    let thread = new_vm_async().await;
     thread.get_database_mut().use_standard_lib(!opt.no_std);
 
     Ok(thread
@@ -248,7 +247,8 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gl
         Some(SubOpt::Doc(ref doc_opt)) => {
             let input = &doc_opt.input;
             let output = &doc_opt.output;
-            gluon_doc::generate_for_path(&new_vm(), input, output)
+            let thread = new_vm_async().await;
+            gluon_doc::generate_for_path(&thread, input, output)
                 .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
         }
         None => {
@@ -258,7 +258,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gl
                 let use_std_lib = !opt.no_std;
                 repl::run(color, &prompt, debug_level, use_std_lib).await?;
             } else if !opt.input.is_empty() {
-                run_files(&vm, &opt.input)?;
+                run_files(&vm, &opt.input).await?;
             } else {
                 writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
                     .expect("Error writing help to stderr");
@@ -268,19 +268,19 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gl
     Ok(())
 }
 
-fn main() {
+#[tokio::main(basic_scheduler)]
+async fn main() {
     init_env_logger();
 
     let opt = Opt::from_args();
 
-    let vm = new_vm();
+    let vm = new_vm_async().await;
     vm.get_database_mut()
         .use_standard_lib(!opt.no_std)
         .run_io(true);
 
-    let runtime = Runtime::new().unwrap();
     let color = opt.color;
-    let result = runtime.block_on(run(&opt, opt.color, &vm));
+    let result = run(&opt, opt.color, &vm).await;
     if let Err(err) = result {
         match err {
             Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),

@@ -152,6 +152,7 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Dead {
+            display("The gluon thread is dead")
         }
         UndefinedBinding(symbol: String) {
             display("Binding `{}` is not defined", symbol)

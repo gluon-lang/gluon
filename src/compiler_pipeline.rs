@@ -168,28 +168,18 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
             struct Forker<'a>(salsa::Forker<'a, CompilerDatabase>);
             impl vm::macros::MacroUserdata for Forker<'_> {
                 fn fork(&self, thread: RootedThread) -> Box<dyn std::any::Any> {
-                    Box::new(self.0.db.fork(self.0.state.clone(), thread))
+                    Box::new(CompilerDatabase::fork(
+                        self.0.db,
+                        self.0.state.clone(),
+                        thread,
+                    ))
                 }
             }
             let mut forker = Forker(compiler.database.forker());
 
-            let spawn = if std::panic::catch_unwind(|| tokio::spawn(async {})).is_ok() {
-                struct TokioSpawn;
-                impl futures::task::Spawn for TokioSpawn {
-                    fn spawn_obj(
-                        &self,
-                        future: futures::task::FutureObj<'static, ()>,
-                    ) -> StdResult<(), futures::task::SpawnError> {
-                        tokio::spawn(future);
-                        Ok(())
-                    }
-                }
-                Some(&TokioSpawn as &(dyn futures::task::Spawn + Send + Sync))
-            } else {
-                None
-            };
+            let spawner = thread.spawner();
 
-            let mut macros = MacroExpander::new(thread, &mut forker, spawn);
+            let mut macros = MacroExpander::new(thread, &mut forker, spawner);
             macros.run(&mut compiler.symbols, self).await;
             macros.finish()
         };

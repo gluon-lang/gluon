@@ -2,8 +2,6 @@
 
 extern crate regex;
 
-use crate::real_std::error::Error as StdError;
-
 use crate::vm::{self, api::Collect, thread::Thread, ExternModule};
 
 #[derive(Debug, Userdata, Trace, VmType)]
@@ -64,9 +62,9 @@ fn captures<'a>(
         .map(Collect::new)
 }
 
-fn error_to_string(err: &Error) -> &str {
+fn error_to_string(err: &Error) -> String {
     let &Error(ref err) = err;
-    err.description()
+    err.to_string()
 }
 
 mod std {

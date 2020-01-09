@@ -89,45 +89,39 @@ use crate::{
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[allow(deprecated)]
 pub enum Error {
     /// Error found when parsing gluon code
     Parse(err: InFile<parser::Error>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when typechecking gluon code
     Typecheck(err: InFile<check::typecheck::HelpError<Symbol>>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when performing an IO action such as loading a file
     IO(err: IoError) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when executing code in the virtual machine
     VM(err: crate::vm::Error) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when expanding macros
     Macro(err: InFile<macros::Error>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     Other(err: macros::Error) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Multiple errors where found
     Multiple(err: Errors<Error>) {
-        description(err.description())
         display("{}", err)
     }
 }
@@ -165,9 +159,6 @@ impl fmt::Display for IoError {
 }
 
 impl StdError for IoError {
-    fn description(&self) -> &str {
-        self.0.description()
-    }
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         self.0.source()
     }
@@ -871,12 +862,33 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        futures::executor::block_on(self.build_async())
+        futures::executor::block_on(self.build_inner(None))
     }
 
     pub async fn build_async(self) -> RootedThread {
-        let vm =
-            RootedThread::with_global_state(crate::vm::vm::GlobalVmStateBuilder::new().build());
+        struct TokioSpawn;
+        impl futures::task::Spawn for TokioSpawn {
+            fn spawn_obj(
+                &self,
+                future: futures::task::FutureObj<'static, ()>,
+            ) -> StdResult<(), futures::task::SpawnError> {
+                tokio::spawn(future);
+                Ok(())
+            }
+        }
+
+        self.build_inner(Some(Box::new(TokioSpawn))).await
+    }
+
+    async fn build_inner(
+        self,
+        spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
+    ) -> RootedThread {
+        let vm = RootedThread::with_global_state(
+            crate::vm::vm::GlobalVmStateBuilder::new()
+                .spawner(spawner)
+                .build(),
+        );
 
         {
             let macros = vm.get_macros();
@@ -1000,21 +1012,6 @@ pub fn new_vm() -> RootedThread {
 
 pub async fn new_vm_async() -> RootedThread {
     VmBuilder::default().build_async().await
-}
-
-#[doc(hidden)]
-pub fn sendify<F>(f: F) -> impl Future<Output = F::Output> + Send
-where
-    F: Future + Send,
-    F::Output: Send,
-{
-    f
-    // let (tx, rx) = tokio::sync::oneshot::channel();
-    // tokio::local::spawn(async move {
-    //     // Ignore the send failure as the receiver do not care about it anymore
-    //     let _ = tx.send(f.await);
-    // });
-    // rx.map(|r| r.unwrap())
 }
 
 #[cfg(test)]

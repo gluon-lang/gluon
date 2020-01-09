@@ -48,7 +48,6 @@ quick_error! {
     pub enum Error {
         /// The importer found a cyclic dependency when loading files
         CyclicDependency(module: String, cycle: Vec<String>) {
-            description("Cyclic dependency")
             display(
                 "Module '{}' occurs in a cyclic dependency: `{}`",
                 module,
@@ -57,12 +56,10 @@ quick_error! {
         }
         /// Generic message error
         String(message: String) {
-            description(message)
             display("{}", message)
         }
         /// The importer could not load the imported file
         IO(err: IoError) {
-            description(err.description())
             display("{}", err)
             from()
         }
@@ -190,7 +187,7 @@ pub(crate) trait ImportApi: Send + Sync {
     ) -> Result<ArcType, (Option<ArcType>, MacroError)>;
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
     fn fork(
-        &self,
+        &mut self,
         forker: salsa::ForkState<CompilerDatabase>,
         thread: RootedThread,
     ) -> DatabaseFork;
@@ -221,7 +218,7 @@ where
         Self::snapshot(self, thread)
     }
     fn fork(
-        &self,
+        &mut self,
         forker: salsa::ForkState<CompilerDatabase>,
         thread: RootedThread,
     ) -> DatabaseFork {
@@ -641,9 +638,9 @@ where
                 .spawn(Box::pin(async move {
                     let result = db
                         .import(modulename)
+                        .await
                         .map_err(|err| MacroError::message(err.to_string()))
-                        .map_ok(move |expr| pos::spanned(span, expr))
-                        .await;
+                        .map(move |expr| pos::spanned(span, expr));
                     drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
                     let _ = tx.send(result);
                 }))

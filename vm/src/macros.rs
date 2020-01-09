@@ -90,6 +90,7 @@ where
 pub struct Error(Box<dyn MacroError>);
 
 impl StdError for Error {
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         self.0.description()
     }
@@ -359,7 +360,7 @@ impl<'a> MacroExpander<'a> {
         spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
     ) -> MacroExpander<'a> {
         MacroExpander {
-            vm: vm,
+            vm,
             state: FnvMap::default(),
             macros: vm.get_macros(),
             userdata,

@@ -173,43 +173,43 @@ quick_error! {
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum Error {
         EmptyCharLiteral {
-            description("empty char literal")
+            display("empty char literal")
         }
         UnexpectedChar(ch: char) {
-            description("unexpected character")
+            display("unexpected character")
         }
         UnexpectedEof {
-            description("unexpected end of file")
+            display("unexpected end of file")
         }
         UnexpectedEscapeCode(ch: char) {
-            description("unexpected escape code")
+            display("unexpected escape code")
         }
         UnterminatedCharLiteral {
-            description("unterminated character literal")
+            display("unterminated character literal")
         }
         UnterminatedStringLiteral {
-            description("unterminated string literal")
+            display("unterminated string literal")
         }
         InvalidRawStringDelimiter {
-            description("raw strings can only use `#` as a delimter")
+            display("raw strings can only use `#` as a delimter")
         }
         NonParseableInt {
-            description("cannot parse integer, probable overflow")
+            display("cannot parse integer, probable overflow")
         }
         HexLiteralOverflow {
-            description("cannot parse hex literal, overflow")
+            display("cannot parse hex literal, overflow")
         }
         HexLiteralUnderflow {
-            description("cannot parse hex literal, underflow")
+            display("cannot parse hex literal, underflow")
         }
         HexLiteralWrongPrefix {
-            description("wrong hex literal prefix, should start as '0x' or '-0x'")
+            display("wrong hex literal prefix, should start as '0x' or '-0x'")
         }
         HexLiteralIncomplete {
-            description("cannot parse hex literal, incomplete")
+            display("cannot parse hex literal, incomplete")
         }
         UnexpectedAnd {
-            description("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
+            display("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
         }
     }
 }

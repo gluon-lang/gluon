@@ -30,9 +30,6 @@ enum Error {
     Error(failure::Error),
 
     #[fail(display = "{}", _0)]
-    Tensile(tensile::Error),
-
-    #[fail(display = "{}", _0)]
     Io(io::Error),
 
     #[fail(display = "{}", _0)]
@@ -51,12 +48,6 @@ impl From<String> for Error {
 impl<'a> From<&'a str> for Error {
     fn from(d: &'a str) -> Error {
         Error::Message(d.to_string())
-    }
-}
-
-impl From<tensile::Error> for Error {
-    fn from(d: tensile::Error) -> Error {
-        Error::Tensile(d)
     }
 }
 
@@ -97,12 +88,12 @@ pub struct Opt {
 
 fn main() {
     let options = Opt::from_args();
-    let runtime = {
+    let mut runtime = {
         let mut builder = tokio::runtime::Builder::new();
         if let Some(jobs) = options.jobs {
             builder.core_threads(jobs);
         }
-        builder.build().unwrap()
+        builder.threaded_scheduler().build().unwrap()
     };
     runtime.block_on(async move {
         if let Err(err) = main_(&options).await {
@@ -378,7 +369,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
-            pool.spawn_with_handle(gluon::sendify(async move {
+            pool.spawn_with_handle(async move {
                 match make_test(&vm, &name, &filename).await {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
@@ -386,7 +377,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         tensile::test(name2, || Err(err.0))
                     }
                 }
-            }))
+            })
             .expect("Could not spawn test future")
         })
         .collect::<stream::FuturesOrdered<_>>()
@@ -408,7 +399,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
             tensile::test(
                 name.clone(),
-                tensile::Future(std::panic::AssertUnwindSafe(gluon::sendify(async move {
+                tensile::Future(std::panic::AssertUnwindSafe(async move {
                     match run_file(&vm, &name, &filename).await {
                         Ok(err) => Err(format!(
                             "Expected test '{}' to fail\n{:?}",
@@ -418,7 +409,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         .into()),
                         Err(_) => Ok(()),
                     }
-                }))),
+                })),
             )
         })
         .collect();

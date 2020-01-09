@@ -6,7 +6,7 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         UnindentedTooFar {
-            description("line was unindented too far")
+            display("line was unindented too far")
         }
     }
 }
@@ -21,10 +21,7 @@ struct Offside {
 
 impl Offside {
     fn new(location: Location, context: Context) -> Offside {
-        Offside {
-            location: location,
-            context: context,
-        }
+        Offside { location, context }
     }
 }
 

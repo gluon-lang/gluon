@@ -298,7 +298,7 @@ impl CompilerDatabase {
     }
 }
 
-pub trait CompilationBase: salsa::Database {
+pub trait CompilationBase: Send {
     fn compiler(&mut self) -> &mut CompilerDatabase;
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
@@ -357,7 +357,7 @@ pub trait Compilation: CompilationBase {
 }
 
 fn recover_cycle_typecheck<T>(
-    db: &mut impl Compilation,
+    db: &mut dyn Compilation,
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
@@ -366,7 +366,7 @@ fn recover_cycle_typecheck<T>(
 }
 
 fn recover_cycle_expected_type<T>(
-    db: &mut impl Compilation,
+    db: &mut dyn Compilation,
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
@@ -375,7 +375,7 @@ fn recover_cycle_expected_type<T>(
 }
 
 fn recover_cycle<T>(
-    _db: &mut impl Compilation,
+    _db: &mut dyn Compilation,
     cycle: &[String],
     module: &String,
 ) -> StdResult<T, Error> {
@@ -396,7 +396,7 @@ fn recover_cycle<T>(
 }
 
 fn module_text(
-    db: &mut impl Compilation,
+    db: &mut (impl Compilation + salsa::Database),
     module: String,
 ) -> StdResult<Arc<Cow<'static, str>>, Error> {
     db.salsa_runtime_mut()
@@ -421,7 +421,7 @@ fn module_text(
 }
 
 async fn typechecked_module(
-    db: &mut impl Compilation,
+    db: &mut (impl Compilation + salsa::Database),
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<
@@ -449,7 +449,7 @@ async fn typechecked_module(
 }
 
 async fn core_expr(
-    db: &mut impl Compilation,
+    db: &mut (impl Compilation + salsa::Database),
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<interpreter::Global<CoreExpr>, Error> {
@@ -482,7 +482,7 @@ async fn core_expr(
 }
 
 async fn compiled_module(
-    db: &mut impl Compilation,
+    db: &mut dyn Compilation,
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error> {
@@ -522,7 +522,7 @@ async fn compiled_module(
     Ok(closure)
 }
 
-async fn import(db: &mut impl Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
+async fn import(db: &mut dyn Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
     let thread = db.thread().root_thread();
     let compiler = db.compiler();
 
@@ -543,7 +543,7 @@ async fn import(db: &mut impl Compilation, modulename: String) -> StdResult<Expr
     Ok(Expr::Ident(TypedIdent { name, typ }))
 }
 
-async fn global_inner(db: &mut impl Compilation, name: String) -> Result<UnrootedGlobal> {
+async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
     let TypecheckValue { metadata, typ, .. } = db
         .typechecked_module(name.clone(), None)
         .map_err(|(_, err)| err)
@@ -593,7 +593,7 @@ async fn global_inner(db: &mut impl Compilation, name: String) -> Result<Unroote
     })
 }
 
-async fn global(db: &mut impl Compilation, name: String) -> Result<DatabaseGlobal> {
+async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal> {
     db.global_inner(name)
         .await
         .map(|global| unsafe { root_global_with(global, db.thread().root_thread()) })
