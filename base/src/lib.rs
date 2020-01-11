@@ -110,7 +110,8 @@ pub fn filename_to_module(filename: &str) -> String {
             .unwrap_or(filename)
     });
 
-    name.replace(|c: char| c == '/' || c == '\\', ".")
+    name.trim_start_matches(|c: char| c == '.' || c == '/')
+        .replace(|c: char| c == '/' || c == '\\', ".")
 }
 
 #[derive(Debug, Clone)]
@@ -151,5 +152,19 @@ impl fmt::Display for DebugLevel {
                 &High => "high",
             }
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn filename_to_module_test() {
+        assert_eq!(filename_to_module("./main.glu"), "main");
+        assert_eq!(filename_to_module("main.glu"), "main");
+        assert_eq!(filename_to_module("./main/test.glu"), "main.test");
+        assert_eq!(filename_to_module("main/test.glu"), "main.test");
     }
 }

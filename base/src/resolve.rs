@@ -110,7 +110,6 @@ impl<T> AliasRemover<T> {
                 Some((typ, args)) => match *typ {
                     Type::Builtin(..)
                     | Type::Function(..)
-                    | Type::Function(..)
                     | Type::Record(..)
                     | Type::Variant(..)
                     | Type::Effect(..)
