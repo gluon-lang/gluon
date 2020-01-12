@@ -480,18 +480,28 @@ where
     ///
     /// WARNING: No check is done that the number of arguments is correct. The VM may return an
     /// error or panic if an incorrect number of arguments is passed.
-    pub fn call_any<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<R>
+    pub fn call_any<A, R>(&'vm self, args: impl IntoIterator<Item = A>) -> Result<R>
     where
         A: Pushable<'vm>,
         R: for<'value> Getable<'vm, 'value> + VmType,
     {
-        match self.call_any_first(args)? {
-            Async::Ready(value) => Ok(value),
-            Async::NotReady => Err(Error::Message("Unexpected async".into())),
-        }
+        block_on_sync(self.call_any_async(args))
     }
 
-    fn call_any_first<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<Async<R>>
+    async fn call_any_async<A, R>(&'vm self, args: impl IntoIterator<Item = A>) -> Result<R>
+    where
+        A: Pushable<'vm>,
+        R: for<'value> Getable<'vm, 'value> + VmType,
+    {
+        let mut args = Some(args);
+        future::poll_fn(move |cx| self.call_any_first(cx, args.take().unwrap())).await
+    }
+
+    fn call_any_first<A, R>(
+        &'vm self,
+        cx: &mut task::Context<'_>,
+        args: impl IntoIterator<Item = A>,
+    ) -> Poll<Result<R>>
     where
         A: Pushable<'vm>,
         R: for<'value> Getable<'vm, 'value> + VmType,
@@ -508,18 +518,14 @@ where
         for _ in 0..R::extra_args() {
             0.push(&mut context).unwrap();
         }
-        match vm.call_function(context.into_owned(), arg_count)? {
-            Async::Ready(context) => {
-                let mut context = context.unwrap();
-                let result = {
-                    let value = context.stack.last().unwrap();
-                    Ok(R::from_value(vm, value)).map(Async::Ready)
-                };
-                context.stack.pop();
-                result
-            }
-            Async::NotReady => Ok(Async::NotReady),
-        }
+        let context = ready!(vm.call_function(cx, context.into_owned(), arg_count))?;
+        let mut context = context.unwrap();
+        let result = {
+            let value = context.stack.last().unwrap();
+            Ok(R::from_value(vm, value))
+        };
+        context.stack.pop();
+        result.into()
     }
 }
 

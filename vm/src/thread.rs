@@ -96,7 +96,20 @@ where
                 .thread
                 .as_ref()
                 .expect("cannot poll Execute future after it has succeded");
-            let mut context = ready!(thread.resume(cx))?;
+            let mut context = thread.owned_context();
+            let poll_fn = context
+                .poll_fns
+                .last()
+                .expect("poll_fn must exist when calling Execute::poll");
+            let frame_offset = poll_fn.frame_index as usize;
+            match context.stack.get_frames_mut()[frame_offset].state {
+                State::Extern(ref mut e) => {
+                    assert_eq!(e.call_state, ExternCallState::InPoll);
+                    e.call_state = ExternCallState::Poll
+                }
+                _ => unreachable!(),
+            }
+            let mut context = ready!(thread.resume_with_context(cx, context))?;
             context.stack.pop()
         };
 
@@ -1131,6 +1144,12 @@ where
 
     fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
 
+    fn resume_with_context<'b>(
+        &'b self,
+        cx: &mut task::Context<'_>,
+        context: OwnedContext<'b>,
+    ) -> Poll<Result<OwnedContext<'b>>>;
+
     fn set_global(
         &self,
         name: Symbol,
@@ -1248,7 +1267,14 @@ impl ThreadInternal for Thread {
     }
 
     fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>> {
-        let mut context = self.owned_context();
+        self.resume_with_context(cx, self.owned_context())
+    }
+
+    fn resume_with_context<'b>(
+        &'b self,
+        cx: &mut task::Context<'_>,
+        mut context: OwnedContext<'b>,
+    ) -> Poll<Result<OwnedContext<'b>>> {
         if context.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead).into();
@@ -1920,10 +1946,6 @@ impl<'b> OwnedContext<'b> {
                         Poll::Pending => {
                             debug!("NOT READY EXTERN {}", function.id);
                             self = thread.owned_context();
-                            match self.stack.get_frames_mut()[frame_offset].state {
-                                State::Extern(ref mut e) => e.call_state = ExternCallState::Poll,
-                                _ => unreachable!(),
-                            }
                             // Restore `poll_fn` so it can be polled again
                             self.poll_fns.push(poll_fn);
                             return Poll::Pending;
