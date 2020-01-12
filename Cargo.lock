@@ -1113,7 +1113,6 @@ dependencies = [
  "tempfile 3.1.0",
  "tensile",
  "tokio 0.2.9",
- "tokio-retry",
  "tokio-tls",
  "tower-service",
  "walkdir",
@@ -3437,17 +3436,6 @@ dependencies = [
  "tokio-executor",
  "tokio-io",
  "tokio-sync",
-]
-
-[[package]]
-name = "tokio-retry"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c03755b956458582182941061def32b8123a26c98b08fc6ddcf49ae89d18f33"
-dependencies = [
- "futures 0.1.29",
- "rand 0.4.6",
- "tokio-timer",
 ]
 
 [[package]]

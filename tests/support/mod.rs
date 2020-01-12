@@ -1,8 +1,6 @@
-#[allow(unused_extern_crates)]
-extern crate env_logger;
+#![allow(dead_code)]
+
 pub extern crate futures;
-#[allow(unused_extern_crates)]
-extern crate gluon;
 
 use gluon::{
     import::Import,
@@ -42,7 +40,14 @@ where
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
 pub fn make_vm() -> RootedThread {
-    futures::executor::block_on(make_vm_async())
+    let vm = ::gluon::VmBuilder::new().build();
+    let import = vm.get_macros().get("import");
+    import
+        .as_ref()
+        .and_then(|import| import.downcast_ref::<Import>())
+        .expect("Import macro")
+        .add_path("..");
+    vm
 }
 
 pub async fn make_vm_async() -> RootedThread {

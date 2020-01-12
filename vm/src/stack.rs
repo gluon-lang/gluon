@@ -145,6 +145,7 @@ impl CloneUnrooted for ClosureState {
 pub(crate) enum ExternCallState {
     Start,
     InPoll,
+    Pending,
     Poll,
 }
 

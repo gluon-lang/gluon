@@ -44,31 +44,39 @@ async fn start(thread: &Thread, port: u16) -> Result<(), failure::Error> {
 mod tests {
     use super::*;
 
-    extern crate hyper;
-    extern crate tokio_retry;
-
     use std::str;
 
-    use self::hyper::Client;
+    use futures::prelude::*;
+    use hyper::Client;
     use tokio::runtime::Runtime;
 
-    fn wait_for_server(port: u16) -> impl Future<Item = (), Error = failure::Error> {
-        let future =
-            move || Client::new().get(format!("http://localhost:{}", port).parse().unwrap());
-
-        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(40);
-
-        tokio_retry::Retry::spawn(retry_strategy, future)
-            .from_err::<failure::Error>()
-            .and_then(|response| {
-                response
-                    .into_body()
-                    .concat2()
-                    .map(|body| {
-                        assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
-                    })
-                    .from_err::<failure::Error>()
-            })
+    async fn wait_for_server(port: u16) -> Result<(), failure::Error> {
+        let mut err = None;
+        for _ in 0..40 {
+            match Client::new()
+                .get(format!("http://localhost:{}", port).parse().unwrap())
+                .await
+            {
+                Ok(response) => {
+                    return response
+                        .into_body()
+                        .try_fold(Vec::new(), |mut acc, buf| {
+                            async move {
+                                acc.extend_from_slice(&buf);
+                                Ok(acc)
+                            }
+                        })
+                        .map_ok(|body| {
+                            assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
+                        })
+                        .err_into::<failure::Error>()
+                        .await;
+                }
+                Err(e) => err = Some(e),
+            }
+            tokio::time::delay_for(std::time::Duration::from_millis(400)).await;
+        }
+        Err(err.unwrap().into())
     }
 
     #[test]
@@ -80,14 +88,13 @@ mod tests {
         let port = 12234;
         let thread = new_vm();
 
-        let start_server = future::lazy(move || start(&thread, port));
+        let start_server = async move {
+            tokio::spawn(async move { start(&thread, port).await.unwrap() });
+            wait_for_server(port).await
+        };
 
         let _ = runtime
-            .block_on(
-                start_server
-                    .select(wait_for_server(port))
-                    .map_err(|(err, _)| err),
-            )
+            .block_on(start_server)
             .unwrap_or_else(|err| panic!("{}", err));
     }
 
@@ -99,36 +106,37 @@ mod tests {
 
         let port = 12235;
         let thread = new_vm();
-        let start_server = future::lazy(move || start(&thread, port));
-
-        let future = move || {
-            let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
-                .body(hyper::Body::from("test"))
-                .unwrap();
-
-            Client::new().request(request)
+        let start_server = async move {
+            tokio::spawn(async move { start(&thread, port).await.unwrap() });
+            wait_for_server(port).await
         };
 
-        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(40);
-
         let _ = runtime
-            .block_on(
-                start_server
-                    .select(
-                        tokio_retry::Retry::spawn(retry_strategy, future)
-                            .from_err::<failure::Error>()
-                            .and_then(|response| {
-                                response
-                                    .into_body()
-                                    .concat2()
-                                    .map(|body| {
-                                        assert_eq!(str::from_utf8(&body).unwrap(), "test");
-                                    })
-                                    .from_err::<failure::Error>()
-                            }),
-                    )
-                    .map_err(|(err, _)| err),
-            )
-            .unwrap_or_else(|err| panic!("{}", err));
+            .block_on(async {
+                start_server.await?;
+                let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
+                    .body(hyper::Body::from("test"))
+                    .unwrap();
+
+                Client::new()
+                    .request(request)
+                    .err_into::<failure::Error>()
+                    .and_then(|response| {
+                        response
+                            .into_body()
+                            .try_fold(Vec::new(), |mut acc, buf| {
+                                async move {
+                                    acc.extend_from_slice(&buf);
+                                    Ok(acc)
+                                }
+                            })
+                            .map_ok(|body| {
+                                assert_eq!(str::from_utf8(&body).unwrap(), "test");
+                            })
+                            .err_into::<failure::Error>()
+                    })
+                    .await
+            })
+            .unwrap_or_else(|err: failure::Error| panic!("{}", err));
     }
 }

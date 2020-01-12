@@ -42,7 +42,6 @@ fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, St
     async move {
         IO::Value(match vm.typecheck_str_async("<repl>", &args, None).await {
             Ok((expr, _)) => {
-                eprintln!("typecheck");
                 let env = vm.get_env();
                 Ok(format!("{}", expr.env_type_of(&env)))
             }

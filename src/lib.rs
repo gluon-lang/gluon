@@ -678,13 +678,15 @@ pub trait ThreadExt: Send + Sync {
     /// Import from gluon's standard library and evaluate a string
     ///
     /// ```
-    /// # use gluon::{new_vm, ThreadExt};
+    /// # use gluon::{new_vm_async, ThreadExt};
     /// # use gluon::base::types::Type;
-    /// # fn main() {
-    /// let vm = new_vm();
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let vm = new_vm_async().await;
     /// let result = vm
-    ///     .run_expr::<String>("example",
+    ///     .run_expr_async::<String>("example",
     ///         " let string  = import! \"std/string.glu\" in string.trim \"    Hello world  \t\" ")
+    ///     .await
     ///     .unwrap();
     /// let expected = ("Hello world".to_string(), Type::string());
     ///
