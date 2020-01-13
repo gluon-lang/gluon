@@ -19,7 +19,7 @@ branches:
 matrix:
   include:
   - rust: nightly-2019-10-19
-  - rust: beta
+    #  - rust: beta
   - rust: stable
     env: ARCH=i686
 
@@ -66,7 +66,7 @@ env:
     - CARGO_INCREMENTAL=0 # Incremental compilation is slower and bloats the travis cache
     - RUST_BACKTRACE=1
     - RUSTC_WRAPPER=sccache
-    # A clean build seems to create ~300M 
+    # A clean build seems to create ~300M
     - SCCACHE_CACHE_SIZE=500M
 script:
 - >
