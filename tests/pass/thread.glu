@@ -20,21 +20,21 @@ let assert_any_err =
 let { sender, receiver } = channel 0
 
 let thread = spawn (\_ ->
-        send sender 0
-        yield ()
-        send sender 1
+        let _ = send sender 0
+        let _ = yield ()
+        let _ = send sender 1
         ()
     )
 resume thread
 
 let tests : TestEff r () =
-    assert_eq (recv receiver) (Ok 0) *> (
-            seq assert_eq (recv receiver) (Err ())
-            resume thread
-            assert_eq (recv receiver) (Ok 1)
-        ) *> (
-            seq assert_eq (recv receiver) (Err ())
-            assert_any_err (resume thread) (Err "Any error message here")
-        )
+    seq assert_eq (recv receiver) (Ok 0)
+
+    seq assert_eq (recv receiver) (Err ())
+    let _ = resume thread
+    seq assert_eq (recv receiver) (Ok 1)
+
+    seq assert_eq (recv receiver) (Err ())
+    assert_any_err (resume thread) (Err "Any error message here")
 
 test "thread" <| \_ -> tests

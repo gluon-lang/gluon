@@ -55,7 +55,10 @@ fn gen_struct_cons<'a, I>(_ident: &Ident, fields: I) -> TokenStream
 where
     I: IntoIterator<Item = &'a Field>,
 {
-    let fields = fields.into_iter().map(|field| &field.ident).collect::<Vec<_>>();
+    let fields = fields
+        .into_iter()
+        .map(|field| &field.ident)
+        .collect::<Vec<_>>();
     quote! {
         match self {
             Self { #(#fields),* } => {
@@ -90,7 +93,9 @@ fn derive_enum(
     ident: Ident,
     generics: Generics,
 ) -> TokenStream {
-    let cons = if ast.variants.is_empty() {quote!() } else {
+    let cons = if ast.variants.is_empty() {
+        quote!()
+    } else {
         let variants = ast
             .variants
             .iter()

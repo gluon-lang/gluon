@@ -1,20 +1,24 @@
 use crate::real_std::{
     fmt, fs,
-    path::Path,
+    path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 
 use {
     collect_mac::collect,
     futures::{
-        future::{self, Either},
-        Async, Future, Stream,
+        future::{self, BoxFuture},
+        prelude::*,
+        ready,
+        task::{self, Poll},
     },
     http::{
         header::{HeaderMap, HeaderName, HeaderValue},
         StatusCode,
     },
-    hyper::{service::Service, Chunk, Server},
+    hyper::{body::Bytes, Server},
+    pin_project::pin_project,
 };
 
 use crate::base::types::{ArcType, Type};
@@ -31,7 +35,7 @@ use crate::vm::{
 
 macro_rules! try_future {
     ($e:expr) => {
-        try_future!($e, Box::new)
+        try_future!($e, Box::pin)
     };
     ($e:expr, $f:expr) => {
         match $e {
@@ -104,7 +108,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 #[gluon_trace(skip)]
 // Representation of a http body that is in the prograss of being read
 pub struct Body(
-    Arc<Mutex<Box<dyn Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>,
+    Arc<Mutex<Pin<Box<dyn Stream<Item = Result<PushAsRef<Bytes, [u8]>, vm::Error>> + Send>>>>,
 );
 
 // Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
@@ -116,15 +120,22 @@ impl fmt::Debug for Body {
 
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
 // into `&Body` argument
-fn read_chunk(
-    body: &Body,
-) -> impl Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = vm::Error> {
+fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Bytes, [u8]>>>> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
-    poll_fn(move || {
+    poll_fn(move |cx| {
         let mut stream = body.lock().unwrap();
-        stream.poll().map(|r#async| r#async.map(IO::Value))
+        Poll::Ready(IO::Value(
+            if let Some(result) = ready!(stream.as_mut().poll_next(cx)) {
+                match result {
+                    Ok(chunk) => Some(chunk),
+                    Err(err) => return IO::Exception(err.to_string()).into(),
+                }
+            } else {
+                None
+            },
+        ))
     })
 }
 
@@ -141,16 +152,13 @@ impl fmt::Debug for ResponseBody {
     }
 }
 
-fn write_response(
-    response: &ResponseBody,
-    bytes: &[u8],
-) -> impl Future<Item = IO<()>, Error = vm::Error> {
+fn write_response(response: &ResponseBody, bytes: &[u8]) -> impl Future<Output = IO<()>> {
     use futures::future::poll_fn;
 
-    // Turn `bytes´ into a `Chunk` which can be sent to the http body
+    // Turn `bytes´ into a `Bytes` which can be sent to the http body
     let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
-    poll_fn(move || {
+    poll_fn(move |cx| {
         info!("Starting response send");
         let mut sender = response.lock().unwrap();
         let sender = sender
@@ -159,22 +167,22 @@ fn write_response(
         let chunk = unsent_chunk
             .take()
             .expect("Attempt to poll after chunk is sent");
-        match sender.poll_ready() {
-            Ok(Async::NotReady) => {
+        match sender.poll_ready(cx) {
+            Poll::Pending => {
                 unsent_chunk = Some(chunk);
-                return Ok(Async::NotReady);
+                return Poll::Pending;
             }
-            Ok(Async::Ready(_)) => (),
-            Err(err) => {
+            Poll::Ready(Ok(_)) => (),
+            Poll::Ready(Err(err)) => {
                 info!("Could not send http response {}", err);
-                return Ok(IO::Exception(err.to_string()).into());
+                return IO::Exception(err.to_string()).into();
             }
         }
-        match sender.send_data(chunk) {
-            Ok(()) => Ok(Async::Ready(IO::Value(()))),
+        match sender.try_send_data(chunk) {
+            Ok(()) => Poll::Ready(IO::Value(())),
             Err(chunk) => {
                 unsent_chunk = Some(chunk);
-                Ok(IO::Exception("Could not send http response".into()).into())
+                IO::Exception("Could not send http response".into()).into()
             }
         }
     })
@@ -208,23 +216,27 @@ type HttpState = record_type! {
 
 #[derive(Getable, VmType)]
 #[gluon(crate_name = "::vm")]
-struct Settings<'a> {
+struct Settings {
     port: u16,
-    tls_cert: Option<&'a Path>,
+    tls_cert: Option<PathBuf>,
 }
 
 fn listen(
     settings: Settings,
-    value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
-) -> impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static {
-    let WithVM {
-        value: handler,
-        vm: thread,
-    } = value;
+    WithVM { vm, value }: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
+) -> impl Future<Output = IO<()>> + Send + 'static {
+    let vm = vm.root_thread();
+    listen_(settings, vm, value).map(IO::from)
+}
 
+async fn listen_(
+    settings: Settings,
+    thread: RootedThread,
+    handler: OpaqueValue<RootedThread, Handler<Response>>,
+) -> vm::Result<()> {
     let thread = match thread.new_thread() {
         Ok(thread) => thread,
-        Err(err) => return Either::A(future::err(err)),
+        Err(err) => return Err(err),
     };
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type
@@ -239,25 +251,28 @@ fn listen(
         handler: OpaqueValue<RootedThread, Handler<Response>>,
     }
 
-    impl Service for Listen {
-        type ReqBody = hyper::Body;
-        type ResBody = hyper::Body;
+    impl tower_service::Service<hyper::Request<hyper::Body>> for Listen {
+        type Response = hyper::Response<hyper::Body>;
         type Error = vm::Error;
-        type Future = Box<
-            dyn Future<Item = http::Response<hyper::Body>, Error = Self::Error> + Send + 'static,
-        >;
+        type Future = BoxFuture<'static, Result<http::Response<hyper::Body>, vm::Error>>;
 
-        fn call(&mut self, request: http::Request<hyper::Body>) -> Self::Future {
+        fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Ok(()).into()
+        }
+
+        fn call(&mut self, request: hyper::Request<hyper::Body>) -> Self::Future {
             let (parts, body) = request.into_parts();
             let gluon_request = record_no_decl! {
                 method => parts.method.as_str().to_owned(),
                 uri => Uri(parts.uri),
                 // Since `Body` implements `Userdata` it can be directly pushed to gluon
-                body => Body(Arc::new(Mutex::new(Box::new(body
-                    .map_err(|err| vm::Error::Message(format!("{}", err)))
-                    // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
-                    // marshalled to `Array Byte` in gluon
-                    .map(PushAsRef::<_, [u8]>::new)))))
+                body => Body(Arc::new(Mutex::new(Box::pin(
+                    body
+                        .map_err(|err| vm::Error::Message(format!("{}", err)))
+                        // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
+                        // marshalled to `Array Byte` in gluon
+                        .map_ok(PushAsRef::<_, [u8]>::new)
+                ))))
             };
             let (response_sender, response_body) = hyper::Body::channel();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
@@ -269,9 +284,11 @@ fn listen(
             let child_thread = try_future!(self.handle.vm().new_thread());
             let mut handle = try_future!(self.handle.re_root(child_thread));
 
-            Box::new(
-                handle.call_async(self.handler.clone(), http_state).then(
-                    move |result| match result {
+            let handler = self.handler.clone();
+            Box::pin(async move {
+                handle
+                    .call_async(handler, http_state)
+                    .map(move |result| match result {
                         Ok(value) => {
                             match value {
                                 IO::Value(record_p! { status, headers }) => {
@@ -304,79 +321,79 @@ fn listen(
                                 .body("".into())
                                 .unwrap())
                         }
-                    },
-                ),
-            )
+                    })
+                    .await
+            })
         }
     }
 
     let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
 
-    if let Some(cert_path) = settings.tls_cert {
-        let identity = try_future!(
-            fs::read(cert_path).map_err(|err| vm::Error::Message(format!(
+    if let Some(cert_path) = &settings.tls_cert {
+        let identity = fs::read(cert_path).map_err(|err| {
+            vm::Error::Message(format!(
                 "Unable to open certificate `{}`: {}",
                 cert_path.display(),
                 err
-            ))),
-            Either::A
-        );
+            ))
+        })?;
 
-        let identity = try_future!(
-            native_tls::Identity::from_pkcs12(&identity, "")
-                .map_err(|err| vm::Error::Message(err.to_string())),
-            Either::A
-        );
-        let acceptor = tokio_tls::TlsAcceptor::from(try_future!(
+        let identity = native_tls::Identity::from_pkcs12(&identity, "")
+            .map_err(|err| vm::Error::Message(err.to_string()))?;
+        let acceptor = tokio_tls::TlsAcceptor::from(
             native_tls::TlsAcceptor::new(identity)
-                .map_err(|err| vm::Error::Message(err.to_string())),
-            Either::A
-        ));
+                .map_err(|err| vm::Error::Message(err.to_string()))?,
+        );
 
         let http = hyper::server::conn::Http::new();
-        let listener = try_future!(
-            tokio_tcp::TcpListener::bind(&addr).map_err(|err| vm::Error::Message(err.to_string())),
-            Either::A
-        );
-        let incoming = listener
-            .incoming()
-            .map(move |stream| {
-                acceptor.accept(stream).map(Some).or_else(|err| {
-                    info!("Unable to accept TLS connection: {}", err);
-                    Ok(None)
-                })
-            })
-            .buffer_unordered(100)
-            .filter_map(|opt_tls_stream| opt_tls_stream);
 
-        let future = http
-            .serve_incoming(incoming, move || -> Result<_, hyper::Error> {
-                Ok(Listen {
+        let mut listener = tokio::net::TcpListener::bind(&addr)
+            .map_err(|err| vm::Error::Message(err.to_string()))
+            .await?;
+        let incoming = listener.incoming().err_into().and_then(|stream| {
+            acceptor.accept(stream).map_err(|err| {
+                info!("Unable to accept TLS connection: {}", err);
+                Box::new(err) as Box<dyn ::std::error::Error + Send + Sync>
+            })
+        });
+
+        #[pin_project]
+        struct Acceptor<S>(#[pin] S);
+        impl<S, T, E> hyper::server::accept::Accept for Acceptor<S>
+        where
+            S: Stream<Item = Result<T, E>>,
+        {
+            type Conn = T;
+            type Error = E;
+            fn poll_accept(
+                self: Pin<&mut Self>,
+                cx: &mut task::Context<'_>,
+            ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+                self.project().0.poll_next(cx)
+            }
+        }
+
+        return hyper::server::Builder::new(Acceptor(incoming), http)
+            .serve(hyper::service::make_service_fn(move |_| {
+                future::ready(Ok::<_, hyper::Error>(Listen {
                     handle: handle.clone(),
                     handler: handler.clone(),
-                })
-            })
-            .and_then(|connecting| connecting)
-            .for_each(|connection| {
-                hyper::rt::spawn(connection.map_err(|err| info!("{}", err)));
-                Ok(())
-            })
-            .map(|_| IO::Value(()))
-            .map_err(|err| vm::Error::from(format!("Server error: {}", err)));
-        return Either::B(Either::A(future));
+                }))
+            }))
+            .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
+            .await;
     }
 
-    Either::B(Either::B(
-        Server::bind(&addr)
-            .serve(move || -> Result<_, hyper::Error> {
-                Ok(Listen {
-                    handle: handle.clone(),
-                    handler: handler.clone(),
-                })
-            })
-            .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
-            .map(|_| IO::Value(())),
-    ))
+    Server::bind(&addr)
+        .serve(hyper::service::make_service_fn(move |_| {
+            future::ready(Ok::<_, hyper::Error>(Listen {
+                handle: handle.clone(),
+                handler: handler.clone(),
+            }))
+        }))
+        .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
+        .map_ok(|_| ())
+        .await
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
@@ -426,7 +443,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             listen => primitive!(2, async fn std::http::prim::listen),
             read_chunk => primitive!(1, async fn std::http::prim::read_chunk),
             write_response => primitive!(2, async fn std::http::prim::write_response),
-            port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port_part().map(|p| p.as_u16())),
+            port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port().map(|p| p.as_u16())),
             uri => uri_binds!(path host query to_string)
         },
     )

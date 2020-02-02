@@ -7,9 +7,9 @@ use std::{
 use {
     collect_mac::collect,
     failure_derive::Fail,
-    futures::{future, stream, Future, Stream},
+    futures::{join, prelude::*, stream, task::SpawnExt},
     serde_derive::Deserialize,
-    tokio::runtime::current_thread::Runtime,
+    structopt::StructOpt,
 };
 
 use gluon::{
@@ -19,7 +19,7 @@ use gluon::{
         symbol::Symbol,
         types::{ArcType, Type},
     },
-    new_vm,
+    new_vm_async,
     vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO},
     RootedThread, Thread, ThreadExt,
 };
@@ -28,10 +28,13 @@ use gluon::{
 enum Error {
     #[fail(display = "{}", _0)]
     Error(failure::Error),
+
     #[fail(display = "{}", _0)]
     Io(io::Error),
+
     #[fail(display = "{}", _0)]
     Gluon(gluon::Error),
+
     #[fail(display = "{}", _0)]
     Message(String),
 }
@@ -60,16 +63,44 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<gluon::vm::Error> for Error {
+    fn from(d: gluon::vm::Error) -> Error {
+        gluon::Error::from(d).into()
+    }
+}
+
 impl From<gluon::Error> for Error {
     fn from(d: gluon::Error) -> Error {
         Error::Gluon(d)
     }
 }
 
+#[derive(StructOpt)]
+#[structopt(about = "gluon tests")]
+pub struct Opt {
+    #[structopt(long = "jobs")]
+    #[structopt(help = "How many threads to run in parallel")]
+    pub jobs: Option<usize>,
+
+    #[structopt(name = "FILTER", help = "Filters which tests to run")]
+    pub filter: Vec<String>,
+}
+
 fn main() {
-    if let Err(err) = main_() {
-        assert!(false, "{}", err);
-    }
+    let options = Opt::from_args();
+    let mut runtime = {
+        let mut builder = tokio::runtime::Builder::new();
+        if let Some(jobs) = options.jobs {
+            builder.core_threads(jobs);
+        }
+        builder.threaded_scheduler().build().unwrap()
+    };
+    runtime.block_on(async move {
+        if let Err(err) = main_(&options).await {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
+    })
 }
 
 fn test_files(path: &str) -> Result<Vec<PathBuf>, Error> {
@@ -124,31 +155,26 @@ struct GluonTestable<F>(F);
 
 impl<F> tensile::Testable for GluonTestable<F>
 where
-    F: Future<Item = (), Error = Error> + Send + Sync + 'static,
+    F: Future<Output = Result<(), Error>> + Send + 'static,
 {
     type Error = Error;
 
     fn test(self) -> tensile::TestFuture<Self::Error> {
-        Box::new(self.0)
+        Box::pin(self.0)
     }
 }
 
 fn make_tensile_test(name: String, test: TestFn) -> tensile::Test<Error> {
     let mut test = ::std::panic::AssertUnwindSafe(test);
-    tensile::test(name, move || {
-        let future = test
-            .call_async(())
-            .and_then(|test| {
-                future::result(test.vm().get_global("std.test.run_io")).and_then(|action| {
-                    let mut action: OwnedFunction<
-                        fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>,
-                    > = action;
-                    action.call_async(test).map(|_| ())
-                })
-            })
-            .map_err(gluon::Error::from)
-            .map_err(Error::from);
-        GluonTestable(::std::panic::AssertUnwindSafe(future))
+    tensile::test(name, {
+        GluonTestable(::std::panic::AssertUnwindSafe(async move {
+            let test = test.call_async(()).await?;
+            let action = test.vm().get_global("std.test.run_io")?;
+            let mut action: OwnedFunction<fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>> =
+                action;
+            action.call_async(test).await?;
+            Ok(())
+        }))
     })
 }
 
@@ -168,23 +194,23 @@ impl TestCase {
     }
 }
 
-fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
+async fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    let (De(test), _) = vm.run_expr(&name, &text)?;
+    let (De(test), _) = vm.run_expr_async(&name, &text).await?;
     Ok(test)
 }
 
-fn run_file<'t>(
+async fn run_file<'t>(
     vm: &'t Thread,
     name: &str,
     filename: &Path,
-) -> Result<(OpaqueValue<&'t Thread, Hole>, ArcType), Error> {
+) -> Result<(OpaqueValue<RootedThread, Hole>, ArcType), Error> {
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    Ok(vm.run_expr::<OpaqueValue<&Thread, Hole>>(&name, &text)?)
+    Ok(vm.run_expr_async(&name, &text).await?)
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
@@ -263,7 +289,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
     visitor.0
 }
 
-fn run_doc_tests<'t>(
+async fn run_doc_tests<'t>(
     vm: &'t Thread,
     name: &str,
     filename: &Path,
@@ -272,36 +298,41 @@ fn run_doc_tests<'t>(
     let mut text = String::new();
     file.read_to_string(&mut text)?;
 
-    let (expr, _, _) = vm.extract_metadata(&name, &text)?;
+    let (expr, _, _) = vm.extract_metadata(&name, &text).await?;
 
-    let (mut convert_test_fn, _) =
-        vm.run_expr::<OwnedFunction<fn(TestEff) -> TestFn>>("convert_test_fn", r"\x -> \_ -> x")?;
+    let convert_test_fn =
+        vm.get_global::<OwnedFunction<fn(TestEff) -> TestFn>>("convert_test_fn")?;
 
     let tests = gather_doc_tests(&expr);
     Ok(tests
         .into_iter()
         .map(move |(test_name, test_source)| {
-            let vm = vm.new_thread().unwrap();
+            let mut convert_test_fn = convert_test_fn.clone();
+            async move {
+                let vm = vm.new_thread().unwrap();
 
-            match vm
-                .run_expr::<TestEff>(&test_name, &test_source)
-                .and_then(|(test, _)| Ok(convert_test_fn.call(test)?))
-            {
-                Ok(test) => make_tensile_test(test_name, test),
-                Err(err) => {
-                    let err = ::std::panic::AssertUnwindSafe(err);
-                    tensile::test(test_name, || Err(err.0.into()))
+                match vm
+                    .run_expr_async::<TestEff>(&test_name, &test_source)
+                    .and_then(|(test, _)| async { Ok(convert_test_fn.call_async(test).await?) })
+                    .await
+                {
+                    Ok(test) => make_tensile_test(test_name, test),
+                    Err(err) => {
+                        let err = ::std::panic::AssertUnwindSafe(err);
+                        tensile::test(test_name, || Err(err.0.into()))
+                    }
                 }
             }
         })
-        .collect())
+        .collect::<stream::FuturesOrdered<_>>()
+        .collect()
+        .await)
 }
 
-fn main_() -> Result<(), Error> {
+async fn main_(options: &Opt) -> Result<(), Error> {
     let _ = ::env_logger::try_init();
-    let args: Vec<_> = ::std::env::args().collect();
-    let filter = if args.len() > 1 && args.last().unwrap() != "main" {
-        args.last()
+    let filter = if options.filter.len() > 1 {
+        options.filter.last()
     } else {
         None
     };
@@ -309,15 +340,25 @@ fn main_() -> Result<(), Error> {
     let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
     let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
 
-    let vm = new_vm();
-    vm.load_file("std/test.glu")?;
+    let vm = new_vm_async().await;
+    vm.load_file_async("std/test.glu").await?;
 
     let iter = test_files("tests/pass")?.into_iter();
 
-    let pool = futures_cpupool::CpuPool::new(1);
-    let mut runtime = tokio::runtime::Runtime::new()?;
-    let pass_tests_future = stream::futures_ordered(
-        iter.filter_map(|filename| {
+    struct TokioSpawn;
+    impl futures::task::Spawn for TokioSpawn {
+        fn spawn_obj(
+            &self,
+            future: futures::task::FutureObj<'static, ()>,
+        ) -> Result<(), futures::task::SpawnError> {
+            tokio::spawn(future);
+            Ok(())
+        }
+    }
+
+    let pool = TokioSpawn;
+    let pass_tests_future = iter
+        .filter_map(|filename| {
             let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
             match filter {
@@ -329,52 +370,55 @@ fn main_() -> Result<(), Error> {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
-            pool.spawn_fn(move || make_test(&vm, &name, &filename))
-                .then(|result| -> Result<_, Error> {
-                    Ok(match result {
-                        Ok(test) => test.into_tensile_test(),
-                        Err(err) => {
-                            let err = ::std::panic::AssertUnwindSafe(err);
-                            tensile::test(name2, || Err(err.0))
-                        }
-                    })
-                })
-        }),
-    )
-    .collect();
-    let pass_tests = runtime.block_on(pass_tests_future)?;
-
-    let iter = test_files("tests/fail")?
-        .into_iter()
-        .filter(|filename| !filename.to_string_lossy().contains("deps"));
-
-    let fail_tests = iter
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
-        .map(|(filename, name)| {
-            let vm = vm.new_thread().unwrap();
-
-            tensile::test(name.clone(), move || -> Result<(), Error> {
-                match run_file(&vm, &name, &filename) {
-                    Ok(err) => Err(format!(
-                        "Expected test '{}' to fail\n{:?}",
-                        filename.to_str().unwrap(),
-                        err.0,
-                    )
-                    .into()),
-                    Err(_) => Ok(()),
+            pool.spawn_with_handle(async move {
+                match make_test(&vm, &name, &filename).await {
+                    Ok(test) => test.into_tensile_test(),
+                    Err(err) => {
+                        let err = ::std::panic::AssertUnwindSafe(err);
+                        tensile::test(name2, || Err(err.0))
+                    }
                 }
             })
+            .expect("Could not spawn test future")
+        })
+        .collect::<stream::FuturesOrdered<_>>()
+        .collect::<Vec<_>>();
+
+    let fail_tests = test_files("tests/fail")?
+        .into_iter()
+        .filter(|filename| !filename.to_string_lossy().contains("deps"))
+        .filter_map(|filename| {
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
+
+            match filter {
+                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+                _ => Some((filename, name)),
+            }
+        })
+        .map(|(filename, name)| {
+            let vm = vm.new_thread().unwrap();
+
+            tensile::test(
+                name.clone(),
+                tensile::Future(std::panic::AssertUnwindSafe(async move {
+                    match run_file(&vm, &name, &filename).await {
+                        Ok(err) => Err(format!(
+                            "Expected test '{}' to fail\n{:?}",
+                            filename.to_str().unwrap(),
+                            err.0,
+                        )
+                        .into()),
+                        Err(_) => Ok(()),
+                    }
+                })),
+            )
         })
         .collect();
 
-    let doc_tests = test_files("std")?
+    vm.load_script_async("convert_test_fn", r"\x -> \_ -> x")
+        .await?;
+
+    let doc_tests_future = test_files("std")?
         .into_iter()
         .filter_map(|filename| {
             let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
@@ -386,29 +430,36 @@ fn main_() -> Result<(), Error> {
         })
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
-            match run_doc_tests(&vm, &name, &filename) {
-                Ok(tests) => tensile::group(name.clone(), tests),
-                Err(err) => {
-                    let err = ::std::panic::AssertUnwindSafe(err);
-                    tensile::test(name.clone(), || Err(err.0))
+            pool.spawn_with_handle(async move {
+                match run_doc_tests(&vm, &name, &filename).await {
+                    Ok(tests) => tensile::group(name.clone(), tests),
+                    Err(err) => {
+                        let err = ::std::panic::AssertUnwindSafe(err);
+                        tensile::test(name.clone(), || Err(err.0))
+                    }
                 }
-            }
+            })
+            .expect("Could not spawn test future")
         })
-        .collect();
+        .collect::<stream::FuturesOrdered<_>>()
+        .collect::<Vec<_>>();
 
-    let mut runtime = Runtime::new()?;
-    runtime.block_on(future::lazy(|| {
-        tensile::console_runner(
-            tensile::group(
-                "main",
-                vec![
-                    tensile::group("pass", pass_tests),
-                    tensile::group("fail", fail_tests),
-                    tensile::group("doc", doc_tests),
-                ],
-            ),
-            &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-        )
-    }))?;
+    let (pass_tests, doc_tests) = join!(pass_tests_future, doc_tests_future);
+
+    let report = tensile::tokio_console_runner(
+        tensile::group(
+            "main",
+            vec![
+                tensile::group("pass", pass_tests),
+                tensile::group("fail", fail_tests),
+                tensile::group("doc", doc_tests),
+            ],
+        ),
+        &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
+    )
+    .await?;
+    if !report.passes() {
+        return Err("Some tests failed".into());
+    }
     Ok(())
 }

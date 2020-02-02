@@ -32,19 +32,7 @@ extern crate gluon_codegen;
 #[macro_use]
 extern crate pretty_assertions;
 
-macro_rules! try_future {
-    ($e:expr) => {
-        try_future!($e, Box::new)
-    };
-    ($e:expr, $f:expr) => {
-        match $e {
-            Ok(x) => x,
-            Err(err) => return $f(::futures::future::err(err.into())),
-        }
-    };
-}
-
-pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> = futures::future::BoxFuture<'vm, std::result::Result<T, E>>;
 
 macro_rules! alloc {
     ($context: ident, $data: expr) => {
@@ -164,6 +152,7 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Dead {
+            display("The gluon thread is dead")
         }
         UndefinedBinding(symbol: String) {
             display("Binding `{}` is not defined", symbol)
@@ -225,7 +214,10 @@ impl<'a> fmt::Display for Panic<'a> {
     }
 }
 
-pub type ExternLoader = Box<dyn FnMut(&Thread) -> Result<ExternModule> + Send + Sync>;
+pub struct ExternLoader {
+    pub load_fn: Box<dyn FnMut(&Thread) -> Result<ExternModule> + Send + Sync>,
+    pub dependencies: Vec<String>,
+}
 
 pub struct ExternModule {
     pub metadata: Metadata,

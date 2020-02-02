@@ -1,9 +1,6 @@
-extern crate env_logger;
-extern crate futures;
 #[macro_use]
 extern crate serde_derive;
 
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 #[macro_use]
@@ -11,7 +8,7 @@ extern crate gluon_codegen;
 
 use std::sync::Arc;
 
-use futures::{future::lazy, Future, IntoFuture};
+use futures::prelude::*;
 
 use gluon::{
     base::types::{Alias, ArcType, Type},
@@ -153,8 +150,8 @@ fn array() {
 fn return_finished_future() {
     let _ = ::env_logger::try_init();
 
-    fn add(x: i32, y: i32) -> FutureResult<impl Future<Item = i32, Error = Error>> {
-        FutureResult(Ok(x + y).into_future())
+    fn add(x: i32, y: i32) -> FutureResult<impl Future<Output = i32>> {
+        FutureResult(async move { x + y })
     }
 
     let expr = r#"
@@ -175,27 +172,24 @@ fn return_finished_future() {
     assert_eq!(result, expected);
 }
 
-fn poll_n(s: String) -> FutureResult<impl Future<Item = IO<String>, Error = Error>> {
-    use futures::sync::oneshot::channel;
+fn poll_n(s: String) -> FutureResult<impl Future<Output = IO<String>>> {
+    use futures::channel::oneshot::channel;
     use std::thread::spawn;
 
     let (ping_c, ping_p) = channel();
     let (pong_c, pong_p) = channel();
     spawn(move || {
-        ping_p.wait().expect("wait");
+        futures::executor::block_on(ping_p).expect("wait");
         pong_c.send(s).expect("send");
     });
-    FutureResult(
-        lazy(move || {
-            ping_c.send(()).unwrap();
-            Ok(())
-        })
-        .and_then(|_| {
+    FutureResult(async move {
+        ping_c.send(()).unwrap();
+        IO::from(
             pong_p
-                .map(IO::Value)
-                .map_err(|err| Error::Message(format!("{}", err)))
-        }),
-    )
+                .await
+                .map_err(|err| Error::Message(format!("{}", err))),
+        )
+    })
 }
 
 #[test]
@@ -251,8 +245,8 @@ fn io_future() {
 
     let _ = ::env_logger::try_init();
 
-    fn test(_: ()) -> FutureResult<impl Future<Item = IO<i32>, Error = Error>> {
-        FutureResult(Ok(IO::Value(123)).into_future())
+    fn test(_: ()) -> FutureResult<impl Future<Output = IO<i32>>> {
+        FutureResult(async { IO::Value(123) })
     }
 
     let expr = r#"

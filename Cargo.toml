@@ -32,28 +32,32 @@ gluon_codegen = { path = "codegen", version = "0.13.1" } # GLUON
 gluon_vm = { path = "vm", version = "0.13.1", default-features = false } # GLUON
 gluon_format = { path = "format", version = "0.13.1", default-features = false } # GLUON
 
+async-trait = "0.1"
 log = "0.4"
 quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.8"
-futures = "0.1.11"
+futures = { version = "0.3.1", features = ["thread-pool"] }
 codespan = "0.3"
 codespan-reporting = "0.3"
-salsa = "0.13.1"
+pin-project = "0.4"
+salsa = { version = "0.14.0", git = "https://github.com/Marwes/salsa", rev = "3fddf72" }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4", optional = true }
 serde_derive_state = { version = "0.4.7", optional = true }
 
+tokio = { version = "0.2", features = ["stream", "sync"] }
+
 # Binding crates
 regex = { version = "1", optional = true }
 # web
-http = { version = "0.1", optional = true }
-hyper = { version = "0.12", optional = true }
+tower-service = { version = "0.3", optional = true }
+http = { version = "0.2", optional = true }
+hyper = { version = "0.13", optional = true, features = ["stream"] }
 native-tls = { version = "0.2", optional = true }
-tokio-tls = { version = "0.2", optional = true }
-tokio-tcp = { version = "0.1", optional = true }
+tokio-tls = { version = "0.3", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3.23", optional = true }
@@ -71,17 +75,16 @@ walkdir = "2"
 
 [dev-dependencies]
 criterion = "0.3"
-tensile = "0.5"
 collect-mac = "0.1.0"
 env_logger = "0.7"
-pretty_assertions = "0.6"
-futures-cpupool = "0.1.8"
-tokio = "0.1.7"
-tokio-retry = "0.2"
-walkdir = "2"
 failure = "0.1"
 failure_derive = "0.1"
+pretty_assertions = "0.6"
+structopt = "0.3"
 tempfile = "3.0.4"
+tensile = { version = "0.6", features = ["tokio"] }
+tokio = { version = "0.2", features = ["macros", "rt-core", "rt-threaded"] }
+walkdir = "2"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"
@@ -98,7 +101,7 @@ gluon_codegen = { path = "codegen", version = "0.13.1" } # GLUON
 default = ["regex", "random"]
 random = ["rand", "rand_xorshift"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["hyper", "http", "native-tls", "tokio-tcp", "tokio-tls"]
+web = ["hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-tls"]
 
 docs_rs = ["serialization"]
 
@@ -121,23 +124,20 @@ harness = false
 [[test]]
 name = "main"
 harness = false
+required-features = ["serialization"]
 
 [[example]]
 name = "marshalling"
 required-features = ["serialization"]
+
 [[example]]
 name = "http"
 path = "examples/http/main.rs"
 required-features = ["serialization", "web"]
+
 [[example]]
 name = "lisp"
 path = "examples/lisp/main.rs"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]
-
-[profile.release]
-debug = true
-
-[profile.bench]
-debug = true

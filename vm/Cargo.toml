@@ -17,6 +17,7 @@ documentation = "https://docs.rs/gluon"
 travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
+async-trait = "0.1"
 bitflags = "1.0.0"
 codespan = "0.3"
 codespan-reporting = "0.3"
@@ -25,11 +26,12 @@ downcast-rs = "1"
 difference = { version = "2", optional = true }
 crossbeam-utils = "0.6"
 frunk_core = "0.3"
-futures = "0.1.0"
+futures = { version = "0.3.1", features = ["compat", "async-await"] }
 itertools = "0.8"
 lalrpop-util = { version = "0.17", optional = true }
 log = "0.4"
 ordered-float = "1"
+parking_lot = "0.9"
 petgraph = "0.4"
 pretty = "0.5"
 quick-error = "1.1.0"

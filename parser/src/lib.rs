@@ -45,6 +45,7 @@ pub use crate::{
 
 lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[allow(unused_parens)]
     grammar
 );
 
@@ -139,38 +140,30 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Token(err: TokenizeError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         Layout(err: LayoutError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         InvalidToken {
-            description("invalid token")
             display("Invalid token")
         }
         UnexpectedToken(token: String, expected: Vec<String>) {
-            description("unexpected token")
             display("Unexpected token: {}{}", token, Expected(&expected))
         }
         UnexpectedEof(expected: Vec<String>) {
-            description("unexpected end of file")
             display("Unexpected end of file{}", Expected(&expected))
         }
         ExtraToken(token: String) {
-            description("extra token")
             display("Extra token: {}", token)
         }
         Infix(err: InfixError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         Message(msg: String) {
-            description(msg)
             display("{}", msg)
             from()
         }

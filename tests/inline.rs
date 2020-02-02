@@ -1,11 +1,12 @@
+#![cfg(features = "test")]
 use support::*;
 
 mod support;
 
 use gluon::{self, query::Compilation, vm::core::tests::check_expr_eq, ThreadExt};
 
-#[test]
-fn inline_cross_module() {
+#[tokio::test]
+async fn inline_cross_module() {
     let _ = env_logger::try_init();
 
     let thread = make_vm();
@@ -25,6 +26,7 @@ fn inline_cross_module() {
     let db = thread.get_database();
     let core_expr = db
         .core_expr("test".into())
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
     let expected_str = r#"
         3

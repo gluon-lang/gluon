@@ -418,6 +418,33 @@ pub mod borrow {
     }
 }
 
+pub mod rw_lock {
+    use super::*;
+
+    pub fn deserialize<'de, D, T, Seed>(
+        seed: &mut Seed,
+        deserializer: D,
+    ) -> Result<parking_lot::RwLock<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: DeserializeState<'de, Seed>,
+    {
+        T::deserialize_state(seed, deserializer).map(parking_lot::RwLock::new)
+    }
+
+    pub fn serialize<S, T, Seed>(
+        t: &parking_lot::RwLock<T>,
+        serializer: S,
+        seed: &Seed,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: SerializeState<Seed>,
+    {
+        t.read().serialize_state(serializer, seed)
+    }
+}
+
 pub mod typ {
     use super::*;
     use crate::base::symbol::Symbol;

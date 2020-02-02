@@ -4,7 +4,11 @@ use std::marker::PhantomData;
 #[cfg(feature = "serde")]
 use crate::serde::{Deserialize, Deserializer};
 
-use futures::{future, Async, Future};
+use futures::{
+    prelude::*,
+    ready,
+    task::{self, Poll},
+};
 
 use crate::base::symbol::Symbol;
 use crate::base::types::ArcType;
@@ -305,12 +309,34 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
             r
         };
 
-        context.stack().release_lock(lock);
-
-        r.async_status_push(&mut context, frame_index)
+        r.async_status_push(&mut context, lock, frame_index)
     }
 }
 
+    }
+}
+
+fn block_on_sync<F, T>(f: F) -> F::Output
+where
+    F: Future<Output = Result<T>>,
+{
+    use std::task::{Context, RawWaker, RawWakerVTable, Waker};
+
+    static VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |p| RawWaker::new(p, &VTABLE),
+        |_| unreachable!(),
+        |_| unreachable!(),
+        |_| (),
+    );
+
+    let waker_state = ();
+    let waker = unsafe { Waker::from_raw(RawWaker::new(&waker_state, &VTABLE)) };
+    let mut context = Context::from_waker(&waker);
+
+    futures::pin_mut!(f);
+    match f.poll(&mut context) {
+        Poll::Ready(value) => value,
+        Poll::Pending => Err(Error::Message("Unexpected async".into())).into(),
     }
 }
 
@@ -358,14 +384,16 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
 {
     #[allow(non_snake_case)]
     pub fn call(&mut self $(, $args: $args)*) -> Result<R> {
-        match self.call_first($($args),*)? {
-            Async::Ready(value) => Ok(value),
-            Async::NotReady => Err(Error::Message("Unexpected async".into())),
-        }
+        $(
+            let mut $args = Some($args);
+        )*
+        block_on_sync(future::poll_fn(|cx| {
+            self.call_first(cx, $($args.take().unwrap()),*)
+        }))
     }
 
     #[allow(non_snake_case)]
-    fn call_first(&self $(, $args: $args)*) -> Result<Async<R>> {
+    fn call_first(&self, cx: &mut task::Context<'_> $(, $args: $args)*) -> Poll<Result<R>> {
         let vm = self.value.vm();
         let mut context = vm.current_context();
         context.push(self.value.get_variant());
@@ -376,18 +404,14 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
             0.push(&mut context).unwrap();
         }
         let args = count!($($args),*) + R::extra_args();
-        match vm.call_function(context.into_owned(), args)? {
-            Async::Ready(context) => {
-                let mut context = context.unwrap();
-                let result = {
-                    let value = context.stack.last().unwrap();
-                    Self::return_value(vm, value).map(Async::Ready)
-                };
-                context.stack.pop();
-                result
-            }
-            Async::NotReady => Ok(Async::NotReady),
-        }
+        let context =  ready!(vm.call_function(cx, context.into_owned(), args))?;
+        let mut context = context.unwrap();
+        let result = {
+            let value = context.stack.last().unwrap();
+            Self::return_value(vm, value)
+        };
+        context.stack.pop();
+        Poll::Ready(result)
     }
 
     fn return_value(vm: &Thread, value: Variants) -> Result<R> {
@@ -401,54 +425,21 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
           R: VmType + for<'x, 'value> Getable<'x, 'value> + Send + Sync + 'static,
 {
     #[allow(non_snake_case)]
-    pub fn call_async(
+    pub async fn call_async(
         &mut self
         $(, $args: $args)*
-        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
+        ) -> Result<R>
     {
         use crate::thread::Execute;
-        use futures::IntoFuture;
-
-        match self.call_first($($args),*) {
-            Ok(ok) => {
-                match ok {
-                    Async::Ready(value) => Box::new(Ok(value).into_future()),
-                    Async::NotReady => {
-                        Box::new(
-                            Execute::new(self.value.vm().root_thread())
-                                .and_then(|value| Self::return_value(value.vm(), value.get_variant()))
-                        )
-                    }
-                }
-            }
-            Err(err) => {
-                Box::new(Err(err).into_future())
-            }
-        }
-    }
-
-    #[allow(non_snake_case)]
-    pub fn call_fast_async(
-        &mut self
-        $(, $args: $args)*
-        ) -> Box<dyn Future<Item = R, Error = Error> + Send + Sync + 'static>
-    {
-        use crate::thread::Execute;
-
-        match self.call_first($($args),*) {
-            Ok(ok) => {
-                match ok {
-                    Async::Ready(value) => Box::new(future::ok(value)),
-                    Async::NotReady => {
-                        Box::new(
-                            Execute::new(self.value.vm().root_thread())
-                                .and_then(|value| Self::return_value(value.vm(), value.get_variant()))
-                        )
-                    }
-                }
-            }
-            Err(err) => {
-                Box::new(future::err(err))
+        $(
+            let mut $args = Some($args);
+        )*
+        match future::poll_fn(|cx| Poll::Ready(self.call_first(cx, $($args.take().unwrap()),*))).await {
+            Poll::Ready(result) => result,
+            Poll::Pending => {
+                let vm = self.value.vm().root_thread();
+                let value = Execute::new(vm).await?;
+                Self::return_value(value.vm(), value.get_variant())
             }
         }
     }
@@ -489,18 +480,28 @@ where
     ///
     /// WARNING: No check is done that the number of arguments is correct. The VM may return an
     /// error or panic if an incorrect number of arguments is passed.
-    pub fn call_any<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<R>
+    pub fn call_any<A, R>(&'vm self, args: impl IntoIterator<Item = A>) -> Result<R>
     where
         A: Pushable<'vm>,
         R: for<'value> Getable<'vm, 'value> + VmType,
     {
-        match self.call_any_first(args)? {
-            Async::Ready(value) => Ok(value),
-            Async::NotReady => Err(Error::Message("Unexpected async".into())),
-        }
+        block_on_sync(self.call_any_async(args))
     }
 
-    fn call_any_first<A, R>(&'vm mut self, args: impl IntoIterator<Item = A>) -> Result<Async<R>>
+    async fn call_any_async<A, R>(&'vm self, args: impl IntoIterator<Item = A>) -> Result<R>
+    where
+        A: Pushable<'vm>,
+        R: for<'value> Getable<'vm, 'value> + VmType,
+    {
+        let mut args = Some(args);
+        future::poll_fn(move |cx| self.call_any_first(cx, args.take().unwrap())).await
+    }
+
+    fn call_any_first<A, R>(
+        &'vm self,
+        cx: &mut task::Context<'_>,
+        args: impl IntoIterator<Item = A>,
+    ) -> Poll<Result<R>>
     where
         A: Pushable<'vm>,
         R: for<'value> Getable<'vm, 'value> + VmType,
@@ -517,18 +518,14 @@ where
         for _ in 0..R::extra_args() {
             0.push(&mut context).unwrap();
         }
-        match vm.call_function(context.into_owned(), arg_count)? {
-            Async::Ready(context) => {
-                let mut context = context.unwrap();
-                let result = {
-                    let value = context.stack.last().unwrap();
-                    Ok(R::from_value(vm, value)).map(Async::Ready)
-                };
-                context.stack.pop();
-                result
-            }
-            Async::NotReady => Ok(Async::NotReady),
-        }
+        let context = ready!(vm.call_function(cx, context.into_owned(), arg_count))?;
+        let mut context = context.unwrap();
+        let result = {
+            let value = context.stack.last().unwrap();
+            Ok(R::from_value(vm, value))
+        };
+        context.stack.pop();
+        result.into()
     }
 }
 
