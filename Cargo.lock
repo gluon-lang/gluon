@@ -2828,7 +2828,7 @@ checksum = "bfa8506c1de11c9c4e4c38863ccbe02a305c8188e85a05a784c9e11e1c3910c8"
 [[package]]
 name = "salsa"
 version = "0.14.1"
-source = "git+https://github.com/Marwes/salsa?branch=async#3fddf726fffd496b004b67390842a1ca49cff53b"
+source = "git+https://github.com/Marwes/salsa?rev=3fddf72#3fddf726fffd496b004b67390842a1ca49cff53b"
 dependencies = [
  "async-trait",
  "crossbeam",
@@ -2845,7 +2845,7 @@ dependencies = [
 [[package]]
 name = "salsa-macros"
 version = "0.14.1"
-source = "git+https://github.com/Marwes/salsa?branch=async#3fddf726fffd496b004b67390842a1ca49cff53b"
+source = "git+https://github.com/Marwes/salsa?rev=3fddf72#3fddf726fffd496b004b67390842a1ca49cff53b"
 dependencies = [
  "heck",
  "proc-macro2 1.0.6",

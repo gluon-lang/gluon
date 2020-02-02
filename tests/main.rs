@@ -97,7 +97,8 @@ fn main() {
     };
     runtime.block_on(async move {
         if let Err(err) = main_(&options).await {
-            assert!(false, "{}", err);
+            eprintln!("{}", err);
+            std::process::exit(1);
         }
     })
 }
@@ -445,7 +446,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
     let (pass_tests, doc_tests) = join!(pass_tests_future, doc_tests_future);
 
-    tensile::tokio_console_runner(
+    let report = tensile::tokio_console_runner(
         tensile::group(
             "main",
             vec![
@@ -457,5 +458,8 @@ async fn main_(options: &Opt) -> Result<(), Error> {
         &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
     )
     .await?;
+    if !report.passes() {
+        return Err("Some tests failed".into());
+    }
     Ok(())
 }

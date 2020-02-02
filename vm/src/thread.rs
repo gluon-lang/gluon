@@ -96,23 +96,7 @@ where
                 .thread
                 .as_ref()
                 .expect("cannot poll Execute future after it has succeded");
-            let mut context = thread.owned_context();
-            if let Some(poll_fn) = context.poll_fns.last() {
-                let frame_offset = poll_fn.frame_index as usize;
-                for frame in &mut context.stack.get_frames_mut()[frame_offset..] {
-                    match frame.state {
-                        State::Extern(ref mut e) => {
-                            assert!(
-                                e.call_state == ExternCallState::Pending
-                                    || e.call_state == ExternCallState::Poll
-                            );
-                            e.call_state = ExternCallState::Poll
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-            }
-            let mut context = ready!(thread.resume_with_context(cx, context))?;
+            let mut context = ready!(thread.resume(cx))?;
             context.stack.pop()
         };
 
@@ -1147,12 +1131,6 @@ where
 
     fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
 
-    fn resume_with_context<'b>(
-        &'b self,
-        cx: &mut task::Context<'_>,
-        context: OwnedContext<'b>,
-    ) -> Poll<Result<OwnedContext<'b>>>;
-
     fn set_global(
         &self,
         name: Symbol,
@@ -1270,14 +1248,22 @@ impl ThreadInternal for Thread {
     }
 
     fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>> {
-        self.resume_with_context(cx, self.owned_context())
-    }
-
-    fn resume_with_context<'b>(
-        &'b self,
-        cx: &mut task::Context<'_>,
-        mut context: OwnedContext<'b>,
-    ) -> Poll<Result<OwnedContext<'b>>> {
+        let mut context = self.owned_context();
+        if let Some(poll_fn) = context.poll_fns.last() {
+            let frame_offset = poll_fn.frame_index as usize;
+            for frame in &mut context.stack.get_frames_mut()[frame_offset..] {
+                match frame.state {
+                    State::Extern(ref mut e) => {
+                        assert!(
+                            e.call_state == ExternCallState::Pending
+                                || e.call_state == ExternCallState::Poll
+                        );
+                        e.call_state = ExternCallState::Poll
+                    }
+                    _ => unreachable!("{:#?}", frame.state),
+                }
+            }
+        }
         if context.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead).into();
