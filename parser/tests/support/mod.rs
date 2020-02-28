@@ -178,13 +178,14 @@ macro_rules! parse_new {
     ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
-        let mut source = crate::support::codespan::CodeMap::new();
-        source.add_filemap(
-            crate::support::codespan::FileName::virtual_("test"),
-            input.clone(),
-        );
-        parse(&input)
-            .unwrap_or_else(|(_, err)| panic!("{}", crate::base::error::InFile::new(source, err)))
+        parse(&input).unwrap_or_else(|(_, err)| {
+            let mut source = crate::support::codespan::CodeMap::new();
+            source.add_filemap(
+                crate::support::codespan::FileName::virtual_("test"),
+                input.clone(),
+            );
+            panic!("{}", crate::base::error::InFile::new(source, err))
+        })
     }};
 }
 
@@ -446,7 +447,7 @@ pub fn array<'ast>(arena: ast::ArenaRef<'ast, String>, fields: Vec<SpExpr<'ast>>
     }))
 }
 
-pub fn error() -> SpExpr<'static> {
+pub fn error<'ast>() -> SpExpr<'ast> {
     no_loc(Expr::Error(None))
 }
 
@@ -495,4 +496,57 @@ where
         variants,
     ))
     .into_type()
+}
+
+// The expected tokens aren't very interesting since they may change fairly often
+pub fn remove_expected(errors: ParseErrors) -> ParseErrors {
+    let f = |mut err: Spanned<Error, _>| {
+        match err.value {
+            Error::UnexpectedToken(_, ref mut expected)
+            | Error::UnexpectedEof(ref mut expected) => expected.clear(),
+            _ => (),
+        }
+        err.span = Span::default();
+        err
+    };
+    ParseErrors::from(errors.into_iter().map(f).collect::<Vec<_>>())
+}
+
+#[macro_export]
+macro_rules! test_parse {
+    ($test_name: ident, $text: expr, $expected: expr $(,)?) => {
+        #[test]
+        fn $test_name() {
+            let _ = ::env_logger::try_init();
+            let text = $text;
+            let e = parse_clear_span!(text);
+            mk_ast_arena!(arena);
+            fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
+                f(a)
+            }
+            assert_eq!(*e.expr(), call(&arena, $expected));
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! test_parse_error {
+    ($test_name: ident, $text: expr, $expected: expr, $expected_error: expr $(,)?) => {
+        #[test]
+        fn $test_name() {
+            let _ = ::env_logger::try_init();
+            let text = $text;
+            let result = parse(text);
+            assert!(result.is_err());
+            let (expr, err) = result.unwrap_err();
+            let expr = clear_span(expr.unwrap());
+            mk_ast_arena!(arena);
+            fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
+                f(a)
+            }
+            assert_eq!(*expr.expr(), call(&arena, $expected));
+
+            assert_eq!(remove_expected(err), ParseErrors::from($expected_error));
+        }
+    };
 }

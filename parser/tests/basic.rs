@@ -18,22 +18,6 @@ use crate::base::{ast::*, mk_ast_arena};
 
 use crate::parser::ReplLine;
 
-macro_rules! test_parse {
-    ($test_name: ident, $text: expr, $expected: expr) => {
-        #[test]
-        fn $test_name() {
-            let _ = ::env_logger::try_init();
-            let text = $text;
-            let e = parse_clear_span!(text);
-            mk_ast_arena!(arena);
-            fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
-                f(a)
-            }
-            assert_eq!(*e.expr(), call(&arena, $expected));
-        }
-    };
-}
-
 test_parse! {
     dangling_in,
 r#"
