@@ -649,13 +649,13 @@ test
     mk_ast_arena!(arena);
     assert_eq!(
         *e.expr(),
-        no_loc(Expr::Block(vec![
+        no_loc(Expr::Block(arena.alloc_extend(vec![
             Spanned {
                 span: Span::new(BytePos::from(0), BytePos::from(0)),
                 value: Expr::Projection(arena.alloc(id("test")), intern(""), Type::hole()),
             },
             id("test"),
-        ]))
+        ])))
     );
 }
 

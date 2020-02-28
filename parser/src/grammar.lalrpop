@@ -9,20 +9,21 @@ use crate::base::{
     metadata::{Attribute, Metadata, Comment},
 };
 
-use std::str::FromStr;
+use std::{str::FromStr, mem};
 
 use crate::{ReplLine, Variant, new_ident};
 use crate::token::{Token, StringLiteral};
 use crate::ordered_float::NotNan;
 
-use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
+use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv, TempVecs, Slice};
 
 grammar<'input, 'env, 'ast, Id>(
     input: &'input dyn crate::ParserSource,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     arena: ast::ArenaRef<'ast, Id>,
     env: MutIdentEnv<'env, Id>,
-    errors: ErrorEnv<'env, 'input>
+    errors: ErrorEnv<'env, 'input>,
+    temp_vecs: &mut TempVecs<'ast, Id>,
 )
     where Id: Clone + AsRef<str>;
 
@@ -85,7 +86,7 @@ extern {
 
 SingleComma: () = {
     "," => (),
-    <!> => errors.push(<>.error)
+    RecoverError,
 };
 
 Sep<Rule, Separator>: Vec<Rule> =
@@ -98,6 +99,21 @@ Comma<Rule>: Vec<Rule> = {
     Sep<Rule, SingleComma>
 };
 
+
+#[inline]
+SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
+    <mut rules: ManyInner<(<Rule> Separator)>> <last: Rule?> => {
+        rules.extend(last);
+        let slice = arena.alloc_extend(rules.drain(..));
+        temp_vecs.push(rules);
+        slice
+    };
+
+#[inline]
+CommaSlice<Rule>: &'ast mut Slice<Rule> = {
+    SepSlice<Rule, SingleComma>
+};
+
 Sp<Rule>: Spanned<Rule, BytePos> =
     <l: @L> <rule: Rule> <r: @R> =>
         pos::spanned2(l, r, rule);
@@ -105,6 +121,40 @@ Sp<Rule>: Spanned<Rule, BytePos> =
 IdentStr: &'input str = {
     "identifier" => <>,
     "(" <"operator"> ")" => <>,
+};
+
+Many1Inner<T>: Vec<T> = {
+    T => {
+        let mut v = temp_vecs.pop();
+        v.push(<>);
+        v
+    },
+    <mut xs: Many1Inner<T>> <x: T> => {
+        xs.push(x);
+        xs
+    }
+};
+
+#[inline]
+ManyInner<T>: Vec<T> = {
+    => Vec::new(),
+    Many1Inner<T>,
+};
+
+#[inline]
+Many<T>: &'ast mut Slice<T> = {
+    => &mut [],
+    Many1<T>,
+};
+
+#[inline]
+Many1<T>: &'ast mut Slice<T> = {
+    Many1Inner<T> => {
+        let mut xs = <>;
+        let slice = arena.alloc_extend(xs.drain(..));
+        temp_vecs.push(xs);
+        slice
+    }
 };
 
 RecoverError: () = {
@@ -457,7 +507,7 @@ ArgType: (ArgType, AstType<Id>) = {
 
 // Patterns
 
-FieldPattern : FieldPattern<Id> = {
+FieldPattern : FieldPattern<'ast, Id> = {
     <id: Sp<Ident>> "=" <body: Sp<Pattern>> =>
         FieldPattern::Value(id, Some(body)),
 
@@ -471,13 +521,13 @@ FieldPattern : FieldPattern<Id> = {
     },
 };
 
-AtomicPattern: Pattern<Id> = {
+AtomicPattern: Pattern<'ast, Id> = {
     <l: @L> <id: Ident> <r: @R> "@" <pat: Sp<AtomicPattern>> =>
-        Pattern::As(pos::spanned2(l, r, id), Box::new(pat)),
+        Pattern::As(pos::spanned2(l, r, id), arena.alloc(pat)),
 
     <id: Ident> =>
         if env.string(&id).starts_with(char::is_uppercase) {
-            Pattern::Constructor(new_ident(type_cache, id), Vec::new())
+            Pattern::Constructor(new_ident(type_cache, id), &mut [])
         } else {
             Pattern::Ident(new_ident(type_cache, id))
         },
@@ -485,11 +535,11 @@ AtomicPattern: Pattern<Id> = {
     <l: Literal> =>
         Pattern::Literal(l),
 
-    "(" <elems: Comma<Sp<Pattern>>> ")" =>
-        match elems.len() {
+    "(" <elems: CommaSlice<Sp<Pattern>>> ")" =>
+        match elems {
             // Parenthesized pattern
-            1 => elems.into_iter().next().unwrap().value,
-            _ => Pattern::Tuple { typ: type_cache.hole(), elems: elems },
+            [e] => mem::take(&mut e.value),
+            _ => Pattern::Tuple { typ: type_cache.hole(), elems },
         },
 
     "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
@@ -534,7 +584,7 @@ AtomicPattern: Pattern<Id> = {
 NoErrorPattern = {
     AtomicPattern,
 
-    <id: Ident> <args: Sp<AtomicPattern>+> => {
+    <id: Ident> <args: Many1<Sp<AtomicPattern>>> => {
         let id = new_ident(type_cache, id);
 
         Pattern::Constructor(id, args)
@@ -543,9 +593,8 @@ NoErrorPattern = {
 
 Pattern = {
     NoErrorPattern,
-    <!> => {
+    RecoverError => {
         debug!("Recovering from pattern error");
-        errors.push(<>.error);
         Pattern::Error
     },
 };
@@ -567,16 +616,14 @@ Alternative: Alternative<'ast, Id> = {
             expr: super::shrink_hidden_spans(expr),
         }
     },
-    "|" <pat: Sp<NoErrorPattern>> <err: !> <end: @R>  => {
-        errors.push(err.error);
+    "|" <pat: Sp<NoErrorPattern>> RecoverError <end: @R>  => {
         let span = pos::Span::new(pat.span.end(), end);
         Alternative {
             pattern: pat,
             expr: pos::spanned(span, Expr::Error(None)),
         }
     },
-    "|" <start: @R> <err: !> <end: @R>  => {
-        errors.push(err.error);
+    "|" <start: @R> RecoverError <end: @R>  => {
         let span = pos::Span::new(start, end);
         Alternative {
             pattern: pos::spanned(span, Pattern::Error),
@@ -693,17 +740,16 @@ AtomicExpr: Expr<'ast, Id> = {
     <expr: SpAtomicExpr> "." <id: Ident> =>
         Expr::Projection(arena.alloc(expr), id, type_cache.hole()),
 
-    <expr: SpAtomicExpr> "." <err: !> => {
-        errors.push(err.error);
+    <expr: SpAtomicExpr> "." RecoverError => {
         Expr::Projection(arena.alloc(expr), env.from_str(""), type_cache.hole())
     },
 
-    "(" <elems: Comma<SpExpr>> ")" =>
-        Expr::Tuple { typ: type_cache.hole(), elems: elems },
+    "(" <elems: CommaSlice<SpExpr>> ")" =>
+        Expr::Tuple { typ: type_cache.hole(), elems },
 
-    "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
+    "[" <exprs: CommaSlice<SpExpr>> "]" => Expr::Array(Array {
             typ: type_cache.hole(),
-            exprs: elems,
+            exprs,
         }),
 
     "{" <fields: Comma<FieldExpr>> <base: RecordExprBase> "}" => {
@@ -754,10 +800,10 @@ ImplicitArg: SpannedExpr<'ast, Id> = {
 AppExpr = {
     AtomicExpr,
 
-    <expr: SpAtomicExpr> <implicit_args: ImplicitArg+> =>
-        Expr::App { func: arena.alloc(expr), implicit_args, args: Vec::new() },
+    <expr: SpAtomicExpr> <implicit_args: Many1<ImplicitArg>> =>
+        Expr::App { func: arena.alloc(expr), implicit_args, args: &mut [] },
 
-    <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
+    <expr: SpAtomicExpr> <implicit_args: Many<ImplicitArg>> <args: Many1<SpAtomicExpr>> =>
         Expr::App { func: arena.alloc(expr), implicit_args, args },
 };
 
@@ -779,14 +825,13 @@ InfixExpr = {
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix { lhs: arena.alloc(lhs), op, rhs: arena.alloc(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
+        Expr::Infix { lhs: arena.alloc(lhs), op, rhs: arena.alloc(super::shrink_hidden_spans(rhs)), implicit_args: &mut [], },
 };
 
 
 InExpr: SpannedExpr<'ast, Id> = {
     "in" <SpExpr>,
-    <err: Sp<!>> => {
-        errors.push(err.value.error);
+    <err: Sp<RecoverError>> => {
         pos::spanned(err.span, Expr::Error(None))
     }
 };
@@ -828,8 +873,7 @@ Expr: Expr<'ast, Id> = {
 
     BlockExpr,
 
-    ! => {
-        errors.push(<>.error);
+    RecoverError => {
         Expr::Error(None)
     }
 };
@@ -846,7 +890,7 @@ DoExpression: Expr<'ast, Id> = {
 };
 
 
-DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<'ast, Id>)> = {
+DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
     <id: Sp<Pattern>> "=" <bound: SpExpr> "in" => Box::new((id, bound)),
 
     // Error recovery
@@ -862,8 +906,7 @@ DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<'ast, Id>)> = {
 };
 
 BlockExpr: Expr<'ast, Id> = {
-    "block open" <mut exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
-        exprs.push(last);
+    "block open" <exprs: SepSlice<SpExpr, "block separator">> "block close" => {
         Expr::Block(exprs)
     },
 };

@@ -79,9 +79,9 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         Expr::Lambda(ref lambda) => {
             expr.span = Span::new(expr.span.start(), lambda.body.span.end())
         }
-        Expr::Block(ref mut exprs) => match exprs.len() {
-            0 => (),
-            1 => return exprs.pop().unwrap(),
+        Expr::Block(ref mut exprs) => match exprs {
+            [] => (),
+            [e] => return std::mem::take(e),
             _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
         Expr::Match(_, ref alts) => {
@@ -228,9 +228,9 @@ impl Error {
     }
 }
 
-pub enum FieldPattern<Id> {
+pub enum FieldPattern<'ast, Id> {
     Type(Spanned<Id, BytePos>, Option<Id>),
-    Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
+    Value(Spanned<Id, BytePos>, Option<SpannedPattern<'ast, Id>>),
 }
 
 pub enum FieldExpr<'ast, Id> {
@@ -250,6 +250,52 @@ pub enum Variant<Id> {
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
+type Slice<T> = [T];
+
+#[doc(hidden)]
+pub struct TempVecs<'ast, Id> {
+    exprs: Vec<Vec<SpannedExpr<'ast, Id>>>,
+    patterns: Vec<Vec<SpannedPattern<'ast, Id>>>,
+}
+
+impl<'ast, Id> TempVecs<'ast, Id> {
+    fn new() -> Self {
+        TempVecs {
+            exprs: Vec::new(),
+            patterns: Vec::new(),
+        }
+    }
+
+    fn push<T>(&mut self, exprs: Vec<T>)
+    where
+        T: TempVec<'ast, Id>,
+    {
+        T::select(self).push(exprs);
+    }
+
+    fn pop<T>(&mut self) -> Vec<T>
+    where
+        T: TempVec<'ast, Id>,
+    {
+        T::select(self).pop().unwrap_or_default()
+    }
+}
+
+trait TempVec<'ast, Id>: Sized {
+    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>>;
+}
+
+impl<'ast, Id> TempVec<'ast, Id> for SpannedExpr<'ast, Id> {
+    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
+        &mut vecs.exprs
+    }
+}
+
+impl<'ast, Id> TempVec<'ast, Id> for SpannedPattern<'ast, Id> {
+    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
+        &mut vecs.patterns
+    }
+}
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
@@ -313,6 +359,7 @@ where
         arena,
         symbols,
         &mut parse_errors,
+        &mut TempVecs::new(),
         layout,
     );
 
@@ -367,6 +414,7 @@ where
         arena,
         symbols,
         &mut parse_errors,
+        &mut TempVecs::new(),
         layout,
     );
 

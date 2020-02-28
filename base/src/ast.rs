@@ -238,7 +238,7 @@ pub enum Literal {
 }
 
 /// Pattern which contains a location
-pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
+pub type SpannedPattern<'ast, Id> = Spanned<Pattern<'ast, Id>, BytePos>;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct PatternField<Id, P> {
@@ -246,25 +246,25 @@ pub struct PatternField<Id, P> {
     pub value: Option<P>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Pattern<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub enum Pattern<'ast, Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
-    As(Spanned<Id, BytePos>, Box<SpannedPattern<Id>>),
+    As(Spanned<Id, BytePos>, &'ast mut SpannedPattern<'ast, Id>),
     /// Constructor pattern, eg. `Cons x xs`
-    Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
+    Constructor(TypedIdent<Id>, &'ast mut [SpannedPattern<'ast, Id>]),
     /// Ident pattern, eg: `x`
     Ident(TypedIdent<Id>),
     /// Record pattern, eg. `{ x, y = foo }`
     Record {
         typ: ArcType<Id>,
         types: Vec<PatternField<Id, Id>>,
-        fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
+        fields: Vec<PatternField<Id, SpannedPattern<'ast, Id>>>,
         implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
     Tuple {
         typ: ArcType<Id>,
-        elems: Vec<SpannedPattern<Id>>,
+        elems: &'ast mut [SpannedPattern<'ast, Id>],
     },
     /// A literal pattern
     Literal(Literal),
@@ -272,7 +272,7 @@ pub enum Pattern<Id> {
     Error,
 }
 
-impl<Id> Default for Pattern<Id> {
+impl<Id> Default for Pattern<'_, Id> {
     fn default() -> Self {
         Pattern::Error
     }
@@ -280,14 +280,14 @@ impl<Id> Default for Pattern<Id> {
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct Alternative<'ast, Id> {
-    pub pattern: SpannedPattern<Id>,
+    pub pattern: SpannedPattern<'ast, Id>,
     pub expr: SpannedExpr<'ast, Id>,
 }
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct Array<'ast, Id> {
     pub typ: ArcType<Id>,
-    pub exprs: Vec<SpannedExpr<'ast, Id>>,
+    pub exprs: &'ast mut [SpannedExpr<'ast, Id>],
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -314,7 +314,7 @@ pub struct ExprField<Id, E> {
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct Do<'ast, Id> {
-    pub id: Option<SpannedPattern<Id>>,
+    pub id: Option<SpannedPattern<'ast, Id>>,
     pub bound: &'ast mut SpannedExpr<'ast, Id>,
     pub body: &'ast mut SpannedExpr<'ast, Id>,
     pub flat_map_id: Option<&'ast mut SpannedExpr<'ast, Id>>,
@@ -330,8 +330,8 @@ pub enum Expr<'ast, Id> {
     /// Function application, eg. `f x`
     App {
         func: &'ast mut SpannedExpr<'ast, Id>,
-        implicit_args: Vec<SpannedExpr<'ast, Id>>,
-        args: Vec<SpannedExpr<'ast, Id>>,
+        implicit_args: &'ast mut [SpannedExpr<'ast, Id>],
+        args: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Lambda abstraction, eg. `\x y -> x * y`
     Lambda(Lambda<'ast, Id>),
@@ -348,7 +348,7 @@ pub enum Expr<'ast, Id> {
         lhs: &'ast mut SpannedExpr<'ast, Id>,
         op: SpannedIdent<Id>,
         rhs: &'ast mut SpannedExpr<'ast, Id>,
-        implicit_args: Vec<SpannedExpr<'ast, Id>>,
+        implicit_args: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Record field projection, eg. `value.field`
     Projection(&'ast mut SpannedExpr<'ast, Id>, Id, ArcType<Id>),
@@ -364,14 +364,14 @@ pub enum Expr<'ast, Id> {
     /// Tuple construction
     Tuple {
         typ: ArcType<Id>,
-        elems: Vec<SpannedExpr<'ast, Id>>,
+        elems: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Declare a series of value bindings
     LetBindings(ValueBindings<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>),
     /// Declare a series of type aliases
     TypeBindings(Vec<TypeBinding<Id>>, &'ast mut SpannedExpr<'ast, Id>),
     /// A group of sequenced expressions
-    Block(Vec<SpannedExpr<'ast, Id>>),
+    Block(&'ast mut [SpannedExpr<'ast, Id>]),
     Do(Do<'ast, Id>),
     MacroExpansion {
         original: &'ast mut SpannedExpr<'ast, Id>,
@@ -447,14 +447,15 @@ impl<'ast, Id> Expr<'ast, Id> {
     pub fn app(
         arena: ArenaRef<'ast, Id>,
         func: SpannedExpr<'ast, Id>,
-        args: Vec<SpannedExpr<'ast, Id>>,
+        args: impl IntoIterator<Item = SpannedExpr<'ast, Id>>,
     ) -> Self {
+        let args = arena.alloc_extend(args);
         if args.is_empty() {
             func.value
         } else {
             Expr::App {
                 func: arena.alloc(func),
-                implicit_args: Vec::new(),
+                implicit_args: &mut [],
                 args,
             }
         }
@@ -576,7 +577,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
 #[derive(Eq, PartialEq, Debug)]
 pub struct ValueBinding<'ast, Id> {
     pub metadata: Metadata,
-    pub name: SpannedPattern<Id>,
+    pub name: SpannedPattern<'ast, Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
     pub args: Vec<Argument<SpannedIdent<Id>>>,
@@ -618,7 +619,7 @@ pub trait $trait_name<'a, 'ast> {
         walk_expr(self, e)
     }
 
-    fn visit_pattern(&mut self, e: &'a $($mut)* SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a $($mut)* SpannedPattern<'ast, Self::Ident>) {
         walk_pattern(self, &$($mut)* e.value);
     }
 
@@ -667,7 +668,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             v.visit_expr(lhs);
             v.visit_spanned_typed_ident(op);
             v.visit_expr(rhs);
-            for arg in implicit_args {
+            for arg in &$($mut)* **implicit_args {
                 v.visit_expr(arg);
             }
         }
@@ -691,10 +692,10 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             ref $($mut)* args,
         } => {
             v.visit_expr(func);
-            for arg in implicit_args {
+            for arg in &$($mut)* **implicit_args {
                 v.visit_expr(arg);
             }
-            for arg in args {
+            for arg in & $($mut)* **args {
                 v.visit_expr(arg);
             }
         }
@@ -711,7 +712,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
         }
         Expr::Array(ref $($mut)* a) => {
             v.visit_typ(&$($mut)* a.typ);
-            for expr in &$($mut)* a.exprs {
+            for expr in &$($mut)* *a.exprs {
                 v.visit_expr(expr);
             }
         }
@@ -726,7 +727,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             for typ in types {
                 v.visit_spanned_ident(&$($mut)* typ.name);
             }
-            for field in exprs {
+            for field in &$($mut)* **exprs {
                 v.visit_spanned_ident(&$($mut)* field.name);
                 if let Some(ref $($mut)* expr) = field.value {
                     v.visit_expr(expr);
@@ -741,11 +742,11 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             ref $($mut)* elems,
         } => {
             v.visit_typ(typ);
-            for expr in elems {
+            for expr in &$($mut)* **elems {
                 v.visit_expr(expr);
             }
         }
-        Expr::Block(ref $($mut)* exprs) => for expr in exprs {
+        Expr::Block(ref $($mut)* exprs) => for expr in &$($mut)* **exprs {
             v.visit_expr(expr);
         },
 
@@ -793,7 +794,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'a $($mut)* Pattern<V::Ident>) {
+pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'a $($mut)* Pattern<'ast, V::Ident>) {
     match *p {
         Pattern::As(ref $($mut)* id, ref $($mut)* pat) => {
             v.visit_spanned_ident(id);
@@ -801,7 +802,7 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
         }
         Pattern::Constructor(ref $($mut)* id, ref $($mut)* args) => {
             v.visit_ident(id);
-            for arg in args {
+            for arg in &$($mut)* **args {
                 v.visit_pattern(arg);
             }
         }
@@ -823,7 +824,7 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
             ref $($mut)* elems,
         } => {
             v.visit_typ(typ);
-            for elem in elems {
+            for elem in &$($mut)* **elems {
                 v.visit_pattern(elem);
             }
         }
@@ -977,7 +978,7 @@ impl<T: Typed> Typed for Spanned<T, BytePos> {
     }
 }
 
-impl Typed for Pattern<Symbol> {
+impl Typed for Pattern<'_, Symbol> {
     type Ident = Symbol;
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         // Identifier patterns might be a function so use the identifier's type instead
@@ -1075,20 +1076,69 @@ pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(),
 use std::mem;
 use std::sync::Arc;
 
-#[derive(Clone)]
-pub struct Arena<'ast, Id>(Arc<typed_arena::Arena<SpannedExpr<'ast, Id>>>);
 pub type ArenaRef<'ast, Id> = &'ast Arena<'ast, Id>;
 
-impl<'ast, Id> Deref for Arena<'ast, Id> {
-    type Target = typed_arena::Arena<SpannedExpr<'ast, Id>>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Clone)]
+pub struct Arena<'ast, Id>(Arc<ArenaInner<'ast, Id>>);
+struct ArenaInner<'ast, Id> {
+    exprs: typed_arena::Arena<SpannedExpr<'ast, Id>>,
+    patterns: typed_arena::Arena<SpannedPattern<'ast, Id>>,
 }
 
 impl<'ast, Id> Arena<'ast, Id> {
     pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
-        Arena(Arc::new(typed_arena::Arena::new()))
+        Arena(Arc::new(ArenaInner {
+            exprs: typed_arena::Arena::new(),
+            patterns: typed_arena::Arena::new(),
+        }))
+    }
+
+    pub fn alloc<T>(&'ast self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        value.alloc(self)
+    }
+
+    pub fn alloc_extend<T>(&'ast self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        T::alloc_extend(iter, self)
+    }
+}
+
+pub trait AstAlloc<'ast, Id>: Sized {
+    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self;
+    fn alloc_extend(
+        iter: impl IntoIterator<Item = Self>,
+        arena: &'ast Arena<'ast, Id>,
+    ) -> &'ast mut [Self];
+}
+
+impl<'ast, Id> AstAlloc<'ast, Id> for SpannedExpr<'ast, Id> {
+    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
+        arena.0.exprs.alloc(self)
+    }
+
+    fn alloc_extend(
+        iter: impl IntoIterator<Item = Self>,
+        arena: &'ast Arena<'ast, Id>,
+    ) -> &'ast mut [Self] {
+        arena.0.exprs.alloc_extend(iter)
+    }
+}
+
+impl<'ast, Id> AstAlloc<'ast, Id> for SpannedPattern<'ast, Id> {
+    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
+        arena.0.patterns.alloc(self)
+    }
+
+    fn alloc_extend(
+        iter: impl IntoIterator<Item = Self>,
+        arena: &'ast Arena<'ast, Id>,
+    ) -> &'ast mut [Self] {
+        arena.0.patterns.alloc_extend(iter)
     }
 }
 

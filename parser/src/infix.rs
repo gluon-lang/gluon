@@ -335,7 +335,7 @@ where
                     lhs,
                     op,
                     rhs,
-                    implicit_args: Vec::new(),
+                    implicit_args: &mut [],
                 },
             ))
         };
@@ -597,7 +597,7 @@ mod tests {
             lhs,
             op: no_loc(ident(op_str)),
             rhs,
-            implicit_args: Vec::new(),
+            implicit_args: Default::default(),
         }))
     }
 

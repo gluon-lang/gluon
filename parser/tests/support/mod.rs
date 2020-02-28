@@ -221,7 +221,7 @@ pub fn binop<'ast>(
         lhs: arena.alloc(l),
         op: no_loc(TypedIdent::new(intern(s))),
         rhs: arena.alloc(r),
-        implicit_args: Vec::new(),
+        implicit_args: Default::default(),
     })
 }
 
@@ -317,8 +317,8 @@ pub fn app<'ast>(
 ) -> SpExpr<'ast> {
     no_loc(Expr::App {
         func: arena.alloc(e),
-        implicit_args: Vec::new(),
-        args,
+        implicit_args: Default::default(),
+        args: arena.alloc_extend(args),
     })
 }
 
@@ -443,7 +443,7 @@ pub fn field_access<'ast>(
 pub fn array<'ast>(arena: ast::ArenaRef<'ast, String>, fields: Vec<SpExpr<'ast>>) -> SpExpr<'ast> {
     no_loc(Expr::Array(Array {
         typ: Type::hole(),
-        exprs: fields,
+        exprs: arena.alloc_extend(fields),
     }))
 }
 
