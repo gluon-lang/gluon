@@ -102,7 +102,7 @@ Comma<Rule>: Vec<Rule> = {
 
 #[inline]
 SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
-    <mut rules: ManyInner<(<Rule> Separator)>> <last: Rule?> => {
+    <mut rules: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
         rules.extend(last);
         let slice = arena.alloc_extend(rules.drain(..));
         temp_vecs.push(rules);
@@ -123,22 +123,22 @@ IdentStr: &'input str = {
     "(" <"operator"> ")" => <>,
 };
 
-Many1Inner<T>: Vec<T> = {
+Many1Vec<T>: Vec<T> = {
     T => {
         let mut v = temp_vecs.pop();
         v.push(<>);
         v
     },
-    <mut xs: Many1Inner<T>> <x: T> => {
+    <mut xs: Many1Vec<T>> <x: T> => {
         xs.push(x);
         xs
     }
 };
 
 #[inline]
-ManyInner<T>: Vec<T> = {
+ManyVec<T>: Vec<T> = {
     => Vec::new(),
-    Many1Inner<T>,
+    Many1Vec<T>,
 };
 
 #[inline]
@@ -149,7 +149,7 @@ Many<T>: &'ast mut Slice<T> = {
 
 #[inline]
 Many1<T>: &'ast mut Slice<T> = {
-    Many1Inner<T> => {
+    Many1Vec<T> => {
         let mut xs = <>;
         let slice = arena.alloc_extend(xs.drain(..));
         temp_vecs.push(xs);
@@ -552,8 +552,10 @@ AtomicPattern: Pattern<'ast, Id> = {
             }
         }
 
-        let mut types = Vec::with_capacity(types_len);
-        let mut values = Vec::with_capacity(values_len);
+        let mut types = temp_vecs.pop();
+        types.reserve(types_len);
+        let mut values = temp_vecs.pop();
+        values.reserve(values_len);
 
         for field in fields {
             match field {
@@ -570,14 +572,17 @@ AtomicPattern: Pattern<'ast, Id> = {
 
         let implicit_import_span = implicit_import.span;
 
-        Pattern::Record {
+        let pattern = Pattern::Record {
             typ: type_cache.hole(),
-            types: types,
-            fields: values,
+            types: arena.alloc_extend(types.drain(..)),
+            fields: arena.alloc_extend(values.drain(..)),
             implicit_import: implicit_import
                 .value
                 .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start())))),
-        }
+        };
+        temp_vecs.push(types);
+        temp_vecs.push(values);
+        pattern
     },
 };
 
@@ -762,8 +767,10 @@ AtomicExpr: Expr<'ast, Id> = {
             }
         }
 
-        let mut types = Vec::with_capacity(types_len);
-        let mut values = Vec::with_capacity(values_len);
+        let mut types = temp_vecs.pop();
+        types.reserve(types_len);
+        let mut values = temp_vecs.pop();
+        values.reserve(values_len);
 
         for field in fields {
             match *field {
@@ -780,12 +787,15 @@ AtomicExpr: Expr<'ast, Id> = {
             }
         }
 
-        Expr::Record {
+        let expr = Expr::Record {
             typ: type_cache.hole(),
-            types: types,
-            exprs: values,
+            types: arena.alloc_extend(types.drain(..)),
+            exprs: arena.alloc_extend(values.drain(..)),
             base: base.map(|e| arena.alloc(e)),
-        }
+        };
+        temp_vecs.push(types);
+        temp_vecs.push(values);
+        expr
     },
 };
 
@@ -846,15 +856,15 @@ Expr: Expr<'ast, Id> = {
         Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(ValueBindings::Plain(binding), arena.alloc(body))
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(*binding)), arena.alloc(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
-        Expr::TypeBindings(vec![*binding], arena.alloc(body))
+        Expr::TypeBindings(arena.alloc_extend(Some(*binding)), arena.alloc(body))
     },
 
     <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
-        let mut bindings = bindings.into_iter().map(|x| *x).collect::<Vec<_>>();
+        let mut bindings = arena.alloc_extend(bindings.into_iter().map(|x| *x));
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
@@ -862,7 +872,7 @@ Expr: Expr<'ast, Id> = {
     },
 
     <metadata: Metadata?> "rec" <bindings: TypeBinding+> <body: InExpr> => {
-        let mut bindings = bindings.into_iter().map(|x| *x).collect::<Vec<_>>();
+        let mut bindings = arena.alloc_extend(bindings.into_iter().map(|x| *x));
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }

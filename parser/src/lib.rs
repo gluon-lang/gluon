@@ -252,49 +252,61 @@ type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 type Slice<T> = [T];
 
-#[doc(hidden)]
-pub struct TempVecs<'ast, Id> {
-    exprs: Vec<Vec<SpannedExpr<'ast, Id>>>,
-    patterns: Vec<Vec<SpannedPattern<'ast, Id>>>,
-}
-
-impl<'ast, Id> TempVecs<'ast, Id> {
-    fn new() -> Self {
-        TempVecs {
-            exprs: Vec::new(),
-            patterns: Vec::new(),
-        }
-    }
-
-    fn push<T>(&mut self, exprs: Vec<T>)
-    where
-        T: TempVec<'ast, Id>,
-    {
-        T::select(self).push(exprs);
-    }
-
-    fn pop<T>(&mut self) -> Vec<T>
-    where
-        T: TempVec<'ast, Id>,
-    {
-        T::select(self).pop().unwrap_or_default()
-    }
-}
-
 trait TempVec<'ast, Id>: Sized {
     fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>>;
 }
 
-impl<'ast, Id> TempVec<'ast, Id> for SpannedExpr<'ast, Id> {
-    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
-        &mut vecs.exprs
-    }
-}
+macro_rules! impl_temp_vec {
+    ($( $ty: ty => $field: ident),* $(,)?) => {
+        #[doc(hidden)]
+        pub struct TempVecs<'ast, Id> {
+        $(
+            $field: Vec<Vec<$ty>>,
+        )*
+        }
 
-impl<'ast, Id> TempVec<'ast, Id> for SpannedPattern<'ast, Id> {
-    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
-        &mut vecs.patterns
-    }
+        impl<'ast, Id> TempVecs<'ast, Id> {
+            fn new() -> Self {
+                TempVecs {
+                    $(
+                        $field: Vec::new(),
+                    )*
+                }
+            }
+
+            fn push<T>(&mut self, exprs: Vec<T>)
+            where
+                T: TempVec<'ast, Id>,
+            {
+                T::select(self).push(exprs);
+            }
+
+            fn pop<T>(&mut self) -> Vec<T>
+            where
+                T: TempVec<'ast, Id>,
+            {
+                T::select(self).pop().unwrap_or_default()
+            }
+        }
+
+        $(
+            impl<'ast, Id> TempVec<'ast, Id> for $ty {
+                fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
+                    &mut vecs.$field
+                }
+            }
+        )*
+    };
+}
+impl_temp_vec! {
+    SpannedExpr<'ast, Id> => exprs,
+    SpannedPattern<'ast, Id> => patterns,
+    ast::PatternField<Id, Id> => pattern_field_types,
+    ast::PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
+    ast::ExprField<Id, ArcType<Id>> => expr_field_types,
+    ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ast::TypeBinding<Id> => type_bindings,
+    ValueBinding<'ast, Id> => value_bindings,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;

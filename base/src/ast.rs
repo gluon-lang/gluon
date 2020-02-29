@@ -257,8 +257,8 @@ pub enum Pattern<'ast, Id> {
     /// Record pattern, eg. `{ x, y = foo }`
     Record {
         typ: ArcType<Id>,
-        types: Vec<PatternField<Id, Id>>,
-        fields: Vec<PatternField<Id, SpannedPattern<'ast, Id>>>,
+        types: &'ast mut [PatternField<Id, Id>],
+        fields: &'ast mut [PatternField<Id, SpannedPattern<'ast, Id>>],
         implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
@@ -357,8 +357,8 @@ pub enum Expr<'ast, Id> {
     /// Record construction
     Record {
         typ: ArcType<Id>,
-        types: Vec<ExprField<Id, ArcType<Id>>>,
-        exprs: Vec<ExprField<Id, SpannedExpr<'ast, Id>>>,
+        types: &'ast mut [ExprField<Id, ArcType<Id>>],
+        exprs: &'ast mut [ExprField<Id, SpannedExpr<'ast, Id>>],
         base: Option<&'ast mut SpannedExpr<'ast, Id>>,
     },
     /// Tuple construction
@@ -369,7 +369,7 @@ pub enum Expr<'ast, Id> {
     /// Declare a series of value bindings
     LetBindings(ValueBindings<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>),
     /// Declare a series of type aliases
-    TypeBindings(Vec<TypeBinding<Id>>, &'ast mut SpannedExpr<'ast, Id>),
+    TypeBindings(&'ast mut [TypeBinding<Id>], &'ast mut SpannedExpr<'ast, Id>),
     /// A group of sequenced expressions
     Block(&'ast mut [SpannedExpr<'ast, Id>]),
     Do(Do<'ast, Id>),
@@ -387,10 +387,14 @@ pub enum Expr<'ast, Id> {
 
 impl<'ast, Id> Expr<'ast, Id> {
     pub fn rec_let_bindings(
-        binds: Vec<ValueBinding<'ast, Id>>,
+        arena: ArenaRef<'ast, Id>,
+        binds: impl IntoIterator<Item = ValueBinding<'ast, Id>>,
         expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
     ) -> Self {
-        Expr::LetBindings(ValueBindings::Recursive(binds), expr.into())
+        Expr::LetBindings(
+            ValueBindings::Recursive(arena.alloc_extend(binds)),
+            expr.into(),
+        )
     }
 
     pub fn annotated<'a>(
@@ -405,10 +409,11 @@ impl<'ast, Id> Expr<'ast, Id> {
     }
 
     pub fn let_binding(
+        arena: ArenaRef<'ast, Id>,
         bind: ValueBinding<'ast, Id>,
         expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
     ) -> Self {
-        Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(bind)), expr.into())
     }
 
     pub fn kind(&self) -> &'static str {
@@ -524,8 +529,8 @@ impl<Id> Argument<Id> {
 
 #[derive(Eq, PartialEq, Debug)]
 pub enum ValueBindings<'ast, Id> {
-    Plain(Box<ValueBinding<'ast, Id>>),
-    Recursive(Vec<ValueBinding<'ast, Id>>),
+    Plain(&'ast mut ValueBinding<'ast, Id>),
+    Recursive(&'ast mut [ValueBinding<'ast, Id>]),
 }
 
 impl<'ast, Id> ValueBindings<'ast, Id> {
@@ -724,7 +729,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             ..
         } => {
             v.visit_typ(typ);
-            for typ in types {
+            for typ in &$($mut)* **types {
                 v.visit_spanned_ident(&$($mut)* typ.name);
             }
             for field in &$($mut)* **exprs {
@@ -774,7 +779,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             v.visit_expr(&$($mut)* lambda.body);
         }
         Expr::TypeBindings(ref $($mut)* bindings, ref $($mut)* expr) => {
-            for binding in bindings {
+            for binding in &$($mut)* **bindings {
                 v.visit_spanned_ident(&$($mut)* binding.name);
                 v.visit_alias(&$($mut)* binding.alias);
             }
@@ -795,24 +800,24 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
 pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'a $($mut)* Pattern<'ast, V::Ident>) {
-    match *p {
-        Pattern::As(ref $($mut)* id, ref $($mut)* pat) => {
+    match p {
+        Pattern::As(id, pat) => {
             v.visit_spanned_ident(id);
             v.visit_pattern(pat);
         }
-        Pattern::Constructor(ref $($mut)* id, ref $($mut)* args) => {
+        Pattern::Constructor(id, args) => {
             v.visit_ident(id);
             for arg in &$($mut)* **args {
                 v.visit_pattern(arg);
             }
         }
         Pattern::Record {
-            ref $($mut)* typ,
-            ref $($mut)* fields,
+            typ,
+            fields,
             ..
         } => {
             v.visit_typ(typ);
-            for field in fields {
+            for field in &$($mut)* **fields {
                 v.visit_spanned_ident(&$($mut)* field.name);
                 if let Some(ref $($mut)* pattern) = field.value {
                     v.visit_pattern(pattern);
@@ -820,15 +825,15 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
             }
         }
         Pattern::Tuple {
-            ref $($mut)* typ,
-            ref $($mut)* elems,
+            typ,
+            elems,
         } => {
             v.visit_typ(typ);
             for elem in &$($mut)* **elems {
                 v.visit_pattern(elem);
             }
         }
-        Pattern::Ident(ref $($mut)* id) => v.visit_ident(id),
+        Pattern::Ident(id) => v.visit_ident(id),
         Pattern::Literal(_) | Pattern::Error => (),
     }
 }
@@ -1080,34 +1085,6 @@ pub type ArenaRef<'ast, Id> = &'ast Arena<'ast, Id>;
 
 #[derive(Clone)]
 pub struct Arena<'ast, Id>(Arc<ArenaInner<'ast, Id>>);
-struct ArenaInner<'ast, Id> {
-    exprs: typed_arena::Arena<SpannedExpr<'ast, Id>>,
-    patterns: typed_arena::Arena<SpannedPattern<'ast, Id>>,
-}
-
-impl<'ast, Id> Arena<'ast, Id> {
-    pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
-        Arena(Arc::new(ArenaInner {
-            exprs: typed_arena::Arena::new(),
-            patterns: typed_arena::Arena::new(),
-        }))
-    }
-
-    pub fn alloc<T>(&'ast self, value: T) -> &'ast mut T
-    where
-        T: AstAlloc<'ast, Id>,
-    {
-        value.alloc(self)
-    }
-
-    pub fn alloc_extend<T>(&'ast self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
-    where
-        T: AstAlloc<'ast, Id>,
-    {
-        T::alloc_extend(iter, self)
-    }
-}
-
 pub trait AstAlloc<'ast, Id>: Sized {
     fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self;
     fn alloc_extend(
@@ -1116,30 +1093,65 @@ pub trait AstAlloc<'ast, Id>: Sized {
     ) -> &'ast mut [Self];
 }
 
-impl<'ast, Id> AstAlloc<'ast, Id> for SpannedExpr<'ast, Id> {
-    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
-        arena.0.exprs.alloc(self)
-    }
+macro_rules! impl_ast_arena {
+    ($( $ty: ty => $field: ident ),+ $(,)?) => {
 
-    fn alloc_extend(
-        iter: impl IntoIterator<Item = Self>,
-        arena: &'ast Arena<'ast, Id>,
-    ) -> &'ast mut [Self] {
-        arena.0.exprs.alloc_extend(iter)
-    }
+        struct ArenaInner<'ast, Id> {
+        $(
+            $field: typed_arena::Arena<$ty>,
+        )+
+        }
+
+        impl<'ast, Id> Arena<'ast, Id> {
+            pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
+                Arena(Arc::new(ArenaInner {
+                    $(
+                        $field: typed_arena::Arena::new(),
+                    )+
+                }))
+            }
+
+            pub fn alloc<T>(&'ast self, value: T) -> &'ast mut T
+            where
+                T: AstAlloc<'ast, Id>,
+            {
+                value.alloc(self)
+            }
+
+            pub fn alloc_extend<T>(&'ast self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+            where
+                T: AstAlloc<'ast, Id>,
+            {
+                T::alloc_extend(iter, self)
+            }
+        }
+
+        $(
+        impl<'ast, Id> AstAlloc<'ast, Id> for $ty {
+            fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
+                (arena.0).$field.alloc(self)
+            }
+
+            fn alloc_extend(
+                iter: impl IntoIterator<Item = Self>,
+                arena: &'ast Arena<'ast, Id>,
+            ) -> &'ast mut [Self] {
+                (arena.0).$field.alloc_extend(iter)
+            }
+        }
+        )+
+    };
 }
 
-impl<'ast, Id> AstAlloc<'ast, Id> for SpannedPattern<'ast, Id> {
-    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
-        arena.0.patterns.alloc(self)
-    }
-
-    fn alloc_extend(
-        iter: impl IntoIterator<Item = Self>,
-        arena: &'ast Arena<'ast, Id>,
-    ) -> &'ast mut [Self] {
-        arena.0.patterns.alloc_extend(iter)
-    }
+impl_ast_arena! {
+    SpannedExpr<'ast, Id> => exprs,
+    SpannedPattern<'ast, Id> => patterns,
+    PatternField<Id, Id> => pattern_field_types,
+    PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
+    ExprField<Id, ArcType<Id>> => expr_field_types,
+    ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    TypeBinding<Id> => type_bindings,
+    ValueBinding<'ast, Id> => value_bindings,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {
