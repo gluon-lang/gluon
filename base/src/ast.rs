@@ -293,7 +293,7 @@ pub struct Array<'ast, Id> {
 #[derive(Eq, PartialEq, Debug)]
 pub struct Lambda<'ast, Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<Argument<SpannedIdent<Id>>>,
+    pub args: &'ast mut [Argument<SpannedIdent<Id>>],
     pub body: &'ast mut SpannedExpr<'ast, Id>,
 }
 
@@ -342,7 +342,10 @@ pub enum Expr<'ast, Id> {
         &'ast mut SpannedExpr<'ast, Id>,
     ),
     /// Pattern match expression
-    Match(&'ast mut SpannedExpr<'ast, Id>, Vec<Alternative<'ast, Id>>),
+    Match(
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut [Alternative<'ast, Id>],
+    ),
     /// Infix operator expression eg. `f >> g`
     Infix {
         lhs: &'ast mut SpannedExpr<'ast, Id>,
@@ -589,7 +592,7 @@ pub struct ValueBinding<'ast, Id> {
     pub name: SpannedPattern<'ast, Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<Argument<SpannedIdent<Id>>>,
+    pub args: &'ast mut [Argument<SpannedIdent<Id>>],
     pub expr: SpannedExpr<'ast, Id>,
 }
 
@@ -684,7 +687,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
         Expr::LetBindings(ref $($mut)* bindings, ref $($mut)* body) => {
             for bind in bindings {
                 v.visit_pattern(&$($mut)* bind.name);
-                for arg in &$($mut)* bind.args {
+                for arg in &$($mut)* *bind.args {
                     v.visit_spanned_typed_ident(&$($mut)* arg.name);
                 }
                 v.visit_typ(&$($mut)* bind.resolved_type);
@@ -714,7 +717,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
         }
         Expr::Match(ref $($mut)* expr, ref $($mut)* alts) => {
             v.visit_expr(expr);
-            for alt in alts {
+            for alt in &$($mut)* **alts {
                 v.visit_pattern(&$($mut)* alt.pattern);
                 v.visit_expr(&$($mut)* alt.expr);
             }
@@ -777,7 +780,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
 
         Expr::Lambda(ref $($mut)* lambda) => {
             v.visit_ident(&$($mut)* lambda.id);
-            for arg in &$($mut)* lambda.args {
+            for arg in &$($mut)* *lambda.args {
                 v.visit_spanned_typed_ident(&$($mut)* arg.name);
             }
             v.visit_expr(&$($mut)* lambda.body);
@@ -1157,6 +1160,8 @@ impl_ast_arena! {
     TypeBinding<Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     Do<'ast, Id> => do_exprs,
+    Alternative<'ast, Id> => alts,
+    Argument<SpannedIdent<Id>> => args,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

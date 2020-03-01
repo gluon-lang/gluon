@@ -308,6 +308,8 @@ impl_temp_vec! {
     ast::TypeBinding<Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     ast::Do<'ast, Id> => do_exprs,
+    ast::Alternative<'ast, Id> => alts,
+    ast::Argument<ast::SpannedIdent<Id>> => args,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;

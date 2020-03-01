@@ -680,12 +680,12 @@ PlainValueBinding: ValueBinding<'ast, Id> = {
             name,
             typ,
             resolved_type: type_cache.hole(),
-            args: vec![],
+            args: Default::default(),
             expr,
         }
     },
 
-    "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+    "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
@@ -708,14 +708,14 @@ PlainValueBinding: ValueBinding<'ast, Id> = {
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: None,
             resolved_type: type_cache.hole(),
-            args: Vec::new(),
+            args: Default::default(),
             expr: pos::spanned(span, Expr::Error(None)),
         }
     }
 };
 
 RecursiveValueBinding: ValueBinding<'ast, Id> = {
-    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: ValueArgument*> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         ValueBinding {
             metadata: metadata.unwrap_or_default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
@@ -827,7 +827,7 @@ LambdaArgument: Argument<SpannedIdent<Id>> = {
 InfixExpr = {
     AppExpr,
 
-    "\\" <args: LambdaArgument+> "->" <body: SpExpr> =>
+    "\\" <args: Many1<LambdaArgument>> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
             args,
@@ -852,7 +852,7 @@ Expr: Expr<'ast, Id> = {
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
         Expr::IfElse(arena.alloc(pred), arena.alloc(if_true), arena.alloc(if_false)),
 
-    "match" <body: SpExpr> "with" <arms: Alternative+> =>
+    "match" <body: SpExpr> "with" <arms: Many1<Alternative>> =>
         Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
