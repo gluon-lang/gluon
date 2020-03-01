@@ -101,6 +101,21 @@ Comma<Rule>: Vec<Rule> = {
 
 
 #[inline]
+SepTemp<Rule, Separator>: TempVecStart<Rule> = {
+    <start: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
+        if let Some(last) = last {
+            temp_vecs.select().push(last);
+        }
+        start
+    }
+};
+
+#[inline]
+CommaTemp<Rule>: TempVecStart<Rule> = {
+    SepTemp<Rule, SingleComma>
+};
+
+#[inline]
 SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
     <start: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
         arena.alloc_extend(temp_vecs.drain(start).chain(last))
@@ -752,22 +767,11 @@ AtomicExpr: Expr<'ast, Id> = {
             exprs,
         }),
 
-    "{" <fields: Comma<FieldExpr>> <base: RecordExprBase> "}" => {
-        let mut types_len = 0;
-        let mut values_len = 0;
-        for field in &fields {
-            match field {
-                FieldExpr::Type(..) => types_len += 1,
-                FieldExpr::Value(..) => values_len += 1,
-            }
-        }
-
+    "{" <fields: CommaTemp<FieldExpr>> <base: RecordExprBase> "}" => {
         let mut types = mem::take(temp_vecs.select());
-        types.reserve(types_len);
         let mut values = mem::take(temp_vecs.select());
-        values.reserve(values_len);
 
-        for field in fields {
+        for field in temp_vecs.drain(fields) {
             match field {
                 FieldExpr::Type(metadata, id, typ) => types.push(ExprField {
                     metadata,
