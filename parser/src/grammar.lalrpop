@@ -15,7 +15,7 @@ use crate::{ReplLine, Variant, new_ident};
 use crate::token::{Token, StringLiteral};
 use crate::ordered_float::NotNan;
 
-use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv, TempVecs, Slice};
+use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv, TempVecs, TempVecStart, Slice};
 
 grammar<'input, 'env, 'ast, Id>(
     input: &'input dyn crate::ParserSource,
@@ -102,11 +102,8 @@ Comma<Rule>: Vec<Rule> = {
 
 #[inline]
 SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
-    <mut rules: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
-        rules.extend(last);
-        let slice = arena.alloc_extend(rules.drain(..));
-        temp_vecs.push(rules);
-        slice
+    <start: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
+        arena.alloc_extend(temp_vecs.drain(start).chain(last))
     };
 
 #[inline]
@@ -123,21 +120,21 @@ IdentStr: &'input str = {
     "(" <"operator"> ")" => <>,
 };
 
-Many1Vec<T>: Vec<T> = {
+Many1Vec<T>: TempVecStart<T> = {
     T => {
-        let mut v = temp_vecs.pop();
-        v.push(<>);
-        v
+        let start = temp_vecs.start();
+        temp_vecs.select().push(<>);
+        start
     },
-    <mut xs: Many1Vec<T>> <x: T> => {
-        xs.push(x);
-        xs
+    <start: Many1Vec<T>> <x: T> => {
+        temp_vecs.select().push(x);
+        start
     }
 };
 
 #[inline]
-ManyVec<T>: Vec<T> = {
-    => Vec::new(),
+ManyVec<T>: TempVecStart<T> = {
+    => temp_vecs.start(),
     Many1Vec<T>,
 };
 
@@ -150,10 +147,8 @@ Many<T>: &'ast mut Slice<T> = {
 #[inline]
 Many1<T>: &'ast mut Slice<T> = {
     Many1Vec<T> => {
-        let mut xs = <>;
-        let slice = arena.alloc_extend(xs.drain(..));
-        temp_vecs.push(xs);
-        slice
+        let start = <>;
+        arena.alloc_extend(temp_vecs.drain(start))
     }
 };
 
@@ -552,9 +547,9 @@ AtomicPattern: Pattern<'ast, Id> = {
             }
         }
 
-        let mut types = temp_vecs.pop();
+        let mut types = mem::take(temp_vecs.select());
         types.reserve(types_len);
-        let mut values = temp_vecs.pop();
+        let mut values = mem::take(temp_vecs.select());
         values.reserve(values_len);
 
         for field in fields {
@@ -580,8 +575,8 @@ AtomicPattern: Pattern<'ast, Id> = {
                 .value
                 .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start())))),
         };
-        temp_vecs.push(types);
-        temp_vecs.push(values);
+        *temp_vecs.select() = types;
+        *temp_vecs.select() = values;
         pattern
     },
 };
@@ -767,9 +762,9 @@ AtomicExpr: Expr<'ast, Id> = {
             }
         }
 
-        let mut types = temp_vecs.pop();
+        let mut types = mem::take(temp_vecs.select());
         types.reserve(types_len);
-        let mut values = temp_vecs.pop();
+        let mut values = mem::take(temp_vecs.select());
         values.reserve(values_len);
 
         for field in fields {
@@ -793,8 +788,8 @@ AtomicExpr: Expr<'ast, Id> = {
             exprs: arena.alloc_extend(values.drain(..)),
             base: base.map(|e| arena.alloc(e)),
         };
-        temp_vecs.push(types);
-        temp_vecs.push(values);
+        *temp_vecs.select() = types;
+        *temp_vecs.select() = values;
         expr
     },
 };

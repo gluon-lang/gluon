@@ -21,7 +21,7 @@ extern crate quick_error;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::{fmt, hash::Hash, sync::Arc};
+use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
 use crate::base::{
     ast::{
@@ -253,7 +253,7 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 type Slice<T> = [T];
 
 trait TempVec<'ast, Id>: Sized {
-    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>>;
+    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Self>;
 }
 
 macro_rules! impl_temp_vec {
@@ -261,9 +261,12 @@ macro_rules! impl_temp_vec {
         #[doc(hidden)]
         pub struct TempVecs<'ast, Id> {
         $(
-            $field: Vec<Vec<$ty>>,
+            $field: Vec<$ty>,
         )*
         }
+
+        #[doc(hidden)]
+        pub struct TempVecStart<T>(usize, PhantomData<T>);
 
         impl<'ast, Id> TempVecs<'ast, Id> {
             fn new() -> Self {
@@ -274,24 +277,31 @@ macro_rules! impl_temp_vec {
                 }
             }
 
-            fn push<T>(&mut self, exprs: Vec<T>)
+            fn start<T>(&mut self) -> TempVecStart<T>
             where
                 T: TempVec<'ast, Id>,
             {
-                T::select(self).push(exprs);
+                TempVecStart(T::select(self).len(), PhantomData)
             }
 
-            fn pop<T>(&mut self) -> Vec<T>
+            fn select<T>(&mut self) -> &mut Vec<T>
             where
                 T: TempVec<'ast, Id>,
             {
-                T::select(self).pop().unwrap_or_default()
+                T::select(self)
+            }
+
+            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl Iterator<Item = T> + 'a
+            where
+                T: TempVec<'ast, Id> + 'a,
+            {
+                T::select(self).drain(start.0..)
             }
         }
 
         $(
             impl<'ast, Id> TempVec<'ast, Id> for $ty {
-                fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Vec<Self>> {
+                fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Self> {
                     &mut vecs.$field
                 }
             }
