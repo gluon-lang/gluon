@@ -372,7 +372,7 @@ pub enum Expr<'ast, Id> {
     TypeBindings(&'ast mut [TypeBinding<Id>], &'ast mut SpannedExpr<'ast, Id>),
     /// A group of sequenced expressions
     Block(&'ast mut [SpannedExpr<'ast, Id>]),
-    Do(Do<'ast, Id>),
+    Do(&'ast mut Do<'ast, Id>),
     MacroExpansion {
         original: &'ast mut SpannedExpr<'ast, Id>,
         replacement: &'ast mut SpannedExpr<'ast, Id>,
@@ -384,6 +384,10 @@ pub enum Expr<'ast, Id> {
         Option<ArcType<Id>>,
     ),
 }
+
+// Safeguard against growing Expr
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 64] = [0; std::mem::size_of::<Expr<'static, Symbol>>()];
 
 impl<'ast, Id> Expr<'ast, Id> {
     pub fn rec_let_bindings(
@@ -1152,6 +1156,7 @@ impl_ast_arena! {
     ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     TypeBinding<Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
+    Do<'ast, Id> => do_exprs,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

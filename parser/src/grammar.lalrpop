@@ -889,11 +889,11 @@ Expr: Expr<'ast, Id> = {
 DoExpression: Expr<'ast, Id> = {
     "do" <bind: DoBinding> <body: SpExpr> => {
         let bind = *bind;
-        Expr::Do(Do { id: Some(bind.0), bound: arena.alloc(bind.1), body: arena.alloc(body), flat_map_id: None })
+        Expr::Do(arena.alloc(Do { id: Some(bind.0), bound: arena.alloc(bind.1), body: arena.alloc(body), flat_map_id: None }))
     },
 
     "seq" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(Do { id: None, bound: arena.alloc(bound), body: arena.alloc(body), flat_map_id: None })
+        Expr::Do(arena.alloc(Do { id: None, bound: arena.alloc(bound), body: arena.alloc(body), flat_map_id: None }))
     },
 };
 

@@ -307,6 +307,7 @@ impl_temp_vec! {
     ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     ast::TypeBinding<Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
+    ast::Do<'ast, Id> => do_exprs,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
