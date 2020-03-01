@@ -347,7 +347,7 @@ TypeTop: Either<AstType<Id>, Spanned<(Vec<Id>, Vec<Variant<Id>>, Option<AstType<
     <Sp<VariantType>> => Either::Right(<>),
 };
 
-TypeBinding: Box<TypeBinding<Id>> = {
+TypeBinding: TypeBinding<Id> = {
     <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
         if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
@@ -394,12 +394,12 @@ TypeBinding: Box<TypeBinding<Id>> = {
             }
         };
 
-        Box::new(TypeBinding {
+        TypeBinding {
             metadata: metadata.unwrap_or_default(),
             name: type_name.clone(),
             alias: pos::spanned(body.span(), AliasData::new(type_name.value.clone(), params, body)),
             finalized_alias: None,
-        })
+        }
     },
 };
 
@@ -637,19 +637,19 @@ Alternative: Alternative<'ast, Id> = {
     },
 };
 
-FieldExpr: Box<FieldExpr<'ast, Id>> = {
+FieldExpr: FieldExpr<'ast, Id> = {
     <metadata: Metadata?> <id: Sp<Ident>> "=" <body: SpExpr> => {
-        Box::new(FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body)))
+        FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body))
     },
 
     <metadata: Metadata?> <id_str: Sp<IdentStr>> => {
         let metadata = metadata.unwrap_or_default();
         let id = pos::spanned(id_str.span, env.from_str(id_str.value));
-        Box::new(if id_str.value.starts_with(char::is_uppercase) {
+        if id_str.value.starts_with(char::is_uppercase) {
             FieldExpr::Type(metadata, id, None)
         } else {
             FieldExpr::Value(metadata, id, None)
-        })
+        }
     },
 };
 
@@ -666,34 +666,34 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
     }
 };
 
-ValueBinding: Box<ValueBinding<'ast, Id>> = {
+ValueBinding: ValueBinding<'ast, Id> = {
     <metadata: Metadata?> <mut bind: PlainValueBinding> => {
         bind.metadata = metadata.unwrap_or_default();
         bind
     }
 };
 
-PlainValueBinding: Box<ValueBinding<'ast, Id>> = {
+PlainValueBinding: ValueBinding<'ast, Id> = {
     "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: Metadata::default(),
             name,
             typ,
             resolved_type: type_cache.hole(),
             args: vec![],
             expr,
-        })
+        }
     },
 
     "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
             args,
             expr,
-        }),
+        },
 
     // Error recovery
 
@@ -703,27 +703,27 @@ PlainValueBinding: Box<ValueBinding<'ast, Id>> = {
             token: (span.start(), Token::In, span.end()),
             expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
         });
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: None,
             resolved_type: type_cache.hole(),
             args: Vec::new(),
             expr: pos::spanned(span, Expr::Error(None)),
-        })
+        }
     }
 };
 
-RecursiveValueBinding: Box<ValueBinding<'ast, Id>> = {
+RecursiveValueBinding: ValueBinding<'ast, Id> = {
     <metadata: Metadata?> "let" <name: Sp<Ident>> <args: ValueArgument*> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: metadata.unwrap_or_default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
             args,
             expr,
-        }),
+        },
 };
 
 RecordExprBase: Option<SpannedExpr<'ast, Id>> = {
@@ -761,7 +761,7 @@ AtomicExpr: Expr<'ast, Id> = {
         let mut types_len = 0;
         let mut values_len = 0;
         for field in &fields {
-            match **field {
+            match field {
                 FieldExpr::Type(..) => types_len += 1,
                 FieldExpr::Value(..) => values_len += 1,
             }
@@ -773,7 +773,7 @@ AtomicExpr: Expr<'ast, Id> = {
         values.reserve(values_len);
 
         for field in fields {
-            match *field {
+            match field {
                 FieldExpr::Type(metadata, id, typ) => types.push(ExprField {
                     metadata,
                     name: id,
@@ -856,23 +856,21 @@ Expr: Expr<'ast, Id> = {
         Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(ValueBindings::Plain(arena.alloc(*binding)), arena.alloc(body))
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(binding)), arena.alloc(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
-        Expr::TypeBindings(arena.alloc_extend(Some(*binding)), arena.alloc(body))
+        Expr::TypeBindings(arena.alloc_extend(Some(binding)), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
-        let mut bindings = arena.alloc_extend(bindings.into_iter().map(|x| *x));
+    <metadata: Metadata?> "rec" <mut bindings: Many1<RecursiveValueBinding>> <body: InExpr> => {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
         Expr::LetBindings(ValueBindings::Recursive(bindings), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: TypeBinding+> <body: InExpr> => {
-        let mut bindings = arena.alloc_extend(bindings.into_iter().map(|x| *x));
+    <metadata: Metadata?> "rec" <mut bindings: Many1<TypeBinding>> <body: InExpr> => {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
@@ -931,6 +929,6 @@ pub TopExpr: SpannedExpr<'ast, Id> = {
 
 pub ReplLine: Option<Box<ReplLine<'ast, Id>>> = {
     <TopExpr> => Some(Box::new(ReplLine::Expr(<>))),
-    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(*<>))),
+    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(<>))),
     => None,
 };
