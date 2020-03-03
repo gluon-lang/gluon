@@ -17,25 +17,27 @@ struct Environment {
     stack: ScopedMap<Symbol, (Symbol, Span<BytePos>)>,
 }
 
-pub fn rename<'s>(
+pub fn rename<'s, 'ast>(
     source: &'s (dyn Source + 's),
     symbols: &mut SymbolModule,
-    expr: &mut SpannedExpr<Symbol>,
+    ast_arena: ast::ArenaRef<'s, 'ast, Symbol>,
+    expr: &mut SpannedExpr<'ast, Symbol>,
 ) {
     enum TailCall {
         TailCall,
         Return,
     }
 
-    struct RenameVisitor<'a: 'b, 'b, 's> {
+    struct RenameVisitor<'a: 'b, 'b, 's, 'ast> {
         source: &'s (dyn Source + 's),
         symbols: &'b mut SymbolModule<'a>,
         seen_symbols: FnvMap<Symbol, u32>,
         scope: Vec<Symbol>,
         env: Environment,
+        ast_arena: ast::ArenaRef<'s, 'ast, Symbol>,
     }
 
-    impl<'a, 'b, 's> RenameVisitor<'a, 'b, 's> {
+    impl<'a, 'b, 's, 'ast> RenameVisitor<'a, 'b, 's, 'ast> {
         fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record {
@@ -43,7 +45,7 @@ pub fn rename<'s>(
                     ref mut implicit_import,
                     ..
                 } => {
-                    for field in fields {
+                    for field in &mut **fields {
                         match field.value {
                             Some(ref mut pat) => self.new_pattern(pat),
                             None => {
@@ -68,12 +70,12 @@ pub fn rename<'s>(
                     self.new_pattern(pat)
                 }
                 Pattern::Tuple { ref mut elems, .. } => {
-                    for elem in elems {
+                    for elem in &mut **elems {
                         self.new_pattern(elem);
                     }
                 }
                 Pattern::Constructor(_, ref mut args) => {
-                    for arg in args {
+                    for arg in &mut **args {
                         self.new_pattern(arg);
                     }
                 }
@@ -131,7 +133,7 @@ pub fn rename<'s>(
             self.env.stack.get(id).map(|t| t.0.clone())
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> TailCall {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<'ast, Symbol>) -> TailCall {
             match expr.value {
                 Expr::Ident(ref mut id)
                     // FIXME Still allow renaming of variants somehow without causing resolution
@@ -147,7 +149,7 @@ pub fn rename<'s>(
                     ref mut base,
                     ..
                 } => {
-                    for expr_field in exprs {
+                    for expr_field in &mut **exprs {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
@@ -179,13 +181,13 @@ pub fn rename<'s>(
                     }
                     self.visit_expr(lhs);
                     self.visit_expr(rhs);
-                    for arg in implicit_args {
+                    for arg in &mut **implicit_args {
                         self.visit_expr(arg);
                     }
                 }
                 Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
-                    for alt in alts {
+                    for alt in &mut **alts {
                         self.env.stack.enter_scope();
                         self.new_pattern(&mut alt.pattern);
                         self.visit_expr(&mut alt.expr);
@@ -218,7 +220,7 @@ pub fn rename<'s>(
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for arg in &mut bind.args {
+                            for arg in &mut *bind.args {
                                 arg.name.value.name =
                                     self.stack_var(arg.name.value.name.clone(), arg.name.span);
                             }
@@ -254,7 +256,7 @@ pub fn rename<'s>(
 
                     self.env.stack.enter_scope();
 
-                    for arg in &mut lambda.args {
+                    for arg in &mut *lambda.args {
                         arg.name.value.name =
                             self.stack_var(arg.name.value.name.clone(), expr.span);
                     }
@@ -268,7 +270,7 @@ pub fn rename<'s>(
                     for bind in &mut **bindings {
                         self.stack_type(expr.span, &mut bind.alias);
                     }
-                    for bind in bindings {
+                    for bind in &mut **bindings {
                         self.visit_alias(&mut bind.alias);
                     }
 
@@ -281,7 +283,7 @@ pub fn rename<'s>(
                     ..
                 }) => {
                     let flat_map = self.symbols.simple_symbol("flat_map");
-                    *flat_map_id = Some(Box::new(pos::spanned(
+                    *flat_map_id = Some(self.ast_arena.alloc(pos::spanned(
                         Span::new(expr.span.end(), expr.span.start() + ByteOffset::from(2)),
                         Expr::Ident(TypedIdent {
                             name: flat_map,
@@ -311,14 +313,14 @@ pub fn rename<'s>(
         }
     }
 
-    impl<'a, 'b, 'c, 's> MutVisitor<'c, '_> for RenameVisitor<'a, 'b, 's> {
+    impl<'a, 'b, 'c, 's, 'ast> MutVisitor<'c, 'ast> for RenameVisitor<'a, 'b, 's, 'ast> {
         type Ident = Symbol;
 
-        fn visit_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
+        fn visit_pattern(&mut self, pattern: &mut ast::SpannedPattern<'ast, Symbol>) {
             self.new_pattern(pattern);
         }
 
-        fn visit_expr(&mut self, mut expr: &mut SpannedExpr<Self::Ident>) {
+        fn visit_expr(&mut self, mut expr: &mut SpannedExpr<'ast, Self::Ident>) {
             let mut i = 0;
             loop {
                 match self.rename_expr(expr) {
@@ -379,6 +381,7 @@ pub fn rename<'s>(
         env: Environment {
             stack: ScopedMap::new(),
         },
+        ast_arena,
     };
     visitor.visit_expr(expr);
 }

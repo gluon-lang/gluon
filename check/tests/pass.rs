@@ -3,8 +3,6 @@ extern crate env_logger;
 extern crate pretty_assertions;
 #[macro_use]
 extern crate collect_mac;
-#[macro_use]
-extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -166,7 +164,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     let expected = Ok(typ("Float"));
 
     assert_req!(result, expected);
-    match expr.value {
+    match expr.expr().value {
         ast::Expr::LetBindings(ref bindings, _) => {
             assert_eq!(
                 bindings[0].expr.env_type_of(&env).to_string(),
@@ -227,7 +225,7 @@ in test2 1";
     let expected = Ok(typ("Int"));
 
     assert_req!(result, expected);
-    assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
+    assert_match!(expr.expr().value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
         assert_match!(**binds[0].resolved_type.remove_forall(), Type::Function(_, ref arg, _) => {
             assert_match!(**arg, Type::Generic(_) => ())
@@ -1052,7 +1050,7 @@ let (<*>) : f (a -> b) -> f a -> f b = any ()
 #[infix(right, 9)]
 let (<<) : (b -> c) -> (a -> b) -> a -> c = any ()
 
-let alternative ?alt : [Alternative m] -> Alternative (StateT s m) = 
+let alternative ?alt : [Alternative m] -> Alternative (StateT s m) =
     let or sra srb = alt.or << sra <*> srb
     { or }
 

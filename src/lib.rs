@@ -63,7 +63,7 @@ use std::{
 };
 
 use crate::base::{
-    ast::{self, SpannedExpr},
+    ast::{self, SendSpannedExpr, SpannedExpr},
     error::{Errors, InFile},
     filename_to_module,
     metadata::Metadata,
@@ -422,7 +422,7 @@ pub trait ThreadExt: Send + Sync {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> StdResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
         self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
@@ -433,7 +433,7 @@ pub trait ThreadExt: Send + Sync {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> SalvageResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
         let vm = self.thread();
         parse_expr(
             &mut ModuleCompiler::new(&mut vm.get_database()),
@@ -449,7 +449,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         file: &str,
         expr_str: &str,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SendSpannedExpr<Symbol>,
     ) -> Result<ArcType> {
         let vm = self.thread();
         expr.typecheck_expected(
@@ -469,7 +469,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
+    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType)> {
         futures::executor::block_on(self.typecheck_str_async(file, expr_str, expected_type))
     }
 
@@ -478,7 +478,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
+    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType)> {
         let vm = self.thread();
         {
             let mut db = vm.get_database_mut();
@@ -498,7 +498,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         filename: &str,
         expr_str: &str,
-        expr: &SpannedExpr<Symbol>,
+        expr: &SendSpannedExpr<Symbol>,
     ) -> Result<CompiledModule> {
         let vm = self.thread();
         TypecheckValue {
@@ -570,7 +570,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         file: &str,
         expr_str: &str,
-    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
+    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
 
         let module_name = filename_to_module(file);
@@ -594,7 +594,7 @@ pub trait ThreadExt: Send + Sync {
         if db.compiler_settings().full_metadata {
             Ok((expr, typ, metadata))
         } else {
-            let (metadata, _) = metadata::metadata(&vm.get_env(), &expr);
+            let (metadata, _) = metadata::metadata(&vm.get_env(), &expr.expr());
             Ok((expr, typ, metadata))
         }
     }
@@ -709,13 +709,11 @@ pub trait ThreadExt: Send + Sync {
                 expr_str,
                 Some(&expected),
             )
-            .and_then(move |execute_value| {
-                async move {
-                    Ok((
-                        T::from_value(vm, execute_value.value.get_variant()),
-                        execute_value.typ,
-                    ))
-                }
+            .and_then(move |execute_value| async move {
+                Ok((
+                    T::from_value(vm, execute_value.value.get_variant()),
+                    execute_value.typ,
+                ))
             })
             .await
     }
@@ -757,12 +755,15 @@ pub trait ThreadExt: Send + Sync {
         };
 
         let file_map = db.get_filemap(file).unwrap();
-        let expr = skip_implicit_prelude(file_map.span(), &expr);
+        let expr = skip_implicit_prelude(file_map.span(), &expr.expr());
         Ok(formatter.pretty_expr(&*file_map, expr))
     }
 }
 
-fn skip_implicit_prelude(span: Span<BytePos>, mut l: &SpannedExpr<Symbol>) -> &SpannedExpr<Symbol> {
+fn skip_implicit_prelude<'a, 'ast>(
+    span: Span<BytePos>,
+    mut l: &'a SpannedExpr<'ast, Symbol>,
+) -> &'a SpannedExpr<'ast, Symbol> {
     loop {
         match l.value {
             ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
@@ -800,22 +801,26 @@ impl<'a> ModuleCompiler<'a> {
         &mut self.symbols
     }
 
-    fn include_implicit_prelude(
+    fn include_implicit_prelude<'ast>(
         &mut self,
+        arena: ast::ArenaRef<'_, 'ast, Symbol>,
         type_cache: &TypeCache<Symbol, ArcType>,
         name: &str,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
     ) {
         use std::mem;
         if name == "std.prelude" {
             return;
         }
 
-        let prelude_expr = parse_expr(self, type_cache, "", PRELUDE).unwrap();
+        let prelude_expr = parse_expr_inner(arena, self, type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
         // Replace the 0 in the prelude with the actual expression
-        fn assign_last_body(mut l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
+        fn assign_last_body<'ast>(
+            mut l: &mut SpannedExpr<'ast, Symbol>,
+            original_expr: SpannedExpr<'ast, Symbol>,
+        ) {
             while let ast::Expr::LetBindings(_, ref mut e) = l.value {
                 l = e;
             }

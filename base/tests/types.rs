@@ -378,7 +378,7 @@ pub fn int<'ast>(i: i64) -> SpExpr<'ast> {
 }
 
 pub fn binop<'ast>(
-    arena: ast::ArenaRef<'ast, Symbol>,
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     l: SpExpr<'ast>,
     s: &str,
     r: SpExpr<'ast>,
@@ -387,14 +387,14 @@ pub fn binop<'ast>(
         lhs: arena.alloc(l),
         op: no_loc(TypedIdent::new(intern(s))),
         rhs: arena.alloc(r),
-        implicit_args: Vec::new(),
+        implicit_args: &mut [],
     })
 }
 
 #[test]
 fn take_implicits_into_account_on_infix_type() {
     base::mk_ast_arena!(arena);
-    let mut expr = binop(&arena, int(1), "+", int(2));
+    let mut expr = binop(arena.borrow(), int(1), "+", int(2));
     if let Expr::Infix { ref mut op, .. } = expr.value {
         op.value.typ = Type::function_implicit(
             vec![Type::int()],

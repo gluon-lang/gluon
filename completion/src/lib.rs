@@ -36,27 +36,27 @@ use crate::base::{
 };
 
 #[derive(Clone, Debug)]
-pub struct Found<'a> {
-    pub match_: Option<Match<'a>>,
-    pub near_matches: Vec<Match<'a>>,
-    pub enclosing_matches: Vec<Match<'a>>,
+pub struct Found<'a, 'ast> {
+    pub match_: Option<Match<'a, 'ast>>,
+    pub near_matches: Vec<Match<'a, 'ast>>,
+    pub enclosing_matches: Vec<Match<'a, 'ast>>,
 }
 
-impl<'a> Found<'a> {
-    fn enclosing_match(&self) -> &Match<'a> {
+impl<'a, 'ast> Found<'a, 'ast> {
+    fn enclosing_match(&self) -> &Match<'a, 'ast> {
         self.enclosing_matches.last().unwrap()
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum Match<'a> {
-    Expr(&'a SpannedExpr<Symbol>),
-    Pattern(&'a SpannedPattern<Symbol>),
+pub enum Match<'a, 'ast> {
+    Expr(&'a SpannedExpr<'ast, Symbol>),
+    Pattern(&'a SpannedPattern<'ast, Symbol>),
     Ident(Span<BytePos>, &'a Symbol, ArcType),
     Type(Span<BytePos>, &'a SymbolRef, ArcKind),
 }
 
-impl<'a> Match<'a> {
+impl<'a, 'ast> Match<'a, 'ast> {
     pub fn span(&self) -> Span<BytePos> {
         match *self {
             Match::Expr(expr) => expr.span,
@@ -162,7 +162,7 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
                 ..
             } => {
                 let unaliased = resolve::remove_aliases(&self.env, &mut NullInterner, typ.clone());
-                for ast_field in types {
+                for ast_field in &**types {
                     if let Some(field) = unaliased
                         .type_field_iter()
                         .find(|field| field.name.name_eq(&ast_field.name.value))
@@ -170,7 +170,7 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
                         self.on_alias(&field.typ);
                     }
                 }
-                for field in field_ids {
+                for field in &**field_ids {
                     match field.value {
                         Some(ref value) => self.on_pattern(value),
                         None => {
@@ -190,7 +190,7 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
                 elems: ref args, ..
             }
             | Pattern::Constructor(_, ref args) => {
-                for arg in args {
+                for arg in &**args {
                     self.on_pattern(arg);
                 }
             }
@@ -217,25 +217,25 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
     }
 }
 
-enum MatchState<'a> {
+enum MatchState<'a, 'ast> {
     NotFound,
     Empty,
-    Found(Match<'a>),
+    Found(Match<'a, 'ast>),
 }
 
-struct FindVisitor<'a, F> {
+struct FindVisitor<'a, 'ast, F> {
     pos: BytePos,
     on_found: F,
-    found: MatchState<'a>,
-    enclosing_matches: Vec<Match<'a>>,
-    near_matches: Vec<Match<'a>>,
+    found: MatchState<'a, 'ast>,
+    enclosing_matches: Vec<Match<'a, 'ast>>,
+    near_matches: Vec<Match<'a, 'ast>>,
 
     /// The span of the currently inspected expression, used to determine if a position is in that
     /// expression or outside it (macro expanded)
     source_span: Span<BytePos>,
 }
 
-impl<'a, F> FindVisitor<'a, F> {
+impl<'a, 'ast, F> FindVisitor<'a, 'ast, F> {
     fn select_spanned<I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<T>)
     where
         I: IntoIterator<Item = T>,
@@ -269,22 +269,22 @@ impl<'a, F> FindVisitor<'a, F> {
     }
 }
 
-struct VisitUnExpanded<'a: 'e, 'e, F: 'e>(&'e mut FindVisitor<'a, F>);
+struct VisitUnExpanded<'a: 'e, 'e, 'ast, F: 'e>(&'e mut FindVisitor<'a, 'ast, F>);
 
-impl<'a, 'e, F> Visitor<'a> for VisitUnExpanded<'a, 'e, F>
+impl<'a, 'e, 'ast, F> Visitor<'a, 'ast> for VisitUnExpanded<'a, 'e, 'ast, F>
 where
     F: OnFound,
 {
     type Ident = Symbol;
 
-    fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+    fn visit_expr(&mut self, e: &'a SpannedExpr<'ast, Self::Ident>) {
         if let MatchState::NotFound = self.0.found {
             if !self.0.is_macro_expanded(e.span) {
                 self.0.visit_expr(e);
             } else {
                 match e.value {
                     Expr::TypeBindings(ref type_bindings, ref e) => {
-                        for type_binding in type_bindings {
+                        for type_binding in &**type_bindings {
                             self.0.on_found.on_alias(
                                 type_binding
                                     .finalized_alias
@@ -306,7 +306,7 @@ where
         }
     }
 
-    fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a SpannedPattern<'ast, Self::Ident>) {
         if !self.0.is_macro_expanded(e.span) {
             self.0.visit_pattern(e);
         } else {
@@ -317,21 +317,21 @@ where
     }
 }
 
-enum Variant<'a> {
-    Pattern(&'a SpannedPattern<Symbol>),
+enum Variant<'a, 'ast> {
+    Pattern(&'a SpannedPattern<'ast, Symbol>),
     Ident(&'a SpannedIdent<Symbol>),
     FieldIdent(&'a Spanned<Symbol, BytePos>, &'a ArcType),
     Type(&'a AstType<Symbol>),
-    Expr(&'a SpannedExpr<Symbol>),
+    Expr(&'a SpannedExpr<'ast, Symbol>),
 }
 
-impl<'a, F> FindVisitor<'a, F>
+impl<'a, 'ast, F> FindVisitor<'a, 'ast, F>
 where
     F: OnFound,
 {
     fn visit_one<I>(&mut self, iter: I)
     where
-        I: IntoIterator<Item = &'a SpannedExpr<Symbol>>,
+        I: IntoIterator<Item = &'a SpannedExpr<'ast, Symbol>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
@@ -339,7 +339,7 @@ where
 
     fn visit_any<I>(&mut self, iter: I)
     where
-        I: IntoIterator<Item = Variant<'a>>,
+        I: IntoIterator<Item = Variant<'a, 'ast>>,
     {
         let (_, sel) = self.select_spanned(iter, |x| match *x {
             Variant::Pattern(p) => p.span,
@@ -387,7 +387,7 @@ where
         }
     }
 
-    fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
+    fn visit_pattern(&mut self, current: &'a SpannedPattern<'ast, Symbol>) {
         if current.span.containment(self.pos) == Ordering::Equal {
             self.enclosing_matches.push(Match::Pattern(current));
         } else {
@@ -405,7 +405,7 @@ where
                     self.found = MatchState::Found(Match::Pattern(current));
                     return;
                 }
-                let (_, pattern) = self.select_spanned(args, |e| e.span);
+                let (_, pattern) = self.select_spanned(&**args, |e| e.span);
                 match pattern {
                     Some(pattern) => self.visit_pattern(pattern),
                     None => self.found = MatchState::Empty,
@@ -484,7 +484,7 @@ where
                 }
             }
             Pattern::Tuple { ref elems, .. } => {
-                let (_, field) = self.select_spanned(elems, |elem| elem.span);
+                let (_, field) = self.select_spanned(&**elems, |elem| elem.span);
                 self.visit_pattern(field.unwrap());
             }
             Pattern::Ident(_) | Pattern::Literal(_) | Pattern::Error => {
@@ -497,7 +497,7 @@ where
         }
     }
 
-    fn visit_expr(&mut self, current: &'a SpannedExpr<Symbol>) {
+    fn visit_expr(&mut self, current: &'a SpannedExpr<'ast, Symbol>) {
         // When inside a macro expanded expression we do a exhaustive search for an unexpanded
         // expression
         if self.is_macro_expanded(current.span) {
@@ -522,7 +522,7 @@ where
             Expr::App {
                 ref func, ref args, ..
             } => {
-                self.visit_one(once(&**func).chain(args));
+                self.visit_one(once(&**func).chain(&**args));
             }
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 self.visit_one([pred, if_true, if_false].iter().map(|x| &***x))
@@ -579,7 +579,7 @@ where
                     Span::new(b.name.span.start(), b.expr.span.end())
                 }) {
                     (false, Some(bind)) => {
-                        for arg in &bind.args {
+                        for arg in &*bind.args {
                             self.on_found.on_ident(&arg.name.value);
                         }
 
@@ -593,7 +593,7 @@ where
                 }
             }
             Expr::TypeBindings(ref type_bindings, ref expr) => {
-                for type_binding in type_bindings {
+                for type_binding in &**type_bindings {
                     self.on_found.on_alias(
                         type_binding
                             .finalized_alias
@@ -634,7 +634,7 @@ where
                     self.found = MatchState::Found(Match::Ident(current.span, id, typ.clone()));
                 }
             }
-            Expr::Array(ref array) => self.visit_one(&array.exprs),
+            Expr::Array(ref array) => self.visit_one(&*array.exprs),
             Expr::Record {
                 ref base,
                 typ: ref record_type,
@@ -655,11 +655,11 @@ where
                 self.visit_any(iter)
             }
             Expr::Lambda(ref lambda) => {
-                for arg in &lambda.args {
+                for arg in &*lambda.args {
                     self.on_found.on_ident(&arg.name.value);
                 }
 
-                let selection = self.select_spanned(&lambda.args, |arg| arg.name.span);
+                let selection = self.select_spanned(&*lambda.args, |arg| arg.name.span);
                 match selection {
                     (false, Some(arg)) => {
                         self.found = MatchState::Found(Match::Ident(
@@ -678,7 +678,7 @@ where
                 if exprs.is_empty() {
                     self.found = MatchState::Found(Match::Expr(current));
                 } else {
-                    self.visit_one(exprs)
+                    self.visit_one(&**exprs)
                 }
             }
             Expr::Do(ref do_expr) => {
@@ -753,12 +753,12 @@ where
     }
 }
 
-fn complete_at<F>(
+fn complete_at<'a, 'ast, F>(
     on_found: F,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
     pos: BytePos,
-) -> Result<Found, ()>
+) -> Result<Found<'a, 'ast>, ()>
 where
     F: OnFound,
 {
@@ -790,8 +790,8 @@ where
 
 pub trait Extract<'a>: Sized {
     type Output;
-    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()>;
-    fn match_extract(self, match_: &Match<'a>) -> Result<Self::Output, ()>;
+    fn extract(self, found: &Found<'a, '_>) -> Result<Self::Output, ()>;
+    fn match_extract(self, match_: &Match<'a, '_>) -> Result<Self::Output, ()>;
 }
 
 #[derive(Clone, Copy)]
@@ -800,7 +800,7 @@ pub struct TypeAt<'a> {
 }
 impl<'a> Extract<'a> for TypeAt<'a> {
     type Output = Either<ArcKind, ArcType>;
-    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
+    fn extract(self, found: &Found<'a, '_>) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
             None => self.match_extract(found.enclosing_match()),
@@ -827,14 +827,14 @@ impl<'a> Extract<'a> for TypeAt<'a> {
 pub struct IdentAt;
 impl<'a> Extract<'a> for IdentAt {
     type Output = &'a SymbolRef;
-    fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
+    fn extract(self, found: &Found<'a, '_>) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
             None => self.match_extract(found.enclosing_match()),
         }
     }
 
-    fn match_extract(self, found: &Match<'a>) -> Result<Self::Output, ()> {
+    fn match_extract(self, found: &Match<'a, '_>) -> Result<Self::Output, ()> {
         Ok(match found {
             Match::Expr(Spanned {
                 value: Expr::Ident(id),
@@ -885,11 +885,11 @@ macro_rules! tuple_extract_ {
         #[allow(non_snake_case)]
         impl<'a, $($id : Extract<'a>),*> Extract<'a> for ( $($id),* ) {
             type Output = ( $($id::Output),* );
-            fn extract(self, found: &Found<'a>) -> Result<Self::Output, ()> {
+            fn extract(self, found: &Found<'a, '_>) -> Result<Self::Output, ()> {
                 let ( $($id),* ) = self;
                 Ok(( $( $id.extract(found)? ),* ))
             }
-            fn match_extract(self, found: &Match<'a>) -> Result<Self::Output, ()> {
+            fn match_extract(self, found: &Match<'a, '_>) -> Result<Self::Output, ()> {
                 let ( $($id),* ) = self;
                 Ok(( $( $id.match_extract(found)? ),* ))
             }
@@ -899,10 +899,10 @@ macro_rules! tuple_extract_ {
 
 tuple_extract! {A B C D E F G H}
 
-pub fn completion<'a, T>(
+pub fn completion<'a, 'ast, T>(
     extract: T,
     source_span: Span<BytePos>,
-    expr: &'a SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Result<T::Output, ()>
 where
@@ -912,10 +912,10 @@ where
     extract.extract(&found)
 }
 
-pub fn find<T>(
+pub fn find<'ast, T>(
     env: &T,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Result<Either<ArcKind, ArcType>, ()>
 where
@@ -925,9 +925,9 @@ where
     completion(extract, source_span, expr, pos)
 }
 
-pub fn find_all_symbols(
+pub fn find_all_symbols<'ast>(
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let extract = IdentAt;
@@ -936,7 +936,7 @@ pub fn find_all_symbols(
             result: Vec<Span<BytePos>>,
             symbol: &'b SymbolRef,
         }
-        impl<'a, 'b> Visitor<'a> for ExtractIdents<'b> {
+        impl<'a, 'b> Visitor<'a, '_> for ExtractIdents<'b> {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
@@ -970,48 +970,48 @@ pub fn find_all_symbols(
     })
 }
 
-pub fn symbol(
+pub fn symbol<'a, 'ast>(
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
     pos: BytePos,
-) -> Result<&SymbolRef, ()> {
+) -> Result<&'a SymbolRef, ()> {
     let extract = IdentAt;
     completion(extract, source_span, expr, pos)
 }
 
-pub type SpCompletionSymbol<'a> = Spanned<CompletionSymbol<'a>, BytePos>;
+pub type SpCompletionSymbol<'a, 'ast> = Spanned<CompletionSymbol<'a, 'ast>, BytePos>;
 
 #[derive(Debug, PartialEq)]
-pub struct CompletionSymbol<'a> {
+pub struct CompletionSymbol<'a, 'ast> {
     pub name: &'a Symbol,
-    pub content: CompletionSymbolContent<'a>,
-    pub children: Vec<SpCompletionSymbol<'a>>,
+    pub content: CompletionSymbolContent<'a, 'ast>,
+    pub children: Vec<SpCompletionSymbol<'a, 'ast>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum CompletionSymbolContent<'a> {
+pub enum CompletionSymbolContent<'a, 'ast> {
     Value {
         typ: &'a ArcType,
-        expr: &'a SpannedExpr<Symbol>,
+        expr: &'a SpannedExpr<'ast, Symbol>,
     },
     Type {
         alias: &'a AliasData<Symbol, AstType<Symbol>>,
     },
 }
 
-pub fn all_symbols(
+pub fn all_symbols<'a, 'ast>(
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
-) -> Vec<SpCompletionSymbol> {
-    struct AllIdents<'a> {
+    expr: &'a SpannedExpr<'ast, Symbol>,
+) -> Vec<SpCompletionSymbol<'a, 'ast>> {
+    struct AllIdents<'a, 'ast> {
         source_span: Span<BytePos>,
-        result: Vec<Spanned<CompletionSymbol<'a>, BytePos>>,
+        result: Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>>,
     }
 
-    impl<'a> Visitor<'a> for AllIdents<'a> {
+    impl<'a, 'ast> Visitor<'a, 'ast> for AllIdents<'a, 'ast> {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+        fn visit_expr(&mut self, e: &'a SpannedExpr<'ast, Self::Ident>) {
             if self.source_span.contains(e.span) {
                 let source_span = self.source_span;
                 match &e.value {
@@ -1038,8 +1038,8 @@ pub fn all_symbols(
                     Expr::LetBindings(binds, expr) => {
                         self.result.extend(binds.iter().flat_map(|bind| {
                             let children = idents_of(source_span, &bind.expr);
-                            match bind.name.value {
-                                Pattern::Ident(ref id) => vec![pos::spanned(
+                            match &bind.name.value {
+                                Pattern::Ident(id) => vec![pos::spanned(
                                     bind.name.span,
                                     CompletionSymbol {
                                         name: &id.name,
@@ -1064,10 +1064,10 @@ pub fn all_symbols(
         }
     }
 
-    fn idents_of(
+    fn idents_of<'a, 'ast>(
         source_span: Span<BytePos>,
-        expr: &SpannedExpr<Symbol>,
-    ) -> Vec<Spanned<CompletionSymbol, BytePos>> {
+        expr: &'a SpannedExpr<'ast, Symbol>,
+    ) -> Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>> {
         let mut visitor = AllIdents {
             source_span,
             result: Vec::new(),
@@ -1079,10 +1079,10 @@ pub fn all_symbols(
     idents_of(source_span, expr)
 }
 
-pub fn suggest<T>(
+pub fn suggest<'ast, T>(
     env: &T,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Vec<Suggestion>
 where
@@ -1157,10 +1157,10 @@ impl SuggestionQuery {
         result.extend(fields.chain(types));
     }
 
-    fn expr_iter<'e>(
+    fn expr_iter<'e, 'ast>(
         &'e self,
         stack: &'e ScopedMap<Symbol, ArcType>,
-        expr: &'e SpannedExpr<Symbol>,
+        expr: &'e SpannedExpr<'ast, Symbol>,
     ) -> impl Iterator<Item = (&'e Symbol, &'e ArcType)> {
         if let Expr::Ident(ref ident) = expr.value {
             Either::Left(
@@ -1173,11 +1173,11 @@ impl SuggestionQuery {
         }
     }
 
-    pub fn suggest<T>(
+    pub fn suggest<'ast, T>(
         &self,
         env: &T,
         source_span: Span<BytePos>,
-        expr: &SpannedExpr<Symbol>,
+        expr: &SpannedExpr<'ast, Symbol>,
         pos: BytePos,
     ) -> Vec<Suggestion>
     where
@@ -1481,14 +1481,14 @@ impl SuggestionQuery {
         suggestions.dedup_by(|l, r| l.name == r.name);
     }
 
-    pub fn suggest_metadata<'a, T>(
+    pub fn suggest_metadata<'a, 'b, 'ast, T>(
         &self,
         env: &'a FnvMap<Symbol, Arc<Metadata>>,
         type_env: &T,
         source_span: Span<BytePos>,
-        expr: &SpannedExpr<Symbol>,
+        expr: &'b SpannedExpr<'ast, Symbol>,
         pos: BytePos,
-        name: &'a str,
+        name: &str,
     ) -> Option<&'a Metadata>
     where
         T: TypeEnv<Type = ArcType>,
@@ -1550,10 +1550,10 @@ pub struct SignatureHelp {
     pub index: Option<u32>,
 }
 
-pub fn signature_help(
+pub fn signature_help<'ast>(
     env: &dyn TypeEnv<Type = ArcType>,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Option<SignatureHelp> {
     complete_at((), source_span, expr, pos)
@@ -1624,10 +1624,10 @@ pub fn signature_help(
         })
 }
 
-pub fn get_metadata<'a>(
+pub fn get_metadata<'a, 'ast>(
     env: &'a FnvMap<Symbol, Arc<Metadata>>,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
     pos: BytePos,
 ) -> Option<&'a Metadata> {
     complete_at((), source_span, expr, pos)
@@ -1667,11 +1667,11 @@ pub fn get_metadata<'a>(
         .map(|m| &**m)
 }
 
-pub fn suggest_metadata<'a, T>(
+pub fn suggest_metadata<'a, 'ast, T>(
     env: &'a FnvMap<Symbol, Arc<Metadata>>,
     type_env: &T,
     source_span: Span<BytePos>,
-    expr: &SpannedExpr<Symbol>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
     pos: BytePos,
     name: &'a str,
 ) -> Option<&'a Metadata>

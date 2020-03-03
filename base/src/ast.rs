@@ -7,9 +7,7 @@ use std::{
     slice,
 };
 
-use either::Either;
-
-use itertools::Itertools;
+use {either::Either, itertools::Itertools, ordered_float::NotNan};
 
 use crate::metadata::{Comment, Metadata};
 use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
@@ -18,7 +16,6 @@ use crate::symbol::Symbol;
 use crate::types::{
     self, Alias, AliasData, ArcType, ArgType, Flags, NullInterner, Type, TypeEnv, TypeExt,
 };
-use ordered_float::NotNan;
 
 pub trait DisplayEnv {
     type Ident;
@@ -394,18 +391,20 @@ const _: [u8; 64] = [0; std::mem::size_of::<Expr<'static, Symbol>>()];
 
 impl<'ast, Id> Expr<'ast, Id> {
     pub fn rec_let_bindings(
-        arena: ArenaRef<'ast, Id>,
+        arena: ArenaRef<'_, 'ast, Id>,
         binds: impl IntoIterator<Item = ValueBinding<'ast, Id>>,
-        expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
+        expr: SpannedExpr<'ast, Id>,
     ) -> Self {
-        Expr::LetBindings(
-            ValueBindings::Recursive(arena.alloc_extend(binds)),
-            expr.into(),
-        )
+        let binds = arena.alloc_extend(binds);
+        if binds.is_empty() {
+            expr.value
+        } else {
+            Expr::LetBindings(ValueBindings::Recursive(binds), arena.alloc(expr))
+        }
     }
 
     pub fn annotated<'a>(
-        arena: ArenaRef<'ast, Id>,
+        arena: ArenaRef<'_, 'ast, Id>,
         expr: SpannedExpr<'ast, Id>,
         typ: ArcType<Id>,
     ) -> SpannedExpr<'ast, Id>
@@ -416,11 +415,11 @@ impl<'ast, Id> Expr<'ast, Id> {
     }
 
     pub fn let_binding(
-        arena: ArenaRef<'ast, Id>,
+        arena: ArenaRef<'_, 'ast, Id>,
         bind: ValueBinding<'ast, Id>,
-        expr: impl Into<&'ast mut SpannedExpr<'ast, Id>>,
+        expr: SpannedExpr<'ast, Id>,
     ) -> Self {
-        Expr::LetBindings(ValueBindings::Plain(arena.alloc(bind)), expr.into())
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(bind)), arena.alloc(expr))
     }
 
     pub fn kind(&self) -> &'static str {
@@ -457,7 +456,7 @@ impl<'ast, Id> Default for Expr<'ast, Id> {
 
 impl<'ast, Id> Expr<'ast, Id> {
     pub fn app(
-        arena: ArenaRef<'ast, Id>,
+        arena: ArenaRef<'_, 'ast, Id>,
         func: SpannedExpr<'ast, Id>,
         args: impl IntoIterator<Item = SpannedExpr<'ast, Id>>,
     ) -> Self {
@@ -511,7 +510,7 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Default, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
@@ -950,6 +949,22 @@ impl Typed for Literal {
     }
 }
 
+impl Typed for SendSpannedExpr<Symbol> {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        self.expr().try_type_of(env)
+    }
+}
+
+impl Typed for RootSpannedExpr<Symbol> {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        self.expr().try_type_of(env)
+    }
+}
+
 impl Typed for Expr<'_, Symbol> {
     type Ident = Symbol;
 
@@ -1030,35 +1045,10 @@ pub fn is_operator_char(c: char) -> bool {
 }
 
 pub fn is_operator_byte(c: u8) -> bool {
-    macro_rules! match_token {
-        ($($x: pat),*) => {
-            match c {
-                $($x)|* => true,
-                _ => false,
-            }
-        }
-    }
-    match_token! {
-        b'!',
-        b'#',
-        b'$',
-        b'%',
-        b'&',
-        b'*',
-        b'+',
-        b'-',
-        b'.',
-        b'/',
-        b'<',
-        b'=',
-        b'>',
-        b'?',
-        b'@',
-        b'\\',
-        b'^',
-        b'|',
-        b'~',
-        b':'
+    match c {
+        b'!' | b'#' | b'$' | b'%' | b'&' | b'*' | b'+' | b'-' | b'.' | b'/' | b'<' | b'='
+        | b'>' | b'?' | b'@' | b'\\' | b'^' | b'|' | b'~' | b':' => true,
+        _ => false,
     }
 }
 
@@ -1070,12 +1060,12 @@ pub fn is_constructor(s: &str) -> bool {
 }
 
 pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(), &'static str> {
-    match expr.value {
-        Expr::Ident(ref id) => {
+    match &expr.value {
+        Expr::Ident(id) => {
             path.push_str(id.name.declared_name());
             Ok(())
         }
-        Expr::Projection(ref expr, ref id, _) => {
+        Expr::Projection(expr, id, _) => {
             expr_to_path(expr, path)?;
             path.push('.');
             path.push_str(id.declared_name());
@@ -1088,10 +1078,34 @@ pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(),
 use std::mem;
 use std::sync::Arc;
 
-pub type ArenaRef<'ast, Id> = &'ast Arena<'ast, Id>;
+pub struct ArenaRef<'a, 'ast, Id>(
+    &'ast Arena<'ast, Id>,
+    PhantomData<&'a &'ast Arena<'ast, Id>>,
+);
 
-#[derive(Clone)]
-pub struct Arena<'ast, Id>(Arc<ArenaInner<'ast, Id>>);
+impl<'a, 'ast, Id> Copy for ArenaRef<'a, 'ast, Id> {}
+impl<'a, 'ast, Id> Clone for ArenaRef<'a, 'ast, Id> {
+    fn clone(&self) -> Self {
+        Self(self.0, PhantomData)
+    }
+}
+
+impl<'a, 'ast, Id> ArenaRef<'a, 'ast, Id> {
+    pub fn alloc<T>(self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Id> + 'ast,
+    {
+        value.alloc(&self.0)
+    }
+
+    pub fn alloc_extend<T>(self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Id> + 'ast,
+    {
+        T::alloc_extend(iter, &self.0)
+    }
+}
+
 pub trait AstAlloc<'ast, Id>: Sized {
     fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self;
     fn alloc_extend(
@@ -1103,7 +1117,7 @@ pub trait AstAlloc<'ast, Id>: Sized {
 macro_rules! impl_ast_arena {
     ($( $ty: ty => $field: ident ),+ $(,)?) => {
 
-        struct ArenaInner<'ast, Id> {
+        pub struct Arena<'ast, Id> {
         $(
             $field: typed_arena::Arena<$ty>,
         )+
@@ -1111,11 +1125,15 @@ macro_rules! impl_ast_arena {
 
         impl<'ast, Id> Arena<'ast, Id> {
             pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
-                Arena(Arc::new(ArenaInner {
+                Arena {
                     $(
                         $field: typed_arena::Arena::new(),
                     )+
-                }))
+                }
+            }
+
+            pub fn borrow(&'ast self) -> ArenaRef<'_, 'ast, Id> {
+                ArenaRef(self, PhantomData)
             }
 
             pub fn alloc<T>(&'ast self, value: T) -> &'ast mut T
@@ -1136,14 +1154,14 @@ macro_rules! impl_ast_arena {
         $(
         impl<'ast, Id> AstAlloc<'ast, Id> for $ty {
             fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
-                (arena.0).$field.alloc(self)
+                arena.$field.alloc(self)
             }
 
             fn alloc_extend(
                 iter: impl IntoIterator<Item = Self>,
                 arena: &'ast Arena<'ast, Id>,
             ) -> &'ast mut [Self] {
-                (arena.0).$field.alloc_extend(iter)
+                arena.$field.alloc_extend(iter)
             }
         }
         )+
@@ -1167,10 +1185,11 @@ impl_ast_arena! {
 pub struct RootSpannedExpr<Id: 'static> {
     // Only used to keep `expr` alive
     #[allow(dead_code)]
-    arena: Arena<'static, Id>,
+    arena: Arc<Arena<'static, Id>>,
     expr: *mut SpannedExpr<'static, Id>,
 }
 
+impl<Id: Eq> Eq for RootSpannedExpr<Id> {}
 impl<Id: PartialEq> PartialEq for RootSpannedExpr<Id> {
     fn eq(&self, other: &Self) -> bool {
         self.expr() == other.expr()
@@ -1184,13 +1203,13 @@ impl<Id: fmt::Debug> fmt::Debug for RootSpannedExpr<Id> {
 }
 
 impl<Id> RootSpannedExpr<Id> {
-    pub fn new<'ast>(arena: Arena<'ast, Id>, expr: &'ast mut SpannedExpr<'ast, Id>) -> Self {
+    pub fn new<'ast>(arena: Arc<Arena<'ast, Id>>, expr: &'ast mut SpannedExpr<'ast, Id>) -> Self {
         // SAFETY Arena<'ast> can only be constructed with an invariant lifetime which means that
         // `expr` must come from that arena. This locks the lifetime of `expr` to `arena` so that
         // the expression won't be dropped before the arena is
         unsafe {
             Self {
-                arena: mem::transmute::<Arena<Id>, Arena<Id>>(arena),
+                arena: mem::transmute::<Arc<Arena<Id>>, Arc<Arena<Id>>>(arena),
                 expr: mem::transmute::<*mut SpannedExpr<Id>, *mut SpannedExpr<Id>>(expr),
             }
         }
@@ -1200,12 +1219,8 @@ impl<Id> RootSpannedExpr<Id> {
         &mut self,
         f: impl for<'ast> FnOnce(&'ast Arena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,
     ) -> R {
-        unsafe {
-            f(
-                mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena),
-                &mut *self.expr,
-            )
-        }
+        let (arena, expr) = self.arena_expr();
+        f(arena, expr)
     }
 
     pub fn expr(&self) -> &SpannedExpr<'_, Id> {
@@ -1213,7 +1228,119 @@ impl<Id> RootSpannedExpr<Id> {
     }
 
     pub fn expr_mut(&mut self) -> &mut SpannedExpr<'_, Id> {
-        unsafe { mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr) }
+        self.arena_expr().1
+    }
+
+    pub fn arena_expr(&mut self) -> (&Arena<'_, Id>, &mut SpannedExpr<'_, Id>) {
+        unsafe {
+            (
+                mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena),
+                mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr),
+            )
+        }
+    }
+
+    pub fn try_into_send(self) -> Result<SendSpannedExpr<Id>, Self> {
+        match Arc::try_unwrap(self.arena) {
+            Ok(arena) => Ok(SendSpannedExpr {
+                arena,
+                expr: self.expr,
+            }),
+            Err(arena) => Err(Self {
+                arena,
+                expr: self.expr,
+            }),
+        }
+    }
+}
+
+pub struct OwnedArena<'ast, Id>(&'ast Arena<'ast, Id>);
+
+// SAFETY OwnedArena is only created if we own the arena. Since `Arena` is `Send` we then we can
+// construct one instance of this at a time which is send (like a mutable refernce, but we can't
+// give out a mutable reference itself since that could be used to free the arena).
+unsafe impl<'ast, Id> Send for OwnedArena<'ast, Id> {}
+
+impl<'ast, Id> OwnedArena<'ast, Id> {
+    pub fn borrow(&self) -> ArenaRef<'_, 'ast, Id> {
+        ArenaRef(self.0, PhantomData)
+    }
+
+    pub fn alloc<T>(&self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        self.0.alloc(value)
+    }
+
+    pub fn alloc_extend<T>(&self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        self.0.alloc_extend(iter)
+    }
+}
+
+pub struct SendSpannedExpr<Id: 'static> {
+    // Only used to keep `expr` alive
+    #[allow(dead_code)]
+    arena: Arena<'static, Id>,
+    expr: *mut SpannedExpr<'static, Id>,
+}
+
+impl<Id: Eq> Eq for SendSpannedExpr<Id> {}
+impl<Id: PartialEq> PartialEq for SendSpannedExpr<Id> {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr() == other.expr()
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for SendSpannedExpr<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.expr().fmt(f)
+    }
+}
+
+/// Since the `Arena` is no longer accessible it if `self` is the only owner of
+/// the arena we can implement `Send` and  `Sync`
+unsafe impl<Id> Send for SendSpannedExpr<Id>
+where
+    Id: Send,
+    SpannedExpr<'static, Id>: Send,
+{
+}
+
+unsafe impl<Id> Sync for SendSpannedExpr<Id>
+where
+    Id: Sync,
+    SpannedExpr<'static, Id>: Sync,
+{
+}
+
+impl<Id> SendSpannedExpr<Id> {
+    pub fn with_arena<R>(
+        &mut self,
+        f: impl for<'ast> FnOnce(OwnedArena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,
+    ) -> R {
+        let (arena, expr) = self.arena_expr();
+        f(arena, expr)
+    }
+
+    pub fn expr(&self) -> &SpannedExpr<'_, Id> {
+        unsafe { mem::transmute::<&SpannedExpr<Id>, &SpannedExpr<Id>>(&*self.expr) }
+    }
+
+    pub fn expr_mut(&mut self) -> &mut SpannedExpr<'_, Id> {
+        self.arena_expr().1
+    }
+
+    pub fn arena_expr(&mut self) -> (OwnedArena<'_, Id>, &mut SpannedExpr<'_, Id>) {
+        unsafe {
+            (
+                OwnedArena(mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena)),
+                mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr),
+            )
+        }
     }
 }
 
@@ -1226,7 +1353,7 @@ pub struct InvariantLifetime<'a>(std::marker::PhantomData<fn(&'a ()) -> &'a ()>)
 macro_rules! mk_ast_arena {
     ($name: ident) => {
         let tag = $crate::ast::InvariantLifetime::default();
-        let $name = unsafe { $crate::ast::Arena::new(&tag) };
+        let $name = unsafe { std::sync::Arc::new($crate::ast::Arena::new(&tag)) };
         let _guard;
         // this doesn't make it to MIR, but ensures that borrowck will not
         // unify the lifetimes of two macro calls by binding the lifetime to

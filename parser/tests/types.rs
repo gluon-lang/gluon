@@ -15,7 +15,7 @@ fn function_type() {
 
     let input = "let _ : Int -> Float -> String = 1 in 1";
     let expr = parse(input).unwrap_or_else(|err| panic!("{}", err.1));
-    match clear_span(expr).value {
+    match clear_span(expr).expr().value {
         Expr::LetBindings(ref bindings, _) => {
             assert_eq!(
                 bindings[0].typ,

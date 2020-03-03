@@ -1,6 +1,6 @@
 use crate::base::{
     ast::{
-        Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+        self, Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
         ValueBinding,
     },
     pos,
@@ -12,10 +12,11 @@ use crate::macros::Error;
 
 use crate::derive::*;
 
-pub fn generate(
+pub fn generate<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     bind: &TypeBinding<Symbol>,
-) -> Result<ValueBinding<Symbol>, Error> {
+) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
     let x = Symbol::from("x");
@@ -46,35 +47,35 @@ pub fn generate(
                 .fold(None, |prev, symbol| {
                     let serialize_field = ident(span, symbol.name.clone());
 
-                    let map = app(
+                    let map = arena.app(
                         span,
                         symbols.simple_symbol("singleton"),
                         vec![literal(span, symbol.name.declared_name()), serialize_field],
                     );
 
                     Some(match prev {
-                        Some(prev) => infix(span, prev, symbols.simple_symbol("<>"), map),
+                        Some(prev) => arena.infix(span, prev, symbols.simple_symbol("<>"), map),
                         None => map,
                     })
                 })
                 .unwrap_or_else(|| ident(span, symbols.simple_symbol("empty")));
 
-            let construct_object_expr = app(
+            let construct_object_expr = arena.app(
                 span,
                 symbols.simple_symbol("Object"),
-                vec![paren(span, construct_map_expr)],
+                vec![arena.paren(span, construct_map_expr)],
             );
 
-            let expr = sequence_actions(
+            let expr = arena.sequence_actions(
                 symbols,
                 span,
                 &field_symbols,
                 construct_object_expr,
                 &mut |symbol| {
-                    app(
+                    arena.app(
                         span,
                         serialize_fn.name.clone(),
-                        vec![ident(span, symbol.clone())],
+                        Some(ident(span, symbol.clone())),
                     )
                 },
             );
@@ -82,16 +83,16 @@ pub fn generate(
             pos::spanned(
                 span,
                 Expr::Match(
-                    Box::new(ident(span, x.clone())),
-                    vec![Alternative {
-                        pattern: generate_record_pattern(span, row, field_symbols),
+                    arena.alloc(ident(span, x.clone())),
+                    arena.alloc_extend(Some(Alternative {
+                        pattern: arena.generate_record_pattern(span, row, field_symbols),
                         expr,
-                    }],
+                    })),
                 ),
             )
         }
         Type::Variant(ref row) => {
-            let alts = row_iter(row)
+            let alts: Vec<_> = row_iter(row)
                 .map(|variant| {
                     let pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .enumerate()
@@ -106,20 +107,20 @@ pub fn generate(
                         }
 
                         if pattern_args.is_empty() {
-                            app(
+                            arena.app(
                                 span,
                                 serialize_fn.name.clone(),
                                 vec![pos::spanned(
                                     span,
                                     Expr::Tuple {
-                                        elems: vec![],
+                                        elems: &mut [],
                                         typ: Type::hole(),
                                     },
                                 )],
                             )
                         } else {
                             let arg = &pattern_args[0];
-                            app(
+                            arena.app(
                                 span,
                                 serialize_fn.name.clone(),
                                 vec![ident(span, arg.name.clone())],
@@ -132,10 +133,11 @@ pub fn generate(
                             span,
                             Pattern::Constructor(
                                 TypedIdent::new(variant.name.clone()),
-                                pattern_args
-                                    .into_iter()
-                                    .map(|arg| pos::spanned(span, Pattern::Ident(arg)))
-                                    .collect(),
+                                arena.alloc_extend(
+                                    pattern_args
+                                        .into_iter()
+                                        .map(|arg| pos::spanned(span, Pattern::Ident(arg))),
+                                ),
                             ),
                         )
                     };
@@ -146,13 +148,19 @@ pub fn generate(
                 })
                 .collect::<Result<_, Error>>()?;
 
-            pos::spanned(span, Expr::Match(Box::new(ident(span, x.clone())), alts))
+            pos::spanned(
+                span,
+                Expr::Match(
+                    arena.alloc(ident(span, x.clone())),
+                    arena.alloc_extend(alts),
+                ),
+            )
         }
 
         _ => return Err(Error::message("Unable to derive Deserialize for this type")),
     };
 
-    let serialization_import = generate_import_(
+    let serialization_import = arena.generate_import_(
         span,
         symbols,
         &["ValueSerializer", "Value"],
@@ -160,19 +168,20 @@ pub fn generate(
         true,
         "std.json.ser",
     );
-    let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
-    let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
-    let map_import = generate_import_(span, symbols, &[], &["singleton", "empty"], true, "std.map");
-    let semigroup_import = generate_import(span, symbols, &[], &["<>"], "std.semigroup");
-    let result_import = generate_import_(span, symbols, &[], &[], true, "std.result");
+    let functor_import = arena.generate_import(span, symbols, &[], &["map"], "std.functor");
+    let applicative_import = arena.generate_import(span, symbols, &[], &["<*>"], "std.applicative");
+    let map_import =
+        arena.generate_import_(span, symbols, &[], &["singleton", "empty"], true, "std.map");
+    let semigroup_import = arena.generate_import(span, symbols, &[], &["<>"], "std.semigroup");
+    let result_import = arena.generate_import_(span, symbols, &[], &[], true, "std.result");
 
     let serialize_ = TypedIdent::new(symbols.simple_symbol("serialize_"));
     let serializer_binding = ValueBinding {
         name: pos::spanned(span, Pattern::Ident(serialize_.clone())),
-        args: vec![Argument::explicit(pos::spanned(
+        args: arena.alloc_extend(Some(Argument::explicit(pos::spanned(
             span,
             TypedIdent::new(x.clone()),
-        ))],
+        )))),
         expr: serializer_expr,
         metadata: Default::default(),
         typ: Some(Type::function(Some(self_type.clone()), Type::hole())),
@@ -183,12 +192,12 @@ pub fn generate(
         span,
         Expr::Record {
             typ: Type::hole(),
-            types: Vec::new(),
-            exprs: vec![ExprField {
+            types: &mut [],
+            exprs: arena.alloc_extend(Some(ExprField {
                 metadata: Default::default(),
                 name: pos::spanned(span, symbols.simple_symbol("serialize")),
                 value: Some(ident(span, serialize_.name.clone())),
-            }],
+            })),
             base: None,
         },
     );
@@ -205,7 +214,7 @@ pub fn generate(
     .into_iter()
     .rev()
     .fold(export_expr, |expr, bind| {
-        pos::spanned(span, Expr::let_binding(bind, expr))
+        pos::spanned(span, Expr::let_binding(arena, bind, expr))
     });
 
     Ok(ValueBinding {
@@ -216,7 +225,7 @@ pub fn generate(
                 bind.alias.value.name.declared_name()
             )))),
         ),
-        args: Vec::new(),
+        args: &mut [],
         expr: serializer_record_expr,
         metadata: Default::default(),
         typ: Some(binding_type(symbols, "Serialize", self_type, bind)),

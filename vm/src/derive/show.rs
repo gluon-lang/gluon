@@ -1,5 +1,6 @@
 use crate::base::ast::{
-    Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding,
+    self, Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+    ValueBinding,
 };
 use crate::base::pos;
 use crate::base::symbol::{Symbol, Symbols};
@@ -9,10 +10,11 @@ use crate::macros::Error;
 
 use crate::derive::*;
 
-pub fn generate(
+pub fn generate<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     bind: &TypeBinding<Symbol>,
-) -> Result<ValueBinding<Symbol>, Error> {
+) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
     let x = Symbol::from("x");
@@ -20,7 +22,7 @@ pub fn generate(
 
     let show_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {
-            let alts = row_iter(variants)
+            let alts: Vec<_> = row_iter(variants)
                 .map(|variant| {
                     let pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .enumerate()
@@ -43,22 +45,26 @@ pub fn generate(
                                 } else {
                                     symbols.simple_symbol("show")
                                 };
-                                let show = infix(
+                                let show = arena.infix(
                                     span,
                                     literal(span, "("),
                                     symbols.simple_symbol("++"),
-                                    infix(
+                                    arena.infix(
                                         span,
-                                        app(span, show_function, vec![ident(span, x.name.clone())]),
+                                        arena.app(
+                                            span,
+                                            show_function,
+                                            vec![ident(span, x.name.clone())],
+                                        ),
                                         symbols.simple_symbol("++"),
                                         literal(span, ")"),
                                     ),
                                 );
-                                infix(
+                                arena.infix(
                                     span,
                                     acc,
                                     symbols.simple_symbol("++"),
-                                    infix(
+                                    arena.infix(
                                         span,
                                         literal(span, " "),
                                         symbols.simple_symbol("++"),
@@ -73,10 +79,11 @@ pub fn generate(
                             span,
                             Pattern::Constructor(
                                 TypedIdent::new(variant.name.clone()),
-                                pattern_args
-                                    .into_iter()
-                                    .map(|arg| pos::spanned(span, Pattern::Ident(arg)))
-                                    .collect(),
+                                arena.alloc_extend(
+                                    pattern_args
+                                        .into_iter()
+                                        .map(|arg| pos::spanned(span, Pattern::Ident(arg))),
+                                ),
                             ),
                         )
                     };
@@ -86,7 +93,10 @@ pub fn generate(
                     }
                 })
                 .collect();
-            Expr::Match(Box::new(ident(span, x.clone())), alts)
+            Expr::Match(
+                arena.alloc(ident(span, x.clone())),
+                arena.alloc_extend(alts),
+            )
         }
         Type::Record(ref row) => {
             let field_symbols: Vec<_> = row_iter(row)
@@ -102,17 +112,17 @@ pub fn generate(
                     .iter()
                     .enumerate()
                     .fold(open_brace, |acc, (i, x)| {
-                        let show = app(
+                        let show = arena.app(
                             span,
                             symbols.simple_symbol("show"),
                             vec![ident(span, x.name.clone())],
                         );
 
-                        let show_field = infix(
+                        let show_field = arena.infix(
                             span,
                             acc,
                             symbols.simple_symbol("++"),
-                            infix(
+                            arena.infix(
                                 span,
                                 literal(span, &format!("{} = ", x.name.declared_name())),
                                 symbols.simple_symbol("++"),
@@ -122,7 +132,7 @@ pub fn generate(
 
                         let last = i == field_symbols.len() - 1;
                         let suffix = if last { " " } else { ", " };
-                        infix(
+                        arena.infix(
                             span,
                             show_field,
                             symbols.simple_symbol("++"),
@@ -130,7 +140,7 @@ pub fn generate(
                         )
                     });
 
-                infix(
+                arena.infix(
                     span,
                     show_expr,
                     symbols.simple_symbol("++"),
@@ -138,11 +148,11 @@ pub fn generate(
                 )
             };
             Expr::Match(
-                Box::new(ident(span, x.clone())),
-                vec![Alternative {
-                    pattern: generate_record_pattern(span, row, field_symbols),
+                arena.alloc(ident(span, x.clone())),
+                arena.alloc_extend(Some(Alternative {
+                    pattern: arena.generate_record_pattern(span, row, field_symbols),
                     expr,
-                }],
+                })),
             )
         }
         _ => return Err(Error::message("Unable to derive Show for this type")),
@@ -160,27 +170,28 @@ pub fn generate(
     );
 
     let show_record_expr = Expr::rec_let_bindings(
-        vec![ValueBinding {
+        arena,
+        Some(ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
-            args: vec![Argument::explicit(pos::spanned(
+            args: arena.alloc_extend(Some(Argument::explicit(pos::spanned(
                 span,
                 TypedIdent::new(x.clone()),
-            ))],
+            )))),
             expr: pos::spanned(span, show_expr),
             metadata: Default::default(),
             typ: Some(Type::function(vec![self_type.clone()], Type::string())),
             resolved_type: Type::hole(),
-        }],
+        }),
         pos::spanned(
             span,
             Expr::Record {
                 typ: Type::hole(),
-                types: Vec::new(),
-                exprs: vec![ExprField {
+                types: &mut [],
+                exprs: arena.alloc_extend(Some(ExprField {
                     metadata: Default::default(),
                     name: pos::spanned(span, symbols.simple_symbol("show")),
                     value: Some(ident(span, show_fn.name.clone())),
-                }],
+                })),
                 base: None,
             },
         ),
@@ -194,7 +205,7 @@ pub fn generate(
                 bind.alias.value.name.declared_name()
             )))),
         ),
-        args: Vec::new(),
+        args: &mut [],
         expr: pos::spanned(span, show_record_expr),
         metadata: Default::default(),
         typ: Some(binding_type(symbols, "Show", self_type, bind)),

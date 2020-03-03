@@ -547,7 +547,7 @@ impl DocCollector<'_> {
         );
 
         let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
-        let (meta, _) = metadata(&thread.get_database(), &expr);
+        let (meta, _) = metadata(&thread.get_database(), &expr.expr());
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
@@ -565,7 +565,7 @@ impl DocCollector<'_> {
             .get_filemap(&name)
             .expect("SourceMap not inserted by compilation");
 
-        let symbols = completion::all_symbols(source.span(), &expr)
+        let symbols = completion::all_symbols(source.span(), &expr.expr())
             .into_iter()
             .map(|s| (s.value.name, s))
             .collect::<FnvMap<_, _>>();

@@ -25,11 +25,13 @@ use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding,
+        self, AstType, Do, Expr, IdentEnv, RootSpannedExpr, SpannedExpr, SpannedPattern,
+        TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
     metadata::Metadata,
+    mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
     symbol::Symbol,
     types::{ArcType, TypeCache},
@@ -233,6 +235,7 @@ pub enum FieldPattern<'ast, Id> {
     Value(Spanned<Id, BytePos>, Option<SpannedPattern<'ast, Id>>),
 }
 
+#[derive(Debug)]
 pub enum FieldExpr<'ast, Id> {
     Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
     Value(
@@ -266,6 +269,7 @@ macro_rules! impl_temp_vec {
         }
 
         #[doc(hidden)]
+        #[derive(Debug)]
         pub struct TempVecStart<T>(usize, PhantomData<T>);
 
         impl<'ast, Id> TempVecs<'ast, Id> {
@@ -365,14 +369,35 @@ impl ParserSource for codespan::FileMap {
     }
 }
 
+pub fn parse_partial_root_expr<Id, S>(
+    symbols: &mut dyn IdentEnv<Ident = Id>,
+    type_cache: &TypeCache<Id, ArcType<Id>>,
+    input: &S,
+) -> Result<RootSpannedExpr<Id>, (Option<RootSpannedExpr<Id>>, ParseErrors)>
+where
+    Id: Clone + AsRef<str> + std::fmt::Debug,
+    S: ?Sized + ParserSource,
+{
+    mk_ast_arena!(arena);
+
+    parse_partial_expr((*arena).borrow(), symbols, type_cache, input)
+        .map_err(|(expr, err)| {
+            (
+                expr.map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr))),
+                err,
+            )
+        })
+        .map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr)))
+}
+
 pub fn parse_partial_expr<'ast, Id, S>(
-    arena: ast::ArenaRef<'ast, Id>,
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
 ) -> Result<SpannedExpr<'ast, Id>, (Option<SpannedExpr<'ast, Id>>, ParseErrors)>
 where
-    Id: Clone + AsRef<str>,
+    Id: Clone + AsRef<str> + std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
     let layout = Layout::new(Tokenizer::new(input));
@@ -405,7 +430,7 @@ where
 }
 
 pub fn parse_expr<'ast>(
-    arena: ast::ArenaRef<'ast, Symbol>,
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut dyn IdentEnv<Ident = Symbol>,
     type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
@@ -420,7 +445,7 @@ pub enum ReplLine<'ast, Id> {
 }
 
 pub fn parse_partial_repl_line<'ast, Id, S>(
-    arena: ast::ArenaRef<'ast, Id>,
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     symbols: &mut dyn IdentEnv<Ident = Id>,
     input: &S,
 ) -> Result<Option<ReplLine<'ast, Id>>, (Option<ReplLine<'ast, Id>>, ParseErrors)>
@@ -461,10 +486,10 @@ where
 }
 
 pub fn reparse_infix<'ast, Id>(
-    arena: ast::ArenaRef<'ast, Id>,
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     metadata: &FnvMap<Id, Arc<Metadata>>,
     symbols: &dyn IdentEnv<Ident = Id>,
-    expr: &'ast mut SpannedExpr<'ast, Id>,
+    expr: &mut SpannedExpr<'ast, Id>,
 ) -> Result<(), ParseErrors>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,

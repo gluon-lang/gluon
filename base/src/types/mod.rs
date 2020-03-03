@@ -749,6 +749,12 @@ pub enum ArgType {
     Constructor,
 }
 
+impl Default for ArgType {
+    fn default() -> Self {
+        Self::Explicit
+    }
+}
+
 /// The representation of gluon's types.
 ///
 /// For efficiency this enum is not stored directly but instead a pointer wrapper which derefs to

@@ -1,11 +1,13 @@
 use proc_macro2::{Span, TokenStream};
-use shared::{map_lifetimes, map_type_params, split_for_impl};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
     Generics, Ident, Variant,
 };
 
-use attr;
+use crate::{
+    attr,
+    shared::{map_lifetimes, map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");

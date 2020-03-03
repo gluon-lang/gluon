@@ -1,6 +1,6 @@
 use crate::base::ast::{
-    Argument, AstType, Expr, Lambda, Literal, Pattern, PatternField, SpannedExpr, SpannedPattern,
-    TypeBinding, TypedIdent, ValueBinding,
+    self, Argument, AstAlloc, AstType, Expr, Lambda, Literal, Pattern, PatternField, SpannedExpr,
+    SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
 };
 use crate::base::metadata::Attribute;
 use crate::base::pos::{self, BytePos, Span};
@@ -14,21 +14,22 @@ mod eq;
 mod serialize;
 mod show;
 
-pub fn generate(
+pub fn generate<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     derive: &Attribute,
     bind: &TypeBinding<Symbol>,
-) -> Result<Vec<ValueBinding<Symbol>>, Error> {
+) -> Result<Vec<ValueBinding<'ast, Symbol>>, Error> {
     match derive.arguments {
         Some(ref args) => args
             .split(',')
             .map(|s| s.trim())
             .map(|arg| {
                 Ok(match arg {
-                    "Eq" => eq::generate(symbols, bind),
-                    "Show" => show::generate(symbols, bind),
-                    "Deserialize" => deserialize::generate(symbols, bind),
-                    "Serialize" => serialize::generate(symbols, bind),
+                    "Eq" => eq::generate(arena, symbols, bind),
+                    "Show" => show::generate(arena, symbols, bind),
+                    "Deserialize" => deserialize::generate(arena, symbols, bind),
+                    "Serialize" => serialize::generate(arena, symbols, bind),
                     _ => {
                         return Err(Error::message(format!(
                             "`{}` is not a type that can be derived",
@@ -42,178 +43,224 @@ pub fn generate(
     }
 }
 
-fn sequence_actions(
-    symbols: &mut Symbols,
-    span: Span<BytePos>,
-    field_symbols: &[TypedIdent<Symbol>],
-    packed_expr: SpannedExpr<Symbol>,
-    action: &mut dyn FnMut(&Symbol) -> SpannedExpr<Symbol>,
-) -> SpannedExpr<Symbol> {
-    let pack_record = pos::spanned(
-        span,
-        Expr::Lambda(Lambda {
-            args: field_symbols
-                .iter()
-                .cloned()
-                .map(|id| Argument::explicit(pos::spanned(span, id)))
-                .collect(),
-            body: Box::new(packed_expr),
-            id: TypedIdent::new(symbols.simple_symbol("pack_record")),
-        }),
-    );
-    let map_expr = app(
-        span,
-        symbols.simple_symbol("map"),
-        vec![
-            paren(span, pack_record),
-            paren(span, action(&field_symbols.first().expect("FIXME").name)),
-        ],
-    );
+impl<'ast> ArenaExt<'ast> for ast::ArenaRef<'_, 'ast, Symbol> {
+    fn alloc<T>(self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Symbol>,
+    {
+        Self::alloc(self, value)
+    }
 
-    field_symbols.iter().skip(1).fold(map_expr, |prev, symbol| {
-        let deserialize_field = action(&symbol.name);
-        infix(span, prev, symbols.simple_symbol("<*>"), deserialize_field)
-    })
+    fn alloc_extend<T>(self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Symbol>,
+    {
+        Self::alloc_extend(self, iter)
+    }
 }
+pub trait ArenaExt<'ast>: Sized + Copy {
+    fn alloc<T>(self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Symbol>;
 
-fn generate_record_pattern<I>(
-    span: Span<BytePos>,
-    row: &AstType<Symbol>,
-    symbols: I,
-) -> SpannedPattern<Symbol>
-where
-    I: IntoIterator<Item = TypedIdent<Symbol>>,
-{
-    pos::spanned(
-        span,
-        Pattern::Record {
-            implicit_import: None,
-            typ: Type::hole(),
-            types: Vec::new(),
-            fields: row_iter(row)
-                .zip(symbols)
-                .map(|(field, bind)| PatternField {
-                    name: pos::spanned(span, field.name.clone()),
-                    value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                })
-                .collect(),
-        },
-    )
-}
+    fn alloc_extend<T>(self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Symbol>;
 
-fn generate_import(
-    span: Span<BytePos>,
-    symbols: &mut Symbols,
-    type_fields: &[&str],
-    fields: &[&str],
-    import: &str,
-) -> ValueBinding<Symbol> {
-    generate_import_(span, symbols, type_fields, fields, false, import)
-}
+    fn sequence_actions(
+        self,
+        symbols: &mut Symbols,
+        span: Span<BytePos>,
+        field_symbols: &[TypedIdent<Symbol>],
+        packed_expr: SpannedExpr<'ast, Symbol>,
+        action: &mut dyn FnMut(&Symbol) -> SpannedExpr<'ast, Symbol>,
+    ) -> SpannedExpr<'ast, Symbol> {
+        let pack_record = pos::spanned(
+            span,
+            Expr::Lambda(Lambda {
+                args: self.alloc_extend(
+                    field_symbols
+                        .iter()
+                        .cloned()
+                        .map(|id| Argument::explicit(pos::spanned(span, id))),
+                ),
+                body: self.alloc(packed_expr),
+                id: TypedIdent::new(symbols.simple_symbol("pack_record")),
+            }),
+        );
+        let map_expr = self.app(
+            span,
+            symbols.simple_symbol("map"),
+            vec![
+                self.paren(span, pack_record),
+                self.paren(span, action(&field_symbols.first().expect("FIXME").name)),
+            ],
+        );
 
-fn generate_import_(
-    span: Span<BytePos>,
-    symbols: &mut Symbols,
-    type_fields: &[&str],
-    fields: &[&str],
-    implicit_import: bool,
-    import: &str,
-) -> ValueBinding<Symbol> {
-    ValueBinding {
-        name: pos::spanned(
+        field_symbols.iter().skip(1).fold(map_expr, |prev, symbol| {
+            let deserialize_field = action(&symbol.name);
+            self.infix(span, prev, symbols.simple_symbol("<*>"), deserialize_field)
+        })
+    }
+
+    fn generate_record_pattern<I>(
+        self,
+        span: Span<BytePos>,
+        row: &AstType<Symbol>,
+        symbols: I,
+    ) -> SpannedPattern<'ast, Symbol>
+    where
+        I: IntoIterator<Item = TypedIdent<Symbol>>,
+    {
+        pos::spanned(
             span,
             Pattern::Record {
-                implicit_import: if implicit_import {
-                    Some(pos::spanned(span, Symbol::from("implicit_import")))
-                } else {
-                    None
-                },
+                implicit_import: None,
                 typ: Type::hole(),
-                types: type_fields
-                    .iter()
-                    .map(|f| PatternField {
-                        name: pos::spanned(span, symbols.simple_symbol(*f)),
-                        value: None,
-                    })
-                    .collect(),
-                fields: fields
-                    .iter()
-                    .map(|f| PatternField {
-                        name: pos::spanned(span, symbols.simple_symbol(*f)),
-                        value: None,
-                    })
-                    .collect(),
+                types: &mut [],
+                fields: self.alloc_extend(row_iter(row).zip(symbols).map(|(field, bind)| {
+                    PatternField {
+                        name: pos::spanned(span, field.name.clone()),
+                        value: Some(pos::spanned(span, Pattern::Ident(bind))),
+                    }
+                })),
             },
-        ),
-        args: Vec::new(),
-        expr: app(
+        )
+    }
+
+    fn generate_import(
+        self,
+        span: Span<BytePos>,
+        symbols: &mut Symbols,
+        type_fields: &[&str],
+        fields: &[&str],
+        import: &str,
+    ) -> ValueBinding<'ast, Symbol> {
+        self.generate_import_(span, symbols, type_fields, fields, false, import)
+    }
+
+    fn generate_import_(
+        self,
+        span: Span<BytePos>,
+        symbols: &mut Symbols,
+        type_fields: &[&str],
+        fields: &[&str],
+        implicit_import: bool,
+        import: &str,
+    ) -> ValueBinding<'ast, Symbol> {
+        ValueBinding {
+            name: pos::spanned(
+                span,
+                Pattern::Record {
+                    implicit_import: if implicit_import {
+                        Some(pos::spanned(span, Symbol::from("implicit_import")))
+                    } else {
+                        None
+                    },
+                    typ: Type::hole(),
+                    types: self.alloc_extend(type_fields.iter().map(|f| PatternField {
+                        name: pos::spanned(span, symbols.simple_symbol(*f)),
+                        value: None,
+                    })),
+                    fields: self.alloc_extend(fields.iter().map(|f| PatternField {
+                        name: pos::spanned(span, symbols.simple_symbol(*f)),
+                        value: None,
+                    })),
+                },
+            ),
+            args: &mut [],
+            expr: self.app(
+                span,
+                symbols.simple_symbol("import!"),
+                vec![self.project(span, symbols, import)],
+            ),
+            metadata: Default::default(),
+            typ: None,
+            resolved_type: Type::hole(),
+        }
+    }
+
+    fn project(
+        self,
+        span: Span<BytePos>,
+        symbols: &mut Symbols,
+        p: &str,
+    ) -> SpannedExpr<'ast, Symbol> {
+        p.split('.')
+            .fold(None, |acc, name| {
+                let symbol = symbols.simple_symbol(name);
+                Some(match acc {
+                    Some(expr) => pos::spanned(
+                        span,
+                        Expr::Projection(self.alloc(expr), symbol, Type::hole()),
+                    ),
+                    None => ident(span, symbol),
+                })
+            })
+            .unwrap()
+    }
+
+    fn paren(
+        self,
+        span: Span<BytePos>,
+        expr: SpannedExpr<'ast, Symbol>,
+    ) -> SpannedExpr<'ast, Symbol> {
+        pos::spanned(
             span,
-            symbols.simple_symbol("import!"),
-            vec![project(span, symbols, import)],
-        ),
-        metadata: Default::default(),
-        typ: None,
-        resolved_type: Type::hole(),
+            Expr::Tuple {
+                elems: self.alloc_extend(Some(expr)),
+                typ: Type::hole(),
+            },
+        )
+    }
+
+    fn app(
+        self,
+        span: Span<BytePos>,
+        func: Symbol,
+        args: impl IntoIterator<Item = SpannedExpr<'ast, Symbol>>,
+    ) -> SpannedExpr<'ast, Symbol> {
+        let func = pos::spanned(span, Expr::Ident(TypedIdent::new(func)));
+        let args = self.alloc_extend(args);
+        if args.is_empty() {
+            func
+        } else {
+            pos::spanned(
+                span,
+                Expr::App {
+                    func: self.alloc(func),
+                    implicit_args: &mut [],
+                    args,
+                },
+            )
+        }
+    }
+
+    fn infix(
+        self,
+        span: Span<BytePos>,
+        lhs: SpannedExpr<'ast, Symbol>,
+        op: Symbol,
+        rhs: SpannedExpr<'ast, Symbol>,
+    ) -> SpannedExpr<'ast, Symbol> {
+        pos::spanned(
+            span,
+            Expr::Infix {
+                lhs: self.alloc(lhs),
+                op: pos::spanned(span, TypedIdent::new(op)),
+                rhs: self.alloc(rhs),
+                implicit_args: &mut [],
+            },
+        )
     }
 }
 
-fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<Symbol> {
-    p.split('.')
-        .fold(None, |acc, name| {
-            let symbol = symbols.simple_symbol(name);
-            Some(match acc {
-                Some(expr) => {
-                    pos::spanned(span, Expr::Projection(Box::new(expr), symbol, Type::hole()))
-                }
-                None => ident(span, symbol),
-            })
-        })
-        .unwrap()
-}
-
-fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {
+fn ident<'ast>(span: Span<BytePos>, s: Symbol) -> SpannedExpr<'ast, Symbol> {
     pos::spanned(span, Expr::Ident(TypedIdent::new(s)))
 }
 
-fn literal(span: Span<BytePos>, s: &str) -> SpannedExpr<Symbol> {
+fn literal<'ast>(span: Span<BytePos>, s: &str) -> SpannedExpr<'ast, Symbol> {
     pos::spanned(span, Expr::Literal(Literal::String(s.to_string())))
-}
-fn paren(span: Span<BytePos>, expr: SpannedExpr<Symbol>) -> SpannedExpr<Symbol> {
-    pos::spanned(
-        span,
-        Expr::Tuple {
-            elems: vec![expr],
-            typ: Type::hole(),
-        },
-    )
-}
-
-fn app(span: Span<BytePos>, func: Symbol, args: Vec<SpannedExpr<Symbol>>) -> SpannedExpr<Symbol> {
-    pos::spanned(
-        span,
-        Expr::App {
-            func: Box::new(pos::spanned(span, Expr::Ident(TypedIdent::new(func)))),
-            implicit_args: Vec::new(),
-            args,
-        },
-    )
-}
-
-fn infix(
-    span: Span<BytePos>,
-    lhs: SpannedExpr<Symbol>,
-    op: Symbol,
-    rhs: SpannedExpr<Symbol>,
-) -> SpannedExpr<Symbol> {
-    pos::spanned(
-        span,
-        Expr::Infix {
-            lhs: lhs.into(),
-            op: pos::spanned(span, TypedIdent::new(op)),
-            rhs: rhs.into(),
-            implicit_args: Vec::new(),
-        },
-    )
 }
 
 fn is_self_type(self_: &Symbol, typ: &AstType<Symbol>) -> bool {

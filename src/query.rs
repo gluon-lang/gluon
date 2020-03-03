@@ -9,7 +9,7 @@ use {futures::prelude::*, salsa::Database};
 
 use {
     base::{
-        ast::{self, Expr, SpannedExpr, TypedIdent},
+        ast::{self, SendSpannedExpr, TypedIdent},
         fnv::FnvMap,
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -202,7 +202,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
     fn peek_typechecked_module(
         &self,
         key: &str,
-    ) -> Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>> {
+    ) -> Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>> {
         self.query(TypecheckedModuleQuery)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
@@ -306,7 +306,7 @@ pub trait CompilationBase: Send {
     fn peek_typechecked_module(
         &self,
         key: &str,
-    ) -> Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>;
+    ) -> Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>;
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
     fn peek_global(&self, key: &str) -> Option<DatabaseGlobal>;
 }
@@ -325,8 +325,8 @@ pub trait Compilation: CompilationBase {
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<
-        TypecheckValue<Arc<SpannedExpr<Symbol>>>,
-        (Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>, Error),
+        TypecheckValue<Arc<SendSpannedExpr<Symbol>>>,
+        (Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>, Error),
     >;
 
     #[salsa::cycle(recover_cycle_expected_type)]
@@ -345,7 +345,7 @@ pub trait Compilation: CompilationBase {
     ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error>;
 
     #[salsa::cycle(recover_cycle)]
-    async fn import(&self, module: String) -> StdResult<Expr<Symbol>, Error>;
+    async fn import(&self, module: String) -> StdResult<TypedIdent<Symbol>, Error>;
 
     #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
@@ -425,8 +425,8 @@ async fn typechecked_module(
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<
-    TypecheckValue<Arc<SpannedExpr<Symbol>>>,
-    (Option<TypecheckValue<Arc<SpannedExpr<Symbol>>>>, Error),
+    TypecheckValue<Arc<SendSpannedExpr<Symbol>>>,
+    (Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>, Error),
 > {
     db.salsa_runtime_mut().report_untracked_read();
 
@@ -463,7 +463,7 @@ async fn core_expr(
 
     let env = db.compiler();
     Ok(core::with_translator(&*env, |translator| {
-        let expr = translator.translate_expr(&value.expr);
+        let expr = translator.translate_expr(value.expr.expr());
 
         debug!("Translation returned: {}", expr);
 
@@ -522,7 +522,10 @@ async fn compiled_module(
     Ok(closure)
 }
 
-async fn import(db: &mut dyn Compilation, modulename: String) -> StdResult<Expr<Symbol>, Error> {
+async fn import(
+    db: &mut dyn Compilation,
+    modulename: String,
+) -> StdResult<TypedIdent<Symbol>, Error> {
     let thread = db.thread().root_thread();
     let compiler = db.compiler();
 
@@ -540,7 +543,7 @@ async fn import(db: &mut dyn Compilation, modulename: String) -> StdResult<Expr<
 
     let typ = result?;
 
-    Ok(Expr::Ident(TypedIdent { name, typ }))
+    Ok(TypedIdent { name, typ })
 }
 
 async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {

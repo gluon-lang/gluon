@@ -1086,7 +1086,7 @@ dependencies = [
  "futures 0.3.1",
  "gluon_base",
  "gluon_check",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_completion",
  "gluon_format",
  "gluon_parser",
@@ -1132,6 +1132,7 @@ dependencies = [
  "either",
  "env_logger 0.7.1",
  "fnv",
+ "gluon_codegen 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "hashbrown 0.6.3",
  "itertools",
  "log 0.4.8",
@@ -1168,7 +1169,7 @@ dependencies = [
  "ena",
  "env_logger 0.7.1",
  "gluon_base",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_format",
  "gluon_parser",
  "itertools",
@@ -1196,6 +1197,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gluon_codegen"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "720c5da0383b0b50795f45b29aafc53bb03671a2e7b37992002eca7d0e76fc39"
+dependencies = [
+ "proc-macro2 1.0.6",
+ "quote 1.0.2",
+ "syn 1.0.7",
+]
+
+[[package]]
 name = "gluon_completion"
 version = "0.13.1"
 dependencies = [
@@ -1207,6 +1219,7 @@ dependencies = [
  "gluon_check",
  "gluon_parser",
  "itertools",
+ "quick-error",
  "walkdir",
 ]
 
@@ -1286,7 +1299,7 @@ dependencies = [
  "env_logger 0.7.1",
  "futures 0.3.1",
  "gluon",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_completion",
  "gluon_doc",
  "gluon_format",
@@ -1321,7 +1334,7 @@ dependencies = [
  "gluon",
  "gluon_base",
  "gluon_check",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_parser",
  "itertools",
  "lalrpop",

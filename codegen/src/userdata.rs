@@ -1,8 +1,10 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use shared::{map_lifetimes, map_type_params, split_for_impl};
 use syn::{self, Data, DeriveInput, Generics};
 
-use attr::{Container, CrateName};
+use crate::{
+    attr::{Container, CrateName},
+    shared::{map_lifetimes, map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -40,9 +42,9 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
             use #ident::Result as _gluon_Result;
         },
         CrateName::GluonVm => quote! {
-            use api as _gluon_api;
-            use thread as _gluon_gc;
-            use self::Result as _gluon_Result;
+            use crate::api as _gluon_api;
+            use crate::thread as _gluon_gc;
+            use crate::Result as _gluon_Result;
         },
         CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;

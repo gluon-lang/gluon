@@ -1,14 +1,13 @@
 #![allow(unused_macros)]
 #![allow(dead_code)]
 
-extern crate codespan;
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use self::{
     base::{
-        ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
+        ast::{DisplayEnv, Expr, IdentEnv, RootSpannedExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -20,8 +19,10 @@ use self::{
         metadata, rename,
         typecheck::{self, Typecheck},
     },
-    parser::{parse_partial_expr, reparse_infix, ParseErrors},
+    parser::{parse_partial_root_expr, reparse_infix, ParseErrors},
 };
+
+use {collect_mac::collect, quick_error::quick_error};
 
 pub use self::base::types::TypeExt;
 
@@ -79,11 +80,11 @@ pub fn intern(s: &str) -> Symbol {
 
 pub fn parse_new(
     s: &str,
-) -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ParseErrors)> {
+) -> Result<RootSpannedExpr<Symbol>, (Option<RootSpannedExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &TypeCache::new(), s)
+    parse_partial_root_expr(&mut module, &TypeCache::new(), s)
 }
 
 #[allow(dead_code)]
@@ -188,7 +189,7 @@ where
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
-) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
+) -> (RootSpannedExpr<Symbol>, Result<ArcType, Error>) {
     let mut expr = match parse_new(text) {
         Ok(expr) => expr,
         Err((expr, err)) => {
@@ -202,28 +203,35 @@ pub fn typecheck_expr_expected(
     let mut interner = interner.borrow_mut();
 
     let source = codespan::FileMap::new("test".into(), text.to_string());
-    rename::rename(
-        &source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+    let result = {
+        let (arena, expr) = expr.arena_expr();
+        let arena = arena.borrow();
 
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
+        rename::rename(
+            &source,
+            &mut SymbolModule::new("test".into(), &mut interner),
+            arena,
+            expr,
+        );
+        let (_, mut metadata) = metadata::metadata(&env, &expr);
+        reparse_infix(arena, &metadata, &*interner, expr).unwrap_or_else(|err| panic!("{}", err));
 
-    let result = tc.typecheck_expr_expected(&mut expr, expected);
+        let mut tc = Typecheck::new(
+            "test".into(),
+            &mut interner,
+            &env,
+            &TypeCache::new(),
+            &mut metadata,
+            arena,
+        );
+
+        tc.typecheck_expr_expected(expr, expected)
+    };
 
     (expr, result.map_err(|err| in_file_error(text, err).into()))
 }
 
-pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
+pub fn typecheck_expr(text: &str) -> (RootSpannedExpr<Symbol>, Result<ArcType, Error>) {
     typecheck_expr_expected(text, None)
 }
 
@@ -231,7 +239,7 @@ pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, Error
 pub fn typecheck_partial_expr(
     text: &str,
 ) -> (
-    SpannedExpr<Symbol>,
+    RootSpannedExpr<Symbol>,
     Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = match parse_new(text) {
@@ -245,23 +253,32 @@ pub fn typecheck_partial_expr(
     let mut interner = interner.borrow_mut();
 
     let source = codespan::FileMap::new("test".into(), text.to_string());
-    rename::rename(
-        &source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
 
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
+    let result = {
+        let (arena, expr) = expr.arena_expr();
+        let arena = arena.borrow();
 
-    let result = tc.typecheck_expr(&mut expr);
+        rename::rename(
+            &source,
+            &mut SymbolModule::new("test".into(), &mut interner),
+            arena,
+            expr,
+        );
+
+        let (_, mut metadata) = metadata::metadata(&env, &expr);
+
+        reparse_infix(arena, &metadata, &*interner, expr).unwrap_or_else(|err| panic!("{}", err));
+
+        let mut tc = Typecheck::new(
+            "test".into(),
+            &mut interner,
+            &env,
+            &TypeCache::new(),
+            &mut metadata,
+            arena,
+        );
+        tc.typecheck_expr(expr)
+    };
 
     (expr, result.map_err(|err| in_file_error(text, err)))
 }
@@ -559,10 +576,10 @@ macro_rules! assert_multi_unify_err {
 
 pub fn print_ident_types(expr: &SpannedExpr<Symbol>) {
     struct Visitor;
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'_, 'a> for Visitor {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+        fn visit_expr(&mut self, expr: &SpannedExpr<'a, Symbol>) {
             match expr.value {
                 Expr::Ident(ref id) => {
                     println!("{} : {}", id.name, id.typ);

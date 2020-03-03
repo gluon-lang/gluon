@@ -1,9 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
@@ -315,7 +309,7 @@ let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { stat
     match ve with
     | Pure value -> wrap { state, value }
     | Impure e f ->
-        match extract_state e with 
+        match extract_state e with
         | Get ->
             loop state (f state)
         | Put state ->

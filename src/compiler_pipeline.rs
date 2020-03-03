@@ -20,7 +20,7 @@ use salsa::ParallelDatabase;
 
 use crate::{
     base::{
-        ast::{SpannedExpr, Typed},
+        ast::{self, RootSpannedExpr, SendSpannedExpr, SpannedExpr, Typed},
         error::{Errors, InFile},
         fnv::FnvMap,
         metadata::Metadata,
@@ -82,15 +82,16 @@ macro_rules! join_result {
     }};
 }
 
-pub fn parse_expr(
+pub fn parse_expr_inner<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     compiler: &mut ModuleCompiler<'_>,
     type_cache: &TypeCache<Symbol, ArcType>,
     file: &str,
     expr_str: &str,
-) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+) -> SalvageResult<SpannedExpr<'ast, Symbol>, InFile<parser::Error>> {
     let map = compiler.add_filemap(file, expr_str);
-
-    Ok(parser::parse_partial_expr(
+    parser::parse_partial_expr(
+        arena,
         &mut SymbolModule::new(file.into(), &mut compiler.symbols),
         type_cache,
         &*map,
@@ -98,7 +99,30 @@ pub fn parse_expr(
     .map_err(|(expr, err)| {
         info!("Parse error: {}", err);
         (expr, InFile::new(compiler.code_map().clone(), err))
-    })?)
+    })
+}
+
+pub fn parse_expr(
+    compiler: &mut ModuleCompiler<'_>,
+    type_cache: &TypeCache<Symbol, ArcType>,
+    file: &str,
+    expr_str: &str,
+) -> SalvageResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
+    let result = {
+        mk_ast_arena!(arena);
+
+        parse_expr_inner((*arena).borrow(), compiler, type_cache, file, expr_str)
+            .map_err(|(expr, err)| {
+                (
+                    expr.map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr))),
+                    err,
+                )
+            })
+            .map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr)))
+    };
+    result
+        .map(|expr| expr.try_into_send().unwrap())
+        .map_err(|(expr, err)| (expr.map(|expr| expr.try_into_send().unwrap()), err))
 }
 
 /// Result type of successful macro expansion
@@ -109,7 +133,7 @@ pub struct MacroValue<E> {
 
 #[async_trait::async_trait]
 pub trait MacroExpandable {
-    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
 
     async fn expand_macro(
         self,
@@ -122,7 +146,7 @@ pub trait MacroExpandable {
 
 #[async_trait::async_trait]
 impl<'s> MacroExpandable for &'s str {
-    type Expr = SpannedExpr<Symbol>;
+    type Expr = SendSpannedExpr<Symbol>;
 
     async fn expand_macro(
         self,
@@ -148,8 +172,8 @@ impl<'s> MacroExpandable for &'s str {
 }
 
 #[async_trait::async_trait]
-impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
-    type Expr = &'s mut SpannedExpr<Symbol>;
+impl<'s> MacroExpandable for &'s mut SendSpannedExpr<Symbol> {
+    type Expr = &'s mut SendSpannedExpr<Symbol>;
 
     async fn expand_macro(
         self,
@@ -161,7 +185,13 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         if compiler.compiler_settings().implicit_prelude
             && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE")
         {
-            compiler.include_implicit_prelude(thread.global_env().type_cache(), file, self);
+            let (arena, expr) = self.arena_expr();
+            compiler.include_implicit_prelude(
+                arena.borrow(),
+                thread.global_env().type_cache(),
+                file,
+                expr,
+            );
         }
 
         let result = {
@@ -179,8 +209,9 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
 
             let spawner = thread.spawner();
 
+            let (arena, expr) = self.arena_expr();
             let mut macros = MacroExpander::new(thread, &mut forker, spawner);
-            macros.run(&mut compiler.symbols, self).await;
+            macros.run(&mut compiler.symbols, arena, expr).await;
             macros.finish()
         };
         let value = MacroValue { expr: self };
@@ -196,8 +227,8 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
 }
 
 #[async_trait::async_trait]
-impl MacroExpandable for SpannedExpr<Symbol> {
-    type Expr = SpannedExpr<Symbol>;
+impl MacroExpandable for SendSpannedExpr<Symbol> {
+    type Expr = SendSpannedExpr<Symbol>;
 
     async fn expand_macro(
         mut self,
@@ -226,7 +257,7 @@ pub struct Renamed<E> {
 
 #[async_trait::async_trait]
 pub trait Renameable: Sized {
-    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
 
     async fn rename(
         self,
@@ -270,7 +301,7 @@ where
 #[async_trait::async_trait]
 impl<E> Renameable for MacroValue<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>> + Send,
+    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -283,7 +314,10 @@ where
     ) -> SalvageResult<Renamed<Self::Expr>> {
         let source = compiler.get_or_insert_filemap(file, expr_str);
         let mut symbols = SymbolModule::new(String::from(file), &mut compiler.symbols);
-        rename::rename(&*source, &mut symbols, &mut self.expr.borrow_mut());
+
+        self.expr
+            .borrow_mut()
+            .with_arena(|arena, expr| rename::rename(&*source, &mut symbols, arena.borrow(), expr));
         Ok(Renamed { expr: self.expr })
     }
 }
@@ -296,7 +330,7 @@ pub struct WithMetadata<E> {
 
 #[async_trait::async_trait]
 pub trait MetadataExtractable: Sized {
-    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
 
     async fn extract_metadata(
         self,
@@ -350,7 +384,7 @@ where
 #[async_trait::async_trait]
 impl<E> MetadataExtractable for Renamed<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>> + Send,
+    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -362,7 +396,7 @@ where
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
         let env = &*compiler.database;
-        let (metadata, metadata_map) = metadata::metadata(env, self.expr.borrow_mut());
+        let (metadata, metadata_map) = metadata::metadata(env, self.expr.borrow_mut().expr_mut());
         Ok(WithMetadata {
             expr: self.expr,
             metadata,
@@ -380,7 +414,7 @@ pub struct InfixReparsed<E> {
 
 #[async_trait::async_trait]
 pub trait InfixReparseable: Sized {
-    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
 
     async fn reparse_infix(
         self,
@@ -434,7 +468,7 @@ where
 #[async_trait::async_trait]
 impl<E> InfixReparseable for WithMetadata<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>> + Send,
+    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -452,7 +486,9 @@ where
             metadata,
             metadata_map,
         } = self;
-        match reparse_infix(&metadata_map, &compiler.symbols, expr.borrow_mut()) {
+        match expr.borrow_mut().with_arena(|arena, expr| {
+            reparse_infix(arena.borrow(), &metadata_map, &compiler.symbols, expr)
+        }) {
             Ok(()) => Ok(InfixReparsed {
                 expr,
                 metadata,
@@ -498,7 +534,7 @@ impl<E> TypecheckValue<E> {
 
 #[async_trait::async_trait]
 pub trait Typecheckable: Sized {
-    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
 
     async fn typecheck(
         self,
@@ -562,7 +598,7 @@ where
 }
 
 fn typecheck_expr(
-    expr: &mut SpannedExpr<Symbol>,
+    expr: &mut SendSpannedExpr<Symbol>,
     compiler: &mut ModuleCompiler<'_>,
     thread: &Thread,
     file: &str,
@@ -571,22 +607,24 @@ fn typecheck_expr(
 ) -> Result<ArcType> {
     use crate::check::typecheck::Typecheck;
     let env = &*compiler.database;
+    let (arena, expr) = expr.arena_expr();
     let mut tc = Typecheck::new(
         file.into(),
         &mut compiler.symbols,
         &*env,
         &thread.global_env().type_cache(),
         metadata_map,
+        arena.borrow(),
     );
 
-    tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
+    tc.typecheck_expr_expected(expr, expected_type)
         .map_err(|err| InFile::new(compiler.database.state().code_map.clone(), err).into())
 }
 
 #[async_trait::async_trait]
 impl<E> Typecheckable for InfixReparsed<E>
 where
-    E: BorrowMut<SpannedExpr<Symbol>> + Send,
+    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -620,6 +658,7 @@ where
                     Some(TypecheckValue {
                         typ: expr
                             .borrow_mut()
+                            .expr()
                             .try_type_of(&*compiler.database)
                             .unwrap_or_else(|_| thread.global_env().type_cache().error()),
                         expr,
@@ -634,7 +673,7 @@ where
         // Some metadata requires typechecking so recompute it if full metadata is required
         let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
             let env = &*compiler.database;
-            metadata::metadata(&*env, expr.borrow_mut())
+            metadata::metadata(&*env, expr.borrow_mut().expr_mut())
         } else {
             (metadata, metadata_map)
         };
@@ -720,7 +759,7 @@ where
 #[async_trait::async_trait]
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
 where
-    E: Borrow<SpannedExpr<Symbol>> + Send + Sync,
+    E: Borrow<SendSpannedExpr<Symbol>> + Send + Sync,
     Extra: Send,
 {
     type Expr = E;
@@ -761,7 +800,7 @@ where
 #[async_trait::async_trait]
 impl<'e, E, Extra> Compileable<Extra> for &'e TypecheckValue<E>
 where
-    E: Borrow<SpannedExpr<Symbol>> + Send + Sync,
+    E: Borrow<SendSpannedExpr<Symbol>> + Send + Sync,
     Extra: Send,
 {
     type Expr = &'e E;
@@ -789,7 +828,7 @@ where
             let env = &*compiler.database;
 
             core_expr = core::with_translator(&*env, |translator| {
-                let expr = translator.translate_expr(self.expr.borrow());
+                let expr = translator.translate_expr(self.expr.borrow().expr());
 
                 debug!("Translation returned: {}", expr);
 
@@ -969,13 +1008,11 @@ where
                 metadata,
             })
             .map_err(Error::from)
-            .and_then(move |v| {
-                async move {
-                    if run_io {
-                        crate::compiler_pipeline::run_io(vm, v).await
-                    } else {
-                        Ok(v)
-                    }
+            .and_then(move |v| async move {
+                if run_io {
+                    crate::compiler_pipeline::run_io(vm, v).await
+                } else {
+                    Ok(v)
                 }
             })
             .await

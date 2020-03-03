@@ -67,6 +67,18 @@ test_parse! {
 }
 
 test_parse! {
+    nested_application,
+    "f (g 1 2)",
+    |arena| app(arena,
+        id("f"),
+        vec![no_loc(Expr::Tuple {
+            typ: Type::hole(),
+            elems: arena.alloc_extend(vec![app(arena, id("g"), vec![int(1), int(2)])]),
+        })]
+    ),
+}
+
+test_parse! {
 if_else_test,
     "if True then 1 else 0",
     |arena| if_else(arena, id("True"), int(1), int(0))
@@ -218,12 +230,12 @@ test_parse! {
                 (
                     Pattern::Constructor(
                         TypedIdent::new(intern("Some")),
-                        vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
+                        arena.alloc_extend(vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))]),
                     ),
                     id("x"),
                 ),
                 (
-                    Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
+                    Pattern::Constructor(TypedIdent::new(intern("None")), &mut []),
                     int(0),
                 ),
             ],
@@ -264,8 +276,8 @@ test_parse! {
     |arena| {
         let pattern = Pattern::Record {
             typ: Type::hole(),
-            types: Vec::new(),
-            fields: vec![
+            types: &mut [],
+            fields: arena.alloc_extend(vec![
                 PatternField {
                     name: no_loc(intern("y")),
                     value: None,
@@ -274,7 +286,7 @@ test_parse! {
                     name: no_loc(intern("x")),
                     value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
                 },
-            ],
+            ]),
             implicit_import: None,
         };
         case(arena, id("x"), vec![(pattern, id("z"))])
@@ -285,12 +297,13 @@ test_parse! {
     let_pattern,
     "let {x, y} = test in x",
     |arena| no_loc(Expr::let_binding(
+            arena,
             ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Record {
                     typ: Type::hole(),
-                    types: Vec::new(),
-                    fields: vec![
+                    types: &mut [],
+                    fields: arena.alloc_extend(vec![
                         PatternField {
                             name: no_loc(intern("x")),
                             value: None,
@@ -299,15 +312,15 @@ test_parse! {
                             name: no_loc(intern("y")),
                             value: None,
                         },
-                    ],
+                    ]),
                     implicit_import: None,
                 }),
                 typ: None,
                 resolved_type: Type::hole(),
-                args: vec![],
+                args: &mut [],
                 expr: id("test"),
             },
-            arena.alloc(id("x")),
+            id("x"),
         ))
 }
 
@@ -317,15 +330,15 @@ test_parse! {
     |arena| {
         let nested = no_loc(Pattern::Constructor(
             TypedIdent::new(intern("Some")),
-            vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
+            arena.alloc_extend(vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))]),
         ));
         let pattern = Pattern::Record {
             typ: Type::hole(),
-            types: Vec::new(),
-            fields: vec![PatternField {
+            types: &mut [],
+            fields: arena.alloc_extend(vec![PatternField {
                 name: no_loc(intern("y")),
                 value: Some(nested),
-            }],
+            }]),
             implicit_import: None,
         };
         case(arena, id("x"), vec![(pattern, id("z"))])
@@ -338,9 +351,9 @@ test_parse! {
     |arena| {
         let inner_pattern = no_loc(Pattern::Constructor(
             TypedIdent::new(intern("Some")),
-            vec![no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))],
+            arena.alloc_extend(vec![no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))]),
         ));
-        let pattern = Pattern::Constructor(TypedIdent::new(intern("Some")), vec![inner_pattern]);
+        let pattern = Pattern::Constructor(TypedIdent::new(intern("Some")), arena.alloc_extend(vec![inner_pattern]));
         case(arena, id("x"), vec![(pattern, id("z"))])
     }
 }
@@ -452,7 +465,7 @@ id
     assert_eq!(
         *e.expr(),
         no_loc(Expr::LetBindings(
-            ValueBindings::Plain(Box::new(ValueBinding {
+            ValueBindings::Plain(arena.alloc(ValueBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
                         typ: CommentType::Line,
@@ -463,7 +476,9 @@ id
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                 typ: None,
                 resolved_type: Type::hole(),
-                args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
+                args: arena.alloc_extend(vec![Argument::explicit(no_loc(TypedIdent::new(
+                    intern("x")
+                )))]),
                 expr: id("x"),
             })),
             arena.alloc(id("id")),
@@ -486,13 +501,15 @@ id
     assert_eq!(
         *e.expr(),
         no_loc(Expr::LetBindings(
-            ValueBindings::Recursive(vec![
+            ValueBindings::Recursive(arena.alloc_extend(vec![
                 ValueBinding {
                     metadata: Metadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
+                    args: arena.alloc_extend(vec![Argument::explicit(no_loc(TypedIdent::new(
+                        intern("x")
+                    )))]),
                     expr: id("x"),
                 },
                 ValueBinding {
@@ -506,10 +523,12 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("y"))))],
+                    args: arena.alloc_extend(vec![Argument::explicit(no_loc(TypedIdent::new(
+                        intern("y")
+                    )))]),
                     expr: id("y"),
                 },
-            ]),
+            ])),
             arena.alloc(id("id")),
         ))
     );
@@ -528,7 +547,7 @@ id
     assert_eq!(
         *e.expr(),
         type_decls(
-            &arena,
+            arena.borrow(),
             vec![TypeBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
@@ -558,15 +577,16 @@ id
 "#;
     let e = parse_clear_span!(text);
     mk_ast_arena!(arena);
+    let arena = arena.borrow();
     assert_eq!(
         *e.expr(),
         let_a(
-            &arena,
+            arena,
             "x",
             &[],
             int(1),
             type_decls(
-                &arena,
+                arena,
                 vec![TypeBinding {
                     metadata: Metadata {
                         comment: Some(Comment {
@@ -600,7 +620,7 @@ id
     assert_eq!(
         *e.expr(),
         type_decls(
-            &arena,
+            arena.borrow(),
             vec![TypeBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
@@ -671,12 +691,12 @@ x
     assert_eq!(
         *e.expr(),
         no_loc(Expr::LetBindings(
-            ValueBindings::Plain(Box::new(ValueBinding {
+            ValueBindings::Plain(arena.alloc(ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                 typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
                 resolved_type: Type::hole(),
-                args: vec![],
+                args: &mut [],
                 expr: id("x"),
             })),
             arena.alloc(id("x")),
@@ -689,16 +709,17 @@ fn quote_in_identifier() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f' = \\x y -> x + y in f' 1 2");
     mk_ast_arena!(arena);
+    let arena = arena.borrow();
     let a = let_(
-        &arena,
+        arena,
         "f'",
         lambda(
-            &arena,
+            arena,
             "",
             vec![intern("x"), intern("y")],
-            binop(&arena, id("x"), "+", id("y")),
+            binop(arena, id("x"), "+", id("y")),
         ),
-        app(&arena, id("f'"), vec![int(1), int(2)]),
+        app(arena, id("f'"), vec![int(1), int(2)]),
     );
     assert_eq!(*e.expr(), a);
 }
@@ -744,7 +765,7 @@ fn record_type_field() {
     assert_eq!(
         *e.expr(),
         record_a(
-            &arena,
+            arena.borrow(),
             vec![("Test".into(), None)],
             vec![("x".into(), None)]
         )
@@ -766,11 +787,12 @@ fn doc_comment_on_record_field() {
     /// x binding
     x = 1 }";
     let e = parse_clear_span!(text);
+    mk_ast_arena!(arena);
     assert_eq!(
         *e.expr(),
         no_loc(Expr::Record {
             typ: Type::hole(),
-            types: vec![ExprField {
+            types: arena.alloc_extend(vec![ExprField {
                 metadata: Metadata {
                     comment: Some(Comment {
                         typ: CommentType::Block,
@@ -780,8 +802,8 @@ fn doc_comment_on_record_field() {
                 },
                 name: no_loc("Test".into()),
                 value: None,
-            }],
-            exprs: vec![ExprField {
+            }]),
+            exprs: arena.alloc_extend(vec![ExprField {
                 metadata: Metadata {
                     comment: Some(Comment {
                         typ: CommentType::Line,
@@ -791,7 +813,7 @@ fn doc_comment_on_record_field() {
                 },
                 name: no_loc("x".into()),
                 value: Some(int(1)),
-            }],
+            }]),
             base: None,
         })
     )
@@ -807,7 +829,7 @@ fn shebang_at_top_is_ignored() {
     assert_eq!(
         *e.expr(),
         record_a(
-            &arena,
+            arena.borrow(),
             vec![("Test".into(), None)],
             vec![("x".into(), None)]
         )
@@ -834,7 +856,7 @@ fn parse_repl_line() {
 
     let line = "let x = test";
     mk_ast_arena!(arena);
-    match parser::parse_partial_repl_line(&arena, &mut module, line) {
+    match parser::parse_partial_repl_line(arena.borrow(), &mut module, line) {
         Ok(x) => assert_eq!(
             x,
             Some(ReplLine::Let(ValueBinding {
@@ -847,7 +869,7 @@ fn parse_repl_line() {
                 ),
                 typ: None,
                 resolved_type: Type::hole(),
-                args: Vec::new(),
+                args: &mut [],
                 expr: pos::spanned2(
                     9.into(),
                     13.into(),
@@ -872,7 +894,7 @@ fn alias_in_record_type() {
     assert_eq!(
         *e.expr(),
         no_loc(Expr::TypeBindings(
-            vec![TypeBinding {
+            arena.alloc_extend(vec![TypeBinding {
                 metadata: Metadata::default(),
                 name: no_loc(intern("Test")),
                 alias: alias(
@@ -887,7 +909,7 @@ fn alias_in_record_type() {
                     ),
                 ),
                 finalized_alias: None,
-            }],
+            }]),
             arena.alloc(int(1))
         ),)
     )
@@ -973,4 +995,16 @@ type Expr a =
 1
 "#;
     parse_clear_span!(text);
+}
+
+#[test]
+fn application_does_not_get_eof_as_end() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+f 1 // abc
+"#;
+    assert_eq!(
+        parse_new!(text).expr().span,
+        pos::Span::new(2.into(), 5.into())
+    );
 }

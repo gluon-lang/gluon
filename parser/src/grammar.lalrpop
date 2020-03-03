@@ -20,12 +20,12 @@ use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv, TempVecs, Tem
 grammar<'input, 'env, 'ast, Id>(
     input: &'input dyn crate::ParserSource,
     type_cache: &TypeCache<Id, ArcType<Id>>,
-    arena: ast::ArenaRef<'ast, Id>,
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     env: MutIdentEnv<'env, Id>,
     errors: ErrorEnv<'env, 'input>,
     temp_vecs: &mut TempVecs<'ast, Id>,
 )
-    where Id: Clone + AsRef<str>;
+    where Id: Clone + AsRef<str> + std::fmt::Debug;
 
 extern {
     type Location = BytePos;
@@ -102,7 +102,8 @@ Comma<Rule>: Vec<Rule> = {
 
 #[inline]
 SepTemp<Rule, Separator>: TempVecStart<Rule> = {
-    <start: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule?> => {
+        let start = start.unwrap_or_else(|| temp_vecs.start());
         if let Some(last) = last {
             temp_vecs.select().push(last);
         }
@@ -116,9 +117,22 @@ CommaTemp<Rule>: TempVecStart<Rule> = {
 };
 
 #[inline]
+SepSlice1<Rule, Separator>: &'ast mut Slice<Rule> =
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule> => {
+        match start {
+            Some(start) => arena.alloc_extend(temp_vecs.drain(start).chain(Some(last))),
+            None => arena.alloc_extend(Some(last)),
+        }
+    };
+
+
+#[inline]
 SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
-    <start: ManyVec<(<Rule> Separator)>> <last: Rule?> => {
-        arena.alloc_extend(temp_vecs.drain(start).chain(last))
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule?> => {
+        match start {
+            Some(start) => arena.alloc_extend(temp_vecs.drain(start).chain(last)),
+            None => arena.alloc_extend(last),
+        }
     };
 
 #[inline]
@@ -135,35 +149,35 @@ IdentStr: &'input str = {
     "(" <"operator"> ")" => <>,
 };
 
-Many1Vec<T>: TempVecStart<T> = {
+VecStart<T>: TempVecStart<T> = {
     T => {
         let start = temp_vecs.start();
         temp_vecs.select().push(<>);
         start
     },
-    <start: Many1Vec<T>> <x: T> => {
-        temp_vecs.select().push(x);
-        start
+};
+
+Many1Rest<T>: () = {
+    <T> => temp_vecs.select().push(<>),
+    Many1Rest<T> <T> => {
+        temp_vecs.select().push(<>);
     }
 };
 
 #[inline]
-ManyVec<T>: TempVecStart<T> = {
-    => temp_vecs.start(),
-    Many1Vec<T>,
+Many1Vec<T>: TempVecStart<T> = {
+    <VecStart<T>>,
+    <VecStart<T>> Many1Rest<T>,
 };
 
-#[inline]
 Many<T>: &'ast mut Slice<T> = {
     => &mut [],
     Many1<T>,
 };
 
-#[inline]
 Many1<T>: &'ast mut Slice<T> = {
     Many1Vec<T> => {
-        let start = <>;
-        arena.alloc_extend(temp_vecs.drain(start))
+        arena.alloc_extend(temp_vecs.drain(<>))
     }
 };
 
@@ -913,7 +927,7 @@ DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
 };
 
 BlockExpr: Expr<'ast, Id> = {
-    "block open" <exprs: SepSlice<SpExpr, "block separator">> "block close" => {
+    "block open" <exprs: SepSlice1<SpExpr, "block separator">> "block close" => {
         Expr::Block(exprs)
     },
 };

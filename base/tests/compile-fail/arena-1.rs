@@ -15,5 +15,5 @@ fn main() {
         Expr::<String>::Error(None),
     ));
 
-    RootSpannedExpr::new(arena2.clone(), arena1_expr);
+    RootSpannedExpr::new(arena2, arena1_expr);
 }

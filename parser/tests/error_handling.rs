@@ -20,7 +20,7 @@ use crate::support::*;
 test_parse_error! {
     empty_input,
     "",
-    |_: &base::ast::Arena<String>| error(),
+    |_: base::ast::ArenaRef<'_, '_, String>| error(),
     {
         let error = Error::UnexpectedEof(vec![]);
         let span = pos::span(BytePos::from(0), BytePos::from(0));
@@ -191,11 +191,11 @@ test_parse_error! {
             vec![(
                 Pattern::Record {
                     typ: Type::hole(),
-                    types: vec![],
-                    fields: vec![PatternField {
+                    types: &mut [],
+                    fields: arena.alloc_extend(vec![PatternField {
                         name: no_loc(intern("x")),
                         value: Some(no_loc(Pattern::Error)),
-                    }],
+                    }]),
                     implicit_import: None,
                 },
                 error(),
@@ -265,7 +265,7 @@ fn missing_close_paren() {
     assert!(result.is_err());
     let (_expr, err) = result.unwrap_err();
 
-    let error = Error::UnexpectedEof([")", ",", "]"].iter().map(|s| s.to_string()).collect());
+    let error = Error::UnexpectedEof([")", ","].iter().map(|s| s.to_string()).collect());
     let span = pos::span(BytePos::from(30), BytePos::from(30));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
@@ -341,7 +341,7 @@ do
     assert_eq!(
         *e.expr(),
         do_2(
-            &arena,
+            arena.borrow(),
             Some(no_loc(Pattern::Error)),
             no_loc(Expr::Error(None)),
             int(1),

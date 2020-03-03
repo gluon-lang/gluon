@@ -1,6 +1,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use shared::split_for_impl;
 use syn::{self, Data, DeriveInput, Generics};
+
+use crate::shared::split_for_impl;
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");

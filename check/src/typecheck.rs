@@ -126,7 +126,7 @@ impl Environment<'_> {
 }
 
 /// Struct which provides methods to typecheck expressions.
-pub struct Typecheck<'a> {
+pub struct Typecheck<'a, 'ast> {
     pub(crate) environment: Environment<'a>,
     symbols: SymbolModule<'a>,
     pub(crate) subs: Substitution<RcType>,
@@ -138,9 +138,10 @@ pub struct Typecheck<'a> {
     pub(crate) implicit_resolver: implicits::ImplicitResolver<'a>,
     unbound_variables: ScopedMap<Symbol, ArcKind>,
     refined_variables: ScopedMap<u32, ()>,
+    pub(crate) ast_arena: ast::ArenaRef<'a, 'ast, Symbol>,
 }
 
-impl<'a> TypeContext<Symbol, RcType> for Typecheck<'a> {
+impl<'a> TypeContext<Symbol, RcType> for Typecheck<'a, '_> {
     gluon_base::forward_type_interner_methods!(Symbol, RcType, self_, &self_.subs);
 }
 
@@ -149,7 +150,7 @@ pub type Error = Errors<SpannedTypeError<Symbol>>;
 
 pub use implicits::{Error as ImplicitError, ErrorKind as ImplicitErrorKind};
 
-impl<'a> Typecheck<'a> {
+impl<'a, 'ast> Typecheck<'a, 'ast> {
     /// Create a new typechecker which typechecks expressions in `module`
     pub fn new(
         module: String,
@@ -157,7 +158,8 @@ impl<'a> Typecheck<'a> {
         environment: &'a (dyn TypecheckEnv<Type = ArcType> + 'a),
         interner: &TypeCache<Symbol, ArcType>,
         metadata: &'a mut FnvMap<Symbol, Arc<Metadata>>,
-    ) -> Typecheck<'a> {
+        ast_arena: ast::ArenaRef<'a, 'ast, Symbol>,
+    ) -> Self {
         let symbols = SymbolModule::new(module, symbols);
         let subs = Substitution::new(interner.kind_cache.typ(), interner.clone());
         Typecheck {
@@ -177,6 +179,7 @@ impl<'a> Typecheck<'a> {
             unbound_variables: ScopedMap::new(),
             refined_variables: ScopedMap::new(),
             subs,
+            ast_arena,
         }
     }
 
@@ -366,7 +369,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         level: u32,
         resolved_type: &mut RcType,
-        binding: &mut ValueBinding<Symbol>,
+        binding: &mut ValueBinding<'ast, Symbol>,
     ) {
         let mut generalizer = TypeGeneralizer::new(level, self, resolved_type, binding.name.span);
         generalize_binding(&mut generalizer, resolved_type, binding);
@@ -465,13 +468,16 @@ impl<'a> Typecheck<'a> {
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
-    pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<ArcType, Error> {
+    pub fn typecheck_expr(
+        &mut self,
+        expr: &mut SpannedExpr<'ast, Symbol>,
+    ) -> Result<ArcType, Error> {
         self.typecheck_expr_expected(expr, None)
     }
 
     pub fn typecheck_expr_expected(
         &mut self,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
         expected_type: Option<&ArcType>,
     ) -> Result<ArcType, Error> {
         let expected_type = expected_type.map(|t| self.translate_arc_type(t));
@@ -482,12 +488,12 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_expr_expected_(
         &mut self,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
         expected_type: Option<&RcType>,
     ) -> Result<RcType, Error> {
-        fn tail_expr<'ast>(
-            e: &'ast mut SpannedExpr<'ast, Symbol>,
-        ) -> &'ast mut SpannedExpr<'ast, Symbol> {
+        fn tail_expr<'e, 'ast>(
+            e: &'e mut SpannedExpr<'ast, Symbol>,
+        ) -> &'e mut SpannedExpr<'ast, Symbol> {
             match e.value {
                 Expr::LetBindings(_, ref mut b) | Expr::TypeBindings(_, ref mut b) => tail_expr(b),
                 _ => e,
@@ -537,11 +543,11 @@ impl<'a> Typecheck<'a> {
         }
 
         {
-            struct ReplaceVisitor<'a: 'b, 'b> {
-                tc: &'b mut Typecheck<'a>,
+            struct ReplaceVisitor<'a: 'b, 'b, 'ast> {
+                tc: &'b mut Typecheck<'a, 'ast>,
             }
 
-            impl<'a, 'b, 'd> MutVisitor<'d, '_> for ReplaceVisitor<'a, 'b> {
+            impl<'a, 'b, 'd> MutVisitor<'d, '_> for ReplaceVisitor<'a, 'b, '_> {
                 type Ident = Symbol;
 
                 fn visit_typ(&mut self, typ: &mut ArcType) {
@@ -591,11 +597,15 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> ModType {
+    fn infer_expr(&mut self, expr: &mut SpannedExpr<'ast, Symbol>) -> ModType {
         self.typecheck_opt(expr, None)
     }
 
-    fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: ModTypeRef) -> ModType {
+    fn typecheck(
+        &mut self,
+        expr: &mut SpannedExpr<'ast, Symbol>,
+        expected_type: ModTypeRef,
+    ) -> ModType {
         self.typecheck_opt(expr, Some(expected_type))
     }
 
@@ -603,7 +613,7 @@ impl<'a> Typecheck<'a> {
     /// successful
     fn typecheck_opt(
         &mut self,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
         mut expected_type: Option<ModTypeRef>,
     ) -> ModType {
         let returned_type;
@@ -617,18 +627,19 @@ impl<'a> Typecheck<'a> {
                             ..
                         } => {
                             if implicit_args.is_empty() {
-                                *implicit_args = args;
+                                *implicit_args = self.ast_arena.alloc_extend(args);
                             } else {
-                                implicit_args.extend(args);
+                                *implicit_args = self.ast_arena.alloc_extend(
+                                    implicit_args.iter_mut().map(mem::take).chain(args),
+                                );
                             }
                         }
                         _ => {
-                            let dummy = Expr::Literal(Literal::Int(0));
-                            let func = mem::replace(&mut expr.value, dummy);
+                            let func = mem::take(&mut expr.value);
                             expr.value = Expr::App {
-                                func: Box::new(pos::spanned(expr.span, func)),
-                                implicit_args: args,
-                                args: vec![],
+                                func: self.ast_arena.alloc(pos::spanned(expr.span, func)),
+                                implicit_args: self.ast_arena.alloc_extend(args),
+                                args: &mut [],
                             }
                         }
                     }
@@ -657,9 +668,9 @@ impl<'a> Typecheck<'a> {
     /// doing it twice)
     fn typecheck_(
         &mut self,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
         expected_type: &mut Option<ModTypeRef>,
-    ) -> TcResult<(ModType, Vec<SpannedExpr<Symbol>>)> {
+    ) -> TcResult<(ModType, Vec<SpannedExpr<'ast, Symbol>>)> {
         if let Some(result) = self.check_macro(expr) {
             return Ok((result?, Vec::new()));
         }
@@ -691,7 +702,18 @@ impl<'a> Typecheck<'a> {
                 ref mut args,
             } => {
                 let func_type = self.infer_expr(func);
-                self.typecheck_application(expr.span, func_type, implicit_args, args)
+                let mut implicit_vec = CowVec::Borrowed(implicit_args);
+                let typ = self.typecheck_application(
+                    expr.span,
+                    func_type,
+                    &mut implicit_vec,
+                    &mut **args,
+                );
+                if let CowVec::Owned(implicit_vec) = implicit_vec {
+                    *implicit_args = self.ast_arena.alloc_extend(implicit_vec);
+                }
+
+                typ
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let bool_type = self.bool();
@@ -748,12 +770,17 @@ impl<'a> Typecheck<'a> {
 
                 op.value.typ = self.subs.bind_arc(&func_type);
 
-                self.typecheck_application(
+                let mut implicit_vec = CowVec::Borrowed(implicit_args);
+                let typ = self.typecheck_application(
                     op.span,
                     func_type,
-                    implicit_args,
+                    &mut implicit_vec,
                     [&mut **lhs, &mut **rhs].iter_mut().map(|expr| &mut **expr),
-                )
+                );
+                if let CowVec::Owned(implicit_vec) = implicit_vec {
+                    *implicit_args = self.ast_arena.alloc_extend(implicit_vec);
+                }
+                typ
             }
             Expr::Tuple {
                 ref mut typ,
@@ -928,7 +955,7 @@ impl<'a> Typecheck<'a> {
                     self.unify_span(expr.span, &expected_type, array_type.clone());
                 }
 
-                for expr in &mut array.exprs {
+                for expr in &mut *array.exprs {
                     expected_element_type |=
                         self.typecheck(expr, ModType::wobbly(&expected_element_type));
                 }
@@ -1043,7 +1070,7 @@ impl<'a> Typecheck<'a> {
                 let mut duplicated_fields = FnvSet::default();
 
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
-                for field in types {
+                for field in &mut **types {
                     if let Some(ref mut typ) = field.value {
                         let rc_type = self.translate_arc_type(typ);
                         if let Some(new_type) = self.create_unifiable_signature(&rc_type) {
@@ -1061,7 +1088,7 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let mut new_fields: Vec<Field<_, RcType>> = Vec::with_capacity(fields.len());
-                for field in fields {
+                for field in &mut **fields {
                     let name = &field.name.value;
                     let expected_field_type = expected_type
                         .as_ref()
@@ -1095,15 +1122,17 @@ impl<'a> Typecheck<'a> {
                                         field.value = Some(pos::spanned(
                                             field.name.span,
                                             Expr::App {
-                                                func: Box::new(pos::spanned(
+                                                func: self.ast_arena.alloc(pos::spanned(
                                                     field.name.span,
                                                     Expr::Ident(TypedIdent {
                                                         name: field.name.value.clone(),
                                                         typ: self.subs.bind_arc(&typ),
                                                     }),
                                                 )),
-                                                implicit_args,
-                                                args: Vec::new(),
+                                                implicit_args: self
+                                                    .ast_arena
+                                                    .alloc_extend(implicit_args),
+                                                args: &mut [],
                                             },
                                         ));
                                     }
@@ -1175,18 +1204,18 @@ impl<'a> Typecheck<'a> {
                 let flat_map_type = match *flat_map_type {
                     Type::Function(ArgType::Implicit, ref arg_type, ref r) => {
                         let name = self.implicit_resolver.make_implicit_ident(arg_type);
-                        *flat_map_id = Some(Box::new(pos::spanned(
+                        *flat_map_id = Some(self.ast_arena.alloc(pos::spanned(
                             do_span,
                             Expr::App {
                                 func: flat_map_id.take().unwrap(),
-                                args: vec![pos::spanned(
+                                args: self.ast_arena.alloc_extend(Some(pos::spanned(
                                     do_span,
                                     Expr::Ident(TypedIdent {
                                         name,
                                         typ: self.subs.bind_arc(&arg_type),
                                     }),
-                                )],
-                                implicit_args: Vec::new(),
+                                ))),
+                                implicit_args: &mut [],
                             },
                         )));
                         r.clone()
@@ -1250,12 +1279,13 @@ impl<'a> Typecheck<'a> {
         &mut self,
         span: Span<BytePos>,
         func_type: ModType,
-        implicit_args: &mut Vec<SpannedExpr<'_, Symbol>>,
+        implicit_args: &mut CowVec<SpannedExpr<'ast, Symbol>>,
         args: I,
-    ) -> TcResult<(ModType, Vec<SpannedExpr<'_, Symbol>>)>
+    ) -> TcResult<(ModType, Vec<SpannedExpr<'ast, Symbol>>)>
     where
-        I: IntoIterator<Item = &'e mut SpannedExpr<'_, Symbol>>,
+        I: IntoIterator<Item = &'e mut SpannedExpr<'ast, Symbol>>,
         I::IntoIter: ExactSizeIterator,
+        'ast: 'e,
     {
         self.typecheck_application_(span, func_type, implicit_args, &mut args.into_iter())
             .map(|typ| (typ, Vec::new()))
@@ -1265,9 +1295,12 @@ impl<'a> Typecheck<'a> {
         &mut self,
         span: Span<BytePos>,
         func_type: ModType,
-        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
-        args: &mut dyn ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
-    ) -> TcResult<ModType> {
+        implicit_args: &mut CowVec<SpannedExpr<'ast, Symbol>>,
+        args: &mut dyn ExactSizeIterator<Item = &'e mut SpannedExpr<'ast, Symbol>>,
+    ) -> TcResult<ModType>
+    where
+        'ast: 'e,
+    {
         fn attach_extra_argument_help<F, R>(self_: &mut Typecheck, actual: u32, f: F) -> R
         where
             F: FnOnce(&mut Typecheck) -> R,
@@ -1300,7 +1333,7 @@ impl<'a> Typecheck<'a> {
                 arg.span,
                 ArgType::Implicit,
                 func_type.clone(),
-                &mut Vec::new(),
+                &mut |_| unreachable!(),
             );
 
             let arg_typ = self.typecheck(arg, ModType::wobbly(&arg_typ));
@@ -1326,7 +1359,7 @@ impl<'a> Typecheck<'a> {
                 arg.span,
                 ArgType::Explicit,
                 func_type.clone(),
-                implicit_args,
+                &mut |expr| implicit_args.as_owned().push(expr),
             );
 
             if errors_before != self.errors.len() {
@@ -1396,12 +1429,14 @@ impl<'a> Typecheck<'a> {
         &mut self,
         function_type: ModType,
         before_args_pos: BytePos,
-        args: &mut Vec<Argument<SpannedIdent<Symbol>>>,
-        body: &mut SpannedExpr<Symbol>,
+        args_ref: &mut &'ast mut [Argument<SpannedIdent<Symbol>>],
+        body: &mut SpannedExpr<'ast, Symbol>,
     ) -> ModType {
         debug!("Checking lambda {}", function_type);
         debug!("Checking lambda {:#?}", self.environment.skolem_variables);
         self.enter_scope();
+
+        let mut args = CowVec::Borrowed(*args_ref);
 
         let mut arg_types = Vec::new();
 
@@ -1438,7 +1473,7 @@ impl<'a> Typecheck<'a> {
                                         .map(|arg| arg.name.span.end())
                                         .unwrap_or(before_args_pos)
                                 };
-                                args.insert(
+                                args.as_owned().insert(
                                     i,
                                     Argument::implicit(pos::spanned2(
                                         pos,
@@ -1491,6 +1526,10 @@ impl<'a> Typecheck<'a> {
             return_type
         };
 
+        if let CowVec::Owned(args) = args {
+            *args_ref = self.ast_arena.alloc_extend(args);
+        }
+
         let body_type = self.typecheck(body, body_type.as_ref());
         self.exit_scope();
 
@@ -1526,13 +1565,13 @@ impl<'a> Typecheck<'a> {
         partial_match_type: RcType,
     ) -> RcType {
         let span = pattern.span;
-        match pattern.value {
-            Pattern::As(ref id, ref mut pat) => {
+        match &mut pattern.value {
+            Pattern::As(id, pat) => {
                 self.stack_var(id.value.clone(), partial_match_type.clone());
                 self.typecheck_pattern(pat, match_type.clone(), partial_match_type.clone());
                 partial_match_type
             }
-            Pattern::Constructor(ref mut id, ref mut args) => {
+            Pattern::Constructor(id, args) => {
                 match_type.concrete = self.subs.real(&match_type).clone();
                 match_type.concrete = self.instantiate_generics(&match_type);
                 match_type.concrete = self.subs.zonk(&match_type);
@@ -1572,10 +1611,10 @@ impl<'a> Typecheck<'a> {
                 }
             }
             Pattern::Record {
-                typ: ref mut curr_typ,
-                types: ref mut associated_types,
-                ref mut fields,
-                ref implicit_import,
+                typ: curr_typ,
+                types: associated_types,
+                fields,
+                implicit_import,
             } => {
                 let uninstantiated_match_type = match_type.clone();
                 match_type.concrete = self.instantiate_generics(&match_type);
@@ -1600,7 +1639,7 @@ impl<'a> Typecheck<'a> {
 
                 let mut missing_fields_from_match_type = Vec::new();
 
-                for field in fields {
+                for field in &mut **fields {
                     let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
                     let field_type = record_match_type
@@ -1686,10 +1725,7 @@ impl<'a> Typecheck<'a> {
 
                 match_type.concrete
             }
-            Pattern::Tuple {
-                ref mut typ,
-                ref mut elems,
-            } => {
+            Pattern::Tuple { typ, elems } => {
                 let tuple_type = {
                     let subs = &mut self.subs;
                     (&*subs).tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
@@ -1705,12 +1741,12 @@ impl<'a> Typecheck<'a> {
                 }
                 tuple_type
             }
-            Pattern::Ident(ref mut id) => {
+            Pattern::Ident(id) => {
                 self.stack_var(id.name.clone(), partial_match_type.clone());
                 id.typ = self.subs.bind_arc(&partial_match_type);
                 partial_match_type
             }
-            Pattern::Literal(ref l) => {
+            Pattern::Literal(l) => {
                 let typ = l.env_type_of(&self.environment);
                 let typ = self.translate_arc_type(&typ);
                 self.unify_span(span, &match_type, typ);
@@ -1809,7 +1845,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_bindings(
         &mut self,
         top_level: bool,
-        mut expr: &mut SpannedExpr<Symbol>,
+        mut expr: &mut SpannedExpr<'ast, Symbol>,
         expected_type: Option<ModTypeRef>,
     ) -> ModType {
         let mut scope_count = 0;
@@ -1849,7 +1885,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_let_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) {
+    fn typecheck_let_bindings(&mut self, bindings: &mut ValueBindings<'ast, Symbol>) {
         self.enter_scope();
         self.environment.skolem_variables.enter_scope();
         self.environment.type_variables.enter_scope();
@@ -1996,7 +2032,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_type_bindings(
         &mut self,
         bindings: &mut [TypeBinding<Symbol>],
-        expr: &SpannedExpr<Symbol>,
+        expr: &SpannedExpr<'ast, Symbol>,
     ) {
         self.enter_scope();
 
@@ -2523,41 +2559,44 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         l: &RcType,
         r: RcType,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
     ) -> RcType {
+        let mut implicit_args = match &mut expr.value {
+            Expr::App { implicit_args, .. } => implicit_args.iter_mut().map(mem::take).collect(),
+            _ => Vec::new(),
+        };
         let new = self.subsumes_implicit(
             span,
             ErrorOrder::ExpectedActual,
             &r,
             l.clone(),
             &mut |arg| {
-                match expr.value {
-                    Expr::App { .. } => (),
-                    _ => {
-                        let dummy = Expr::default();
-                        let func = mem::replace(&mut expr.value, dummy);
-                        expr.value = Expr::App {
-                            func: Box::new(pos::spanned(expr.span, func)),
-                            implicit_args: Vec::new(),
-                            args: vec![],
-                        }
-                    }
-                }
-
-                match expr.value {
-                    Expr::App {
-                        ref mut implicit_args,
-                        ..
-                    } => implicit_args.push(pos::spanned(expr.span, arg)),
-                    _ => (),
-                }
+                implicit_args.push(pos::spanned(expr.span, arg));
             },
         );
+
+        match &mut expr.value {
+            Expr::App {
+                implicit_args: current,
+                ..
+            } => *current = self.ast_arena.alloc_extend(implicit_args),
+            _ => {
+                if !implicit_args.is_empty() {
+                    let func = mem::take(&mut expr.value);
+                    expr.value = Expr::App {
+                        func: self.ast_arena.alloc(pos::spanned(expr.span, func)),
+                        implicit_args: self.ast_arena.alloc_extend(implicit_args),
+                        args: &mut [],
+                    }
+                }
+            }
+        }
+
         // We ended up skolemizing r. To prevent the variables from looking like they
         // are escaping we need to bind the forall at this location
         if let Type::Forall(..) = *new {
             let temp = mem::replace(expr, Default::default());
-            *expr = Expr::annotated(temp, self.subs.bind_arc(&new));
+            *expr = Expr::annotated(self.ast_arena, temp, self.subs.bind_arc(&new));
         }
         new
     }
@@ -2568,7 +2607,7 @@ impl<'a> Typecheck<'a> {
         error_order: ErrorOrder,
         expected: &RcType,
         actual: RcType,
-        receiver: &mut dyn FnMut(Expr<Symbol>),
+        receiver: &mut dyn FnMut(Expr<'ast, Symbol>),
     ) -> RcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
 
@@ -2728,7 +2767,7 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         typ: &RcType,
         expected_type: &mut Option<&RcType>,
-    ) -> (Vec<SpannedExpr<Symbol>>, RcType) {
+    ) -> (Vec<SpannedExpr<'ast, Symbol>>, RcType) {
         match expected_type.take() {
             Some(expected_type) => {
                 debug!("Instantiate sigma: {} <> {}", expected_type, typ);
@@ -2757,7 +2796,7 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         arg_type: ArgType,
         actual: RcType,
-        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
+        implicit_args: &mut dyn FnMut(SpannedExpr<'ast, Symbol>),
     ) -> (RcType, RcType) {
         let (_, a, r) = self.merge_function(Some(arg_type), actual, &mut |self_, f, actual| {
             self_.subsumes_implicit(
@@ -2766,7 +2805,7 @@ impl<'a> Typecheck<'a> {
                 &f,
                 actual,
                 &mut |implicit_arg| {
-                    implicit_args.push(pos::spanned2(prev_arg_end, span.start(), implicit_arg));
+                    implicit_args(pos::spanned2(prev_arg_end, span.start(), implicit_arg))
                 },
             );
         });
@@ -2946,7 +2985,7 @@ impl<'a> Typecheck<'a> {
             })
     }
 
-    fn check_macro(&mut self, expr: &mut SpannedExpr<Symbol>) -> Option<TcResult<ModType>> {
+    fn check_macro(&mut self, expr: &mut SpannedExpr<'ast, Symbol>) -> Option<TcResult<ModType>> {
         let (replacement, typ) = match expr.value {
             Expr::App {
                 ref mut func,
@@ -3000,7 +3039,7 @@ impl<'a> Typecheck<'a> {
                             row_arg,
                         );
                         (
-                            args.pop().unwrap(),
+                            mem::take(args.last_mut().unwrap()),
                             self.app(eff, collect![self.subs.real(&arg).clone()]),
                         )
                     }
@@ -3072,7 +3111,7 @@ impl<'a> Typecheck<'a> {
                                 ))));
                             }
                         };
-                        (args.pop().unwrap(), variant_type)
+                        (mem::take(args.last_mut().unwrap()), variant_type)
                     }
 
                     _ => return None,
@@ -3084,7 +3123,7 @@ impl<'a> Typecheck<'a> {
             _ => return None,
         };
 
-        *expr = Expr::annotated(replacement, self.subs.bind_arc(&typ));
+        *expr = Expr::annotated(self.ast_arena, replacement, self.subs.bind_arc(&typ));
 
         Some(Ok(ModType::wobbly(typ)))
     }
@@ -3141,16 +3180,19 @@ pub fn translate_projected_type(
         .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
 }
 
-fn with_pattern_types<'a: 'b, 'b>(
-    fields: &'a mut [PatternField<Symbol, SpannedPattern<Symbol>>],
+fn with_pattern_types<'a: 'b, 'b, 'ast>(
+    fields: &'a mut [PatternField<Symbol, SpannedPattern<'ast, Symbol>>],
     typ: &'b RcType,
 ) -> impl Iterator<
     Item = (
         &'a Spanned<Symbol, BytePos>,
-        &'a mut Option<SpannedPattern<Symbol>>,
+        &'a mut Option<SpannedPattern<'ast, Symbol>>,
         Option<&'b RcType>,
     ),
-> {
+>
+where
+    'ast: 'a,
+{
     fields.iter_mut().map(move |field| {
         let opt = typ
             .row_iter()
@@ -3188,12 +3230,12 @@ fn get_alias_app<'a>(
         }),
     }
 }
-struct FunctionArgIter<'a, 'b: 'a> {
-    tc: &'a mut Typecheck<'b>,
+struct FunctionArgIter<'a, 'b: 'a, 'ast> {
+    tc: &'a mut Typecheck<'b, 'ast>,
     typ: RcType,
 }
 
-impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
+impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b, '_> {
     type Item = (ArgType, RcType);
     fn next(&mut self) -> Option<Self::Item> {
         let mut last_alias = None;
@@ -3229,7 +3271,10 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     }
 }
 
-fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: RcType) -> FunctionArgIter<'a, 'b> {
+fn function_arg_iter<'a, 'b, 'ast>(
+    tc: &'a mut Typecheck<'b, 'ast>,
+    typ: RcType,
+) -> FunctionArgIter<'a, 'b, 'ast> {
     FunctionArgIter { tc, typ }
 }
 
@@ -3252,10 +3297,10 @@ fn expr_check_span(e: &SpannedExpr<Symbol>) -> Span<BytePos> {
     }
 }
 
-fn generalize_binding(
-    generalizer: &mut TypeGeneralizer,
+fn generalize_binding<'ast>(
+    generalizer: &mut TypeGeneralizer<'_, '_, 'ast>,
     resolved_type: &mut RcType,
-    binding: &mut ValueBinding<Symbol>,
+    binding: &mut ValueBinding<'ast, Symbol>,
 ) {
     crate::implicits::resolve(generalizer.tc, &mut binding.expr);
 
@@ -3270,5 +3315,43 @@ where
     match &**typ {
         Type::Forall(_, typ) | Type::Function(_, _, typ) => ctor_return_type(typ),
         _ => typ,
+    }
+}
+
+enum CowVec<'a, T> {
+    Borrowed(&'a mut [T]),
+    Owned(Vec<T>),
+}
+
+impl<T> std::ops::Deref for CowVec<'_, T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            CowVec::Owned(v) => v,
+            CowVec::Borrowed(v) => v,
+        }
+    }
+}
+
+impl<T> std::ops::DerefMut for CowVec<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            CowVec::Owned(v) => v,
+            CowVec::Borrowed(v) => v,
+        }
+    }
+}
+
+impl<T> CowVec<'_, T>
+where
+    T: Default,
+{
+    fn as_owned(&mut self) -> &mut Vec<T> {
+        let v = match self {
+            CowVec::Owned(v) => return v,
+            CowVec::Borrowed(b) => b.iter_mut().map(mem::take).collect(),
+        };
+        *self = CowVec::Owned(v);
+        self.as_owned()
     }
 }

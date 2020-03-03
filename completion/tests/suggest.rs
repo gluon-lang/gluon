@@ -1,8 +1,5 @@
-extern crate codespan;
 #[macro_use]
 extern crate collect_mac;
-extern crate either;
-extern crate env_logger;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -36,10 +33,10 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
 
     struct ReplaceImport;
 
-    impl<'a> MutVisitor<'a> for ReplaceImport {
+    impl<'a> MutVisitor<'a, '_> for ReplaceImport {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
+        fn visit_expr(&mut self, expr: &mut SpannedExpr<'_, Symbol>) {
             let replacement = match expr.value {
                 Expr::App {
                     ref func, ref args, ..
@@ -64,8 +61,9 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
     }
 
     let (mut expr, _result) = support::typecheck_partial_expr(s);
+    let expr = expr.expr_mut();
 
-    ReplaceImport.visit_expr(&mut expr);
+    ReplaceImport.visit_expr(expr);
 
     let mut vec = query.suggest(&env, expr.span, &expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
@@ -701,6 +699,7 @@ match Abc 1 with
     let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
+    let expr = expr.expr_mut();
     let source_span = expr.span;
     // Mark the expression as if it was macro expanded
     expr.span = Span::new(0.into(), 0.into());
@@ -727,6 +726,7 @@ match Abc 1 with
     let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
+    let expr = expr.expr_mut();
     let source_span = expr.span;
     // Mark the expression as if it was macro expanded
     expr.span = Span::new(0.into(), 0.into());

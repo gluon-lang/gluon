@@ -92,7 +92,7 @@ pub fn parse_string<'env, 'input>(
     input: &'input str,
 ) -> Result<RootSpannedExpr<String>, (Option<RootSpannedExpr<String>>, ParseErrors)> {
     mk_ast_arena!(arena);
-    match parse_partial_expr(&arena, symbols, &TypeCache::default(), input) {
+    match parse_partial_expr(arena.borrow(), symbols, &TypeCache::default(), input) {
         Ok(expr) => {
             let expr = arena.alloc(expr);
             Ok(RootSpannedExpr::new(arena.clone(), expr))
@@ -142,7 +142,7 @@ pub fn parse(
     );
 
     expr.with_arena(|arena, expr| {
-        let mut reparser = Reparser::new(arena, op_table, &mut symbols);
+        let mut reparser = Reparser::new(arena.borrow(), op_table, &mut symbols);
         reparser.reparse(expr)
     })
     .map_err(|err| {
@@ -212,7 +212,7 @@ pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 pub fn binop<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     l: SpExpr<'ast>,
     s: &str,
     r: SpExpr<'ast>,
@@ -230,7 +230,7 @@ pub fn int<'a>(i: i64) -> SpExpr<'a> {
 }
 
 pub fn let_<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     s: &str,
     e: SpExpr<'ast>,
     b: SpExpr<'ast>,
@@ -239,30 +239,31 @@ pub fn let_<'ast>(
 }
 
 pub fn let_a<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     s: &str,
     args: &[&str],
     e: SpExpr<'ast>,
     b: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
     no_loc(Expr::let_binding(
+        arena,
         ValueBinding {
             metadata: Metadata::default(),
             name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
             typ: None,
             resolved_type: Type::hole(),
-            args: args
-                .iter()
-                .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
-                .collect(),
+            args: arena.alloc_extend(
+                args.iter()
+                    .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i))))),
+            ),
             expr: e,
         },
-        arena.alloc(b),
+        b,
     ))
 }
 
 pub fn do_<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     s: &str,
     e: SpExpr<'ast>,
     b: SpExpr<'ast>,
@@ -276,17 +277,17 @@ pub fn do_<'ast>(
 }
 
 pub fn do_2<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
-    id: Option<SpannedPattern<String>>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
+    id: Option<SpannedPattern<'ast, String>>,
     e: SpExpr<'ast>,
     b: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
-    no_loc(Expr::Do(Do {
+    no_loc(Expr::Do(arena.alloc(Do {
         id,
         bound: arena.alloc(e),
         body: arena.alloc(b),
         flat_map_id: None,
-    }))
+    })))
 }
 
 pub fn id(s: &str) -> SpExpr<'_> {
@@ -311,7 +312,7 @@ pub fn generic(s: &str) -> Generic<String> {
 }
 
 pub fn app<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     e: SpExpr<'ast>,
     args: Vec<SpExpr<'ast>>,
 ) -> SpExpr<'ast> {
@@ -323,7 +324,7 @@ pub fn app<'ast>(
 }
 
 pub fn if_else<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     p: SpExpr<'ast>,
     if_true: SpExpr<'ast>,
     if_false: SpExpr<'ast>,
@@ -336,39 +337,37 @@ pub fn if_else<'ast>(
 }
 
 pub fn case<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     e: SpExpr<'ast>,
-    alts: Vec<(Pattern<String>, SpExpr<'ast>)>,
+    alts: Vec<(Pattern<'ast, String>, SpExpr<'ast>)>,
 ) -> SpExpr<'ast> {
     no_loc(Expr::Match(
         arena.alloc(e),
-        alts.into_iter()
-            .map(|(p, e)| Alternative {
-                pattern: no_loc(p),
-                expr: e,
-            })
-            .collect(),
+        arena.alloc_extend(alts.into_iter().map(|(p, e)| Alternative {
+            pattern: no_loc(p),
+            expr: e,
+        })),
     ))
 }
 
 pub fn lambda<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     name: &str,
     args: Vec<String>,
     body: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
     no_loc(Expr::Lambda(Lambda {
         id: TypedIdent::new(intern(name)),
-        args: args
-            .into_iter()
-            .map(|id| Argument::explicit(no_loc(TypedIdent::new(id))))
-            .collect(),
+        args: arena.alloc_extend(
+            args.into_iter()
+                .map(|id| Argument::explicit(no_loc(TypedIdent::new(id)))),
+        ),
         body: arena.alloc(body),
     }))
 }
 
 pub fn type_decl<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     name: String,
     args: Vec<Generic<String>>,
     typ: AstType<String>,
@@ -387,49 +386,46 @@ pub fn type_decl<'ast>(
 }
 
 pub fn type_decls<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     binds: Vec<TypeBinding<String>>,
     body: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
-    no_loc(Expr::TypeBindings(binds, arena.alloc(body)))
+    no_loc(Expr::TypeBindings(
+        arena.alloc_extend(binds),
+        arena.alloc(body),
+    ))
 }
 
 pub fn record<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     fields: Vec<(String, Option<SpExpr<'ast>>)>,
 ) -> SpExpr<'ast> {
     record_a(arena, Vec::new(), fields)
 }
 
 pub fn record_a<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     types: Vec<(String, Option<ArcType<String>>)>,
     fields: Vec<(String, Option<SpExpr<'ast>>)>,
 ) -> SpExpr<'ast> {
     no_loc(Expr::Record {
         typ: Type::hole(),
-        types: types
-            .into_iter()
-            .map(|(name, value)| ExprField {
-                metadata: Metadata::default(),
-                name: no_loc(name),
-                value: value,
-            })
-            .collect(),
-        exprs: fields
-            .into_iter()
-            .map(|(name, value)| ExprField {
-                metadata: Metadata::default(),
-                name: no_loc(name),
-                value: value,
-            })
-            .collect(),
+        types: arena.alloc_extend(types.into_iter().map(|(name, value)| ExprField {
+            metadata: Metadata::default(),
+            name: no_loc(name),
+            value: value,
+        })),
+        exprs: arena.alloc_extend(fields.into_iter().map(|(name, value)| ExprField {
+            metadata: Metadata::default(),
+            name: no_loc(name),
+            value: value,
+        })),
         base: None,
     })
 }
 
 pub fn field_access<'ast>(
-    arena: ast::ArenaRef<'ast, String>,
+    arena: ast::ArenaRef<'_, 'ast, String>,
     expr: SpExpr<'ast>,
     field: &str,
 ) -> SpExpr<'ast> {
@@ -440,7 +436,10 @@ pub fn field_access<'ast>(
     ))
 }
 
-pub fn array<'ast>(arena: ast::ArenaRef<'ast, String>, fields: Vec<SpExpr<'ast>>) -> SpExpr<'ast> {
+pub fn array<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, String>,
+    fields: Vec<SpExpr<'ast>>,
+) -> SpExpr<'ast> {
     no_loc(Expr::Array(Array {
         typ: Type::hole(),
         exprs: arena.alloc_extend(fields),
@@ -524,7 +523,7 @@ macro_rules! test_parse {
             fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
                 f(a)
             }
-            assert_eq!(*e.expr(), call(&arena, $expected));
+            assert_eq!(*e.expr(), call(arena.borrow(), $expected));
         }
     };
 }
@@ -537,14 +536,14 @@ macro_rules! test_parse_error {
             let _ = ::env_logger::try_init();
             let text = $text;
             let result = parse(text);
-            assert!(result.is_err());
+            assert!(result.is_err(), "{:#?}", result.unwrap());
             let (expr, err) = result.unwrap_err();
             let expr = clear_span(expr.unwrap());
             mk_ast_arena!(arena);
             fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
                 f(a)
             }
-            assert_eq!(*expr.expr(), call(&arena, $expected));
+            assert_eq!(*expr.expr(), call(arena.borrow(), $expected));
 
             assert_eq!(remove_expected(err), ParseErrors::from($expected_error));
         }

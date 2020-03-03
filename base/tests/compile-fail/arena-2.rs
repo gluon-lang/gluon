@@ -17,5 +17,5 @@ fn main() {
     ));
 
     // Should fail
-    RootSpannedExpr::new(arena1.clone(), arena2_expr);
+    RootSpannedExpr::new(arena1, arena2_expr);
 }

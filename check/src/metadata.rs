@@ -182,7 +182,7 @@ pub fn metadata(
                         self.stack_var(implicit_import.value.clone(), metadata.clone());
                     }
 
-                    for field in fields {
+                    for field in &**fields {
                         if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
                             let id = match field.value {
                                 Some(ref pat) => match pat.value {
@@ -197,7 +197,7 @@ pub fn metadata(
                             self.stack_var(id.clone(), m.clone());
                         }
                     }
-                    for field in types {
+                    for field in &**types {
                         if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
                             // TODO Shouldn't need to insert this metadata twice
                             if let Some(type_field) = typ
@@ -259,7 +259,7 @@ pub fn metadata(
         }
 
         fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> MaybeMetadata {
-            for arg in &bind.args {
+            for arg in &*bind.args {
                 if let Some(type_metadata) = arg
                     .name
                     .value
@@ -289,7 +289,7 @@ pub fn metadata(
                 } => {
                     let mut module = BTreeMap::new();
 
-                    for field in exprs {
+                    for field in &**exprs {
                         let maybe_metadata = match field.value {
                             Some(ref expr) => self.metadata_expr(expr),
                             None => self.metadata(&field.name.value).into(),
@@ -301,7 +301,7 @@ pub fn metadata(
                         }
                     }
 
-                    for field in types {
+                    for field in &**types {
                         let maybe_metadata = self.metadata(&field.name.value);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
                             let name = Name::new(field.name.value.as_ref()).name().as_str();
@@ -348,7 +348,7 @@ pub fn metadata(
                     result
                 }
                 Expr::TypeBindings(ref bindings, ref expr) => {
-                    for bind in bindings {
+                    for bind in &**bindings {
                         let type_metadata = Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
                             || bind.metadata.clone(),

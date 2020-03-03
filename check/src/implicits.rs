@@ -315,17 +315,17 @@ struct Demand {
     constraint: RcType,
 }
 
-struct ResolveImplicitsVisitor<'a, 'b: 'a> {
-    tc: &'a mut Typecheck<'b>,
+struct ResolveImplicitsVisitor<'a, 'b: 'a, 'ast> {
+    tc: &'a mut Typecheck<'b, 'ast>,
 }
 
-impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
+impl<'a, 'b, 'ast> ResolveImplicitsVisitor<'a, 'b, 'ast> {
     fn resolve_implicit(
         &mut self,
         implicit_bindings: &Partition<ImplicitBinding>,
         expr: &SpannedExpr<Symbol>,
         id: &TypedIdent<Symbol, RcType>,
-    ) -> Option<SpannedExpr<Symbol>> {
+    ) -> Option<SpannedExpr<'ast, Symbol>> {
         debug!(
             "Resolving {} against:\n{}",
             id.typ,
@@ -370,6 +370,11 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                     Some(Ok(replacement)) => Some(replacement),
                     Some(Err(err)) => {
                         debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
+                        error!(
+                            "UnableToResolveImplicit {:?} {} {:#?}",
+                            id.name, id.typ, expr
+                        );
+
                         self.tc.errors.push(Spanned {
                             span: expr.span,
                             value: TypeError::UnableToResolveImplicit(err).into(),
@@ -410,7 +415,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol, RcType>],
         to_resolve: &[Demand],
-    ) -> Result<Option<SpannedExpr<Symbol>>> {
+    ) -> Result<Option<SpannedExpr<'ast, Symbol>>> {
         self.resolve_implicit_application_(implicit_bindings, level, span, path, to_resolve)
             .map_err(|mut err| {
                 if let ErrorKind::LoopInImplicitResolution(ref mut paths) = err.kind {
@@ -427,7 +432,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol, RcType>],
         to_resolve: &[Demand],
-    ) -> Result<Option<SpannedExpr<Symbol>>> {
+    ) -> Result<Option<SpannedExpr<'ast, Symbol>>> {
         let func = path[1..].iter().fold(
             pos::spanned(
                 span,
@@ -440,7 +445,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 pos::spanned(
                     expr.span,
                     Expr::Projection(
-                        Box::new(expr),
+                        self.tc.ast_arena.alloc(expr),
                         ident.name.clone(),
                         self.tc.subs.bind_arc(&ident.typ),
                     ),
@@ -482,11 +487,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             if resolved_arguments.len() == to_resolve.len() {
                 Some(pos::spanned(
                     span,
-                    Expr::App {
-                        func: Box::new(func),
-                        args: resolved_arguments,
-                        implicit_args: Vec::new(),
-                    },
+                    Expr::app(self.tc.ast_arena, func, resolved_arguments),
                 ))
             } else {
                 None
@@ -622,10 +623,10 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     }
 }
 
-impl<'a, 'b, 'c> MutVisitor<'c, '_> for ResolveImplicitsVisitor<'a, 'b> {
+impl<'a, 'b, 'c, 'ast> MutVisitor<'c, 'ast> for ResolveImplicitsVisitor<'a, 'b, 'ast> {
     type Ident = Symbol;
 
-    fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
+    fn visit_expr(&mut self, expr: &mut SpannedExpr<'ast, Symbol>) {
         let mut replacement = None;
         if let Expr::Ident(ref id) = expr.value {
             let implicit_vars = self
@@ -847,7 +848,7 @@ impl<'a> ImplicitResolver<'a> {
     }
 }
 
-pub fn resolve(tc: &mut Typecheck, expr: &mut SpannedExpr<Symbol>) {
+pub fn resolve<'ast>(tc: &mut Typecheck<'_, 'ast>, expr: &mut SpannedExpr<'ast, Symbol>) {
     let mut visitor = ResolveImplicitsVisitor { tc };
     visitor.visit_expr(expr);
 }

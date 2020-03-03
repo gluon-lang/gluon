@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 
 mod support;
@@ -17,7 +12,7 @@ fn partial_let() {
 /// Alias of `or`
 #[infix(left, 3)]
 let (<|>) : () = ()
-let a 
+let a
 {
     (<|>)
 }
