@@ -240,7 +240,7 @@ where
 
         // apply all generic parameters to the type
         let mut vec = AppVec::new();
-        vec.push(T::make_type(thread));
+        AppVec::push(&mut vec, T::make_type(thread));
         Type::app(ty, vec)
     }
 }

@@ -27,7 +27,7 @@ where
     match s.parse() {
         Ok(b) => Type::Builtin(b),
         Err(()) if s.starts_with(char::is_lowercase) => Type::Generic(Generic::new(s, Kind::typ())),
-        Err(()) => Type::App(Type::ident(s), args.into_iter().collect()),
+        Err(()) => Type::App(Type::ident(KindedIdent::new(s)), args.into_iter().collect()),
     }
 }
 
@@ -261,8 +261,11 @@ fn show_record_multi_line_nested() {
 #[test]
 fn show_variant() {
     let typ: ArcType<&str> = Type::variant(vec![
-        Field::new("A", Type::function(vec![Type::int()], Type::ident("A"))),
-        Field::new("B", Type::ident("A")),
+        Field::new(
+            "A",
+            Type::function(vec![Type::int()], Type::ident(KindedIdent::new("A"))),
+        ),
+        Field::new("B", Type::ident(KindedIdent::new("A"))),
     ]);
     assert_eq_display!(format!("{}", typ), "| A Int\n| B");
 }
@@ -278,7 +281,7 @@ fn show_kind() {
 #[test]
 fn show_polymorphic_record() {
     let fields = vec![Field::new("x", Type::string())];
-    let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident("r"));
+    let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident(KindedIdent::new("r")));
     assert_eq_display!(format!("{}", typ), "{ x : String | r }");
 }
 
@@ -289,10 +292,11 @@ fn show_polymorphic_record_associated_type() {
         Alias::new(
             "Test",
             vec![Generic::new("a", Kind::typ())],
-            Type::ident("a"),
+            Type::ident(KindedIdent::new("a")),
         ),
     )];
-    let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
+    let typ: ArcType<&str> =
+        Type::poly_record(type_fields, vec![], Type::ident(KindedIdent::new("r")));
     assert_eq_display!(format!("{}", typ), "{ Test a = a | r }");
 }
 

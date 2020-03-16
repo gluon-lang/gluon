@@ -9,12 +9,21 @@ use std::{
 
 use {either::Either, itertools::Itertools, ordered_float::NotNan};
 
-use crate::metadata::{Comment, Metadata};
-use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
-use crate::resolve::remove_aliases_cow;
-use crate::symbol::Symbol;
-use crate::types::{
-    self, Alias, AliasData, ArcType, ArgType, Flags, NullInterner, Type, TypeEnv, TypeExt,
+#[cfg(feature = "serde")]
+use crate::{
+    serde::de::DeserializeState,
+    serialization::{SeSeed, Seed},
+};
+
+use crate::{
+    kind::ArcKind,
+    metadata::{Comment, Metadata},
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    resolve::remove_aliases_cow,
+    symbol::Symbol,
+    types::{
+        self, Alias, AliasData, ArcType, ArgType, NullInterner, Type, TypeEnv, TypeExt, TypePtr,
+    },
 };
 
 pub trait DisplayEnv {
@@ -64,79 +73,45 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-struct InnerAstType<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct InnerAstType<'ast, Id> {
     metadata: Option<Metadata>,
-    typ: Spanned<Type<Id, AstType<Id>>, BytePos>,
+    typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct AstType<Id> {
-    _typ: Box<InnerAstType<Id>>,
+#[derive(Eq, PartialEq, Debug)]
+pub struct AstType<'ast, Id> {
+    _typ: &'ast mut InnerAstType<'ast, Id>,
 }
 
-impl<Id> Deref for AstType<Id> {
-    type Target = Type<Id, AstType<Id>>;
+impl<'ast, Id> Deref for AstType<'ast, Id> {
+    type Target = Type<Id, AstType<'ast, Id>>;
 
     fn deref(&self) -> &Self::Target {
         &self._typ.typ.value
     }
 }
 
-impl<Id> DerefMut for AstType<Id> {
+impl<'ast, Id> DerefMut for AstType<'ast, Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self._typ.typ.value
     }
 }
 
-impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
+impl<Id: AsRef<str>> fmt::Display for AstType<'_, Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", types::TypeFormatter::new(self))
     }
 }
 
-impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
-    fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
-        AstType {
-            _typ: Box::new(InnerAstType {
-                metadata: None,
-                typ,
-            }),
-        }
-    }
-}
-
-impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
-    fn from(typ: Type<Id, AstType<Id>>) -> Self {
-        Self::from(pos::spanned2(0.into(), 0.into(), typ))
-    }
-}
-
-impl<Id> From<(Type<Id, AstType<Id>>, Flags)> for AstType<Id> {
-    fn from((typ, _): (Type<Id, AstType<Id>>, Flags)) -> AstType<Id> {
-        Self::from(typ)
-    }
-}
-
-impl<Id> HasSpan for AstType<Id> {
+impl<Id> HasSpan for AstType<'_, Id> {
     fn span(&self) -> Span<BytePos> {
         self._typ.typ.span
     }
 }
 
-impl<Id> TypeExt for AstType<Id>
-where
-    Id: Clone,
-{
+impl<Id> TypePtr for AstType<'_, Id> {
     type Id = Id;
-
-    fn new(typ: Type<Id, Self>) -> Self {
-        Self::from(typ)
-    }
-
-    fn strong_count(_typ: &Self) -> usize {
-        1
-    }
 }
 
 pub trait HasMetadata {
@@ -148,19 +123,39 @@ pub trait HasMetadata {
     }
 }
 
-impl<Id> HasMetadata for AstType<Id> {
+impl<Id> HasMetadata for AstType<'_, Id> {
     fn metadata(&self) -> Option<&Metadata> {
         self._typ.metadata.as_ref()
     }
 }
 
-impl<Id> AstType<Id> {
-    pub fn with_metadata<T>(metadata: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
+impl<'ast, Id> AstType<'ast, Id> {
+    pub fn new(
+        arena: ArenaRef<'_, 'ast, Id>,
+        typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
+    ) -> Self {
+        AstType {
+            _typ: arena.alloc(InnerAstType {
+                metadata: None,
+                typ,
+            }),
+        }
+    }
+
+    pub fn new_no_loc(arena: ArenaRef<'_, 'ast, Id>, typ: Type<Id, AstType<'ast, Id>>) -> Self {
+        Self::new(arena, pos::spanned2(0.into(), 0.into(), typ))
+    }
+
+    pub fn with_metadata<T>(
+        arena: ArenaRef<'_, 'ast, Id>,
+        metadata: T,
+        typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
+    ) -> Self
     where
         T: Into<Option<Metadata>>,
     {
         AstType {
-            _typ: Box::new(InnerAstType {
+            _typ: arena.alloc(InnerAstType {
                 metadata: metadata.into(),
                 typ,
             }),
@@ -174,11 +169,7 @@ impl<Id> AstType<Id> {
         self._typ.metadata = metadata.into();
     }
 
-    pub fn into_inner(self) -> Type<Id, Self> {
-        self._typ.typ.value
-    }
-
-    pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {
+    pub fn remove_single_forall(&mut self) -> &mut AstType<'ast, Id> {
         match self._typ.typ.value {
             Type::Forall(_, ref mut typ) => typ,
             _ => self,
@@ -186,25 +177,48 @@ impl<Id> AstType<Id> {
     }
 }
 
-impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
-    fn as_mut(&mut self) -> &mut SpannedAstType<Id> {
+impl<'ast, Id> AsMut<SpannedAstType<'ast, Id>> for AstType<'ast, Id> {
+    fn as_mut(&mut self) -> &mut SpannedAstType<'ast, Id> {
         &mut self._typ.typ
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Default)]
+pub type KindedIdent<Id> = TypedIdent<Id, ArcKind>;
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(de_parameters = "U", deserialize_state = "Seed<Id, U>")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(bound(deserialize = "
+           T: DeserializeState<'de, Seed<Id, U>>,
+           U: Clone
+                + From<Type<Id, U>>
+                + std::any::Any
+                + DeserializeState<'de, Seed<Id, U>>,
+           Id: DeserializeState<'de, Seed<Id, U>>
+                + Clone
+                + std::any::Any
+                + DeserializeState<'de, Seed<Id, U>>"))
+)]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
 }
 
-impl<Id> TypedIdent<Id> {
-    pub fn new(name: Id) -> TypedIdent<Id>
-    where
-        Id: PartialEq,
-    {
+impl<Id, T> TypedIdent<Id, T>
+where
+    T: Default,
+{
+    pub fn new(name: Id) -> TypedIdent<Id, T> {
         TypedIdent {
-            typ: Type::hole(),
+            typ: T::default(),
             name,
         }
     }
@@ -298,9 +312,9 @@ pub type SpannedExpr<'ast, Id> = Spanned<Expr<'ast, Id>, BytePos>;
 
 pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
-pub type SpannedAlias<Id> = Spanned<AliasData<Id, AstType<Id>>, BytePos>;
+pub type SpannedAlias<'ast, Id> = Spanned<AliasData<Id, AstType<'ast, Id>>, BytePos>;
 
-pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
+pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos>;
 
 #[derive(Eq, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
@@ -369,7 +383,10 @@ pub enum Expr<'ast, Id> {
     /// Declare a series of value bindings
     LetBindings(ValueBindings<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>),
     /// Declare a series of type aliases
-    TypeBindings(&'ast mut [TypeBinding<Id>], &'ast mut SpannedExpr<'ast, Id>),
+    TypeBindings(
+        &'ast mut [TypeBinding<'ast, Id>],
+        &'ast mut SpannedExpr<'ast, Id>,
+    ),
     /// A group of sequenced expressions
     Block(&'ast mut [SpannedExpr<'ast, Id>]),
     Do(&'ast mut Do<'ast, Id>),
@@ -496,15 +513,15 @@ impl<'ast, Id> Expr<'ast, Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct TypeBinding<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct TypeBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
-    pub alias: SpannedAlias<Id>,
+    pub alias: SpannedAlias<'ast, Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
 
-impl<Id> TypeBinding<Id> {
+impl<Id> TypeBinding<'_, Id> {
     pub fn span(&self) -> Span<BytePos> {
         Span::new(self.name.span.start(), self.alias.span.end())
     }
@@ -589,7 +606,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
 pub struct ValueBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: SpannedPattern<'ast, Id>,
-    pub typ: Option<AstType<Id>>,
+    pub typ: Option<AstType<'ast, Id>>,
     pub resolved_type: ArcType<Id>,
     pub args: &'ast mut [Argument<SpannedIdent<Id>>],
     pub expr: SpannedExpr<'ast, Id>,
@@ -642,19 +659,19 @@ pub trait $trait_name<'a, 'ast> {
         self.visit_typ(&$($mut)* id.typ)
     }
 
-    fn visit_alias(&mut self, alias: &'a $($mut)* SpannedAlias<Self::Ident>) {
+    fn visit_alias(&mut self, alias: &'a $($mut)* SpannedAlias<'ast, Self::Ident>) {
         walk_alias(self, alias)
     }
     fn visit_spanned_ident(&mut self, _: &'a $($mut)* Spanned<Self::Ident, BytePos>) {}
     fn visit_typ(&mut self, _: &'a $($mut)* ArcType<Self::Ident>) {}
-    fn visit_ast_type(&mut self, s: &'a $($mut)* SpannedAstType<Self::Ident>) {
+    fn visit_ast_type(&mut self, s: &'a $($mut)* SpannedAstType<'ast, Self::Ident>) {
         walk_ast_type(self, s);
     }
 }
 
 pub fn walk_alias<'a, 'ast, V>(
     v: &mut V,
-    alias: &'a $($mut)* SpannedAlias<V::Ident>,
+    alias: &'a $($mut)* SpannedAlias<'ast, V::Ident>,
 )
     where V: ?Sized + $trait_name<'a, 'ast>,
 {
@@ -846,7 +863,7 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
 
 pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
     v: &mut V,
-    s: &'a $($mut)* SpannedAstType<V::Ident>,
+    s: &'a $($mut)* SpannedAstType<'ast, V::Ident>,
 ) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
@@ -1175,11 +1192,12 @@ impl_ast_arena! {
     PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
     ExprField<Id, ArcType<Id>> => expr_field_types,
     ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
-    TypeBinding<Id> => type_bindings,
+    TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     Do<'ast, Id> => do_exprs,
     Alternative<'ast, Id> => alts,
     Argument<SpannedIdent<Id>> => args,
+    InnerAstType<'ast, Id> => types,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

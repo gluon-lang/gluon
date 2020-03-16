@@ -23,7 +23,7 @@ use crate::base::{
     },
     filename_to_module,
     fnv::{FnvMap, FnvSet},
-    kind::{ArcKind, Kind},
+    kind::ArcKind,
     metadata::Metadata,
     pos::{self, BytePos, HasSpan, Span, Spanned},
     resolve,
@@ -321,7 +321,7 @@ enum Variant<'a, 'ast> {
     Pattern(&'a SpannedPattern<'ast, Symbol>),
     Ident(&'a SpannedIdent<Symbol>),
     FieldIdent(&'a Spanned<Symbol, BytePos>, &'a ArcType),
-    Type(&'a AstType<Symbol>),
+    Type(&'a AstType<'ast, Symbol>),
     Expr(&'a SpannedExpr<'ast, Symbol>),
 }
 
@@ -705,7 +705,7 @@ where
         }
     }
 
-    fn visit_ast_type(&mut self, typ: &'a AstType<Symbol>) {
+    fn visit_ast_type(&mut self, typ: &'a AstType<'ast, Symbol>) {
         match **typ {
             // ExtendRow do not have spans set properly so recurse unconditionally
             Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => (),
@@ -714,7 +714,7 @@ where
         }
         match **typ {
             Type::Ident(ref id) => {
-                self.found = MatchState::Found(Match::Type(typ.span(), id, Kind::hole()));
+                self.found = MatchState::Found(Match::Type(typ.span(), &id.name, id.typ.clone()));
             }
 
             Type::Builtin(ref builtin) => {
@@ -747,7 +747,7 @@ where
 
             _ => walk_type_(
                 typ,
-                &mut ControlVisitation(|typ: &'a AstType<Symbol>| self.visit_ast_type(typ)),
+                &mut ControlVisitation(|typ: &'a AstType<'ast, Symbol>| self.visit_ast_type(typ)),
             ),
         }
     }
@@ -995,7 +995,7 @@ pub enum CompletionSymbolContent<'a, 'ast> {
         expr: &'a SpannedExpr<'ast, Symbol>,
     },
     Type {
-        alias: &'a AliasData<Symbol, AstType<Symbol>>,
+        alias: &'a AliasData<Symbol, AstType<'ast, Symbol>>,
     },
 }
 

@@ -1,11 +1,11 @@
 use crate::itertools::{Either, Itertools};
 
 use crate::base::{
-    ast::{self, Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
+    ast::{self, Alternative, Argument, Array, AstType, Do, Expr, ExprField, KindedIdent, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
     kind::{ArcKind, Kind},
     pos::{self, BytePos, HasSpan, Spanned},
-    types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache},
+    types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache, TypeContext},
     metadata::{Attribute, Metadata, Comment},
 };
 
@@ -296,28 +296,30 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
-RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
+RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> = {
     <metadata: Metadata?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
-            Alias::from(AliasData::new(
+            Alias::new_with(
+                &mut arena.clone(),
                 id.value,
                 args.into_iter()
                     .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                     .collect(),
-                AstType::with_metadata(metadata, alias),
-            )),
+                AstType::with_metadata(arena, metadata, alias),
+            ),
         ))
     },
     <metadata: Metadata?> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
-            Alias::new(
+            Alias::new_with(
+                &mut arena.clone(),
                 id.value,
                 Vec::new(),
-                AstType::with_metadata(metadata, pos::spanned(span, Type::Hole)),
+                AstType::with_metadata(arena, metadata, pos::spanned(span, Type::Hole)),
             ),
         ))
     },
@@ -328,27 +330,28 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
             });
             Either::Left(Field::new(
                 id.clone(),
-                Alias::new(
+                Alias::new_with(
+                    &mut arena.clone(),
                     id,
                     Vec::new(),
-                    AstType::with_metadata(metadata, typ),
+                    AstType::with_metadata(arena, metadata, typ),
                 ),
             ))
         } else {
             Either::Right(Field::new(
                 id,
-                AstType::with_metadata(metadata, typ),
+                AstType::with_metadata(arena, metadata, typ),
             ))
         }
     },
 };
 
-VariantField: Variant<Id> = {
+VariantField: Variant<'ast, Id> = {
     "|" <CtorIdent> <AtomicType*> => Variant::Simple(<>),
     "|" <CtorIdent> ":" <Type> => Variant::Gadt(<>)
 };
 
-VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
+VariantType: (Vec<Id>, Vec<Variant<'ast, Id>>, Option<AstType<'ast, Id>>) = {
 
     <row: VariantField+> <rest: (".." <AtomicType>)?> => {
         (Vec::new(), row, rest)
@@ -360,18 +363,21 @@ VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
     }
 };
 
-TypeTop: Either<AstType<Id>, Spanned<(Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>), BytePos>> = {
+TypeTop: Either<AstType<'ast, Id>, Spanned<(Vec<Id>, Vec<Variant<'ast, Id>>, Option<AstType<'ast, Id>>), BytePos>> = {
     Type => Either::Left(<>),
     <rest: Sp<(".." <AtomicType>)>> => {
         let Spanned { span, value: rest } = rest;
         Either::Left(
-            pos::spanned(span, Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())).into()
+            AstType::new(
+                arena,
+                pos::spanned(span, Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }))))
+            ),
         )
     },
     <Sp<VariantType>> => Either::Right(<>),
 };
 
-TypeBinding: TypeBinding<Id> = {
+TypeBinding: TypeBinding<'ast, Id> = {
     <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
         if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
@@ -382,7 +388,7 @@ TypeBinding: TypeBinding<Id> = {
         let body = match body {
             Either::Left(body) => body,
             Either::Right(Spanned { span, value: (forall_params, variants, rest) }) => {
-                let rest: AstType<_> = rest.unwrap_or_else(|| pos::spanned(span, Type::EmptyRow).into());
+                let rest: AstType<_> = rest.unwrap_or_else(|| AstType::new(arena, pos::spanned(span, Type::EmptyRow)));
                 let row = if variants.is_empty() {
                     rest
                 } else {
@@ -400,21 +406,21 @@ TypeBinding: TypeBinding<Id> = {
                             }
                             Variant::Simple(name, types) => Field::new(
                                 name,
-                                Type::function_type(
+                                arena.clone().function_type(
                                     ArgType::Constructor,
                                     types,
-                                    Type::opaque(),
+                                    arena.clone().opaque(),
                                 )
                             ),
                         })
                         .collect();
-                    AstType::from(pos::spanned(span, Type::ExtendRow { fields, rest }))
+                    AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields, rest }))
                 };
 
-                AstType::from(Type::forall(
+                arena.clone().forall(
                     forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole())).collect(),
-                    AstType::from(pos::spanned(span, Type::Variant(row)))
-                ))
+                    AstType::new(arena, pos::spanned(span, Type::Variant(row)))
+                )
             }
         };
 
@@ -427,11 +433,11 @@ TypeBinding: TypeBinding<Id> = {
     },
 };
 
-Effect: Field<Id, AstType<Id>> = {
+Effect: Field<Id, AstType<'ast, Id>> = {
     <name: Ident> ":" <typ: Type> => Field { <> }
 };
 
-AtomicType_: Type<Id, AstType<Id>> = {
+AtomicType_: Type<Id, AstType<'ast, Id>> = {
     "(" "->" ")" =>
         Type::Builtin(BuiltinType::Function),
 
@@ -443,7 +449,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
                 match BuiltinType::from_str(last) {
                     Ok(ty) => Type::Builtin(ty),
                     Err(_) if last.starts_with(char::is_uppercase) => {
-                        Type::Ident(env.from_str(last))
+                        Type::Ident(KindedIdent { name: env.from_str(last), typ: type_cache.kind_cache.hole() })
                     }
                     Err(_) => {
                         Type::Generic(Generic::new(env.from_str(last), type_cache.kind_cache.hole()))
@@ -462,34 +468,34 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
     "(" <rest: Sp<(".." <AtomicType>)>> ")" => {
         let Spanned { span, value: rest } = rest;
-        Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())
+        Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest })))
     },
 
 
     "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
-        let rest = rest.unwrap_or_else(Type::empty_row);
-        Type::Effect(Type::extend_row(fields, rest))
+        let rest = rest.unwrap_or_else(|| arena.clone().empty_row());
+        Type::Effect(arena.clone().extend_row(fields, rest))
     },
 
     "(" <elems: Comma<Type>> ")" =>
         match elems.len() {
             // Parenthesized type
-            1 => elems.into_iter().next().unwrap().into_inner(),
-            _ => Type::tuple_(env, elems),
+            1 => mem::take(&mut *elems.into_iter().next().unwrap()), // TODO Avoid mem take
+            _ => arena.clone().tuple_(env, elems),
         },
 
     "{" <row: Comma<RecordField>> <rest: ("|" <Type>)?> "}" => {
         let (types, fields) = row.into_iter().partition_map(|x| x);
-        Type::Record(Type::extend_full_row(
+        Type::Record(arena.clone().extend_full_row(
             types,
             fields,
-            rest.unwrap_or_else(Type::empty_row),
+            rest.unwrap_or_else(|| arena.clone().empty_row()),
         ))
     },
 };
 
-AtomicType : AstType<Id> = {
-    <typ: Sp<AtomicType_>> => AstType::from(typ),
+AtomicType: AstType<'ast, Id> = {
+    <typ: Sp<AtomicType_>> => AstType::new(arena, typ),
 };
 
 AppType_ = {
@@ -499,8 +505,8 @@ AppType_ = {
         Type::App(ty, args.into_iter().collect()),
 };
 
-AppType : AstType<Id> = {
-    <typ: Sp<AppType_>> => AstType::from(typ),
+AppType: AstType<'ast, Id> = {
+    <typ: Sp<AppType_>> => AstType::new(arena, typ),
 };
 
 Type_ = {
@@ -519,14 +525,14 @@ Type_ = {
         )
 };
 
-Type: AstType<Id> = {
-    <typ: Sp<Type_>> => AstType::from(typ),
+Type: AstType<'ast, Id> = {
+    <typ: Sp<Type_>> => AstType::new(arena, typ),
 };
 
-ArgType: (ArgType, AstType<Id>) = {
+ArgType: (ArgType, AstType<'ast, Id>) = {
     <AppType> => (ArgType::Explicit, <>),
     <l: @L> "[" <typ: Type_> "]" <r: @R> =>
-        (ArgType::Implicit, AstType::from(pos::spanned2(l, r, typ))),
+        (ArgType::Implicit, AstType::new(arena, pos::spanned2(l, r, typ))),
 };
 
 // Patterns

@@ -9,7 +9,7 @@ use crate::base::{
     metadata::{Metadata, MetadataEnv},
     pos::{BytePos, Spanned},
     symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
-    types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+    types::{self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv},
 };
 
 use crate::check::{
@@ -61,7 +61,7 @@ impl MockEnv {
         let mut interner = interner.borrow_mut();
 
         let bool_sym = interner.simple_symbol("Bool");
-        let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+        let bool_ty = Type::app(Type::ident(KindedIdent::new(bool_sym.clone())), collect![]);
 
         MockEnv {
             bool: Alias::new(bool_sym, Vec::new(), bool_ty),
@@ -129,9 +129,12 @@ where
         }
         Err(()) => {
             if args.is_empty() {
-                Type::ident(intern(s))
+                Type::ident(KindedIdent::new(intern(s)))
             } else {
-                Type::app(Type::ident(intern(s)), args.into_iter().collect())
+                Type::app(
+                    Type::ident(KindedIdent::new(intern(s))),
+                    args.into_iter().collect(),
+                )
             }
         }
     }

@@ -354,7 +354,10 @@ impl<'a> KindCheck<'a> {
 
             Type::EmptyRow => Ok(self.row_kind()),
 
-            Type::Ident(ref id) => self.find(span, id),
+            Type::Ident(ref mut id) => {
+                id.typ = self.find(span, &id.name)?;
+                Ok(id.typ.clone())
+            }
 
             Type::Projection(ref ids) => Ok(self
                 .find_projection(ids)
@@ -410,24 +413,6 @@ impl<'a> KindCheck<'a> {
         });
     }
     fn finalize_type_(&mut self, typ: &mut AstType<Symbol>) {
-        if let Type::Ident(_) = **typ {
-            let id = match **typ {
-                Type::Ident(ref id) => id.clone(),
-                _ => unreachable!(),
-            };
-            if let Ok(kind) = self.find(typ.span(), &id) {
-                // HACK Use a "generic" type as the rhs of the alias to make the type have the
-                // correct kind
-                **typ = Type::<_, AstType<_>>::alias(
-                    id.clone(),
-                    Vec::new(),
-                    Type::generic(Generic::new(id, kind)),
-                )
-                .into_inner();
-            }
-            return;
-        }
-
         match &mut **typ {
             Type::ExtendTypeRow { types, .. } => types.iter_mut().for_each(|field| {
                 if let Some(alias) = field.typ.try_get_alias_mut() {
@@ -452,6 +437,9 @@ impl<'a> KindCheck<'a> {
                 for param in params {
                     *param = self.finalize_generic(&param);
                 }
+            }
+            Type::Ident(id) => {
+                id.typ = update_kind(&self.subs, id.typ.clone(), Some(&self.kind_cache.typ));
             }
             _ => (),
         }

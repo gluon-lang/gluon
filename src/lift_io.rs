@@ -10,7 +10,7 @@ use {
         },
         pos::{self, BytePos, Span},
         symbol::{Symbol, SymbolData, Symbols},
-        types::{self, ArcType, Type, TypeExt},
+        types::{self, ArcType, Type, TypeContext, TypeExt},
     },
     check::check_signature,
     vm::{
@@ -135,7 +135,7 @@ impl Macro for LiftIo {
 }
 
 fn lift_action<'ast>(
-    arena: ast::ArenaRef<'_, 'ast, Symbol>,
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     lift: SpannedExpr<'ast, Symbol>,
     action: SpannedExpr<'ast, Symbol>,
@@ -152,7 +152,7 @@ fn lift_action<'ast>(
                 TypedIdent::new(symbols.simple_symbol(format!("x{}", i))),
             ))
         }));
-        let translate_type = |t| types::translate_type(&mut types::NullInterner::default(), t);
+        let translate_type = move |t| types::translate_type(&mut arena, t);
         // If there are any implicit arguments we need to forward them to the lambda so implicits
         // get resolved correctly
         let typ: AstType<_> = {
@@ -163,9 +163,11 @@ fn lift_action<'ast>(
             let mut iter = iter.typ.arg_iter();
             let args: Vec<_> = iter.by_ref().map(translate_type).collect();
 
-            Type::forall(
+            arena.clone().forall(
                 forall_params,
-                Type::function_implicit(implicit_args, Type::function(args, Type::hole())),
+                arena
+                    .clone()
+                    .function_implicit(implicit_args, arena.clone().function(args, arena.hole())),
             )
         };
 

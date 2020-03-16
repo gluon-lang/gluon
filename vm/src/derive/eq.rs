@@ -1,11 +1,11 @@
 use crate::base::{
     ast::{
-        self, Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+        self, Alternative, Argument, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
         ValueBinding,
     },
     pos,
     symbol::{Symbol, Symbols},
-    types::{ctor_args, remove_forall, row_iter, Type},
+    types::{ctor_args, remove_forall, row_iter, Type, TypeContext},
 };
 
 use crate::macros::Error;
@@ -13,9 +13,9 @@ use crate::macros::Error;
 use crate::derive::*;
 
 pub fn generate<'ast>(
-    arena: ast::ArenaRef<'_, 'ast, Symbol>,
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
-    bind: &TypeBinding<Symbol>,
+    bind: &TypeBinding<'ast, Symbol>,
 ) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
@@ -173,16 +173,10 @@ pub fn generate<'ast>(
         _ => return Err(Error::message("Unable to derive eq for this type")),
     };
 
-    let self_type: AstType<_> = Type::app(
-        Type::ident(bind.alias.value.name.clone()),
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(Type::generic)
-            .collect(),
-    );
+    let mut self_type = {
+        let mut arena = arena;
+        move || bind.alias.value.self_type(&mut arena)
+    };
 
     let eq_record_expr =
         Expr::rec_let_bindings(
@@ -194,10 +188,11 @@ pub fn generate<'ast>(
                 })),
                 expr: pos::spanned(span, comparison_expr),
                 metadata: Default::default(),
-                typ: Some(Type::function(
-                    vec![self_type.clone(), self_type.clone()],
-                    Type::hole(),
-                )),
+                typ: Some(
+                    arena
+                        .clone()
+                        .function(vec![self_type(), self_type()], arena.hole()),
+                ),
                 resolved_type: Type::hole(),
             }],
             pos::spanned(
@@ -226,7 +221,7 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: pos::spanned(span, eq_record_expr),
         metadata: Default::default(),
-        typ: Some(binding_type(symbols, "Eq", self_type, bind)),
+        typ: Some(binding_type(arena, symbols, "Eq", self_type(), bind)),
         resolved_type: Type::hole(),
     })
 }

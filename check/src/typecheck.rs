@@ -10,9 +10,9 @@ use std::{
 
 use crate::base::{
     ast::{
-        self, Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern,
-        PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
-        ValueBinding, ValueBindings,
+        self, Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, KindedIdent, Literal, MutVisitor,
+        Pattern, PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed,
+        TypedIdent, ValueBinding, ValueBindings,
     },
     error::Errors,
     fnv::{FnvMap, FnvSet},
@@ -25,7 +25,7 @@ use crate::base::{
     symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Flags, Generic, PrimitiveEnv, Type,
-        TypeCache, TypeContext, TypeEnv, TypeExt, Walker,
+        TypeCache, TypeContext, TypeEnv, TypeExt, TypePtr, Walker,
     },
 };
 
@@ -314,7 +314,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                         Type::Function(ArgType::Constructor, arg, ret) => {
                             Some(Type::function(Some(arg.clone()), ret.clone()))
                         }
-                        Type::Ident(id) if canonical_alias.name == *id => Some(a.clone()),
+                        Type::Ident(id) if canonical_alias.name == id.name => Some(a.clone()),
                         Type::Opaque => Some(variant_type.clone()),
                         _ => None,
                     });
@@ -1801,7 +1801,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         match **ast_type {
             // Undo the hack in kindchecking that inserts a dummy alias wrapping a generic
             Type::Alias(ref alias) => match **alias.unresolved_type() {
-                Type::Generic(ref gen) if gen.id == alias.name => self.ident(alias.name.clone()),
+                Type::Generic(ref gen) if gen.id == alias.name => self.ident(KindedIdent {
+                    name: alias.name.clone(),
+                    typ: alias.kind(&self.kind_cache).into_owned(),
+                }),
                 _ => types::translate_type_with(self, ast_type, |self_, typ| {
                     self_.translate_ast_type(typ)
                 }),
@@ -2187,7 +2190,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         }
     }
 
-    fn check_type_binding(&mut self, alias_name: &Symbol, typ: &AstType<Symbol>) {
+    fn check_type_binding(&mut self, alias_name: &Symbol, typ: &AstType<'_, Symbol>) {
         use crate::base::pos::HasSpan;
         match &**typ {
             Type::Generic(id) => {
@@ -2201,7 +2204,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 for field in types::row_iter(row) {
                     let spine = ctor_return_type(&field.typ).spine();
                     match &**spine {
-                        Type::Ident(id) if id == alias_name => (),
+                        Type::Ident(id) if id.name == *alias_name => (),
                         Type::Opaque => (),
                         _ => {
                             let actual = self.translate_ast_type(spine);
@@ -2230,11 +2233,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                         .type_variables
                         .extend(params.iter().map(|gen| (gen.id.clone(), type_cache.hole())));
                 }
-                types::walk_move_type_opt(
+                types::walk_type_(
                     typ,
-                    &mut types::ControlVisitation(|typ: &AstType<_>| {
-                        self.check_type_binding(alias_name, typ);
-                        None
+                    &mut types::ControlVisitation(|typ: &AstType<'_, _>| {
+                        self.check_type_binding(alias_name, typ)
                     }),
                 );
             }
@@ -2450,7 +2452,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             Type::Ident(ref id) => {
                 // Substitute the Id by its alias if possible
                 self.environment
-                    .find_type_info(id)
+                    .find_type_info(&id.name)
                     .map(|alias| alias.clone().into_type())
             }
 

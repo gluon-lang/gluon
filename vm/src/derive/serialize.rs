@@ -1,11 +1,11 @@
 use crate::base::{
     ast::{
-        self, Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+        self, Alternative, Argument, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
         ValueBinding,
     },
     pos,
     symbol::{Symbol, Symbols},
-    types::{ctor_args, remove_forall, row_iter, Type},
+    types::{ctor_args, remove_forall, row_iter, Type, TypeContext},
 };
 
 use crate::macros::Error;
@@ -13,26 +13,20 @@ use crate::macros::Error;
 use crate::derive::*;
 
 pub fn generate<'ast>(
-    arena: ast::ArenaRef<'_, 'ast, Symbol>,
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
-    bind: &TypeBinding<Symbol>,
+    bind: &TypeBinding<'ast, Symbol>,
 ) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
     let x = Symbol::from("x");
 
-    let serialize_fn = TypedIdent::new(symbols.simple_symbol("serialize"));
+    let serialize_fn = symbols.simple_symbol("serialize");
 
-    let self_type: AstType<_> = Type::app(
-        Type::ident(bind.alias.value.name.clone()),
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(Type::generic)
-            .collect(),
-    );
+    let mut self_type = {
+        let mut arena = arena;
+        move || bind.alias.value.self_type(&mut arena)
+    };
 
     let serializer_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Record(ref row) => {
@@ -74,7 +68,7 @@ pub fn generate<'ast>(
                 &mut |symbol| {
                     arena.app(
                         span,
-                        serialize_fn.name.clone(),
+                        serialize_fn.clone(),
                         Some(ident(span, symbol.clone())),
                     )
                 },
@@ -109,7 +103,7 @@ pub fn generate<'ast>(
                         if pattern_args.is_empty() {
                             arena.app(
                                 span,
-                                serialize_fn.name.clone(),
+                                serialize_fn.clone(),
                                 vec![pos::spanned(
                                     span,
                                     Expr::Tuple {
@@ -122,7 +116,7 @@ pub fn generate<'ast>(
                             let arg = &pattern_args[0];
                             arena.app(
                                 span,
-                                serialize_fn.name.clone(),
+                                serialize_fn.clone(),
                                 vec![ident(span, arg.name.clone())],
                             )
                         }
@@ -184,7 +178,7 @@ pub fn generate<'ast>(
         )))),
         expr: serializer_expr,
         metadata: Default::default(),
-        typ: Some(Type::function(Some(self_type.clone()), Type::hole())),
+        typ: Some(arena.clone().function(Some(self_type()), arena.hole())),
         resolved_type: Type::hole(),
     };
 
@@ -228,7 +222,7 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: serializer_record_expr,
         metadata: Default::default(),
-        typ: Some(binding_type(symbols, "Serialize", self_type, bind)),
+        typ: Some(binding_type(arena, symbols, "Serialize", self_type(), bind)),
         resolved_type: Type::hole(),
     })
 }

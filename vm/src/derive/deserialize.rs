@@ -1,8 +1,8 @@
 use crate::base::{
-    ast::{self, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
+    ast::{self, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
     pos,
     symbol::{Symbol, Symbols},
-    types::{remove_forall, row_iter, Type},
+    types::{remove_forall, row_iter, KindedIdent, Type, TypeContext},
 };
 
 use crate::macros::Error;
@@ -10,9 +10,9 @@ use crate::macros::Error;
 use crate::derive::*;
 
 pub fn generate<'ast>(
-    arena: ast::ArenaRef<'_, 'ast, Symbol>,
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
-    bind: &TypeBinding<Symbol>,
+    bind: &TypeBinding<'ast, Symbol>,
 ) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
@@ -24,16 +24,10 @@ pub fn generate<'ast>(
         move || ident(span, id.clone())
     };
 
-    let self_type: AstType<_> = Type::app(
-        Type::ident(bind.alias.value.name.clone()),
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(Type::generic)
-            .collect(),
-    );
+    let mut self_type = {
+        let mut arena = arena;
+        move || bind.alias.value.self_type(&mut arena)
+    };
 
     let deserializer_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Record(ref row) => {
@@ -107,9 +101,10 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: deserializer_expr,
         metadata: Default::default(),
-        typ: Some(Type::app(
-            Type::ident(symbols.simple_symbol("ValueDeserializer")),
-            collect![self_type.clone()],
+        typ: Some(TypeContext::app(
+            &mut arena.clone(),
+            arena.ident(KindedIdent::new(symbols.simple_symbol("ValueDeserializer"))),
+            collect![self_type()],
         )),
         resolved_type: Type::hole(),
     };
@@ -152,7 +147,13 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: deserializer_record_expr,
         metadata: Default::default(),
-        typ: Some(binding_type(symbols, "Deserialize", self_type, bind)),
+        typ: Some(binding_type(
+            arena,
+            symbols,
+            "Deserialize",
+            self_type(),
+            bind,
+        )),
         resolved_type: Type::hole(),
     })
 }

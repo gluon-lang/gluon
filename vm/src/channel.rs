@@ -15,7 +15,10 @@ use futures::{
     try_join,
 };
 
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    kind::Kind,
+    types::{ArcType, KindedIdent, Type},
+};
 
 use crate::{
     api::{
@@ -99,13 +102,21 @@ where
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm
-            .get_env()
+        let env = vm.get_env();
+        let symbol = env
             .find_type_info("std.channel.Sender")
             .unwrap()
             .name
             .clone();
-        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
+
+        let k = vm.global_env().type_cache().kind_cache.typ();
+        Type::app(
+            Type::ident(KindedIdent {
+                name: symbol,
+                typ: Kind::function(k.clone(), k),
+            }),
+            collect![T::make_type(vm)],
+        )
     }
 }
 
@@ -121,7 +132,14 @@ where
             .unwrap()
             .name
             .clone();
-        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
+        let k = vm.global_env().type_cache().kind_cache.typ();
+        Type::app(
+            Type::ident(KindedIdent {
+                name: symbol,
+                typ: Kind::function(k.clone(), k),
+            }),
+            collect![T::make_type(vm)],
+        )
     }
 }
 

@@ -14,8 +14,6 @@ use std::{
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
-use smallvec::SmallVec;
-
 use itertools::Itertools;
 
 use crate::{
@@ -40,6 +38,7 @@ pub use self::{
     flags::Flags,
     pretty_print::{Filter, TypeFormatter},
 };
+pub use crate::ast::KindedIdent;
 
 mod flags;
 pub mod pretty_print;
@@ -411,6 +410,20 @@ impl<Id, T> AsRef<T> for Alias<Id, T> {
     }
 }
 
+impl<Id, T> Alias<Id, T> {
+    pub fn new_with(
+        context: &mut (impl TypeContext<Id, T> + ?Sized),
+        name: Id,
+        args: Vec<Generic<Id>>,
+        typ: T,
+    ) -> Alias<Id, T> {
+        Alias {
+            _typ: context.alias(name, args, typ),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<Id, T> Alias<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -581,16 +594,16 @@ where
             Type::Ident(ref id) => {
                 // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
                 // needed to resolve the type later on
-                let replacement =
-                    self.group
-                        .iter()
-                        .position(|alias| alias.name == *id)
-                        .map(|index| {
-                            interner.intern(Type::Alias(AliasRef {
-                                index,
-                                group: self.group.clone(),
-                            }))
-                        });
+                let replacement = self
+                    .group
+                    .iter()
+                    .position(|alias| alias.name == id.name)
+                    .map(|index| {
+                        interner.intern(Type::Alias(AliasRef {
+                            index,
+                            group: self.group.clone(),
+                        }))
+                    });
                 if replacement.is_none() {
                     info!("Alias group were not able to resolve an identifier");
                 }
@@ -649,8 +662,25 @@ impl<Id, T> AliasData<Id, T> {
 
 impl<Id, T> AliasData<Id, T>
 where
-    T: From<Type<Id, T>>,
+    T: TypePtr<Id = Id>,
+    Id: Clone,
 {
+    pub fn self_type(&self, context: &mut (impl TypeContext<Id, T> + ?Sized)) -> T {
+        let f = context.ident(KindedIdent {
+            name: self.name.clone(),
+            typ: self.typ.kind(&Default::default()).into_owned(),
+        });
+        let args = self
+            .params()
+            .iter()
+            .cloned()
+            .map(|g| context.generic(g))
+            .collect();
+        context.app(f, args)
+    }
+}
+
+impl<Id, T> AliasData<Id, T> {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
         AliasData {
             name,
@@ -720,11 +750,28 @@ pub struct Field<Id, T = ArcType<Id>> {
 /// type. If `Type` is changed in a way that changes its size it is likely a good idea to change
 /// the number of elements in the `SmallVec` so that it fills out the entire `Type` enum while not
 /// increasing the size of `Type`.
-pub type AppVec<T> = SmallVec<[T; 2]>;
+pub type AppVec<T> = Vec<T>;
 
 impl<Id, T> Field<Id, T> {
     pub fn new(name: Id, typ: T) -> Field<Id, T> {
         Field { name, typ }
+    }
+
+    pub fn ctor_with<J>(
+        context: &mut (impl TypeContext<Id, T> + ?Sized),
+        ctor_name: Id,
+        elems: J,
+    ) -> Self
+    where
+        J: IntoIterator<Item = T>,
+        J::IntoIter: DoubleEndedIterator,
+    {
+        let opaque = context.opaque();
+        let typ = context.function_type(ArgType::Constructor, elems, opaque);
+        Field {
+            name: ctor_name,
+            typ,
+        }
     }
 
     pub fn ctor<J>(ctor_name: Id, elems: J) -> Self
@@ -769,11 +816,11 @@ impl Default for ArgType {
     serde(bound(deserialize = "
            T: Clone
                 + From<Type<Id, T>>
-                + ::std::any::Any
+                + std::any::Any
                 + DeserializeState<'de, Seed<Id, T>>,
            Id: DeserializeState<'de, Seed<Id, T>>
                 + Clone
-                + ::std::any::Any
+                + std::any::Any
                 + DeserializeState<'de, Seed<Id, T>>"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
@@ -839,7 +886,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
+    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] KindedIdent<Id>),
     Projection(
         #[cfg_attr(
             feature = "serde_derive",
@@ -857,9 +904,15 @@ pub enum Type<Id, T = ArcType<Id>> {
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
 
+impl<Id, T> Default for Type<Id, T> {
+    fn default() -> Self {
+        Type::Hole
+    }
+}
+
 #[cfg(target_pointer_width = "64")]
 // Safeguard against accidentally growing Type as it is a core type
-const _: [(); 8 * 6] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
+const _: [(); 8 * 5] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
 impl<Id, T> Type<Id, T> {
     pub fn as_variable(&self) -> Option<&TypeVariable> {
@@ -1050,7 +1103,7 @@ where
         }))
     }
 
-    pub fn ident(id: Id) -> T {
+    pub fn ident(id: KindedIdent<Id>) -> T {
         T::from(Type::Ident(id))
     }
 
@@ -1163,7 +1216,7 @@ where
     pub fn alias_ident(&self) -> Option<&Id> {
         match self {
             Type::App(id, _) => id.alias_ident(),
-            Type::Ident(id) => Some(id),
+            Type::Ident(id) => Some(&id.name),
             Type::Alias(alias) => Some(&alias.name),
             _ => None,
         }
@@ -1487,12 +1540,8 @@ where
     }
 }
 
-pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + Sized {
+pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
-
-    fn new(typ: Type<Self::Id, Self>) -> Self;
-
-    fn strong_count(typ: &Self) -> usize;
 
     fn spine(&self) -> &Self {
         match &**self {
@@ -1500,6 +1549,10 @@ pub trait TypeExt: Deref<Target = Type<<Self as TypeExt>::Id, Self>> + Clone + S
             _ => self,
         }
     }
+}
+
+pub trait TypeExt: TypePtr + Clone + Sized {
+    fn strong_count(typ: &Self) -> usize;
 
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
@@ -1802,17 +1855,24 @@ where
     })
 }
 
+impl<Id> ArcType<Id>
+where
+    Id: PartialEq,
+{
+    pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
+        let flags = Flags::from_type(&typ);
+        Self::with_flags(typ, flags)
+    }
+}
+
+impl<Id> TypePtr for ArcType<Id> {
+    type Id = Id;
+}
+
 impl<Id> TypeExt for ArcType<Id>
 where
     Id: PartialEq,
 {
-    type Id = Id;
-
-    fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
-        let flags = Flags::from_type(&typ);
-        Self::with_flags(typ, flags)
-    }
-
     fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
     }
@@ -2479,7 +2539,9 @@ where
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => printer.symbol_with(id, Name::new(id.as_ref()).name().as_str()),
+            Type::Ident(ref id) => {
+                printer.symbol_with(&id.name, Name::new(id.as_ref()).name().as_str())
+            }
             Type::Projection(ref ids) => arena.concat(
                 ids.iter()
                     .map(|id| printer.symbol(id))
@@ -3030,7 +3092,7 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).alias(name, args, typ)
         }
 
-        fn ident(&mut self, id: $id) -> $typ {
+        fn ident(&mut self, id: $crate::ast::KindedIdent<$id>) -> $typ {
             $crate::expr!(self, $($tokens)+).ident(id)
         }
 
@@ -3271,7 +3333,6 @@ pub trait TypeContext<Id, T> {
 
     fn function<I>(&mut self, args: I, ret: T) -> T
     where
-        T: Clone,
         I: IntoIterator<Item = T>,
         I::IntoIter: DoubleEndedIterator<Item = T>,
     {
@@ -3320,7 +3381,7 @@ pub trait TypeContext<Id, T> {
         }))
     }
 
-    fn ident(&mut self, id: Id) -> T {
+    fn ident(&mut self, id: KindedIdent<Id>) -> T {
         self.intern(Type::Ident(id))
     }
 
@@ -3500,6 +3561,25 @@ where
     forward_to_cache! {
         hole opaque error int byte float string char
         function_builtin array_builtin unit empty_row
+    }
+}
+
+impl<'ast, Id> TypeContext<Id, crate::ast::AstType<'ast, Id>>
+    for crate::ast::ArenaRef<'_, 'ast, Id>
+{
+    fn intern(
+        &mut self,
+        typ: Type<Id, crate::ast::AstType<'ast, Id>>,
+    ) -> crate::ast::AstType<'ast, Id> {
+        crate::ast::AstType::new_no_loc(*self, typ)
+    }
+
+    fn intern_flags(
+        &mut self,
+        typ: Type<Id, crate::ast::AstType<'ast, Id>>,
+        _flags: Flags,
+    ) -> crate::ast::AstType<'ast, Id> {
+        self.intern(typ)
     }
 }
 
@@ -3900,7 +3980,6 @@ where
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
 where
     T: Deref<Target = Type<Id, T>>,
-    U: Clone,
     Id: Clone,
     F: FnMut(&T) -> U,
 {
@@ -3915,7 +3994,6 @@ where
 pub fn translate_type<Id, T, U>(interner: &mut impl TypeContext<Id, U>, arc_type: &T) -> U
 where
     T: Deref<Target = Type<Id, T>>,
-    U: Clone,
     Id: Clone,
 {
     translate_type_with(interner, arc_type, |interner, typ| {
@@ -3930,7 +4008,6 @@ pub fn translate_type_with<Id, T, U, I, F>(
 ) -> U
 where
     T: Deref<Target = Type<Id, T>>,
-    U: Clone,
     Id: Clone,
     F: FnMut(&mut I, &T) -> U,
     I: TypeContext<Id, U>,

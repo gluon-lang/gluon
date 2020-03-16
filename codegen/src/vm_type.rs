@@ -224,7 +224,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
 fn gen_type_application(generics: &Generics) -> TokenStream {
     let applications = map_type_params(generics, |param| {
         quote! {
-            vec.push(<#param as _gluon_api::VmType>::make_type(vm));
+            _gluon_base::types::AppVec::push(&mut vec, <#param as _gluon_api::VmType>::make_type(vm));
         }
     });
 

@@ -11,10 +11,13 @@ mod support;
 
 use crate::support::*;
 
-use crate::base::metadata::*;
-use crate::base::pos::{self, BytePos, Span, Spanned};
-use crate::base::types::{Alias, Field, Type};
-use crate::base::{ast::*, mk_ast_arena};
+use crate::base::{
+    ast::*,
+    metadata::*,
+    mk_ast_arena,
+    pos::{self, BytePos, Span, Spanned},
+    types::{Alias, Field, Type, TypeContext},
+};
 
 use crate::parser::ReplLine;
 
@@ -49,7 +52,7 @@ test_parse! {
 test_parse! {
     expression3,
     r#"type Test = Int in 0"#,
-    |arena| type_decl(arena, intern("Test"), vec![], typ("Int"), int(0))
+    |arena| type_decl(arena, intern("Test"), vec![], typ(arena, "Int"), int(0))
 }
 
 test_parse! {
@@ -88,8 +91,10 @@ if_else_test,
 fn let_type_decl() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f: Int = \\x y -> x + y in f 1 2");
+    mk_ast_arena!(arena);
+    let arena = (*arena).borrow();
     match &e.expr().value {
-        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
+        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ(arena, "Int"))),
         _ => assert!(false),
     }
 }
@@ -103,12 +108,12 @@ test_parse! {
 test_parse! {
 type_decl_record,
     "type Test = { x: Int, y: {} } in 1",
-    |arena| {
-        let record = Type::record(
+    |mut arena| {
+        let record = arena.record(
             Vec::new(),
             vec![
-                Field::new(intern("x"), typ("Int")),
-                Field::new(intern("y"), Type::record(vec![], vec![])),
+                Field::new(intern("x"), typ(arena, "Int")),
+                Field::new(intern("y"), arena.clone().record(vec![], vec![])),
             ],
         );
         type_decl(arena, intern("Test"), vec![], record, int(1))
@@ -124,13 +129,13 @@ test_parse! {
     #[a]
     type Test2 = { x: Int, y: {} }
     in 1"#,
-    |arena| {
-        let test = Type::variant(vec![Field::ctor(intern("Test"), vec![typ("Int")])]);
-        let test2 = Type::record(
+    |mut arena| {
+        let test = arena.clone().variant(vec![Field::ctor_with(&mut arena.clone(), intern("Test"), vec![typ(arena, "Int")])]);
+        let test2 = arena.record(
             Vec::new(),
             vec![
-                Field::new(intern("x"), typ("Int")),
-                Field::new(intern("y"), Type::record(vec![], vec![])),
+                Field::new(intern("x"), typ(arena, "Int")),
+                Field::new(intern("y"), arena.clone().record(vec![], vec![])),
             ],
         );
         let binds = vec![
@@ -161,7 +166,7 @@ test_parse! {
 type_decl_projection,
     "type Test = x.y.Z in 1",
     |arena| {
-        let record = Type::projection(["x", "y", "Z"].iter().map(|s| intern(s)).collect());
+        let record = arena.clone().projection(["x", "y", "Z"].iter().map(|s| intern(s)).collect());
         type_decl(arena, intern("Test"), vec![], record, int(1))
     }
 }
@@ -210,9 +215,9 @@ test_parse! {
     |arena| type_decl(arena,
             intern("Option"),
             vec![generic("a")],
-            Type::variant(vec![
-                Field::ctor(intern("None"), vec![]),
-                Field::ctor(intern("Some"), vec![typ("a")]),
+            arena.clone().variant(vec![
+                Field::ctor_with(&mut arena.clone(), intern("None"), vec![]),
+                Field::ctor_with(&mut arena.clone(), intern("Some"), vec![typ(arena, "a")]),
             ]),
             app(arena, id("Some"), vec![int(1)]),
         )
@@ -544,10 +549,11 @@ id
 "#;
     let e = parse_clear_span!(text);
     mk_ast_arena!(arena);
+    let arena = (*arena).borrow();
     assert_eq!(
         *e.expr(),
         type_decls(
-            arena.borrow(),
+            arena,
             vec![TypeBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
@@ -557,7 +563,7 @@ id
                     ..Metadata::default()
                 },
                 name: no_loc(intern("Test")),
-                alias: alias(intern("Test"), Vec::new(), typ("Int")),
+                alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
                 finalized_alias: None,
             }],
             id("id"),
@@ -596,7 +602,7 @@ id
                         ..Metadata::default()
                     },
                     name: no_loc(intern("Test")),
-                    alias: alias(intern("Test"), Vec::new(), typ("Int")),
+                    alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
                     finalized_alias: None,
                 }],
                 id("id"),
@@ -617,10 +623,11 @@ id
 "#;
     let e = parse_clear_span!(text);
     mk_ast_arena!(arena);
+    let arena = (*arena).borrow();
     assert_eq!(
         *e.expr(),
         type_decls(
-            arena.borrow(),
+            arena,
             vec![TypeBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
@@ -630,7 +637,7 @@ id
                     ..Metadata::default()
                 },
                 name: no_loc(intern("Test")),
-                alias: alias(intern("Test"), Vec::new(), typ("Int")),
+                alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
                 finalized_alias: None,
             }],
             id("id"),
@@ -688,13 +695,17 @@ x
 "#;
     let e = parse_clear_span!(text);
     mk_ast_arena!(arena);
+    let arena = (*arena).borrow();
     assert_eq!(
         *e.expr(),
         no_loc(Expr::LetBindings(
             ValueBindings::Plain(arena.alloc(ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
-                typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
+                typ: Some(arena.clone().app(
+                    typ(arena, "->"),
+                    collect![typ(arena, "Int"), typ(arena, "Int")]
+                )),
                 resolved_type: Type::hole(),
                 args: &mut [],
                 expr: id("x"),
@@ -891,6 +902,7 @@ fn alias_in_record_type() {
         "#;
     let e = parse_clear_span!(text);
     mk_ast_arena!(arena);
+    let arena = (*arena).borrow();
     assert_eq!(
         *e.expr(),
         no_loc(Expr::TypeBindings(
@@ -900,10 +912,15 @@ fn alias_in_record_type() {
                 alias: alias(
                     intern("Test"),
                     Vec::new(),
-                    Type::record(
+                    arena.clone().record(
                         vec![Field {
                             name: intern("MyInt"),
-                            typ: Alias::new(intern("MyInt"), Vec::new(), Type::hole()),
+                            typ: Alias::new_with(
+                                &mut arena.clone(),
+                                intern("MyInt"),
+                                Vec::new(),
+                                arena.clone().hole()
+                            ),
                         }],
                         vec![],
                     ),

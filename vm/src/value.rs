@@ -1737,7 +1737,7 @@ mod tests {
     use crate::base::{
         kind::{ArcKind, KindEnv},
         symbol::{Symbol, SymbolRef},
-        types::{Alias, ArcType, Field, Type, TypeEnv},
+        types::{Alias, ArcType, Field, KindedIdent, Type, TypeEnv},
     };
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
@@ -1769,13 +1769,13 @@ mod tests {
             Field {
                 name: Symbol::from("Cons"),
                 typ: Type::function(
-                    vec![Type::int(), Type::ident(list.clone())],
-                    Type::ident(list.clone()),
+                    vec![Type::int(), Type::ident(KindedIdent::new(list.clone()))],
+                    Type::ident(KindedIdent::new(list.clone())),
                 ),
             },
             Field {
                 name: Symbol::from("Nil"),
-                typ: Type::ident(list.clone()),
+                typ: Type::ident(KindedIdent::new(list.clone())),
             },
         ]);
 

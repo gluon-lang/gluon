@@ -7,8 +7,11 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    ast::KindedIdent,
+    symbol::Symbol,
+    types::{ArcType, Type},
+};
 
 use crate::check::typecheck::TypeError;
 
@@ -499,9 +502,9 @@ f (Test (Test 1))
 fn long_type_error_format() {
     let long_type: ArcType = Type::function(
         vec![Type::int()],
-        Type::ident(Symbol::from(
+        Type::ident(KindedIdent::new(Symbol::from(
             "loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong",
-        )),
+        ))),
     );
     let err = TypeError::Unification(Type::int(), long_type.clone(), vec![]);
     assert_eq!(

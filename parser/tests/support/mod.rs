@@ -16,7 +16,7 @@ use crate::base::{
     metadata::{Comment, CommentType, Metadata},
     mk_ast_arena,
     pos::{self, BytePos, Span, Spanned},
-    types::{Alias, AliasData, ArcType, Field, Generic, Type, TypeCache},
+    types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
 };
 use crate::parser::{
     infix::{Fixity, OpMeta, OpTable, Reparser},
@@ -294,17 +294,20 @@ pub fn id(s: &str) -> SpExpr<'_> {
     no_loc(Expr::Ident(TypedIdent::new(intern(s))))
 }
 
-pub fn typ(s: &str) -> AstType<String> {
+pub fn typ<'ast>(mut arena: ast::ArenaRef<'_, 'ast, String>, s: &str) -> AstType<'ast, String> {
     assert!(s.len() != 0);
     match s.parse() {
-        Ok(b) => Type::builtin(b),
-        Err(()) if s.starts_with(char::is_lowercase) => generic_ty(s),
-        Err(()) => Type::ident(intern(s)),
+        Ok(b) => arena.builtin(b),
+        Err(()) if s.starts_with(char::is_lowercase) => generic_ty(arena, s),
+        Err(()) => arena.ident(KindedIdent::new(intern(s))),
     }
 }
 
-pub fn generic_ty(s: &str) -> AstType<String> {
-    Type::generic(generic(s))
+pub fn generic_ty<'ast>(
+    mut arena: ast::ArenaRef<'_, 'ast, String>,
+    s: &str,
+) -> AstType<'ast, String> {
+    arena.generic(generic(s))
 }
 
 pub fn generic(s: &str) -> Generic<String> {
@@ -370,7 +373,7 @@ pub fn type_decl<'ast>(
     arena: ast::ArenaRef<'_, 'ast, String>,
     name: String,
     args: Vec<Generic<String>>,
-    typ: AstType<String>,
+    typ: AstType<'ast, String>,
     body: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
     type_decls(
@@ -387,7 +390,7 @@ pub fn type_decl<'ast>(
 
 pub fn type_decls<'ast>(
     arena: ast::ArenaRef<'_, 'ast, String>,
-    binds: Vec<TypeBinding<String>>,
+    binds: Vec<TypeBinding<'ast, String>>,
     body: SpExpr<'ast>,
 ) -> SpExpr<'ast> {
     no_loc(Expr::TypeBindings(
@@ -450,11 +453,11 @@ pub fn error<'ast>() -> SpExpr<'ast> {
     no_loc(Expr::Error(None))
 }
 
-pub fn alias<Id>(
+pub fn alias<'ast, Id>(
     name: Id,
     args: Vec<Generic<Id>>,
-    typ: AstType<Id>,
-) -> Spanned<AliasData<Id, AstType<Id>>, BytePos> {
+    typ: AstType<'ast, Id>,
+) -> Spanned<AliasData<Id, AstType<'ast, Id>>, BytePos> {
     no_loc(AliasData::new(name, args, typ))
 }
 
@@ -468,24 +471,44 @@ pub fn line_comment(s: &str) -> Metadata {
     }
 }
 
-pub fn variant<Id>(arg: &str, types: &[AstType<Id>]) -> Field<Id, AstType<Id>>
+pub fn variant<'ast, Id>(
+    mut arena: ast::ArenaRef<'_, 'ast, Id>,
+    arg: &str,
+    types: impl IntoIterator<
+        Item = AstType<'ast, Id>,
+        IntoIter = impl DoubleEndedIterator<Item = AstType<'ast, Id>>,
+    >,
+) -> Field<Id, AstType<'ast, Id>>
 where
     Id: Clone + AsRef<str> + for<'a> From<&'a str>,
 {
-    Field::ctor(arg.into(), types.iter().cloned())
+    Field::ctor_with(&mut arena, arg.into(), types)
 }
 
-pub fn alias_variant<Id>(s: &str, params: &[&str], args: &[(&str, &[AstType<Id>])]) -> AstType<Id>
+pub fn alias_variant<'s, 'ast, Id>(
+    mut arena: ast::ArenaRef<'_, 'ast, Id>,
+    s: &str,
+    params: &[&str],
+    args: impl IntoIterator<
+        Item = (
+            &'s str,
+            impl IntoIterator<
+                Item = AstType<'ast, Id>,
+                IntoIter = impl DoubleEndedIterator<Item = AstType<'ast, Id>>,
+            >,
+        ),
+    >,
+) -> AstType<'ast, Id>
 where
     Id: Clone + AsRef<str> + for<'a> From<&'a str>,
 {
-    let variants = Type::variant(
-        args.iter()
-            .cloned()
-            .map(|(arg, types)| variant(arg, types))
+    let variants = arena.variant(
+        args.into_iter()
+            .map(|(arg, types)| variant(arena, arg, types))
             .collect(),
     );
-    Alias::from(AliasData::new(
+    Alias::new_with(
+        &mut arena,
         s.into(),
         params
             .iter()
@@ -493,7 +516,7 @@ where
             .map(|g| Generic::new(g.into(), Kind::hole()))
             .collect(),
         variants,
-    ))
+    )
     .into_type()
 }
 

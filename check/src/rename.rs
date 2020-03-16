@@ -345,7 +345,7 @@ pub fn rename<'s, 'ast>(
             }
         }
 
-        fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<Self::Ident>) {
+        fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<'ast, Self::Ident>) {
             match &mut s.value {
                 Type::ExtendTypeRow { types, .. } => {
                     for field in types {
@@ -363,8 +363,8 @@ pub fn rename<'s, 'ast>(
                     }
                 }
                 Type::Ident(id) => {
-                    if let Some(new_id) = self.rename(id) {
-                        *id = new_id;
+                    if let Some(new_id) = self.rename(&id.name) {
+                        id.name = new_id;
                     }
                 }
                 _ => (),

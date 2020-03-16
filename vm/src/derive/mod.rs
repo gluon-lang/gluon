@@ -1,11 +1,13 @@
-use crate::base::ast::{
-    self, Argument, AstAlloc, AstType, Expr, Lambda, Literal, Pattern, PatternField, SpannedExpr,
-    SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+use crate::base::{
+    ast::{
+        self, Argument, AstAlloc, AstType, Expr, Lambda, Literal, Pattern, PatternField,
+        SpannedExpr, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+    },
+    metadata::Attribute,
+    pos::{self, BytePos, Span},
+    symbol::{Symbol, Symbols},
+    types::{row_iter, KindedIdent, Type, TypeContext},
 };
-use crate::base::metadata::Attribute;
-use crate::base::pos::{self, BytePos, Span};
-use crate::base::symbol::{Symbol, Symbols};
-use crate::base::types::{row_iter, Type};
 
 use crate::macros::Error;
 
@@ -18,7 +20,7 @@ pub fn generate<'ast>(
     arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     derive: &Attribute,
-    bind: &TypeBinding<Symbol>,
+    bind: &TypeBinding<'ast, Symbol>,
 ) -> Result<Vec<ValueBinding<'ast, Symbol>>, Error> {
     match derive.arguments {
         Some(ref args) => args
@@ -267,25 +269,28 @@ fn is_self_type(self_: &Symbol, typ: &AstType<Symbol>) -> bool {
     match **typ {
         Type::App(ref f, _) => is_self_type(self_, f),
         Type::Alias(ref alias) => alias.name == *self_,
-        Type::Ident(ref id) => id == self_,
+        Type::Ident(ref id) => id.name == *self_,
         _ => false,
     }
 }
 
-fn binding_type(
+fn binding_type<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
     derive_type_name: &str,
-    self_type: AstType<Symbol>,
-    bind: &TypeBinding<Symbol>,
-) -> AstType<Symbol> {
-    let derive_type: AstType<_> = Type::ident(symbols.simple_symbol(derive_type_name));
-    Type::function_implicit(
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(|g| Type::app(derive_type.clone(), collect![Type::generic(g)])),
-        Type::app(derive_type.clone(), collect![self_type]),
+    self_type: AstType<'ast, Symbol>,
+    bind: &TypeBinding<'ast, Symbol>,
+) -> AstType<'ast, Symbol> {
+    let derive_symbol = symbols.simple_symbol(derive_type_name);
+    let derive_type = move || arena.clone().ident(KindedIdent::new(derive_symbol.clone()));
+    arena.clone().function_implicit(
+        bind.alias.value.params().iter().cloned().map(|g| {
+            TypeContext::app(
+                &mut arena.clone(),
+                derive_type(),
+                collect![arena.clone().generic(g)],
+            )
+        }),
+        TypeContext::app(&mut arena.clone(), derive_type(), collect![self_type]),
     )
 }

@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 
 use self::{
     base::{
-        ast::{DisplayEnv, Expr, IdentEnv, RootSpannedExpr, SpannedExpr},
+        ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootSpannedExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -105,7 +105,13 @@ impl MockEnv {
         MockEnv {
             bool: {
                 let bool_sym = interner.simple_symbol("Bool");
-                let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+                let bool_ty = Type::app(
+                    Type::ident(KindedIdent {
+                        name: bool_sym.clone(),
+                        typ: Kind::typ(),
+                    }),
+                    collect![],
+                );
                 Alias::new(bool_sym, Vec::new(), bool_ty)
             },
         }
@@ -286,10 +292,10 @@ pub fn typecheck_partial_expr(
 #[allow(dead_code)]
 pub fn typ(s: &str) -> ArcType {
     assert!(s.len() != 0);
-    typ_a(s, Vec::new())
+    typ_a(s, Kind::typ(), Vec::new())
 }
 
-pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
+pub fn typ_a<T>(s: &str, kind: ArcKind, args: Vec<T>) -> T
 where
     T: From<Type<Symbol, T>>,
 {
@@ -302,9 +308,18 @@ where
         }
         Err(()) => {
             if args.len() == 0 {
-                Type::ident(intern(s))
+                Type::ident(KindedIdent {
+                    name: intern(s),
+                    typ: kind,
+                })
             } else {
-                Type::app(Type::ident(intern(s)), args.into_iter().collect())
+                Type::app(
+                    Type::ident(KindedIdent {
+                        name: intern(s),
+                        typ: kind,
+                    }),
+                    args.into_iter().collect(),
+                )
             }
         }
     }

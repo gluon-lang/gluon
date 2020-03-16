@@ -54,7 +54,7 @@ fn split_type<'a>(
             Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
         }
         Type::Skolem(skolem) => Some(SymbolKey::Owned(skolem.name.clone())),
-        Type::Ident(id) => Some(SymbolKey::Owned(id.clone())),
+        Type::Ident(id) => Some(SymbolKey::Owned(id.name.clone())),
         Type::Alias(alias) => Some(SymbolKey::Owned(alias.name.clone())),
         Type::Builtin(builtin) => Some(SymbolKey::Ref(builtin.symbol())),
         _ => None,
@@ -882,7 +882,7 @@ fn smallers(state: unify_type::State, new_types: &[RcType], old_types: &[RcType]
 mod tests {
     use super::*;
 
-    use base::{kind::Kind, types::SharedInterner};
+    use base::{ast::KindedIdent, kind::Kind, types::SharedInterner};
 
     use crate::tests::*;
 
@@ -894,16 +894,31 @@ mod tests {
         let a = intern("A");
         let b = intern("B");
 
-        let typ = Type::app(Type::ident(a.clone()), collect![Type::ident(b.clone())]);
+        let typ = Type::app(
+            Type::ident(KindedIdent {
+                name: a.clone(),
+                typ: Kind::typ(),
+            }),
+            collect![Type::ident(KindedIdent {
+                name: b.clone(),
+                typ: Kind::typ()
+            })],
+        );
         assert_eq!(
             spliterator(&subs, &typ).collect::<Vec<_>>(),
             vec![SymbolKey::Owned(a.clone()), SymbolKey::Owned(b.clone())]
         );
 
         let typ = Type::app(
-            Type::ident(a.clone()),
+            Type::ident(KindedIdent {
+                name: a.clone(),
+                typ: Kind::typ(),
+            }),
             collect![Type::app(
-                Type::ident(b.clone()),
+                Type::ident(KindedIdent {
+                    name: b.clone(),
+                    typ: Kind::typ(),
+                }),
                 collect![Type::generic(Generic::new(intern("c"), Kind::typ()))]
             )],
         );

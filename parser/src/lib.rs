@@ -245,9 +245,9 @@ pub enum FieldExpr<'ast, Id> {
     ),
 }
 
-pub enum Variant<Id> {
-    Gadt(Id, AstType<Id>),
-    Simple(Id, Vec<AstType<Id>>),
+pub enum Variant<'ast, Id> {
+    Gadt(Id, AstType<'ast, Id>),
+    Simple(Id, Vec<AstType<'ast, Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -319,12 +319,13 @@ impl_temp_vec! {
     ast::PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
     ast::ExprField<Id, ArcType<Id>> => expr_field_types,
     ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
-    ast::TypeBinding<Id> => type_bindings,
+    ast::TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     ast::Do<'ast, Id> => do_exprs,
     ast::Alternative<'ast, Id> => alts,
     ast::Argument<ast::SpannedIdent<Id>> => args,
     FieldExpr<'ast, Id> => field_expr,
+    ast::InnerAstType<'ast, Id> => types,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
