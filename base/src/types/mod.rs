@@ -116,6 +116,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 
 type_cache! {
     TypeCache(Id, T)
+    where [T: TypePtr<Id = Id>,]
     (kind_cache: crate::kind::KindCache)
     { T, Type }
     hole opaque error int byte float string char
@@ -124,7 +125,7 @@ type_cache! {
 
 impl<Id, T> TypeCache<Id, T>
 where
-    T: From<Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
 {
     pub fn function<I>(&self, args: I, ret: T) -> T
     where
@@ -193,7 +194,7 @@ where
 
 impl<Id, T> TypeCache<Id, T>
 where
-    T: Clone,
+    T: TypePtr<Id = Id> + Clone,
 {
     pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
@@ -339,13 +340,13 @@ impl<Id> Generic<Id> {
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(deserialize = "
-           T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           T: DeserializeState<'de, Seed<Id, T>> + TypePtr<Id = Id> + Clone + From<Type<Id, T>> + ::std::any::Any,
            Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(serialize = "T: SerializeState<SeSeed>"))
+    serde(bound(serialize = "T: SerializeState<SeSeed> + TypePtr<Id = Id>"))
 )]
 pub struct Alias<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -356,7 +357,7 @@ pub struct Alias<Id, T> {
 
 impl<Id, T> Deref for Alias<Id, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Target = AliasRef<Id, T>;
 
@@ -370,7 +371,7 @@ where
 
 impl<Id, T> DerefMut for Alias<Id, T>
 where
-    T: DerefMut<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id> + DerefMut<Target = Type<Id, T>>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match *self._typ {
@@ -382,7 +383,7 @@ where
 
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 where
-    T: From<Type<Id, T>>,
+    T: TypePtr<Id = Id> + From<Type<Id, T>>,
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
@@ -394,7 +395,7 @@ where
 
 impl<Id, T> From<AliasRef<Id, T>> for Alias<Id, T>
 where
-    T: From<Type<Id, T>>,
+    T: TypePtr<Id = Id> + From<Type<Id, T>>,
 {
     fn from(data: AliasRef<Id, T>) -> Alias<Id, T> {
         Alias {
@@ -410,7 +411,10 @@ impl<Id, T> AsRef<T> for Alias<Id, T> {
     }
 }
 
-impl<Id, T> Alias<Id, T> {
+impl<Id, T> Alias<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     pub fn new_with(
         context: &mut (impl TypeContext<Id, T> + ?Sized),
         name: Id,
@@ -426,7 +430,7 @@ impl<Id, T> Alias<Id, T> {
 
 impl<Id, T> Alias<Id, T>
 where
-    T: From<Type<Id, T>>,
+    T: TypePtr<Id = Id> + From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
         Alias {
@@ -509,7 +513,7 @@ where
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(deserialize = "
-           T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           T: DeserializeState<'de, Seed<Id, T>> + TypePtr<Id = Id> + Clone + From<Type<Id, T>> + ::std::any::Any,
            Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
@@ -532,9 +536,15 @@ pub struct AliasRef<Id, T> {
     pub group: Arc<[AliasData<Id, T>]>,
 }
 
-impl<Id, T> Eq for AliasRef<Id, T> where AliasData<Id, T>: Eq {}
+impl<Id, T> Eq for AliasRef<Id, T>
+where
+    T: TypePtr<Id = Id>,
+    AliasData<Id, T>: Eq,
+{
+}
 impl<Id, T> PartialEq for AliasRef<Id, T>
 where
+    T: TypePtr<Id = Id>,
     AliasData<Id, T>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -543,6 +553,7 @@ where
 }
 impl<Id, T> Hash for AliasRef<Id, T>
 where
+    T: TypePtr<Id = Id>,
     AliasData<Id, T>: Hash,
 {
     fn hash<H>(&self, state: &mut H)
@@ -625,7 +636,7 @@ where
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(deserialize = "
-           T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+           T: TypePtr<Id = Id> + Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
            Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
@@ -693,7 +704,7 @@ impl<Id, T> AliasData<Id, T> {
 
 impl<Id, T> AliasData<Id, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     pub fn params(&self) -> &[Generic<Id>] {
         &self.args
@@ -715,7 +726,10 @@ where
     }
 }
 
-impl<Id, T> Deref for AliasRef<Id, T> {
+impl<Id, T> Deref for AliasRef<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     type Target = AliasData<Id, T>;
 
     fn deref(&self) -> &Self::Target {
@@ -765,6 +779,7 @@ impl<Id, T> Field<Id, T> {
     where
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
+        T: TypePtr<Id = Id>,
     {
         let opaque = context.opaque();
         let typ = context.function_type(ArgType::Constructor, elems, opaque);
@@ -778,7 +793,7 @@ impl<Id, T> Field<Id, T> {
     where
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
-        T: From<Type<Id, T>>,
+        T: TypePtr<Id = Id> + From<Type<Id, T>>,
     {
         let typ = Type::function_type(ArgType::Constructor, elems, Type::opaque());
         Field {
@@ -815,6 +830,7 @@ impl Default for ArgType {
     feature = "serde_derive",
     serde(bound(deserialize = "
            T: Clone
+                + TypePtr<Id = Id>
                 + From<Type<Id, T>>
                 + std::any::Any
                 + DeserializeState<'de, Seed<Id, T>>,
@@ -824,7 +840,7 @@ impl Default for ArgType {
                 + DeserializeState<'de, Seed<Id, T>>"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
-pub enum Type<Id, T = ArcType<Id>> {
+pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
     /// An opaque type
@@ -904,7 +920,10 @@ pub enum Type<Id, T = ArcType<Id>> {
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
 
-impl<Id, T> Default for Type<Id, T> {
+impl<Id, T> Default for Type<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     fn default() -> Self {
         Type::Hole
     }
@@ -914,7 +933,10 @@ impl<Id, T> Default for Type<Id, T> {
 // Safeguard against accidentally growing Type as it is a core type
 const _: [(); 8 * 5] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
-impl<Id, T> Type<Id, T> {
+impl<Id, T> Type<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     pub fn as_variable(&self) -> Option<&TypeVariable> {
         match *self {
             Type::Variable(ref var) => Some(var),
@@ -925,7 +947,7 @@ impl<Id, T> Type<Id, T> {
 
 impl<Id, T> Type<Id, T>
 where
-    T: From<Type<Id, T>>,
+    T: From<Type<Id, T>> + TypePtr<Id = Id>,
 {
     pub fn hole() -> T {
         T::from(Type::Hole)
@@ -1142,7 +1164,7 @@ where
 
 impl<Id, T> Type<Id, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     pub fn is_array(&self) -> bool {
         match self {
@@ -1303,7 +1325,7 @@ where
 
 impl<T> Type<Symbol, T>
 where
-    T: Deref<Target = Type<Symbol, T>>,
+    T: TypePtr<Id = Symbol>,
 {
     /// Returns the name of `self`
     /// Example:
@@ -1516,7 +1538,7 @@ pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<T> {
 
 pub fn remove_forall<'a, Id, T>(typ: &'a T) -> &'a T
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
     Id: 'a,
 {
     match **typ {
@@ -1527,7 +1549,7 @@ where
 
 pub fn remove_forall_mut<'a, Id, T>(typ: &'a mut T) -> &'a mut T
 where
-    T: DerefMut<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id> + DerefMut<Target = Type<Id, T>>,
     Id: 'a,
 {
     if let Type::Forall(_, _) = **typ {
@@ -1838,7 +1860,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
 pub fn forall_params<'a, T, Id>(mut typ: &'a T) -> impl Iterator<Item = &'a Generic<Id>>
 where
     Id: 'a,
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     let mut i = 0;
     iter::repeat(()).scan((), move |_, _| {
@@ -1889,7 +1911,7 @@ pub struct ForallScopeIter<'a, T: 'a> {
 
 impl<'a, T, Id: 'a> Iterator for ForallScopeIter<'a, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Item = &'a Generic<Id>;
 
@@ -1937,7 +1959,7 @@ pub struct TypeFieldIterator<'a, T: 'a> {
 
 impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Item = &'a Field<Id, Alias<Id, T>>;
 
@@ -1978,7 +2000,7 @@ impl<'a, T> RowIterator<'a, T> {
 
 impl<'a, Id: 'a, T> Iterator for RowIterator<'a, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Item = &'a Field<Id, T>;
 
@@ -2017,7 +2039,7 @@ where
 
 impl<'a, Id: 'a, T> ExactSizeIterator for RowIterator<'a, T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     fn len(&self) -> usize {
         let mut typ = self.typ;
@@ -2054,7 +2076,7 @@ impl<'a, Id, T> RowIteratorMut<'a, Id, T> {
 
 impl<'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, Id, T>
 where
-    T: DerefMut<Target = Type<Id, T>>,
+    T: DerefMut<Target = Type<Id, T>> + TypePtr<Id = Id>,
 {
     type Item = &'a mut Field<Id, T>;
 
@@ -2091,7 +2113,7 @@ where
 
 fn split_top<'a, Id, T>(self_: &'a T) -> Option<(Option<&'a T>, Cow<[T]>)>
 where
-    T: Deref<Target = Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id> + Clone,
     Id: 'a,
 {
     Some(match **self_ {
@@ -2115,7 +2137,7 @@ where
 
 pub fn split_app<'a, Id, T>(self_: &'a T) -> (Option<&'a T>, Cow<[T]>)
 where
-    T: Deref<Target = Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id> + Clone,
     Id: 'a,
 {
     match split_top(self_) {
@@ -2140,7 +2162,7 @@ where
 
 pub fn ctor_args<Id, T>(typ: &T) -> ArgIterator<T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     ArgIterator { typ }
 }
@@ -2154,7 +2176,7 @@ pub struct ArgIterator<'a, T: 'a> {
 /// Constructs an iterator over a functions arguments
 pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     ArgIterator { typ }
 }
@@ -2162,7 +2184,7 @@ where
 impl<'a, Id, T> Iterator for ArgIterator<'a, T>
 where
     Id: 'a,
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
@@ -2182,7 +2204,7 @@ pub struct ImplicitArgIterator<'a, T: 'a> {
 /// Constructs an iterator over a functions arguments
 pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     ImplicitArgIterator { typ }
 }
@@ -2190,7 +2212,7 @@ where
 impl<'a, Id, T> Iterator for ImplicitArgIterator<'a, T>
 where
     Id: 'a,
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
@@ -2355,7 +2377,7 @@ where
 fn is_tuple<I, T>(typ: &T) -> bool
 where
     I: AsRef<str>,
-    T: Deref<Target = Type<I, T>>,
+    T: TypePtr<Id = I>,
 {
     match **typ {
         Type::Record(_) => {
@@ -2384,7 +2406,7 @@ const INDENT: usize = 4;
 
 impl<'a, I, T> DisplayType<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
+    T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
     I: AsRef<str> + 'a,
 {
     pub fn pretty<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
@@ -2779,7 +2801,7 @@ pub fn pretty_print<'a, I, T, A>(
 ) -> DocBuilder<'a, Arena<'a, A>, A>
 where
     I: AsRef<str> + 'a,
-    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata,
+    T: TypePtr<Id = I> + HasSpan + HasMetadata,
     A: Clone,
 {
     dt(Prec::Top, typ).pretty(printer)
@@ -2788,7 +2810,7 @@ where
 pub fn walk_type<'a, I, T, F>(typ: &'a T, mut f: F)
 where
     F: Walker<'a, T>,
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: TypePtr<Id = I> + 'a,
     I: 'a,
 {
     f.walk(typ)
@@ -2797,7 +2819,7 @@ where
 pub fn walk_type_<'a, I, T, F: ?Sized>(typ: &'a T, f: &mut F)
 where
     F: Walker<'a, T>,
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: TypePtr<Id = I> + 'a,
     I: 'a,
 {
     match **typ {
@@ -2850,7 +2872,7 @@ where
 pub fn walk_type_mut<I, T, F: ?Sized>(typ: &mut T, f: &mut F)
 where
     F: WalkerMut<T>,
-    T: DerefMut<Target = Type<I, T>>,
+    T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
 {
     match **typ {
         Type::Forall(_, ref mut typ) => f.walk_mut(typ),
@@ -2902,10 +2924,10 @@ where
     }
 }
 
-pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
+pub fn fold_type<Id, T, F, A>(typ: &T, mut f: F, a: A) -> A
 where
     F: FnMut(&T, A) -> A,
-    T: Deref<Target = Type<I, T>>,
+    T: TypePtr<Id = Id>,
 {
     let mut a = Some(a);
     walk_type(typ, |t| {
@@ -2914,10 +2936,13 @@ where
     a.expect("fold_type")
 }
 
-pub trait TypeVisitor<Id, T> {
+pub trait TypeVisitor<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<Id, T>> + Clone,
+        T: TypePtr<Id = Id> + Clone,
         Id: Clone,
     {
         walk_move_type_opt(typ, self)
@@ -2949,11 +2974,11 @@ pub trait Walker<'a, T> {
 impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
 where
     F: FnMut(&T) -> Option<T>,
-    T: From<Type<I, T>>,
+    T: TypePtr<Id = I> + From<Type<I, T>>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
         I: Clone,
     {
         let new_type = walk_move_type_opt(typ, self);
@@ -3181,7 +3206,10 @@ pub struct InternerVisitor<'i, F, T> {
     visitor: F,
 }
 
-pub trait TypeContext<Id, T> {
+pub trait TypeContext<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T;
 
     fn intern(&mut self, typ: Type<Id, T>) -> T;
@@ -3474,7 +3502,10 @@ pub trait TypeContext<Id, T> {
     }
 }
 
-pub trait Substitution<Id, T>: TypeContext<Id, T> {
+pub trait Substitution<Id, T>: TypeContext<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     fn new_var(&mut self) -> T;
     fn new_skolem(&mut self, name: Id, kind: ArcKind) -> T;
 }
@@ -3482,6 +3513,7 @@ pub trait Substitution<Id, T>: TypeContext<Id, T> {
 impl<'b, Id, T, V> TypeContext<Id, T> for &'b Rc<V>
 where
     for<'a> &'a V: TypeContext<Id, T>,
+    T: TypePtr<Id = Id>,
 {
     forward_type_interner_methods!(Id, T, self_, &***self_);
 }
@@ -3489,6 +3521,7 @@ where
 impl<Id, T, V> TypeContext<Id, T> for Rc<V>
 where
     for<'a> &'a V: TypeContext<Id, T>,
+    T: TypePtr<Id = Id>,
 {
     forward_type_interner_methods!(Id, T, self_, &**self_);
 }
@@ -3496,6 +3529,7 @@ where
 impl<'a, Id, T, V> TypeContext<Id, T> for &'a RefCell<V>
 where
     V: TypeContext<Id, T>,
+    T: TypePtr<Id = Id>,
 {
     forward_type_interner_methods!(Id, T, self_, self_.borrow_mut());
 }
@@ -3507,7 +3541,7 @@ pub struct NullInterner;
 
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
-    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3530,7 +3564,7 @@ macro_rules! forward_to_cache {
 
 impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
-    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3548,7 +3582,7 @@ where
 
 impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
-    T: From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3620,20 +3654,18 @@ where
 
 impl<Id, T> Borrow<Type<Id, T>> for Interned<T>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
 {
     fn borrow(&self) -> &Type<Id, T> {
         &self.0
     }
 }
 
-pub trait TypeContextAlloc: Sized {
-    type Id;
+pub trait TypeContextAlloc: TypePtr + Sized {
     fn alloc(into: &mut Self, typ: Type<Self::Id, Self>, flags: Flags);
 }
 
 impl TypeContextAlloc for ArcType {
-    type Id = Symbol;
     fn alloc(into: &mut Self, typ: Type<Symbol, Self>, flags: Flags) {
         match Arc::get_mut(&mut into.typ) {
             Some(into) => {
@@ -3647,7 +3679,10 @@ impl TypeContextAlloc for ArcType {
     }
 }
 
-pub struct Interner<Id, T> {
+pub struct Interner<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     set: FnvMap<Interned<T>, ()>,
     scratch: Interned<T>,
     type_cache: TypeCache<Id, T>,
@@ -3655,7 +3690,7 @@ pub struct Interner<Id, T> {
 
 impl<Id, T> Default for Interner<Id, T>
 where
-    T: Default + Deref + From<Type<Id, T>> + Clone,
+    T: Default + TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
     T::Target: Eq + Hash,
 {
     fn default() -> Self {
@@ -3756,7 +3791,7 @@ where
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + Clone,
+        T: TypePtr<Id = I> + Clone,
         I: Clone,
     {
         let new_type = walk_move_type_opt(typ, self);
@@ -3777,7 +3812,7 @@ where
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + Clone,
+        T: TypePtr<Id = I> + Clone,
         I: Clone,
     {
         (self.visitor.0)(self.interner, typ)
@@ -3794,11 +3829,11 @@ pub struct ControlVisitation<F: ?Sized>(pub F);
 impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 where
     F: FnMut(&T) -> Option<T>,
-    T: From<Type<I, T>>,
+    T: From<Type<I, T>> + TypePtr<Id = I>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
         I: Clone,
     {
         (self.0)(typ)
@@ -3828,7 +3863,7 @@ where
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
         I: Clone,
     {
         if self.0.intersects(typ.flags()) {
@@ -3861,7 +3896,7 @@ where
 impl<'a, I, T, F> Walker<'a, T> for F
 where
     F: ?Sized + FnMut(&'a T),
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: TypePtr<Id = I> + 'a,
     I: 'a,
 {
     fn walk(&mut self, typ: &'a T) {
@@ -3877,7 +3912,7 @@ pub trait WalkerMut<T> {
 impl<I, T, F: ?Sized> WalkerMut<T> for F
 where
     F: FnMut(&mut T),
-    T: DerefMut<Target = Type<I, T>>,
+    T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
 {
     fn walk_mut(&mut self, typ: &mut T) {
         self(typ);
@@ -3889,7 +3924,7 @@ where
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
 where
     F: TypeVisitor<I, T>,
-    T: Deref<Target = Type<I, T>> + Clone,
+    T: TypePtr<Id = I> + Clone,
     I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
@@ -3898,7 +3933,7 @@ where
 pub fn visit_type_opt<F: ?Sized, I, T>(typ: &T, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
-    T: Deref<Target = Type<I, T>> + Clone,
+    T: TypePtr<Id = I> + Clone,
     I: Clone,
 {
     f.visit(typ)
@@ -3907,7 +3942,7 @@ where
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
-    T: Deref<Target = Type<I, T>> + Clone,
+    T: TypePtr<Id = I> + Clone,
     I: Clone,
 {
     match *typ {
@@ -3979,7 +4014,7 @@ where
 
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
     Id: Clone,
     F: FnMut(&T) -> U,
 {
@@ -3993,7 +4028,8 @@ where
 
 pub fn translate_type<Id, T, U>(interner: &mut impl TypeContext<Id, U>, arc_type: &T) -> U
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
+    U: TypePtr<Id = Id>,
     Id: Clone,
 {
     translate_type_with(interner, arc_type, |interner, typ| {
@@ -4007,7 +4043,8 @@ pub fn translate_type_with<Id, T, U, I, F>(
     mut translate: F,
 ) -> U
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
+    U: TypePtr<Id = Id>,
     Id: Clone,
     F: FnMut(&mut I, &T) -> U,
     I: TypeContext<Id, U>,

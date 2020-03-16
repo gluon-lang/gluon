@@ -4,7 +4,6 @@
 use std::{
     borrow::{BorrowMut, Cow},
     mem,
-    ops::Deref,
     sync::Arc,
 };
 
@@ -3311,7 +3310,7 @@ fn generalize_binding<'ast>(
 
 fn ctor_return_type<'a, Id, T>(typ: &'a T) -> &'a T
 where
-    T: Deref<Target = Type<Id, T>>,
+    T: TypePtr<Id = Id>,
     Id: 'a,
 {
     match &**typ {

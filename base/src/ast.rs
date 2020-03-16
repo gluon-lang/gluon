@@ -196,6 +196,7 @@ pub type KindedIdent<Id> = TypedIdent<Id, ArcKind>;
     serde(bound(deserialize = "
            T: DeserializeState<'de, Seed<Id, U>>,
            U: Clone
+                + TypePtr<Id = Id>
                 + From<Type<Id, U>>
                 + std::any::Any
                 + DeserializeState<'de, Seed<Id, U>>,

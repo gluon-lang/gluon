@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
@@ -10,7 +9,7 @@ use crate::metadata::{Comment, CommentType};
 use crate::pos::{BytePos, HasSpan, Span};
 use crate::source::Source;
 
-use crate::types::{pretty_print, Type};
+use crate::types::{pretty_print, Type, TypePtr};
 
 pub fn ident<'a, S, A>(arena: &'a Arena<'a, A>, name: S) -> DocBuilder<'a, Arena<'a, A>, A>
 where
@@ -129,7 +128,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 
     pub fn pretty(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
-        T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
+        T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
         I: AsRef<str>,
         A: Clone,
     {
@@ -156,7 +155,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + HasMetadata + 'a,
+    T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
