@@ -501,8 +501,8 @@ AtomicType: AstType<'ast, Id> = {
 AppType_ = {
     AtomicType_,
 
-    <ty: AtomicType> <args: AtomicType+> =>
-        Type::App(ty, args.into_iter().collect()),
+    <ty: AtomicType> <args: Many1<AtomicType>> =>
+        Type::App(ty, args),
 };
 
 AppType: AstType<'ast, Id> = {

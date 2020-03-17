@@ -4,6 +4,7 @@ use std::{
     cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
+    iter::FromIterator,
     iter::{self, FusedIterator},
     marker::PhantomData,
     mem,
@@ -12,9 +13,11 @@ use std::{
     sync::Arc,
 };
 
-use pretty::{Arena, Doc, DocAllocator, DocBuilder};
-
-use itertools::Itertools;
+use {
+    itertools::Itertools,
+    pretty::{Arena, Doc, DocAllocator, DocBuilder},
+    smallvec::SmallVec,
+};
 
 use crate::{
     ast::{EmptyEnv, HasMetadata, IdentEnv},
@@ -116,7 +119,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 
 type_cache! {
     TypeCache(Id, T)
-    where [T: TypePtr<Id = Id>,]
+    where [T: TypePtr<Id = Id>, T::Types: Default + Extend<T>,]
     (kind_cache: crate::kind::KindCache)
     { T, Type }
     hole opaque error int byte float string char
@@ -126,6 +129,7 @@ type_cache! {
 impl<Id, T> TypeCache<Id, T>
 where
     T: TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
+    T::Types: Default + Extend<T>,
 {
     pub fn function<I>(&self, args: I, ret: T) -> T
     where
@@ -195,6 +199,7 @@ where
 impl<Id, T> TypeCache<Id, T>
 where
     T: TypePtr<Id = Id> + Clone,
+    T::Types: Default + Extend<T> + FromIterator<T>,
 {
     pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
@@ -384,6 +389,7 @@ where
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 where
     T: TypePtr<Id = Id> + From<Type<Id, T>>,
+    T::Types: Clone + Default + Extend<T>,
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
@@ -431,6 +437,7 @@ where
 impl<Id, T> Alias<Id, T>
 where
     T: TypePtr<Id = Id> + From<Type<Id, T>>,
+    T::Types: Clone + Default + Extend<T>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
         Alias {
@@ -466,6 +473,7 @@ impl<Id, T> Alias<Id, T> {
 impl<Id, T> Alias<Id, T>
 where
     T: TypeExt<Id = Id> + Clone,
+    T::Types: Clone + Default + Extend<T>,
     Id: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
@@ -588,6 +596,7 @@ impl<Id, T> AliasRef<Id, T> {
 impl<Id, T> AliasRef<Id, T>
 where
     T: TypeExt<Id = Id> + Clone,
+    T::Types: Clone + Default + Extend<T>,
     Id: Clone + PartialEq,
 {
     pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
@@ -686,7 +695,8 @@ where
             .iter()
             .cloned()
             .map(|g| context.generic(g))
-            .collect();
+            .collect::<SmallVec<[_; 5]>>();
+        let args = context.intern_types(args);
         context.app(f, args)
     }
 }
@@ -764,7 +774,7 @@ pub struct Field<Id, T = ArcType<Id>> {
 /// type. If `Type` is changed in a way that changes its size it is likely a good idea to change
 /// the number of elements in the `SmallVec` so that it fills out the entire `Type` enum while not
 /// increasing the size of `Type`.
-pub type AppVec<T> = Vec<T>;
+pub type AppVec<T> = SmallVec<[T; 2]>;
 
 impl<Id, T> Field<Id, T> {
     pub fn new(name: Id, typ: T) -> Field<Id, T> {
@@ -794,6 +804,7 @@ impl<Id, T> Field<Id, T> {
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
         T: TypePtr<Id = Id> + From<Type<Id, T>>,
+        T::Types: Default + Extend<T>,
     {
         let typ = Type::function_type(ArgType::Constructor, elems, Type::opaque());
         Field {
@@ -828,16 +839,20 @@ impl Default for ArgType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(deserialize = "
+    serde(bound(
+        deserialize = "
            T: Clone
                 + TypePtr<Id = Id>
                 + From<Type<Id, T>>
                 + std::any::Any
                 + DeserializeState<'de, Seed<Id, T>>,
+           T::Types: Default + Extend<T>,
            Id: DeserializeState<'de, Seed<Id, T>>
                 + Clone
                 + std::any::Any
-                + DeserializeState<'de, Seed<Id, T>>"))
+                + DeserializeState<'de, Seed<Id, T>>",
+        serialize = "T: TypePtr<Id = Id> + SerializeState<SeSeed>, Id: SerializeState<SeSeed>"
+    ))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
@@ -862,7 +877,7 @@ pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
             feature = "serde_derive",
             serde(state_with = "crate::serialization::seq")
         )]
-        AppVec<T>,
+        T::Types,
     ),
     /// Function type which can have a explicit or implicit argument
     Function(
@@ -931,7 +946,7 @@ where
 
 #[cfg(target_pointer_width = "64")]
 // Safeguard against accidentally growing Type as it is a core type
-const _: [(); 8 * 5] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
+const _: [(); 8 * 6] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
 impl<Id, T> Type<Id, T>
 where
@@ -948,6 +963,7 @@ where
 impl<Id, T> Type<Id, T>
 where
     T: From<Type<Id, T>> + TypePtr<Id = Id>,
+    T::Types: Default + Extend<T>,
 {
     pub fn hole() -> T {
         T::from(Type::Hole)
@@ -981,7 +997,7 @@ where
         Type::builtin(BuiltinType::Array)
     }
 
-    pub fn app(id: T, args: AppVec<T>) -> T {
+    pub fn app(id: T, args: T::Types) -> T {
         if args.is_empty() {
             id
         } else {
@@ -1564,6 +1580,7 @@ where
 
 pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
+    type Types: Deref<Target = [Self]> + Default;
 
     fn spine(&self) -> &Self {
         match &**self {
@@ -1623,6 +1640,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
     where
         Self::Id: Clone + Eq + Hash,
         Self: Clone,
+        Self::Types: Clone,
     {
         if named_variables.is_empty() {
             None
@@ -1639,6 +1657,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
     where
         Self::Id: Clone + Eq + Hash,
         Self: Clone,
+        Self::Types: Clone,
     {
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
@@ -1712,6 +1731,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: Clone + Eq + Hash,
         Self: fmt::Display,
         Self::Id: fmt::Display,
+        Self::Types: Clone + FromIterator<Self>,
     {
         let (non_replaced_type, unapplied_args) =
             self.arg_application(params, args, interner, named_variables)?;
@@ -1733,6 +1753,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: Clone + Eq + Hash,
         Self: fmt::Display,
         Self::Id: fmt::Display,
+        Self::Types: FromIterator<Self>,
     {
         // If the alias was just hiding an error then any application is also an error as we have
         // no way of knowing how many arguments it should take
@@ -1766,7 +1787,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
                 return None;
             }
             // Remove the args at the end of the aliased type
-            let arg_types: AppVec<_> = arg_types
+            let arg_types = arg_types
                 .iter()
                 .take(arg_types.len() + args.len() - params.len())
                 .cloned()
@@ -1797,6 +1818,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::Types: Clone,
     {
         let mut typ = self;
         while let Type::Forall(params, inner_type) = &**typ {
@@ -1822,6 +1844,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::Types: Clone,
     {
         let mut typ = self;
         while let Type::Forall(ref params, ref inner_type) = **typ {
@@ -1850,6 +1873,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::Types: Clone,
     {
         let skolemized = self.skolemize(interner, named_variables);
         let new_type = f(skolemized);
@@ -1889,6 +1913,7 @@ where
 
 impl<Id> TypePtr for ArcType<Id> {
     type Id = Id;
+    type Types = AppVec<Self>;
 }
 
 impl<Id> TypeExt for ArcType<Id>
@@ -2829,7 +2854,7 @@ where
         }
         Type::App(ref t, ref args) => {
             f.walk(t);
-            for a in args {
+            for a in &**args {
                 f.walk(a);
             }
         }
@@ -2873,6 +2898,7 @@ pub fn walk_type_mut<I, T, F: ?Sized>(typ: &mut T, f: &mut F)
 where
     F: WalkerMut<T>,
     T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
+    T::Types: DerefMut<Target = [T]>,
 {
     match **typ {
         Type::Forall(_, ref mut typ) => f.walk_mut(typ),
@@ -2882,7 +2908,7 @@ where
         }
         Type::App(ref mut t, ref mut args) => {
             f.walk_mut(t);
-            for a in args {
+            for a in args.iter_mut() {
                 f.walk_mut(a);
             }
         }
@@ -2939,6 +2965,7 @@ where
 pub trait TypeVisitor<Id, T>
 where
     T: TypePtr<Id = Id>,
+    T::Types: Clone,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -2949,6 +2976,7 @@ where
     }
 
     fn make(&mut self, typ: Type<Id, T>) -> T;
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types;
 
     fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
         if params.is_empty() {
@@ -2958,7 +2986,7 @@ where
         }
     }
 
-    fn app(&mut self, id: T, args: AppVec<T>) -> T {
+    fn app(&mut self, id: T, args: T::Types) -> T {
         if args.is_empty() {
             id
         } else {
@@ -2975,6 +3003,7 @@ impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
 where
     F: FnMut(&T) -> Option<T>,
     T: TypePtr<Id = I> + From<Type<I, T>>,
+    T::Types: FromIterator<T> + Clone,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -2988,6 +3017,9 @@ where
 
     fn make(&mut self, typ: Type<I, T>) -> T {
         T::from(typ)
+    }
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        typ.into_iter().collect()
     }
 }
 
@@ -3019,6 +3051,10 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern(typ)
         }
 
+        fn intern_types(&mut self, types: impl IntoIterator<Item = $typ>) -> <$typ as $crate::types::TypePtr>::Types {
+            $crate::expr!(self, $($tokens)+).intern_types(types)
+        }
+
         fn intern_flags(&mut self, typ: $crate::types::Type<$id, $typ>, flags: $crate::types::Flags) -> $typ {
             $crate::expr!(self, $($tokens)+).intern_flags(typ, flags)
         }
@@ -3043,7 +3079,7 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).array(typ)
         }
 
-        fn app(&mut self, id: $typ, args: $crate::types::AppVec<$typ>) -> $typ {
+        fn app(&mut self, id: $typ, args: <$typ as $crate::types::TypePtr>::Types) -> $typ {
             $crate::expr!(self, $($tokens)+).app(id, args)
         }
 
@@ -3214,6 +3250,8 @@ where
 
     fn intern(&mut self, typ: Type<Id, T>) -> T;
 
+    fn intern_types(&mut self, types: impl IntoIterator<Item = T>) -> T::Types;
+
     fn hole(&mut self) -> T {
         self.intern(Type::Hole)
     }
@@ -3249,14 +3287,15 @@ where
 
     fn array(&mut self, typ: T) -> T {
         let a = self.array_builtin();
-        self.app(a, collect![typ])
+        let typ = self.intern_types(Some(typ));
+        self.app(a, typ)
     }
 
     fn array_builtin(&mut self) -> T {
         self.builtin(BuiltinType::Array)
     }
 
-    fn app(&mut self, id: T, args: AppVec<T>) -> T {
+    fn app(&mut self, id: T, args: T::Types) -> T {
         if args.is_empty() {
             id
         } else {
@@ -3542,9 +3581,14 @@ pub struct NullInterner;
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
+    T::Types: FromIterator<T>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_types(&mut self, types: impl IntoIterator<Item = T>) -> T::Types {
+        types.into_iter().collect()
     }
 
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
@@ -3565,9 +3609,14 @@ macro_rules! forward_to_cache {
 impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
+    T::Types: Default + Extend<T> + FromIterator<T>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_types(&mut self, types: impl IntoIterator<Item = T>) -> T::Types {
+        types.into_iter().collect()
     }
 
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
@@ -3583,9 +3632,14 @@ where
 impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
+    T::Types: Default + Extend<T> + FromIterator<T>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
+    }
+
+    fn intern_types(&mut self, types: impl IntoIterator<Item = T>) -> T::Types {
+        types.into_iter().collect()
     }
 
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
@@ -3606,6 +3660,13 @@ impl<'ast, Id> TypeContext<Id, crate::ast::AstType<'ast, Id>>
         typ: Type<Id, crate::ast::AstType<'ast, Id>>,
     ) -> crate::ast::AstType<'ast, Id> {
         crate::ast::AstType::new_no_loc(*self, typ)
+    }
+
+    fn intern_types(
+        &mut self,
+        types: impl IntoIterator<Item = crate::ast::AstType<'ast, Id>>,
+    ) -> &'ast mut [crate::ast::AstType<'ast, Id>] {
+        self.alloc_extend(types)
     }
 
     fn intern_flags(
@@ -3682,6 +3743,7 @@ impl TypeContextAlloc for ArcType {
 pub struct Interner<Id, T>
 where
     T: TypePtr<Id = Id>,
+    T::Types: Default + Extend<T> + FromIterator<T>,
 {
     set: FnvMap<Interned<T>, ()>,
     scratch: Interned<T>,
@@ -3692,6 +3754,7 @@ impl<Id, T> Default for Interner<Id, T>
 where
     T: Default + TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
     T::Target: Eq + Hash,
+    T::Types: Default + Extend<T> + FromIterator<T>,
 {
     fn default() -> Self {
         let mut interner = Interner {
@@ -3730,12 +3793,17 @@ macro_rules! forward_to_intern_cache {
 
 impl<Id, T> TypeContext<Id, T> for Interner<Id, T>
 where
-    T: TypeContextAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
+    T: TypeContextAlloc<Id = Id> + TypeExt<Id = Id, Types = AppVec<T>> + Eq + Hash + Clone,
+    T::Types: FromIterator<T>,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         let flags = Flags::from_type(&typ);
         self.intern_flags(typ, flags)
+    }
+
+    fn intern_types(&mut self, types: impl IntoIterator<Item = T>) -> T::Types {
+        types.into_iter().collect()
     }
 
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
@@ -3786,7 +3854,7 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
 impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, F, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
-    T: TypeExt<Id = I>,
+    T: TypeExt<Id = I, Types = AppVec<T>>,
     V: TypeContext<I, T>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
@@ -3802,6 +3870,9 @@ where
     fn make(&mut self, typ: Type<I, T>) -> T {
         self.interner.intern(typ)
     }
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        self.interner.intern_types(typ)
+    }
 }
 
 impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, ControlVisitation<F>, V>
@@ -3809,6 +3880,7 @@ where
     F: FnMut(&mut V, &T) -> Option<T>,
     T: TypeExt<Id = I>,
     V: TypeContext<I, T>,
+    T::Types: Clone,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -3821,6 +3893,10 @@ where
     fn make(&mut self, typ: Type<I, T>) -> T {
         self.interner.intern(typ)
     }
+
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        self.interner.intern_types(typ)
+    }
 }
 
 /// Wrapper type which allows functions to control how to traverse the members of the type
@@ -3830,6 +3906,7 @@ impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 where
     F: FnMut(&T) -> Option<T>,
     T: From<Type<I, T>> + TypePtr<Id = I>,
+    T::Types: FromIterator<T> + Clone,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -3841,6 +3918,10 @@ where
 
     fn make(&mut self, typ: Type<I, T>) -> T {
         T::from(typ)
+    }
+
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        typ.into_iter().collect()
     }
 }
 
@@ -3859,7 +3940,7 @@ pub struct FlagsVisitor<F: ?Sized>(pub Flags, pub F);
 impl<F, I, T> TypeVisitor<I, T> for FlagsVisitor<F>
 where
     F: FnMut(&T) -> Option<T>,
-    T: From<Type<I, T>> + TypeExt<Id = I>,
+    T: From<Type<I, T>> + TypeExt<Id = I, Types = AppVec<T>>,
 {
     fn visit(&mut self, typ: &T) -> Option<T>
     where
@@ -3877,6 +3958,10 @@ where
 
     fn make(&mut self, typ: Type<I, T>) -> T {
         T::from(typ)
+    }
+
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        typ.into_iter().collect()
     }
 }
 
@@ -3913,6 +3998,7 @@ impl<I, T, F: ?Sized> WalkerMut<T> for F
 where
     F: FnMut(&mut T),
     T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
+    T::Types: DerefMut<Target = [T]>,
 {
     fn walk_mut(&mut self, typ: &mut T) {
         self(typ);
@@ -3925,6 +4011,7 @@ pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
 where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
+    T::Types: Clone,
     I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
@@ -3934,6 +4021,7 @@ pub fn visit_type_opt<F: ?Sized, I, T>(typ: &T, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
+    T::Types: Clone,
     I: Clone,
 {
     f.visit(typ)
@@ -3943,6 +4031,7 @@ pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Optio
 where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
+    T::Types: Clone,
     I: Clone,
 {
     match *typ {
@@ -3956,7 +4045,9 @@ where
             })
         }
         Type::App(ref id, ref args) => {
-            let new_args = walk_move_types(args, |t| f.visit(t));
+            // TODO Avoid Vec allocation
+            let new_args =
+                walk_move_types(args.iter(), |t| f.visit(t)).map(|args: Vec<_>| f.make_types(args));
             merge(id, f.visit(id), args, new_args, |x, y| f.app(x, y))
         }
         Type::Record(ref row) => f.visit(row).map(|row| f.make(Type::Record(row))),
@@ -4007,7 +4098,7 @@ where
     I::IntoIter: FusedIterator + Clone,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: std::iter::FromIterator<T>,
+    R: FromIterator<T>,
 {
     merge_collect(types, f, Clone::clone)
 }
@@ -4061,10 +4152,12 @@ where
             interner.intern(t)
         }
         Type::App(ref f, ref args) => {
-            let t = Type::App(
-                translate(interner, f),
-                args.iter().map(|typ| translate(interner, typ)).collect(),
-            );
+            let f = translate(interner, f);
+            let args = args
+                .iter()
+                .map(|typ| translate(interner, typ))
+                .collect::<SmallVec<[_; 5]>>();
+            let t = Type::App(f, interner.intern_types(args));
             interner.intern(t)
         }
         Type::Record(ref row) => intern!(Type::Record(translate(interner, row))),

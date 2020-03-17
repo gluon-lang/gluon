@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::fmt;
+use std::{fmt, iter::FromIterator};
 
 use crate::base::{
     ast::RootSpannedExpr,
@@ -9,7 +9,9 @@ use crate::base::{
     metadata::{Metadata, MetadataEnv},
     pos::{BytePos, Spanned},
     symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
-    types::{self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv},
+    types::{
+        self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv, TypePtr,
+    },
 };
 
 use crate::check::{
@@ -118,7 +120,8 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 where
-    T: From<Type<Symbol, T>>,
+    T: TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
+    T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(!s.is_empty());
 

@@ -288,9 +288,13 @@ fn binding_type<'ast>(
             TypeContext::app(
                 &mut arena.clone(),
                 derive_type(),
-                collect![arena.clone().generic(g)],
+                arena.clone().alloc_extend(Some(arena.clone().generic(g))),
             )
         }),
-        TypeContext::app(&mut arena.clone(), derive_type(), collect![self_type]),
+        TypeContext::app(
+            &mut arena.clone(),
+            derive_type(),
+            arena.clone().alloc_extend(Some(self_type)),
+        ),
     )
 }

@@ -13,7 +13,9 @@ use self::{
         metadata::{Metadata, MetadataEnv},
         pos::{BytePos, Spanned},
         symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
-        types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+        types::{
+            self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv, TypePtr,
+        },
     },
     check::{
         metadata, rename,
@@ -26,7 +28,7 @@ use {collect_mac::collect, quick_error::quick_error};
 
 pub use self::base::types::TypeExt;
 
-use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc, sync::Arc};
+use std::{cell::RefCell, fmt, iter::FromIterator, marker::PhantomData, rc::Rc, sync::Arc};
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
@@ -297,7 +299,8 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, kind: ArcKind, args: Vec<T>) -> T
 where
-    T: From<Type<Symbol, T>>,
+    T: TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
+    T::Types: FromIterator<T> + Extend<T>,
 {
     assert!(s.len() != 0);
 

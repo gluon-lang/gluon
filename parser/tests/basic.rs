@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 #[macro_use]
@@ -704,7 +701,7 @@ x
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                 typ: Some(arena.clone().app(
                     typ(arena, "->"),
-                    collect![typ(arena, "Int"), typ(arena, "Int")]
+                    arena.alloc_extend(vec![typ(arena, "Int"), typ(arena, "Int")])
                 )),
                 resolved_type: Type::hole(),
                 args: &mut [],

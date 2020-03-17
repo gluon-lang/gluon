@@ -84,6 +84,10 @@ pub struct AstType<'ast, Id> {
     _typ: &'ast mut InnerAstType<'ast, Id>,
 }
 
+// Workaround https://github.com/rust-lang/rust/issues/70083
+unsafe impl<'ast, Id> Send for AstType<'ast, Id> where Id: Send {}
+unsafe impl<'ast, Id> Sync for AstType<'ast, Id> where Id: Sync {}
+
 impl<'ast, Id> Deref for AstType<'ast, Id> {
     type Target = Type<Id, AstType<'ast, Id>>;
 
@@ -110,8 +114,9 @@ impl<Id> HasSpan for AstType<'_, Id> {
     }
 }
 
-impl<Id> TypePtr for AstType<'_, Id> {
+impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Id = Id;
+    type Types = &'ast mut [AstType<'ast, Id>];
 }
 
 pub trait HasMetadata {
@@ -876,7 +881,7 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
             v.visit_ast_type(&$($mut)* ret._typ.typ);
         }
         Type::App(ref $($mut)* ast_type, ref $($mut)* ast_types) => {
-            for ast_type in ast_types {
+            for ast_type in & $($mut)* **ast_types {
                 v.visit_ast_type(&$($mut)* ast_type._typ.typ);
             }
             v.visit_ast_type(&$($mut)* ast_type._typ.typ)
@@ -1199,6 +1204,7 @@ impl_ast_arena! {
     Alternative<'ast, Id> => alts,
     Argument<SpannedIdent<Id>> => args,
     InnerAstType<'ast, Id> => types,
+    AstType<'ast, Id> => type_ptrs,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

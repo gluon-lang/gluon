@@ -251,7 +251,7 @@ impl<'a> KindCheck<'a> {
 
                 let mut prev_span = ctor.span();
 
-                for arg in args {
+                for arg in &mut **args {
                     let (arg_kind, ret) = self.unify_function(prev_span, kind)?;
 
                     let actual = self.kindcheck(arg)?;

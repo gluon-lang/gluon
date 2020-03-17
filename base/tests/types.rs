@@ -5,7 +5,7 @@ extern crate pretty;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::{cell::RefCell, ops::Deref, rc::Rc};
+use std::{cell::RefCell, iter::FromIterator, ops::Deref, rc::Rc};
 
 use pretty::{Arena, DocAllocator};
 
@@ -21,7 +21,8 @@ use base::{
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
     I: Deref<Target = str>,
-    T: From<Type<I, T>>,
+    T: TypePtr<Id = I> + From<Type<I, T>>,
+    T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(s.len() != 0);
     match s.parse() {

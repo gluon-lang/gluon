@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, iter::FromIterator};
 
 use crate::{
     fnv::FnvMap,
@@ -61,6 +61,7 @@ impl<T> AliasRemover<T> {
 impl<T> AliasRemover<T>
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
 {
     pub fn canonical_alias<'t, F>(
         &mut self,
@@ -241,6 +242,7 @@ pub fn remove_aliases<T>(
 ) -> T
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
 {
     while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
@@ -256,6 +258,7 @@ pub fn remove_aliases_cow<'t, T>(
 ) -> Cow<'t, T>
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
 {
     match remove_alias(env, interner, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
@@ -274,6 +277,7 @@ pub fn canonical_alias<'t, F, T>(
 where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -307,6 +311,7 @@ pub fn remove_alias<T>(
 ) -> Result<Option<T>, Error>
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -328,6 +333,7 @@ pub fn peek_alias<'t, T>(
 ) -> Result<Option<AliasRef<Symbol, T>>, Error>
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T>,
 {
     let maybe_alias = typ.applied_alias();
 

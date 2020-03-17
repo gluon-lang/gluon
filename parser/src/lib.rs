@@ -326,6 +326,7 @@ impl_temp_vec! {
     ast::Argument<ast::SpannedIdent<Id>> => args,
     FieldExpr<'ast, Id> => field_expr,
     ast::InnerAstType<'ast, Id> => types,
+    AstType<'ast, Id> => type_ptrs,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;

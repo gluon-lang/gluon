@@ -104,7 +104,7 @@ pub fn generate<'ast>(
         typ: Some(TypeContext::app(
             &mut arena.clone(),
             arena.ident(KindedIdent::new(symbols.simple_symbol("ValueDeserializer"))),
-            collect![self_type()],
+            arena.clone().alloc_extend(Some(self_type())),
         )),
         resolved_type: Type::hole(),
     };

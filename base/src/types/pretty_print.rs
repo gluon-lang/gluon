@@ -9,7 +9,7 @@ use crate::metadata::{Comment, CommentType};
 use crate::pos::{BytePos, HasSpan, Span};
 use crate::source::Source;
 
-use crate::types::{pretty_print, Type, TypePtr};
+use crate::types::{pretty_print, TypePtr};
 
 pub fn ident<'a, S, A>(arena: &'a Arena<'a, A>, name: S) -> DocBuilder<'a, Arena<'a, A>, A>
 where
