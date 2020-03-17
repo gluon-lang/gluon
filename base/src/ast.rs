@@ -22,7 +22,8 @@ use crate::{
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{
-        self, Alias, AliasData, ArcType, ArgType, NullInterner, Type, TypeEnv, TypeExt, TypePtr,
+        self, Alias, AliasData, ArcType, ArgType, Generic, NullInterner, Type, TypeEnv, TypeExt,
+        TypePtr,
     },
 };
 
@@ -117,6 +118,7 @@ impl<Id> HasSpan for AstType<'_, Id> {
 impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Id = Id;
     type Types = &'ast mut [AstType<'ast, Id>];
+    type Generics = &'ast mut [Generic<Id>];
 }
 
 pub trait HasMetadata {
@@ -1205,6 +1207,7 @@ impl_ast_arena! {
     Argument<SpannedIdent<Id>> => args,
     InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
+    Generic<Id> => generics,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

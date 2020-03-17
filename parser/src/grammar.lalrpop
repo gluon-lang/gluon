@@ -418,7 +418,7 @@ TypeBinding: TypeBinding<'ast, Id> = {
                 };
 
                 arena.clone().forall(
-                    forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole())).collect(),
+                    arena.alloc_extend(forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole()))),
                     AstType::new(arena, pos::spanned(span, Type::Variant(row)))
                 )
             }
@@ -512,10 +512,10 @@ AppType: AstType<'ast, Id> = {
 Type_ = {
     AppType_,
     "forall" <args: Ident+> "." <ty: Type> =>
-        Type::Forall(args.into_iter()
-                         .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
-                         .collect(),
-                     ty),
+        Type::Forall(
+            arena.alloc_extend(args.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole()))),
+            ty,
+        ),
 
     <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
         Type::Function(

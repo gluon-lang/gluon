@@ -3,7 +3,7 @@ use std::{borrow::Cow, iter::FromIterator};
 use crate::{
     fnv::FnvMap,
     symbol::Symbol,
-    types::{AliasData, AliasRef, Type, TypeContext, TypeEnv, TypeExt},
+    types::{AliasData, AliasRef, Generic, Type, TypeContext, TypeEnv, TypeExt},
 };
 
 quick_error! {
@@ -62,6 +62,7 @@ impl<T> AliasRemover<T>
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     pub fn canonical_alias<'t, F>(
         &mut self,
@@ -243,6 +244,7 @@ pub fn remove_aliases<T>(
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
@@ -259,6 +261,7 @@ pub fn remove_aliases_cow<'t, T>(
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     match remove_alias(env, interner, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
@@ -278,6 +281,7 @@ where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -312,6 +316,7 @@ pub fn remove_alias<T>(
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -334,6 +339,7 @@ pub fn peek_alias<'t, T>(
 where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
 {
     let maybe_alias = typ.applied_alias();
 
