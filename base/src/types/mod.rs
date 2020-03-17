@@ -1582,6 +1582,10 @@ pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
     type Types: Deref<Target = [Self]> + Default;
 
+    fn flags(&self) -> Flags {
+        Flags::all()
+    }
+
     fn spine(&self) -> &Self {
         match &**self {
             Type::App(ref id, _) => id.spine(),
@@ -1807,10 +1811,6 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Some((typ.into_owned(), &args[params.len().min(args.len())..]))
     }
 
-    fn flags(&self) -> Flags {
-        Flags::all()
-    }
-
     fn instantiate_generics(
         &self,
         interner: &mut impl Substitution<Self::Id, Self>,
@@ -1914,6 +1914,10 @@ where
 impl<Id> TypePtr for ArcType<Id> {
     type Id = Id;
     type Types = AppVec<Self>;
+
+    fn flags(&self) -> Flags {
+        self.typ.flags
+    }
 }
 
 impl<Id> TypeExt for ArcType<Id>
@@ -1922,10 +1926,6 @@ where
 {
     fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
-    }
-
-    fn flags(&self) -> Flags {
-        self.typ.flags
     }
 }
 
@@ -2967,6 +2967,18 @@ where
     T: TypePtr<Id = Id>,
     T::Types: Clone,
 {
+    type Context: TypeContext<Id, T>;
+
+    fn context(&mut self) -> &mut Self::Context;
+
+    fn make(&mut self, typ: Type<Id, T>) -> T {
+        self.context().intern(typ)
+    }
+
+    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
+        self.context().intern_types(typ)
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: TypePtr<Id = Id> + Clone,
@@ -2974,9 +2986,6 @@ where
     {
         walk_move_type_opt(typ, self)
     }
-
-    fn make(&mut self, typ: Type<Id, T>) -> T;
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types;
 
     fn forall(&mut self, params: Vec<Generic<Id>>, typ: T) -> T {
         if params.is_empty() {
@@ -2999,27 +3008,26 @@ pub trait Walker<'a, T> {
     fn walk(&mut self, typ: &'a T);
 }
 
-impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
+impl<Id, T, F: ?Sized> TypeVisitor<Id, T> for F
 where
     F: FnMut(&T) -> Option<T>,
-    T: TypePtr<Id = I> + From<Type<I, T>>,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
 {
+    type Context = NullInterner;
+
+    fn context(&mut self) -> &mut Self::Context {
+        &mut NullInterner
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
-        I: Clone,
+        T: TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
+        Id: Clone,
     {
         let new_type = walk_move_type_opt(typ, self);
         let new_type2 = self(new_type.as_ref().map_or(typ, |t| t));
         new_type2.or(new_type)
-    }
-
-    fn make(&mut self, typ: Type<I, T>) -> T {
-        T::from(typ)
-    }
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
-        typ.into_iter().collect()
     }
 }
 
@@ -3575,8 +3583,13 @@ where
 
 pub type SharedInterner<Id, T> = TypeCache<Id, T>;
 
-#[derive(Default, Clone)]
-pub struct NullInterner;
+pub struct NullInternerInner;
+// Workaround since &mut NullInterner does not get promoted to a `&'static mut NullInterner` but
+// `&mut []` does
+pub type NullInterner = [NullInternerInner; 0];
+
+#[allow(non_upper_case_globals)]
+pub const NullInterner: NullInterner = [];
 
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
@@ -3857,6 +3870,12 @@ where
     T: TypeExt<Id = I, Types = AppVec<T>>,
     V: TypeContext<I, T>,
 {
+    type Context = V;
+
+    fn context(&mut self) -> &mut Self::Context {
+        &mut self.interner
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: TypePtr<Id = I> + Clone,
@@ -3865,13 +3884,6 @@ where
         let new_type = walk_move_type_opt(typ, self);
         let new_type2 = (self.visitor)(self.interner, new_type.as_ref().map_or(typ, |t| t));
         new_type2.or(new_type)
-    }
-
-    fn make(&mut self, typ: Type<I, T>) -> T {
-        self.interner.intern(typ)
-    }
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
-        self.interner.intern_types(typ)
     }
 }
 
@@ -3882,6 +3894,12 @@ where
     V: TypeContext<I, T>,
     T::Types: Clone,
 {
+    type Context = V;
+
+    fn context(&mut self) -> &mut Self::Context {
+        &mut self.interner
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: TypePtr<Id = I> + Clone,
@@ -3889,39 +3907,29 @@ where
     {
         (self.visitor.0)(self.interner, typ)
     }
-
-    fn make(&mut self, typ: Type<I, T>) -> T {
-        self.interner.intern(typ)
-    }
-
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
-        self.interner.intern_types(typ)
-    }
 }
 
 /// Wrapper type which allows functions to control how to traverse the members of the type
 pub struct ControlVisitation<F: ?Sized>(pub F);
 
-impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
+impl<F, Id, T> TypeVisitor<Id, T> for ControlVisitation<F>
 where
     F: FnMut(&T) -> Option<T>,
-    T: From<Type<I, T>> + TypePtr<Id = I>,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
 {
+    type Context = NullInterner;
+
+    fn context(&mut self) -> &mut Self::Context {
+        &mut NullInterner
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
-        I: Clone,
+        T: TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
+        Id: Clone,
     {
         (self.0)(typ)
-    }
-
-    fn make(&mut self, typ: Type<I, T>) -> T {
-        T::from(typ)
-    }
-
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
-        typ.into_iter().collect()
     }
 }
 
@@ -3937,15 +3945,22 @@ where
 
 pub struct FlagsVisitor<F: ?Sized>(pub Flags, pub F);
 
-impl<F, I, T> TypeVisitor<I, T> for FlagsVisitor<F>
+impl<F, Id, T> TypeVisitor<Id, T> for FlagsVisitor<F>
 where
     F: FnMut(&T) -> Option<T>,
-    T: From<Type<I, T>> + TypeExt<Id = I, Types = AppVec<T>>,
+    T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
+    T::Types: FromIterator<T> + Clone,
 {
+    type Context = NullInterner;
+
+    fn context(&mut self) -> &mut Self::Context {
+        &mut NullInterner
+    }
+
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: TypePtr<Id = I> + From<Type<I, T>> + Clone,
-        I: Clone,
+        T: TypePtr<Id = Id> + From<Type<Id, T>> + Clone,
+        Id: Clone,
     {
         if self.0.intersects(typ.flags()) {
             let new_type = walk_move_type_opt(typ, self);
@@ -3954,14 +3969,6 @@ where
         } else {
             None
         }
-    }
-
-    fn make(&mut self, typ: Type<I, T>) -> T {
-        T::from(typ)
-    }
-
-    fn make_types(&mut self, typ: impl IntoIterator<Item = T>) -> T::Types {
-        typ.into_iter().collect()
     }
 }
 
