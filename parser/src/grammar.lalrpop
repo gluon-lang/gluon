@@ -370,7 +370,7 @@ TypeTop: Either<AstType<'ast, Id>, Spanned<(Vec<Id>, Vec<Variant<'ast, Id>>, Opt
         Either::Left(
             AstType::new(
                 arena,
-                pos::spanned(span, Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }))))
+                pos::spanned(span, Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Default::default(), rest }))))
             ),
         )
     },
@@ -392,28 +392,29 @@ TypeBinding: TypeBinding<'ast, Id> = {
                 let row = if variants.is_empty() {
                     rest
                 } else {
-                    let fields = variants.into_iter()
-                        .map(|variant| match variant {
-                            Variant::Gadt(name, mut typ) => {
-                                {
-                                    let mut typ = &mut typ;
-                                    while let Type::Function(arg_type, _, ret) = &mut **typ {
-                                        *arg_type = ArgType::Constructor;
-                                        typ = ret;
+                    let fields = arena.clone().alloc_extend(
+                        variants.into_iter()
+                            .map(|variant| match variant {
+                                Variant::Gadt(name, mut typ) => {
+                                    {
+                                        let mut typ = &mut typ;
+                                        while let Type::Function(arg_type, _, ret) = &mut **typ {
+                                            *arg_type = ArgType::Constructor;
+                                            typ = ret;
+                                        }
                                     }
+                                    Field::new(name, typ)
                                 }
-                                Field::new(name, typ)
-                            }
-                            Variant::Simple(name, types) => Field::new(
-                                name,
-                                arena.clone().function_type(
-                                    ArgType::Constructor,
-                                    types,
-                                    arena.clone().opaque(),
-                                )
-                            ),
-                        })
-                        .collect();
+                                Variant::Simple(name, types) => Field::new(
+                                    name,
+                                    arena.clone().function_type(
+                                        ArgType::Constructor,
+                                        types,
+                                        arena.clone().opaque(),
+                                    )
+                                ),
+                            }),
+                    );
                     AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields, rest }))
                 };
 
@@ -468,11 +469,11 @@ AtomicType_: Type<Id, AstType<'ast, Id>> = {
 
     "(" <rest: Sp<(".." <AtomicType>)>> ")" => {
         let Spanned { span, value: rest } = rest;
-        Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest })))
+        Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Default::default(), rest })))
     },
 
 
-    "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
+    "[" "|" <fields: SepSlice<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
         let rest = rest.unwrap_or_else(|| arena.clone().empty_row());
         Type::Effect(arena.clone().extend_row(fields, rest))
     },
@@ -484,8 +485,15 @@ AtomicType_: Type<Id, AstType<'ast, Id>> = {
             _ => arena.clone().tuple_(env, elems),
         },
 
-    "{" <row: Comma<RecordField>> <rest: ("|" <Type>)?> "}" => {
-        let (types, fields) = row.into_iter().partition_map(|x| x);
+    "{" <row: CommaTemp<RecordField>> <rest: ("|" <Type>)?> "}" => {
+        let mut types = Vec::new();
+        let fields = arena.alloc_extend(temp_vecs.drain(row).filter_map(|either| match either {
+            Either::Left(l) => {
+                types.push(l);
+                None
+            }
+            Either::Right(r) => Some(r),
+        }));
         Type::Record(arena.clone().extend_full_row(
             types,
             fields,

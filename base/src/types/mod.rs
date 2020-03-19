@@ -119,7 +119,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 
 type_cache! {
     TypeCache(Id, T)
-    where [T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>>, T::Types: Default + Extend<T>,]
+    where [T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>, T::Types: Default + Extend<T>,]
     (kind_cache: crate::kind::KindCache)
     { T, Type }
     hole opaque error int byte float string char
@@ -128,7 +128,9 @@ type_cache! {
 
 impl<Id, T> TypeCache<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + From<Type<Id, T>> + Clone,
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
+        + From<Type<Id, T>>
+        + Clone,
     T::Types: Default + Extend<T>,
 {
     pub fn function<I>(&self, args: I, ret: T) -> T
@@ -198,7 +200,7 @@ where
 
 impl<Id, T> TypeCache<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + Clone,
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>> + Clone,
     T::Types: Default + Extend<T> + FromIterator<T>,
 {
     pub fn builtin_type(&self, typ: BuiltinType) -> T {
@@ -388,7 +390,8 @@ where
 
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + From<Type<Id, T>>,
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
+        + From<Type<Id, T>>,
     T::Types: Clone + Default + Extend<T>,
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
@@ -436,7 +439,8 @@ where
 
 impl<Id, T> Alias<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + From<Type<Id, T>>,
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
+        + From<Type<Id, T>>,
     T::Types: Clone + Default + Extend<T>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
@@ -474,6 +478,8 @@ impl<Id, T> Alias<Id, T>
 where
     T: TypeExt<Id = Id> + Clone,
     T::Types: Clone + Default + Extend<T>,
+    T::Generics: Clone,
+    T::Fields: Clone,
     Id: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
@@ -597,6 +603,8 @@ impl<Id, T> AliasRef<Id, T>
 where
     T: TypeExt<Id = Id> + Clone,
     T::Types: Clone + Default + Extend<T>,
+    T::Generics: Clone,
+    T::Fields: Clone,
     Id: Clone + PartialEq,
 {
     pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
@@ -803,7 +811,8 @@ impl<Id, T> Field<Id, T> {
     where
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
-        T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + From<Type<Id, T>>,
+        T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
+            + From<Type<Id, T>>,
         T::Types: Default + Extend<T>,
     {
         let typ = Type::function_type(ArgType::Constructor, elems, Type::opaque());
@@ -848,11 +857,14 @@ impl Default for ArgType {
                 + DeserializeState<'de, Seed<Id, T>>,
            T::Types: Default + Extend<T>,
            T::Generics: Default + Extend<Generic<Id>>,
+           T::Fields: DeserializeState<'de, Seed<Id, T>>,
            Id: DeserializeState<'de, Seed<Id, T>>
                 + Clone
-                + std::any::Any
-                + DeserializeState<'de, Seed<Id, T>>",
-        serialize = "T: TypePtr<Id = Id> + SerializeState<SeSeed>, Id: SerializeState<SeSeed>"
+                + std::any::Any",
+        serialize = "
+            T: TypePtr<Id = Id> + SerializeState<SeSeed>,
+            Id: SerializeState<SeSeed>,
+            T::Fields: SerializeState<SeSeed>"
     ))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
@@ -902,7 +914,7 @@ pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
     ExtendRow {
         /// The fields of this record type
         #[cfg_attr(feature = "serde_derive", serde(state))]
-        fields: Vec<Field<Id, T>>,
+        fields: T::Fields,
         /// The rest of the row
         #[cfg_attr(feature = "serde_derive", serde(state))]
         rest: T,
@@ -967,7 +979,8 @@ where
 
 impl<Id, T> Type<Id, T>
 where
-    T: From<Type<Id, T>> + TypePtr<Id = Id, Generics = Vec<Generic<Id>>>,
+    T: From<Type<Id, T>>
+        + TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>,
     T::Types: Default + Extend<T>,
 {
     pub fn hole() -> T {
@@ -1616,10 +1629,14 @@ type_alloc_impl! { T ['ast, T: TypePtr<Generics = Self>] &'ast mut [Generic<<T a
 type_alloc_impl! { T [T: TypePtr<Types = Self>] AppVec<T>, T => intern_types }
 type_alloc_impl! { T ['ast, T: TypePtr<Types = Self>] &'ast mut [T], T => intern_types }
 
+type_alloc_impl! { T [T: TypePtr<Fields = Self>] Vec<Field<<T as TypePtr>::Id, T>>, Field<<T as TypePtr>::Id, T> => intern_fields }
+type_alloc_impl! { T ['ast, T: TypePtr<Fields = Self>] &'ast mut [Field<<T as TypePtr>::Id, T>], Field<<T as TypePtr>::Id, T> => intern_fields }
+
 pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
     type Types: TypeAlloc<Self> + Deref<Target = [Self]> + Default;
     type Generics: TypeAlloc<Self> + Deref<Target = [Generic<Self::Id>]> + Default;
+    type Fields: TypeAlloc<Self> + Deref<Target = [Field<Self::Id, Self>]> + Default;
 
     fn flags(&self) -> Flags {
         Flags::all()
@@ -1685,6 +1702,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         if named_variables.is_empty() {
             None
@@ -1703,6 +1721,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         if !self.flags().intersects(Flags::HAS_GENERICS) {
             return None;
@@ -1778,6 +1797,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: fmt::Display,
         Self::Types: Clone + FromIterator<Self>,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         let (non_replaced_type, unapplied_args) =
             self.arg_application(params, args, interner, named_variables)?;
@@ -1801,6 +1821,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: fmt::Display,
         Self::Types: FromIterator<Self>,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         // If the alias was just hiding an error then any application is also an error as we have
         // no way of knowing how many arguments it should take
@@ -1863,6 +1884,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: Clone + Eq + Hash,
         Self::Types: Clone,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         let mut typ = self;
         while let Type::Forall(params, inner_type) = &**typ {
@@ -1890,6 +1912,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: Clone + Eq + Hash,
         Self::Types: Clone,
         Self::Generics: Clone,
+        Self::Fields: Clone,
     {
         let mut typ = self;
         while let Type::Forall(ref params, ref inner_type) = **typ {
@@ -1920,6 +1943,7 @@ pub trait TypeExt: TypePtr + Clone + Sized {
         Self::Id: Clone + Eq + Hash,
         Self::Types: Clone,
         Self::Generics: FromIterator<Generic<Self::Id>> + Clone,
+        Self::Fields: Clone,
     {
         let skolemized = self.skolemize(interner, named_variables);
         let new_type = f(skolemized);
@@ -1961,6 +1985,7 @@ impl<Id> TypePtr for ArcType<Id> {
     type Id = Id;
     type Types = AppVec<Self>;
     type Generics = Vec<Generic<Id>>;
+    type Fields = Vec<Field<Id, Self>>;
 
     fn flags(&self) -> Flags {
         self.typ.flags
@@ -2149,6 +2174,7 @@ impl<'a, Id, T> RowIteratorMut<'a, Id, T> {
 impl<'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, Id, T>
 where
     T: DerefMut<Target = Type<Id, T>> + TypePtr<Id = Id>,
+    T::Fields: DerefMut<Target = [Field<Id, T>]>,
 {
     type Item = &'a mut Field<Id, T>;
 
@@ -2913,7 +2939,7 @@ where
             ref fields,
             ref rest,
         } => {
-            for field in fields {
+            for field in fields.iter() {
                 f.walk(&field.typ);
             }
             f.walk(rest);
@@ -2946,6 +2972,7 @@ where
     F: WalkerMut<T>,
     T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
     T::Types: DerefMut<Target = [T]>,
+    T::Fields: DerefMut<Target = [Field<I, T>]>,
 {
     match **typ {
         Type::Forall(_, ref mut typ) => f.walk_mut(typ),
@@ -2966,7 +2993,7 @@ where
             ref mut fields,
             ref mut rest,
         } => {
-            for field in fields {
+            for field in &mut **fields {
                 f.walk_mut(&mut field.typ);
             }
             f.walk_mut(rest);
@@ -3013,6 +3040,8 @@ pub trait TypeVisitor<Id, T>
 where
     T: TypePtr<Id = Id>,
     T::Types: Clone,
+    T::Generics: Clone,
+    T::Fields: Clone,
 {
     type Context: TypeContext<Id, T>;
 
@@ -3055,12 +3084,13 @@ pub trait Walker<'a, T> {
     fn walk(&mut self, typ: &'a T);
 }
 
-impl<Id, T, F: ?Sized> TypeVisitor<Id, T> for F
+impl<Id, T, F> TypeVisitor<Id, T> for F
 where
-    F: FnMut(&T) -> Option<T>,
+    F: ?Sized + FnMut(&T) -> Option<T>,
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
-    T::Generics: FromIterator<Generic<Id>>,
+    T::Generics: FromIterator<Generic<Id>> + Clone,
+    T::Fields: FromIterator<Field<Id, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -3115,6 +3145,10 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern_generics(types)
         }
 
+        fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+            $crate::expr!(self, $($tokens)+).intern_fields(types)
+        }
+
         fn intern_flags(&mut self, typ: $crate::types::Type<$id, $typ>, flags: $crate::types::Flags) -> $typ {
             $crate::expr!(self, $($tokens)+).intern_flags(typ, flags)
         }
@@ -3144,30 +3178,34 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).app(id, args)
         }
 
-        fn variant(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+        fn variant(&mut self, fields: <$typ as $crate::types::TypePtr>::Fields) -> $typ {
             $crate::expr!(self, $($tokens)+).variant(fields)
         }
 
-        fn poly_variant(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>, rest: $typ) -> $typ {
+        fn poly_variant(&mut self, fields: <$typ as $crate::types::TypePtr>::Fields, rest: $typ) -> $typ {
             $crate::expr!(self, $($tokens)+).poly_variant(fields, rest)
         }
 
-        fn effect(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+        fn effect(&mut self, fields: <$typ as $crate::types::TypePtr>::Fields) -> $typ {
             $crate::expr!(self, $($tokens)+).effect(fields)
         }
 
-        fn poly_effect(&mut self, fields: Vec<$crate::types::Field<$id, $typ>>, rest: $typ) -> $typ {
+        fn poly_effect(&mut self, fields: <$typ as $crate::types::TypePtr>::Fields, rest: $typ) -> $typ {
             $crate::expr!(self, $($tokens)+).poly_effect(fields, rest)
         }
 
-        fn record(&mut self, types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>, fields: Vec<$crate::types::Field<$id, $typ>>) -> $typ {
+        fn record(
+            &mut self,
+            types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
+            fields: <$typ as $crate::types::TypePtr>::Fields,
+        ) -> $typ {
             $crate::expr!(self, $($tokens)+).record(types, fields)
         }
 
         fn poly_record(
             &mut self,
             types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
-            fields: Vec<$crate::types::Field<$id, $typ>>,
+            fields: <$typ as $crate::types::TypePtr>::Fields,
             rest: $typ,
         ) -> $typ {
             $crate::expr!(self, $($tokens)+).poly_record(types, fields, rest)
@@ -3176,7 +3214,7 @@ macro_rules! forward_type_interner_methods {
         fn extend_full_row(
             &mut self,
             types: Vec<$crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>,
-            fields: Vec<$crate::types::Field<$id, $typ>>,
+            fields: <$typ as $crate::types::TypePtr>::Fields,
             rest: $typ,
         ) -> $typ {
             $crate::expr!(self, $($tokens)+).extend_full_row(types, fields, rest)
@@ -3184,7 +3222,7 @@ macro_rules! forward_type_interner_methods {
 
         fn extend_row(
             &mut self,
-            fields: Vec<$crate::types::Field<$id, $typ>>,
+            fields: <$typ as $crate::types::TypePtr>::Fields,
             rest: $typ,
         ) -> $typ {
             $crate::expr!(self, $($tokens)+).extend_row(fields, rest)
@@ -3315,6 +3353,8 @@ where
 
     fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics;
 
+    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields;
+
     fn hole(&mut self) -> T {
         self.intern(Type::Hole)
     }
@@ -3367,22 +3407,22 @@ where
         }
     }
 
-    fn variant(&mut self, fields: Vec<Field<Id, T>>) -> T {
+    fn variant(&mut self, fields: T::Fields) -> T {
         let empty_row = self.empty_row();
         self.poly_variant(fields, empty_row)
     }
 
-    fn poly_variant(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+    fn poly_variant(&mut self, fields: T::Fields, rest: T) -> T {
         let row = self.extend_row(fields, rest);
         self.intern(Type::Variant(row))
     }
 
-    fn effect(&mut self, fields: Vec<Field<Id, T>>) -> T {
+    fn effect(&mut self, fields: T::Fields) -> T {
         let empty_row = self.empty_row();
         self.poly_effect(fields, empty_row)
     }
 
-    fn poly_effect(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+    fn poly_effect(&mut self, fields: T::Fields, rest: T) -> T {
         let extend_row = self.extend_row(fields, rest);
         self.intern(Type::Effect(extend_row))
     }
@@ -3402,22 +3442,14 @@ where
         I: IntoIterator<Item = T>,
     {
         let empty_row = self.empty_row();
-        Type::Record(
-            self.extend_row(
-                elems
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, typ)| Field {
-                        name: symbols.from_str(&format!("_{}", i)),
-                        typ,
-                    })
-                    .collect(),
-                empty_row,
-            ),
-        )
+        let elems = self.intern_fields(elems.into_iter().enumerate().map(|(i, typ)| Field {
+            name: symbols.from_str(&format!("_{}", i)),
+            typ,
+        }));
+        Type::Record(self.extend_row(elems, empty_row))
     }
 
-    fn record(&mut self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+    fn record(&mut self, types: Vec<Field<Id, Alias<Id, T>>>, fields: T::Fields) -> T {
         let empty_row = self.empty_row();
         self.poly_record(types, fields, empty_row)
     }
@@ -3425,7 +3457,7 @@ where
     fn poly_record(
         &mut self,
         types: Vec<Field<Id, Alias<Id, T>>>,
-        fields: Vec<Field<Id, T>>,
+        fields: T::Fields,
         rest: T,
     ) -> T {
         let row = self.extend_full_row(types, fields, rest);
@@ -3435,14 +3467,14 @@ where
     fn extend_full_row(
         &mut self,
         types: Vec<Field<Id, Alias<Id, T>>>,
-        fields: Vec<Field<Id, T>>,
+        fields: T::Fields,
         rest: T,
     ) -> T {
         let rest = self.extend_row(fields, rest);
         self.extend_type_row(types, rest)
     }
 
-    fn extend_row(&mut self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+    fn extend_row(&mut self, fields: T::Fields, rest: T) -> T {
         if fields.is_empty() {
             rest
         } else {
@@ -3545,7 +3577,7 @@ where
     }
 
     fn unit(&mut self) -> T {
-        self.record(vec![], vec![])
+        self.record(Default::default(), Default::default())
     }
 
     fn builtin_type(&mut self, typ: BuiltinType) -> T {
@@ -3652,6 +3684,7 @@ where
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
+    T::Fields: FromIterator<Field<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3662,6 +3695,10 @@ where
     }
 
     fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics {
+        types.into_iter().collect()
+    }
+
+    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
         types.into_iter().collect()
     }
 
@@ -3682,12 +3719,13 @@ macro_rules! forward_to_cache {
 
 impl<Id, T> TypeContext<Id, T> for TypeCache<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>>
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
         + From<(Type<Id, T>, Flags)>
         + From<Type<Id, T>>
         + Clone,
     T::Types: Default + Extend<T> + FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
+    T::Fields: FromIterator<Field<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3698,6 +3736,10 @@ where
     }
 
     fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics {
+        types.into_iter().collect()
+    }
+
+    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
         types.into_iter().collect()
     }
 
@@ -3713,12 +3755,13 @@ where
 
 impl<'a, Id, T> TypeContext<Id, T> for &'a TypeCache<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>>
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
         + From<(Type<Id, T>, Flags)>
         + From<Type<Id, T>>
         + Clone,
     T::Types: Default + Extend<T> + FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
+    T::Fields: FromIterator<Field<Id, T>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3732,6 +3775,10 @@ where
         types.into_iter().collect()
     }
 
+    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+        types.into_iter().collect()
+    }
+
     fn intern_flags(&mut self, typ: Type<Id, T>, flags: Flags) -> T {
         T::from((typ, flags))
     }
@@ -3742,20 +3789,16 @@ where
     }
 }
 
-impl<'ast, Id> TypeContext<Id, crate::ast::AstType<'ast, Id>>
-    for crate::ast::ArenaRef<'_, 'ast, Id>
-{
-    fn intern(
-        &mut self,
-        typ: Type<Id, crate::ast::AstType<'ast, Id>>,
-    ) -> crate::ast::AstType<'ast, Id> {
-        crate::ast::AstType::new_no_loc(*self, typ)
+use crate::ast::{ArenaRef, AstType};
+impl<'ast, Id> TypeContext<Id, AstType<'ast, Id>> for ArenaRef<'_, 'ast, Id> {
+    fn intern(&mut self, typ: Type<Id, AstType<'ast, Id>>) -> AstType<'ast, Id> {
+        AstType::new_no_loc(*self, typ)
     }
 
     fn intern_types(
         &mut self,
-        types: impl IntoIterator<Item = crate::ast::AstType<'ast, Id>>,
-    ) -> &'ast mut [crate::ast::AstType<'ast, Id>] {
+        types: impl IntoIterator<Item = AstType<'ast, Id>>,
+    ) -> &'ast mut [AstType<'ast, Id>] {
         self.alloc_extend(types)
     }
 
@@ -3766,11 +3809,18 @@ impl<'ast, Id> TypeContext<Id, crate::ast::AstType<'ast, Id>>
         self.alloc_extend(types)
     }
 
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<Id, AstType<'ast, Id>>>,
+    ) -> &'ast mut [Field<Id, AstType<'ast, Id>>] {
+        self.alloc_extend(types)
+    }
+
     fn intern_flags(
         &mut self,
-        typ: Type<Id, crate::ast::AstType<'ast, Id>>,
+        typ: Type<Id, AstType<'ast, Id>>,
         _flags: Flags,
-    ) -> crate::ast::AstType<'ast, Id> {
+    ) -> AstType<'ast, Id> {
         self.intern(typ)
     }
 }
@@ -3839,7 +3889,7 @@ impl TypeContextAlloc for ArcType {
 
 pub struct Interner<Id, T>
 where
-    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>>,
+    T: TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>,
     T::Types: Default + Extend<T> + FromIterator<T>,
 {
     set: FnvMap<Interned<T>, ()>,
@@ -3849,7 +3899,10 @@ where
 
 impl<Id, T> Default for Interner<Id, T>
 where
-    T: Default + TypePtr<Id = Id, Generics = Vec<Generic<Id>>> + From<Type<Id, T>> + Clone,
+    T: Default
+        + TypePtr<Id = Id, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
+        + From<Type<Id, T>>
+        + Clone,
     T::Target: Eq + Hash,
     T::Types: Default + Extend<T> + FromIterator<T>,
 {
@@ -3891,7 +3944,7 @@ macro_rules! forward_to_intern_cache {
 impl<Id, T> TypeContext<Id, T> for Interner<Id, T>
 where
     T: TypeContextAlloc<Id = Id>
-        + TypeExt<Id = Id, Types = AppVec<T>, Generics = Vec<Generic<Id>>>
+        + TypeExt<Id = Id, Types = AppVec<T>, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
         + Eq
         + Hash
         + Clone,
@@ -3909,6 +3962,10 @@ where
     }
 
     fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics {
+        types.into_iter().collect()
+    }
+
+    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
         types.into_iter().collect()
     }
 
@@ -3957,11 +4014,13 @@ impl<'i, F, V> InternerVisitor<'i, F, V> {
     }
 }
 
-impl<'i, F, V, I, T> TypeVisitor<I, T> for InternerVisitor<'i, F, V>
+impl<'i, F, V, Id, T> TypeVisitor<Id, T> for InternerVisitor<'i, F, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
-    T: TypeExt<Id = I, Types = AppVec<T>>,
-    V: TypeContext<I, T>,
+    T: TypeExt<Id = Id, Types = AppVec<T>>,
+    V: TypeContext<Id, T>,
+    T::Generics: FromIterator<Generic<Id>> + Clone,
+    T::Fields: FromIterator<Field<Id, T>> + Clone,
 {
     type Context = V;
 
@@ -3971,8 +4030,8 @@ where
 
     fn visit(&mut self, typ: &T) -> Option<T>
     where
-        T: TypePtr<Id = I> + Clone,
-        I: Clone,
+        T: TypePtr<Id = Id> + Clone,
+        Id: Clone,
     {
         let new_type = walk_move_type_opt(typ, self);
         let new_type2 = (self.visitor)(self.interner, new_type.as_ref().map_or(typ, |t| t));
@@ -3986,6 +4045,8 @@ where
     T: TypeExt<Id = I>,
     V: TypeContext<I, T>,
     T::Types: Clone,
+    T::Generics: Clone,
+    T::Fields: Clone,
 {
     type Context = V;
 
@@ -4010,7 +4071,8 @@ where
     F: FnMut(&T) -> Option<T>,
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
-    T::Generics: FromIterator<Generic<Id>>,
+    T::Generics: FromIterator<Generic<Id>> + Clone,
+    T::Fields: FromIterator<Field<Id, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -4044,7 +4106,8 @@ where
     F: FnMut(&T) -> Option<T>,
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
-    T::Generics: FromIterator<Generic<Id>>,
+    T::Generics: FromIterator<Generic<Id>> + Clone,
+    T::Fields: FromIterator<Field<Id, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -4096,11 +4159,12 @@ pub trait WalkerMut<T> {
     fn walk_mut(&mut self, typ: &mut T);
 }
 
-impl<I, T, F: ?Sized> WalkerMut<T> for F
+impl<Id, T, F: ?Sized> WalkerMut<T> for F
 where
     F: FnMut(&mut T),
-    T: TypePtr<Id = I> + DerefMut<Target = Type<I, T>>,
+    T: TypePtr<Id = Id> + DerefMut<Target = Type<Id, T>>,
     T::Types: DerefMut<Target = [T]>,
+    T::Fields: DerefMut<Target = [Field<Id, T>]>,
 {
     fn walk_mut(&mut self, typ: &mut T) {
         self(typ);
@@ -4114,6 +4178,8 @@ where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
     T::Types: Clone,
+    T::Generics: Clone,
+    T::Fields: Clone,
     I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
@@ -4124,6 +4190,8 @@ where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
     T::Types: Clone,
+    T::Generics: Clone,
+    T::Fields: Clone,
     I: Clone,
 {
     f.visit(typ)
@@ -4134,13 +4202,12 @@ where
     F: TypeVisitor<I, T>,
     T: TypePtr<Id = I> + Clone,
     T::Types: Clone,
+    T::Generics: Clone,
+    T::Fields: Clone,
     I: Clone,
 {
     match *typ {
-        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| {
-            let args = f.context().intern_generics(args.iter().cloned());
-            f.forall(args, typ)
-        }),
+        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| f.forall(args.clone(), typ)),
 
         Type::Function(arg_type, ref arg, ref ret) => {
             let new_arg = f.visit(arg);
@@ -4151,8 +4218,8 @@ where
         }
         Type::App(ref id, ref args) => {
             // TODO Avoid Vec allocation
-            let new_args =
-                walk_move_types(args.iter(), |t| f.visit(t)).map(|args: Vec<_>| f.make_types(args));
+            let new_args = walk_move_types(f, args.iter(), |f, t| f.visit(t))
+                .map(|args: Vec<_>| f.make_types(args));
             merge(id, f.visit(id), args, new_args, |x, y| f.app(x, y))
         }
         Type::Record(ref row) => f.visit(row).map(|row| f.make(Type::Record(row))),
@@ -4162,10 +4229,11 @@ where
             ref fields,
             ref rest,
         } => {
-            let new_fields = walk_move_types(fields, |field| {
+            let new_fields = walk_move_types(f, fields.iter(), |f, field| {
                 f.visit(&field.typ)
                     .map(|typ| Field::new(field.name.clone(), typ))
-            });
+            })
+            .map(|args: Vec<_>| f.context().intern_fields(args));
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {
                 f.make(Type::ExtendRow { fields, rest })
@@ -4197,15 +4265,16 @@ where
     }
 }
 
-pub fn walk_move_types<'a, I, F, T, R>(types: I, f: F) -> Option<R>
+pub fn walk_move_types<'a, I, F, T, S, R>(state: &mut S, types: I, f: F) -> Option<R>
 where
+    S: ?Sized,
     I: IntoIterator<Item = &'a T>,
     I::IntoIter: FusedIterator + Clone,
-    F: FnMut(&'a T) -> Option<T>,
+    F: FnMut(&mut S, &'a T) -> Option<T>,
     T: Clone + 'a,
     R: FromIterator<T>,
 {
-    merge_collect(types, f, Clone::clone)
+    merge_collect(state, types, f, Clone::clone)
 }
 
 pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
@@ -4290,7 +4359,8 @@ where
                     name: field.name.clone(),
                     typ: translate(interner, &field.typ),
                 })
-                .collect();
+                .collect::<SmallVec<[_; 10]>>();
+            let fields = interner.intern_fields(fields);
 
             let rest = translate(interner, rest);
 
@@ -4345,7 +4415,11 @@ mod tests {
     #[test]
     fn walk_move_types_test() {
         assert_eq!(
-            walk_move_types([1, 2, 3].iter(), |i| if *i == 2 { Some(4) } else { None }),
+            walk_move_types(&mut (), [1, 2, 3].iter(), |_, i| if *i == 2 {
+                Some(4)
+            } else {
+                None
+            }),
             Some(vec![1, 4, 3])
         );
     }

@@ -18,7 +18,7 @@ bitflags! {
     }
 }
 
-trait AddFlags {
+pub(crate) trait AddFlags {
     fn add_flags(&self, flags: &mut Flags);
 }
 

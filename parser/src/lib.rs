@@ -23,6 +23,8 @@ extern crate pretty_assertions;
 
 use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
+use itertools::Either;
+
 use crate::base::{
     ast::{
         self, AstType, Do, Expr, IdentEnv, RootSpannedExpr, SpannedExpr, SpannedPattern,
@@ -34,7 +36,7 @@ use crate::base::{
     mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
     symbol::Symbol,
-    types::{ArcType, TypeCache},
+    types::{Alias, ArcType, Field, TypeCache},
 };
 
 use crate::{
@@ -327,6 +329,8 @@ impl_temp_vec! {
     FieldExpr<'ast, Id> => field_expr,
     ast::InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
+    Field<Id, AstType<'ast, Id>> => type_fields,
+    Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;

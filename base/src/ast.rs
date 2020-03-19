@@ -22,8 +22,8 @@ use crate::{
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{
-        self, Alias, AliasData, ArcType, ArgType, Generic, NullInterner, Type, TypeEnv, TypeExt,
-        TypePtr,
+        self, Alias, AliasData, ArcType, ArgType, Field, Generic, NullInterner, Type, TypeEnv,
+        TypeExt, TypePtr,
     },
 };
 
@@ -119,6 +119,7 @@ impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Id = Id;
     type Types = &'ast mut [AstType<'ast, Id>];
     type Generics = &'ast mut [Generic<Id>];
+    type Fields = &'ast mut [Field<Id, Self>];
 }
 
 pub trait HasMetadata {
@@ -896,7 +897,7 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
             ref $($mut)* fields,
             ref $($mut)* rest,
         } => {
-            for field in fields {
+            for field in & $($mut)* **fields {
                 v.visit_ast_type(&$($mut)* field.typ._typ.typ);
             }
             v.visit_ast_type(&$($mut)* rest._typ.typ);
@@ -1208,6 +1209,7 @@ impl_ast_arena! {
     InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
     Generic<Id> => generics,
+    Field<Id, AstType<'ast, Id>> => type_fields,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

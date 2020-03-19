@@ -63,6 +63,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     pub fn canonical_alias<'t, F>(
         &mut self,
@@ -245,6 +246,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
@@ -262,6 +264,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     match remove_alias(env, interner, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
@@ -282,6 +285,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -317,6 +321,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -340,6 +345,7 @@ where
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     let maybe_alias = typ.applied_alias();
 
