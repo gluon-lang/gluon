@@ -1583,10 +1583,43 @@ where
     }
 }
 
+pub trait TypeAlloc<T: TypePtr>: Sized {
+    type Elem;
+
+    fn alloc_extend(
+        iter: impl IntoIterator<Item = Self::Elem>,
+        context: &mut (impl ?Sized + TypeContext<T::Id, T>),
+    ) -> Self;
+}
+
+macro_rules! type_alloc_impl {
+    (T [$($where_: tt)*] $ty: ty, $elem: ty => $method: ident) => {
+        impl<$($where_)*> TypeAlloc<T> for $ty
+        where
+            T: TypePtr,
+        {
+            type Elem = $elem;
+
+            fn alloc_extend(
+                iter: impl IntoIterator<Item = Self::Elem>,
+                context: &mut (impl ?Sized + TypeContext<T::Id, T>),
+            ) -> Self {
+                context.$method(iter)
+            }
+        }
+    }
+}
+
+type_alloc_impl! { T [T: TypePtr<Generics = Self>] Vec<Generic<<T as TypePtr>::Id>>, Generic<<T as TypePtr>::Id> => intern_generics }
+type_alloc_impl! { T ['ast, T: TypePtr<Generics = Self>] &'ast mut [Generic<<T as TypePtr>::Id>], Generic<<T as TypePtr>::Id> => intern_generics }
+
+type_alloc_impl! { T [T: TypePtr<Types = Self>] AppVec<T>, T => intern_types }
+type_alloc_impl! { T ['ast, T: TypePtr<Types = Self>] &'ast mut [T], T => intern_types }
+
 pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
-    type Types: Deref<Target = [Self]> + Default;
-    type Generics: Deref<Target = [Generic<Self::Id>]> + Default;
+    type Types: TypeAlloc<Self> + Deref<Target = [Self]> + Default;
+    type Generics: TypeAlloc<Self> + Deref<Target = [Generic<Self::Id>]> + Default;
 
     fn flags(&self) -> Flags {
         Flags::all()
