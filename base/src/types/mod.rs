@@ -1650,7 +1650,14 @@ pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     }
 }
 
-pub trait TypeExt: TypePtr + Clone + Sized {
+pub trait TypeExt:
+    TypePtr<
+        Types = AppVec<Self>,
+        Generics = Vec<Generic<<Self as TypePtr>::Id>>,
+        Fields = Vec<Field<<Self as TypePtr>::Id, Self>>,
+    > + Clone
+    + Sized
+{
     fn strong_count(typ: &Self) -> usize;
 
     /// Returns an iterator over all type fields in a record.
@@ -3943,11 +3950,7 @@ macro_rules! forward_to_intern_cache {
 
 impl<Id, T> TypeContext<Id, T> for Interner<Id, T>
 where
-    T: TypeContextAlloc<Id = Id>
-        + TypeExt<Id = Id, Types = AppVec<T>, Generics = Vec<Generic<Id>>, Fields = Vec<Field<Id, T>>>
-        + Eq
-        + Hash
-        + Clone,
+    T: TypeContextAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
     T::Types: FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
     Id: Eq + Hash,
