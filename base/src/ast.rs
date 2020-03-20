@@ -120,6 +120,7 @@ impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Types = &'ast mut [AstType<'ast, Id>];
     type Generics = &'ast mut [Generic<Id>];
     type Fields = &'ast mut [Field<Id, Self>];
+    type TypeFields = &'ast mut [Field<Id, Alias<Id, Self>>];
 }
 
 pub trait HasMetadata {
@@ -906,7 +907,7 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
             ref $($mut)* types,
             ref $($mut)* rest,
         } => {
-            for field in types {
+            for field in & $($mut)* **types {
                 if let Some(alias) = field.typ.$try_get_alias() {
                     v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
                 }
@@ -1210,6 +1211,7 @@ impl_ast_arena! {
     AstType<'ast, Id> => type_ptrs,
     Generic<Id> => generics,
     Field<Id, AstType<'ast, Id>> => type_fields,
+    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
 }
 
 pub struct RootSpannedExpr<Id: 'static> {

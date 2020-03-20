@@ -1,3 +1,5 @@
+use std::{str::FromStr, mem};
+
 use crate::itertools::{Either, Itertools};
 
 use crate::base::{
@@ -8,8 +10,6 @@ use crate::base::{
     types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache, TypeContext},
     metadata::{Attribute, Metadata, Comment},
 };
-
-use std::{str::FromStr, mem};
 
 use crate::{ReplLine, Variant, new_ident};
 use crate::token::{Token, StringLiteral};
@@ -494,6 +494,7 @@ AtomicType_: Type<Id, AstType<'ast, Id>> = {
             }
             Either::Right(r) => Some(r),
         }));
+        let types = arena.alloc_extend(types);
         Type::Record(arena.clone().extend_full_row(
             types,
             fields,
