@@ -272,6 +272,14 @@ pub enum PatternField<'ast, Id> {
     },
 }
 
+impl<Id> PatternField<'_, Id> {
+    pub fn name(&self) -> &Spanned<Id, BytePos> {
+        match self {
+            PatternField::Type { name } | PatternField::Value { name, .. } => name,
+        }
+    }
+}
+
 #[derive(Eq, PartialEq, Debug)]
 pub enum Pattern<'ast, Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
@@ -295,6 +303,53 @@ pub enum Pattern<'ast, Id> {
     Literal(Literal),
     /// An invalid pattern
     Error,
+}
+
+pub fn pattern_names<'a, 'ast, Id>(
+    fields: &'a [PatternField<'ast, Id>],
+) -> impl Iterator<Item = &'a Spanned<Id, BytePos>> + Captures<'ast> {
+    fields.iter().map(|field| field.name())
+}
+
+pub fn pattern_values<'a, 'ast, Id>(
+    fields: &'a [PatternField<'ast, Id>],
+) -> impl Iterator<
+    Item = (
+        &'a Spanned<Id, BytePos>,
+        &'a Option<SpannedPattern<'ast, Id>>,
+    ),
+> {
+    fields.iter().filter_map(|field| match field {
+        PatternField::Type { .. } => None,
+        PatternField::Value { name, value } => Some((name, value)),
+    })
+}
+
+pub fn pattern_values_mut<'a, 'ast, Id>(
+    fields: &'a mut [PatternField<'ast, Id>],
+) -> impl Iterator<
+    Item = (
+        &'a mut Spanned<Id, BytePos>,
+        &'a mut Option<SpannedPattern<'ast, Id>>,
+    ),
+> {
+    fields.iter_mut().filter_map(|field| match field {
+        PatternField::Type { .. } => None,
+        PatternField::Value { name, value } => Some((name, value)),
+    })
+}
+
+#[doc(hidden)]
+pub trait Captures<'a> {}
+impl<T> Captures<'_> for T {}
+
+pub fn pattern_types<'a, 'ast, Id>(
+    fields: &'a mut [PatternField<'ast, Id>],
+) -> impl Iterator<Item = &'a mut Spanned<Id, BytePos>> + Captures<'ast> {
+    fields.iter_mut().filter_map(|field| match field {
+        PatternField::Type { name } => Some(name),
+        PatternField::Value { .. } => None,
+    })
 }
 
 // Safeguard against growing Pattern

@@ -45,12 +45,12 @@ pub fn rename<'s, 'ast>(
                     ref mut implicit_import,
                     ..
                 } => {
-                    for field in &mut **fields {
-                        match field.value {
-                            Some(ref mut pat) => self.new_pattern(pat),
+                    for (name, value) in ast::pattern_values_mut(fields) {
+                        match value {
+                            Some(pat) => self.new_pattern(pat),
                             None => {
-                                let id = field.name.value.clone();
-                                field.name.value = self.stack_var(id, pattern.span);
+                                let id = name.value.clone();
+                                name.value = self.stack_var(id, pattern.span);
                             }
                         }
                     }
@@ -348,7 +348,7 @@ pub fn rename<'s, 'ast>(
         fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<'ast, Self::Ident>) {
             match &mut s.value {
                 Type::ExtendTypeRow { types, .. } => {
-                    for field in types {
+                    for field in &mut **types {
                         if let Some(alias) = field.typ.try_get_alias_mut() {
                             if let Some(new_name) = self.rename(&field.name) {
                                 alias.name = new_name;

@@ -1611,7 +1611,6 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             }
             Pattern::Record {
                 typ: curr_typ,
-                types: associated_types,
                 fields,
                 implicit_import,
             } => {
@@ -1619,14 +1618,13 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 match_type.concrete = self.instantiate_generics(&match_type);
                 *curr_typ = self.subs.bind_arc(&match_type);
 
-                let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
+                let mut pattern_fields = Vec::with_capacity(fields.len());
 
                 let mut duplicated_fields = FnvSet::default();
                 {
-                    let all_fields = associated_types
-                        .iter()
-                        .map(|field| &field.name)
-                        .chain(fields.iter().map(|field| &field.name));
+                    let all_fields = fields.iter().map(|field| match field {
+                        PatternField::Type { name } | PatternField::Value { name, .. } => name,
+                    });
                     for field in all_fields {
                         if self.error_on_duplicated_field(&mut duplicated_fields, &field) {
                             pattern_fields.push(field.value.clone());
@@ -1638,8 +1636,8 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
 
                 let mut missing_fields_from_match_type = Vec::new();
 
-                for field in &mut **fields {
-                    let name = &field.name.value;
+                for (name, value) in ast::pattern_values_mut(fields) {
+                    let name = &name.value;
                     // The field should always exist since the type was constructed from the pattern
                     let field_type = record_match_type
                         .row_iter()
@@ -1653,8 +1651,8 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                             });
                             typ
                         });
-                    match field.value {
-                        Some(ref mut pattern) => {
+                    match value {
+                        Some(pattern) => {
                             self.typecheck_pattern(
                                 pattern,
                                 ModType::new(match_type.modifier, field_type.clone()),
@@ -1668,8 +1666,9 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 }
 
                 // Check that all types declared in the pattern exists
-                for field in associated_types.iter_mut() {
-                    let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
+                for name in ast::pattern_types(fields) {
+                    let span = name.span;
+                    let name = name.value.clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
                     let field_type = record_match_type
@@ -1688,7 +1687,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                         }
                         None => {
                             self.error(
-                                field.name.span,
+                                span,
                                 TypeError::UndefinedField(
                                     match_type.concrete.clone(),
                                     name.clone(),
@@ -2481,7 +2480,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 ref fields,
                 ref rest,
             } => {
-                let new_fields = types::walk_move_types(fields, |field| {
+                let new_fields = types::walk_move_types(&mut (), fields, |_, field| {
                     self.create_unifiable_signature2(&field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
@@ -2495,7 +2494,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 ref types,
                 ref rest,
             } => {
-                let new_types = types::walk_move_types(types, |field| {
+                let new_types = types::walk_move_types(&mut (), types, |_, field| {
                     let typ = self
                         .create_unifiable_signature_with(
                             field.typ.params().iter().map(|param| {
@@ -3182,7 +3181,7 @@ pub fn translate_projected_type(
 }
 
 fn with_pattern_types<'a: 'b, 'b, 'ast>(
-    fields: &'a mut [PatternField<Symbol, SpannedPattern<'ast, Symbol>>],
+    fields: &'a mut [PatternField<'ast, Symbol>],
     typ: &'b RcType,
 ) -> impl Iterator<
     Item = (
@@ -3194,13 +3193,13 @@ fn with_pattern_types<'a: 'b, 'b, 'ast>(
 where
     'ast: 'a,
 {
-    fields.iter_mut().map(move |field| {
+    ast::pattern_values_mut(fields).map(move |(name, value)| {
         let opt = typ
             .row_iter()
-            .find(|type_field| type_field.name.name_eq(&field.name.value));
+            .find(|type_field| type_field.name.name_eq(&name.value));
         (
-            &field.name,
-            &mut field.value,
+            &*name,
+            value,
             opt.map(move |associated_type| &associated_type.typ),
         )
     })

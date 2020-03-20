@@ -21,7 +21,7 @@ use base::{
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
     I: Deref<Target = str>,
-    T: TypePtr<Id = I> + From<Type<I, T>>,
+    T: TypeExt<Id = I> + From<Type<I, T>>,
     T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(s.len() != 0);

@@ -13,9 +13,7 @@ use self::{
         metadata::{Metadata, MetadataEnv},
         pos::{BytePos, Spanned},
         symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
-        types::{
-            self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv, TypePtr,
-        },
+        types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
     },
     check::{
         metadata, rename,
@@ -299,7 +297,7 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, kind: ArcKind, args: Vec<T>) -> T
 where
-    T: TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
     T::Types: FromIterator<T> + Extend<T>,
 {
     assert!(s.len() != 0);

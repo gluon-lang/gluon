@@ -502,10 +502,12 @@ pub fn alias_variant<'s, 'ast, Id>(
 where
     Id: Clone + AsRef<str> + for<'a> From<&'a str>,
 {
-    let variants = arena.variant(
-        args.into_iter()
-            .map(|(arg, types)| variant(arena, arg, types))
-            .collect(),
+    let variants = arena.clone().variant(
+        arena.alloc_extend(
+            args.into_iter()
+                .map(|(arg, types)| variant(arena, arg, types))
+                .collect::<Vec<_>>(),
+        ),
     );
     Alias::new_with(
         &mut arena,

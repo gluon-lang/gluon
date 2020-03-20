@@ -2,7 +2,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::base::ast::Visitor;
 use crate::base::ast::{
-    self, Argument, AstType, Expr, HasMetadata, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+    self, Argument, AstType, Expr, HasMetadata, Pattern, PatternField, SpannedExpr, SpannedPattern,
+    ValueBinding,
 };
 use crate::base::fnv::FnvMap;
 use crate::base::metadata::{Metadata, MetadataEnv};
@@ -174,7 +175,6 @@ pub fn metadata(
             match pattern.value {
                 Pattern::Record {
                     ref fields,
-                    ref types,
                     ref typ,
                     ref implicit_import,
                 } => {
@@ -183,36 +183,38 @@ pub fn metadata(
                     }
 
                     for field in &**fields {
-                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            let id = match field.value {
-                                Some(ref pat) => match pat.value {
-                                    Pattern::Ident(ref id) => &id.name,
-                                    _ => {
-                                        return self
-                                            .new_pattern(MaybeMetadata::Data(m.clone()), pat);
-                                    }
-                                },
-                                None => &field.name.value,
-                            };
-                            self.stack_var(id.clone(), m.clone());
-                        }
-                    }
-                    for field in &**types {
-                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            // TODO Shouldn't need to insert this metadata twice
-                            if let Some(type_field) = typ
-                                .type_field_iter()
-                                .find(|type_field| type_field.name.name_eq(&field.name.value))
-                            {
-                                self.stack_var(type_field.typ.name.clone(), m.clone());
+                        match field {
+                            PatternField::Value { name, value } => {
+                                if let Some(m) = metadata.get_module(name.value.as_ref()) {
+                                    let id = match value {
+                                        Some(pat) => match pat.value {
+                                            Pattern::Ident(ref id) => &id.name,
+                                            _ => {
+                                                return self.new_pattern(
+                                                    MaybeMetadata::Data(m.clone()),
+                                                    pat,
+                                                );
+                                            }
+                                        },
+                                        None => &name.value,
+                                    };
+                                    self.stack_var(id.clone(), m.clone());
+                                }
                             }
+                            PatternField::Type { name } => {
+                                if let Some(m) = metadata.get_module(name.value.as_ref()) {
+                                    // TODO Shouldn't need to insert this metadata twice
+                                    if let Some(type_field) = typ
+                                        .type_field_iter()
+                                        .find(|type_field| type_field.name.name_eq(&name.value))
+                                    {
+                                        self.stack_var(type_field.typ.name.clone(), m.clone());
+                                    }
 
-                            let id = field
-                                .value
-                                .as_ref()
-                                .unwrap_or_else(|| &field.name.value)
-                                .clone();
-                            self.stack_var(id, m.clone());
+                                    let id = name.value.clone();
+                                    self.stack_var(id, m.clone());
+                                }
+                            }
                         }
                     }
                 }

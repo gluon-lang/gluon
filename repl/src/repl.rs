@@ -5,7 +5,7 @@ use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sy
 use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
-    ast::{Expr, Pattern, RootSpannedExpr, SpannedPattern, Typed, TypedIdent},
+    ast::{self, Expr, Pattern, RootSpannedExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
     mk_ast_arena, pos, resolve,
@@ -462,8 +462,8 @@ fn set_globals(
                 resolve::remove_aliases_cow(&env, &mut type_cache, typ)
             };
 
-            for pattern_field in fields.iter() {
-                let field_name: &Symbol = &pattern_field.name.value;
+            for (name, pattern_value) in ast::pattern_values(fields) {
+                let field_name: &Symbol = &name.value;
                 // if the record didn't have a field with this name,
                 // there should have already been a type error. So we can just panic here
                 let field_value: RootedValue<&Thread> = value
@@ -483,12 +483,12 @@ fn set_globals(
                     })
                     .typ
                     .clone();
-                match pattern_field.value {
+                match pattern_value {
                     Some(ref sub_pattern) => {
                         set_globals(vm, sub_pattern, &field_type, &field_value)?
                     }
                     None => vm.set_global(
-                        Symbol::from(format!("@{}", pattern_field.name.value.declared_name())),
+                        Symbol::from(format!("@{}", name.value.declared_name())),
                         field_type.to_owned(),
                         Default::default(),
                         field_value.get_value(),

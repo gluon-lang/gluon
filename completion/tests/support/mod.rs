@@ -10,7 +10,8 @@ use crate::base::{
     pos::{BytePos, Spanned},
     symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
     types::{
-        self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv, TypePtr,
+        self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv,
+        TypeExt, TypePtr,
     },
 };
 
@@ -120,7 +121,7 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 where
-    T: TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
     T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(!s.is_empty());

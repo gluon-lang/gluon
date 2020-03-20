@@ -1535,12 +1535,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             Pattern::Record(core_fields) => core_fields,
                             _ => unreachable!(),
                         };
-                        fields
-                            .iter()
+                        ast::pattern_values(fields)
                             .zip(core_fields)
-                            .map(|(field, core_field)| {
-                                field.value.as_ref().map(RefOwned::Ref).unwrap_or_else(|| {
-                                    let typ = if field.name.value == core_field.0.name {
+                            .map(|((name, value), core_field)| {
+                                value.as_ref().map(RefOwned::Ref).unwrap_or_else(|| {
+                                    let typ = if name.value == core_field.0.name {
                                         core_field.0.typ.clone()
                                     } else {
                                         // If the field has been renamed we need to go the slo path
@@ -1556,7 +1555,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                             .as_ref()
                                             .unwrap()
                                             .row_iter()
-                                            .find(|f| f.name.name_eq(&field.name.value))
+                                            .find(|f| f.name.name_eq(&name.value))
                                             .map(|f| f.typ.clone())
                                             .unwrap_or_else(Type::hole)
                                     };
@@ -1564,7 +1563,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                     RefOwned::Owned(spanned(
                                         Span::default(),
                                         ast::Pattern::Ident(TypedIdent {
-                                            name: field.name.value.clone(),
+                                            name: name.value.clone(),
                                             typ,
                                         }),
                                     ))
@@ -2068,25 +2067,24 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 } => {
                     let typ = remove_aliases_cow(&self.0.env, &mut NullInterner, typ);
 
-                    for (i, field) in fields.iter().enumerate() {
+                    for (i, (name, value)) in ast::pattern_values(fields).enumerate() {
                         if !add_duplicate_ident(
                             &mut replacements,
                             &mut record_fields,
-                            &field.name.value,
-                            field.value.as_ref(),
+                            &name.value,
+                            value.as_ref(),
                         ) {
-                            let x = field
-                                .value
+                            let x = value
                                 .as_ref()
                                 .map(|pattern| self.extract_ident(i, &pattern.value).name);
                             let field_type = typ
                                 .row_iter()
-                                .find(|f| f.name.name_eq(&field.name.value))
+                                .find(|f| f.name.name_eq(&name.value))
                                 .map(|f| f.typ.clone())
                                 .unwrap_or_else(|| Type::hole());
                             record_fields.push((
                                 TypedIdent {
-                                    name: field.name.value.clone(),
+                                    name: name.value.clone(),
                                     typ: field_type,
                                 },
                                 x,

@@ -228,7 +228,7 @@ impl<'a> KindCheck<'a> {
             Type::Builtin(builtin_typ) => Ok(self.builtin_kind(builtin_typ)),
 
             Type::Forall(ref mut params, ref mut typ) => self.scope(|self_| {
-                for param in &mut *params {
+                for param in &mut **params {
                     param.kind = self_.subs.new_var();
                     self_.variables.insert(param.id.clone(), param.kind.clone());
                 }
@@ -311,7 +311,7 @@ impl<'a> KindCheck<'a> {
                 ref mut fields,
                 ref mut rest,
             } => {
-                for field in fields {
+                for field in &mut **fields {
                     let kind = self.kindcheck(&mut field.typ)?;
                     let type_kind = self.type_kind();
                     self.unify(field.typ.span(), &type_kind, kind)?;
@@ -328,7 +328,7 @@ impl<'a> KindCheck<'a> {
                 ref mut types,
                 ref mut rest,
             } => {
-                for field in types {
+                for field in &mut **types {
                     if let Some(alias) = field.typ.try_get_alias_mut() {
                         self.scope(|self_| {
                             for param in alias.params_mut() {
@@ -434,7 +434,7 @@ impl<'a> KindCheck<'a> {
                 .iter_mut()
                 .for_each(|var| *var = self.finalize_generic(var)),
             Type::Forall(params, _) => {
-                for param in params {
+                for param in &mut **params {
                     *param = self.finalize_generic(&param);
                 }
             }

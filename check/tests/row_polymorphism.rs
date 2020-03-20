@@ -228,7 +228,7 @@ fn row_kinds() {
     assert_eq!(result, Ok(Kind::row()));
 
     let mut typ = arena.clone().extend_row(
-        vec![Field::new(intern("x"), arena.int())],
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.int())]),
         arena.empty_row(),
     );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
@@ -243,14 +243,15 @@ fn row_kinds_error() {
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 
-    let mut typ = arena
-        .clone()
-        .extend_row(vec![Field::new(intern("x"), arena.int())], arena.int());
+    let mut typ = arena.clone().extend_row(
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.int())]),
+        arena.int(),
+    );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 
     let mut typ = arena.clone().extend_row(
-        vec![Field::new(intern("x"), arena.empty_row())],
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.empty_row())]),
         arena.empty_row(),
     );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());

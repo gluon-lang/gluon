@@ -10,7 +10,7 @@ extern crate gluon_parser as parser;
 use crate::base::{
     ast::{self, KindedIdent, Typed},
     kind::Kind,
-    types::{Alias, AliasData, ArcType, Field, Generic, Type},
+    types::{Alias, AliasData, ArcType, Field, Generic, Type, TypeExt},
 };
 
 use crate::support::*;

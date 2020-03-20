@@ -191,8 +191,7 @@ test_parse_error! {
             vec![(
                 Pattern::Record {
                     typ: Type::hole(),
-                    types: &mut [],
-                    fields: arena.alloc_extend(vec![PatternField {
+                    fields: arena.alloc_extend(vec![PatternField::Value {
                         name: no_loc(intern("x")),
                         value: Some(no_loc(Pattern::Error)),
                     }]),

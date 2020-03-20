@@ -3154,15 +3154,15 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern_types(types)
         }
 
-        fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics {
+        fn intern_generics(&mut self, types: impl IntoIterator<Item = $crate::types::Generic<$id>>) -> <$typ as $crate::types::TypePtr>::Generics {
             $crate::expr!(self, $($tokens)+).intern_generics(types)
         }
 
-        fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+        fn intern_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<$id, $typ>>) -> <$typ as $crate::types::TypePtr>::Fields {
             $crate::expr!(self, $($tokens)+).intern_fields(types)
         }
 
-        fn intern_type_fields(&mut self, types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>) -> T::TypeFields {
+        fn intern_type_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>) -> <$typ as $crate::types::TypePtr>::TypeFields {
             $crate::expr!(self, $($tokens)+).intern_type_fields(types)
         }
 
@@ -3182,7 +3182,7 @@ macro_rules! forward_type_interner_methods {
         where
             $id: Clone + Eq + std::hash::Hash,
             $typ: $crate::types::TypeExt<Id = $id> + Clone,
-            <$typ>::Generics: FromIterator<Generic<$id>> + Clone,
+            <$typ as $crate::types::TypePtr>::Generics: std::iter::FromIterator<$crate::types::Generic<$id>> + Clone,
         {
             $crate::expr!(self, $($tokens)+).with_forall(typ, from)
         }

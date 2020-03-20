@@ -141,9 +141,8 @@ pub fn generate<'ast>(
                     Pattern::Record {
                         implicit_import: None,
                         typ: Type::hole(),
-                        types: &mut [],
                         fields: arena.alloc_extend(row_iter(row).zip(symbols).map(
-                            |(field, bind)| PatternField {
+                            |(field, bind)| PatternField::Value {
                                 name: pos::spanned(span, field.name.clone()),
                                 value: Some(pos::spanned(span, Pattern::Ident(bind))),
                             },

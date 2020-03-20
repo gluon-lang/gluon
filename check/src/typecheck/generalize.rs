@@ -3,7 +3,7 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypeExt},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypePtr},
 };
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};

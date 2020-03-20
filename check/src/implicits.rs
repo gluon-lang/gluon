@@ -15,7 +15,9 @@ use crate::base::{
     resolve,
     scoped_map::{self, ScopedMap},
     symbol::Symbol,
-    types::{self, ArgType, BuiltinType, Flags, Generic, SymbolKey, Type, TypeContext, TypeExt},
+    types::{
+        self, ArgType, BuiltinType, Flags, Generic, SymbolKey, Type, TypeContext, TypeExt, TypePtr,
+    },
 };
 
 use crate::{

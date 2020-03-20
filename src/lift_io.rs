@@ -157,7 +157,7 @@ fn lift_action<'ast>(
         // get resolved correctly
         let typ: AstType<_> = {
             let mut iter = original_type.forall_params();
-            let forall_params: Vec<_> = iter.by_ref().cloned().collect();
+            let forall_params = arena.alloc_extend(iter.by_ref().cloned());
             let mut iter = original_type.remove_forall().implicit_arg_iter();
             let implicit_args: Vec<_> = iter.by_ref().map(translate_type).collect();
             let mut iter = iter.typ.arg_iter();

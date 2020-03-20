@@ -786,8 +786,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         }
                         let mut result = Ok(());
                         let new_closures = merge_collect(
+                            &mut (),
                             closures,
-                            |closure| {
+                            |_, closure| {
                                 let new_body = match self.compile_lambda(
                                     &closure.name,
                                     &closure.args,
@@ -1763,14 +1764,14 @@ pub(crate) mod tests {
         let _ = ::env_logger::try_init();
 
         let expr = r#"
-            let match_pattern = m state 
+            let match_pattern = m state
             in
             match match_pattern with
             | { value } -> value
             end
         "#;
         let expected = r#"
-            let match_pattern = m state 
+            let match_pattern = m state
             in
             match match_pattern with
             | { value } -> value

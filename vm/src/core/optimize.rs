@@ -389,8 +389,9 @@ where
         }),
         Pattern::Literal(_) => None,
         Pattern::Constructor(id, fields) => merge_iter(
+            &mut (),
             fields,
-            |field| {
+            |_, field| {
                 visitor.visit_binding(&field.name).map(|name| TypedIdent {
                     typ: field.typ.clone(),
                     name,
@@ -400,8 +401,9 @@ where
         )
         .map(|iter| Pattern::Constructor(id.clone(), iter.collect())),
         Pattern::Record(fields) => merge_iter(
+            &mut (),
             fields,
-            |field| {
+            |_, field| {
                 visitor
                     .visit_binding(field.1.as_ref().unwrap_or(&field.0.name))
                     .map(|name| (field.0.clone(), Some(name)))
@@ -468,8 +470,9 @@ where
 {
     let allocator = visitor.detach_allocator();
     merge_collect(
+        &mut (),
         closures,
-        |closure| {
+        |_, closure| {
             visitor.visit_expr(closure.expr).map(|new_expr| Closure {
                 pos: closure.pos,
                 name: closure.name.clone(),
@@ -501,7 +504,7 @@ where
 pub fn merge_slice_produce<'a, 'b, P, T, U, F>(
     allocator: Option<&'a Allocator<'a>>,
     slice: &'b [U],
-    action: F,
+    mut action: F,
 ) -> Option<&'a [T]>
 where
     U: ArenaAllocatable<'b> + 'b,
@@ -509,9 +512,12 @@ where
     P: ExprProducer<'a, 'b>,
     F: FnMut(&'b U) -> Option<T>,
 {
-    merge_iter(slice, action, |e| {
-        T::produce_with(e, &mut P::new(allocator.expect("Allocator")))
-    })
+    merge_iter(
+        &mut (),
+        slice,
+        |_, e| action(e),
+        |e| T::produce_with(e, &mut P::new(allocator.expect("Allocator"))),
+    )
     .map(|iter| ArenaAllocatable::alloc_iter_into(iter, allocator.expect("Allocator")))
 }
 

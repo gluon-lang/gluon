@@ -119,9 +119,8 @@ pub trait ArenaExt<'ast>: Sized + Copy {
             Pattern::Record {
                 implicit_import: None,
                 typ: Type::hole(),
-                types: &mut [],
                 fields: self.alloc_extend(row_iter(row).zip(symbols).map(|(field, bind)| {
-                    PatternField {
+                    PatternField::Value {
                         name: pos::spanned(span, field.name.clone()),
                         value: Some(pos::spanned(span, Pattern::Ident(bind))),
                     }
@@ -160,14 +159,24 @@ pub trait ArenaExt<'ast>: Sized + Copy {
                         None
                     },
                     typ: Type::hole(),
-                    types: self.alloc_extend(type_fields.iter().map(|f| PatternField {
-                        name: pos::spanned(span, symbols.simple_symbol(*f)),
-                        value: None,
-                    })),
-                    fields: self.alloc_extend(fields.iter().map(|f| PatternField {
-                        name: pos::spanned(span, symbols.simple_symbol(*f)),
-                        value: None,
-                    })),
+                    fields: self.alloc_extend(
+                        type_fields
+                            .iter()
+                            .map(|f| (false, f))
+                            .chain(fields.iter().map(|f| (true, f)))
+                            .map(|(is_value, f)| {
+                                if is_value {
+                                    PatternField::Value {
+                                        name: pos::spanned(span, symbols.simple_symbol(*f)),
+                                        value: None,
+                                    }
+                                } else {
+                                    PatternField::Type {
+                                        name: pos::spanned(span, symbols.simple_symbol(*f)),
+                                    }
+                                }
+                            }),
+                    ),
                 },
             ),
             args: &mut [],

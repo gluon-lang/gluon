@@ -14,12 +14,10 @@ use codespan::ByteOffset;
 
 use either::Either;
 
-use itertools::Itertools;
-
 use crate::base::{
     ast::{
-        walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent,
-        SpannedPattern, Typed, TypedIdent, Visitor,
+        self, walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
+        SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor,
     },
     filename_to_module,
     fnv::{FnvMap, FnvSet},
@@ -144,52 +142,46 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
     }
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
-        match pattern.value {
-            Pattern::As(ref id, ref pat) => {
+        match &pattern.value {
+            Pattern::As(id, pat) => {
                 self.stack.insert(
                     id.value.clone(),
                     pat.try_type_of(&self.env).unwrap_or_else(|_| Type::hole()),
                 );
                 self.on_pattern(pat);
             }
-            Pattern::Ident(ref id) => {
+            Pattern::Ident(id) => {
                 self.stack.insert(id.name.clone(), id.typ.clone());
             }
-            Pattern::Record {
-                ref typ,
-                fields: ref field_ids,
-                ref types,
-                ..
-            } => {
+            Pattern::Record { typ, fields, .. } => {
                 let unaliased = resolve::remove_aliases(&self.env, &mut NullInterner, typ.clone());
-                for ast_field in &**types {
-                    if let Some(field) = unaliased
-                        .type_field_iter()
-                        .find(|field| field.name.name_eq(&ast_field.name.value))
-                    {
-                        self.on_alias(&field.typ);
-                    }
-                }
-                for field in &**field_ids {
-                    match field.value {
-                        Some(ref value) => self.on_pattern(value),
-                        None => {
-                            let name = field.name.value.clone();
-                            let typ = unaliased.row_iter()
+                for field in &**fields {
+                    match field {
+                        PatternField::Type { name } => {
+                            if let Some(field) = unaliased
+                                .type_field_iter()
+                                .find(|field| field.name.name_eq(&name.value))
+                            {
+                                self.on_alias(&field.typ);
+                            }
+                        }
+                        PatternField::Value { name, value } => match value {
+                            Some(ref value) => self.on_pattern(value),
+                            None => {
+                                let name = name.value.clone();
+                                let typ = unaliased.row_iter()
                                 .find(|f| f.name.name_eq(&name))
                                 .map(|f| f.typ.clone())
                                 // If we did not find a matching field in the type, default to a
                                 // type hole so that the user at least gets completion on the name
                                 .unwrap_or_else(Type::hole);
-                            self.stack.insert(name, typ);
-                        }
+                                self.stack.insert(name, typ);
+                            }
+                        },
                     }
                 }
             }
-            Pattern::Tuple {
-                elems: ref args, ..
-            }
-            | Pattern::Constructor(_, ref args) => {
+            Pattern::Tuple { elems: args, .. } | Pattern::Constructor(_, args) => {
                 for arg in &**args {
                     self.on_pattern(arg);
                 }
@@ -413,62 +405,49 @@ where
             }
             Pattern::Record {
                 ref typ,
-                ref types,
                 ref fields,
                 ..
             } => {
-                let iter = types.iter().map(Either::Left).merge_by(
-                    fields.iter().map(Either::Right),
-                    |l, r| {
-                        l.left().unwrap().name.span.start() < r.right().unwrap().name.span.start()
-                    },
-                );
-                let (on_whitespace, selected) = self.select_spanned(iter, |either| {
-                    either.either(
-                        |type_field| type_field.name.span,
-                        |field| {
-                            Span::new(
-                                field.name.span.start(),
-                                field
-                                    .value
-                                    .as_ref()
-                                    .map_or(field.name.span.end(), |p| p.span.end()),
-                            )
-                        },
-                    )
-                });
+                let (on_whitespace, selected) =
+                    self.select_spanned(&**fields, |field| match field {
+                        PatternField::Type { name } => name.span,
+                        PatternField::Value { name, value } => Span::new(
+                            name.span.start(),
+                            value.as_ref().map_or(name.span.end(), |p| p.span.end()),
+                        ),
+                    });
 
                 if on_whitespace {
                     self.found = MatchState::Empty;
                 } else if let Some(either) = selected {
                     match either {
-                        Either::Left(type_field) => {
-                            if type_field.name.span.containment(self.pos) == Ordering::Equal {
+                        PatternField::Type { name } => {
+                            if name.span.containment(self.pos) == Ordering::Equal {
                                 let field_type = typ
                                     .type_field_iter()
-                                    .find(|it| it.name.name_eq(&type_field.name.value))
+                                    .find(|it| it.name.name_eq(&name.value))
                                     .map(|it| it.typ.as_type())
                                     .unwrap_or(typ);
                                 self.found = MatchState::Found(Match::Ident(
-                                    type_field.name.span,
-                                    &type_field.name.value,
+                                    name.span,
+                                    &name.value,
                                     field_type.clone(),
                                 ));
                             } else {
                                 self.found = MatchState::Empty;
                             }
                         }
-                        Either::Right(field) => {
-                            match (field.name.span.containment(self.pos), &field.value) {
+                        PatternField::Value { name, value } => {
+                            match (name.span.containment(self.pos), &value) {
                                 (Ordering::Equal, _) => {
                                     let field_type = typ
                                         .row_iter()
-                                        .find(|it| it.name.name_eq(&field.name.value))
+                                        .find(|it| it.name.name_eq(&name.value))
                                         .map(|it| &it.typ)
                                         .unwrap_or(typ);
                                     self.found = MatchState::Found(Match::Ident(
-                                        field.name.span,
-                                        &field.name.value,
+                                        name.span,
+                                        &name.value,
                                         field_type.clone(),
                                     ));
                                 }
@@ -738,7 +717,7 @@ where
             }
 
             Type::Forall(ref params, ref typ) => {
-                for param in params {
+                for param in &**params {
                     self.on_found.on_type_ident(param);
                 }
 
@@ -1121,15 +1100,12 @@ impl SuggestionQuery {
     fn suggest_fields_of_type(
         &self,
         result: &mut Vec<Suggestion>,
-        types: &[PatternField<Symbol, Symbol>],
-        fields: &[PatternField<Symbol, SpannedPattern<Symbol>>],
+        fields: &[PatternField<'_, Symbol>],
         prefix: &str,
         typ: &ArcType,
     ) {
-        let existing_fields: FnvSet<&str> = types
-            .iter()
-            .map(|field| field.name.value.as_ref())
-            .chain(fields.iter().map(|field| field.name.value.as_ref()))
+        let existing_fields: FnvSet<&str> = ast::pattern_names(fields)
+            .map(|name| name.value.as_ref())
             .collect();
 
         let should_suggest = |name: &str| {
@@ -1213,14 +1189,10 @@ impl SuggestionQuery {
                 Match::Pattern(pattern) => {
                     let prefix = match pattern.value {
                         Pattern::Constructor(ref id, _) | Pattern::Ident(ref id) => id.as_ref(),
-                        Pattern::Record {
-                            ref types,
-                            ref fields,
-                            ..
-                        } => {
+                        Pattern::Record { ref fields, .. } => {
                             if let Ok(typ) = expr.try_type_of(&env) {
                                 let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
-                                self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                                self.suggest_fields_of_type(&mut result, fields, "", &typ);
                             }
                             ""
                         }
@@ -1279,7 +1251,6 @@ impl SuggestionQuery {
                         value:
                             Pattern::Record {
                                 ref typ,
-                                ref types,
                                 ref fields,
                                 ..
                             },
@@ -1288,7 +1259,6 @@ impl SuggestionQuery {
                         let typ = resolve::remove_aliases_cow(env, &mut NullInterner, typ);
                         self.suggest_fields_of_type(
                             &mut result,
-                            types,
                             fields,
                             ident.declared_name(),
                             &typ,
@@ -1325,14 +1295,10 @@ impl SuggestionQuery {
                 ),
 
                 Match::Pattern(pattern) => match pattern.value {
-                    Pattern::Record {
-                        ref types,
-                        ref fields,
-                        ..
-                    } => {
+                    Pattern::Record { ref fields, .. } => {
                         if let Ok(typ) = pattern.try_type_of(env) {
                             let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
-                            self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                            self.suggest_fields_of_type(&mut result, fields, "", &typ);
                         }
                     }
                     _ => result.extend(suggest.patterns.iter().map(|(name, typ)| Suggestion {

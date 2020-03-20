@@ -107,11 +107,13 @@ type_decl_record,
     "type Test = { x: Int, y: {} } in 1",
     |mut arena| {
         let record = arena.record(
-            Vec::new(),
-            vec![
-                Field::new(intern("x"), typ(arena, "Int")),
-                Field::new(intern("y"), arena.clone().record(vec![], vec![])),
-            ],
+            Default::default(),
+            arena.alloc_extend(
+                vec![
+                    Field::new(intern("x"), typ(arena, "Int")),
+                    Field::new(intern("y"), arena.clone().unit()),
+                ]
+            ),
         );
         type_decl(arena, intern("Test"), vec![], record, int(1))
     }
@@ -127,13 +129,13 @@ test_parse! {
     type Test2 = { x: Int, y: {} }
     in 1"#,
     |mut arena| {
-        let test = arena.clone().variant(vec![Field::ctor_with(&mut arena.clone(), intern("Test"), vec![typ(arena, "Int")])]);
+        let test = arena.clone().variant(arena.alloc_extend(vec![Field::ctor_with(&mut arena.clone(), intern("Test"), vec![typ(arena, "Int")])]));
         let test2 = arena.record(
-            Vec::new(),
-            vec![
+            Default::default(),
+            arena.alloc_extend(vec![
                 Field::new(intern("x"), typ(arena, "Int")),
-                Field::new(intern("y"), arena.clone().record(vec![], vec![])),
-            ],
+                Field::new(intern("y"), arena.clone().unit()),
+            ]),
         );
         let binds = vec![
             TypeBinding {
@@ -212,10 +214,10 @@ test_parse! {
     |arena| type_decl(arena,
             intern("Option"),
             vec![generic("a")],
-            arena.clone().variant(vec![
+            arena.clone().variant(arena.alloc_extend(vec![
                 Field::ctor_with(&mut arena.clone(), intern("None"), vec![]),
                 Field::ctor_with(&mut arena.clone(), intern("Some"), vec![typ(arena, "a")]),
-            ]),
+            ])),
             app(arena, id("Some"), vec![int(1)]),
         )
 }
@@ -278,13 +280,12 @@ test_parse! {
     |arena| {
         let pattern = Pattern::Record {
             typ: Type::hole(),
-            types: &mut [],
             fields: arena.alloc_extend(vec![
-                PatternField {
+                PatternField::Value {
                     name: no_loc(intern("y")),
                     value: None,
                 },
-                PatternField {
+                PatternField::Value {
                     name: no_loc(intern("x")),
                     value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
                 },
@@ -304,13 +305,12 @@ test_parse! {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Record {
                     typ: Type::hole(),
-                    types: &mut [],
                     fields: arena.alloc_extend(vec![
-                        PatternField {
+                        PatternField::Value {
                             name: no_loc(intern("x")),
                             value: None,
                         },
-                        PatternField {
+                        PatternField::Value {
                             name: no_loc(intern("y")),
                             value: None,
                         },
@@ -336,8 +336,7 @@ test_parse! {
         ));
         let pattern = Pattern::Record {
             typ: Type::hole(),
-            types: &mut [],
-            fields: arena.alloc_extend(vec![PatternField {
+            fields: arena.alloc_extend(vec![PatternField::Value {
                 name: no_loc(intern("y")),
                 value: Some(nested),
             }]),
@@ -910,7 +909,7 @@ fn alias_in_record_type() {
                     intern("Test"),
                     Vec::new(),
                     arena.clone().record(
-                        vec![Field {
+                        arena.alloc_extend(vec![Field {
                             name: intern("MyInt"),
                             typ: Alias::new_with(
                                 &mut arena.clone(),
@@ -918,8 +917,8 @@ fn alias_in_record_type() {
                                 Vec::new(),
                                 arena.clone().hole()
                             ),
-                        }],
-                        vec![],
+                        }]),
+                        Default::default(),
                     ),
                 ),
                 finalized_alias: None,
