@@ -89,17 +89,6 @@ SingleComma: () = {
     RecoverError,
 };
 
-Sep<Rule, Separator>: Vec<Rule> =
-    <mut rules: (<Rule> Separator)*> <last: Rule?> => {
-        rules.extend(last);
-        rules
-    };
-
-Comma<Rule>: Vec<Rule> = {
-    Sep<Rule, SingleComma>
-};
-
-
 #[inline]
 SepTemp<Rule, Separator>: TempVecStart<Rule> = {
     <start: Many1Vec<(<Rule> Separator)>?> <last: Rule?> => {
@@ -478,12 +467,14 @@ AtomicType_: Type<Id, AstType<'ast, Id>> = {
         Type::Effect(arena.clone().extend_row(fields, rest))
     },
 
-    "(" <elems: Comma<Type>> ")" =>
-        match elems.len() {
+    "(" <elems: CommaTemp<Type>> ")" => {
+        let mut elems = temp_vecs.drain(elems);
+        match elems.size_hint().0 {
             // Parenthesized type
-            1 => mem::take(&mut *elems.into_iter().next().unwrap()), // TODO Avoid mem take
+            1 => mem::take(&mut *elems.next().unwrap()), // TODO Avoid mem take
             _ => arena.clone().tuple_(env, elems),
-        },
+        }
+    },
 
     "{" <row: CommaTemp<RecordField>> <rest: ("|" <Type>)?> "}" => {
         let mut types = Vec::new();
