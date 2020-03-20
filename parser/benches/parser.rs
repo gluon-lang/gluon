@@ -21,7 +21,7 @@ fn parse_file(b: &mut Bencher, file: &str) {
         let expr = parser::parse_expr(arena.borrow(), &mut symbols, &TypeCache::default(), &text)
             .unwrap_or_else(|err| panic!("{:?}", err));
         let expr = arena.alloc(expr);
-        ast::RootSpannedExpr::new(arena.clone(), expr)
+        ast::RootExpr::new(arena.clone(), expr)
     })
 }
 

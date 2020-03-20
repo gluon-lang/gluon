@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 
 use self::{
     base::{
-        ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootSpannedExpr, SpannedExpr},
+        ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -80,7 +80,7 @@ pub fn intern(s: &str) -> Symbol {
 
 pub fn parse_new(
     s: &str,
-) -> Result<RootSpannedExpr<Symbol>, (Option<RootSpannedExpr<Symbol>>, ParseErrors)> {
+) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
@@ -195,7 +195,7 @@ where
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
-) -> (RootSpannedExpr<Symbol>, Result<ArcType, Error>) {
+) -> (RootExpr<Symbol>, Result<ArcType, Error>) {
     let mut expr = match parse_new(text) {
         Ok(expr) => expr,
         Err((expr, err)) => {
@@ -237,7 +237,7 @@ pub fn typecheck_expr_expected(
     (expr, result.map_err(|err| in_file_error(text, err).into()))
 }
 
-pub fn typecheck_expr(text: &str) -> (RootSpannedExpr<Symbol>, Result<ArcType, Error>) {
+pub fn typecheck_expr(text: &str) -> (RootExpr<Symbol>, Result<ArcType, Error>) {
     typecheck_expr_expected(text, None)
 }
 
@@ -245,7 +245,7 @@ pub fn typecheck_expr(text: &str) -> (RootSpannedExpr<Symbol>, Result<ArcType, E
 pub fn typecheck_partial_expr(
     text: &str,
 ) -> (
-    RootSpannedExpr<Symbol>,
+    RootExpr<Symbol>,
     Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = match parse_new(text) {

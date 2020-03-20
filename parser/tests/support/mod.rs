@@ -8,7 +8,7 @@ use crate::base::{
     ast::{
         self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
         Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
-        MutVisitor, Pattern, RootSpannedExpr, SpannedAlias, SpannedAstType, SpannedExpr,
+        MutVisitor, Pattern, RootExpr, SpannedAlias, SpannedAstType, SpannedExpr,
         SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
     },
     error::Errors,
@@ -90,17 +90,17 @@ where
 pub fn parse_string<'env, 'input>(
     symbols: &'env mut dyn IdentEnv<Ident = String>,
     input: &'input str,
-) -> Result<RootSpannedExpr<String>, (Option<RootSpannedExpr<String>>, ParseErrors)> {
+) -> Result<RootExpr<String>, (Option<RootExpr<String>>, ParseErrors)> {
     mk_ast_arena!(arena);
     match parse_partial_expr(arena.borrow(), symbols, &TypeCache::default(), input) {
         Ok(expr) => {
             let expr = arena.alloc(expr);
-            Ok(RootSpannedExpr::new(arena.clone(), expr))
+            Ok(RootExpr::new(arena.clone(), expr))
         }
         Err((expr, err)) => Err((
             expr.map(|expr| {
                 let expr = arena.alloc(expr);
-                RootSpannedExpr::new(arena.clone(), expr)
+                RootExpr::new(arena.clone(), expr)
             }),
             err,
         )),
@@ -109,7 +109,7 @@ pub fn parse_string<'env, 'input>(
 
 pub fn parse(
     input: &str,
-) -> Result<RootSpannedExpr<String>, (Option<RootSpannedExpr<String>>, ParseErrors)> {
+) -> Result<RootExpr<String>, (Option<RootExpr<String>>, ParseErrors)> {
     let mut symbols = MockEnv::new();
 
     let mut expr = parse_string(&mut symbols, input)?;
@@ -157,13 +157,13 @@ pub fn parse(
 }
 
 /// Clears spans of the expression.
-pub fn clear_span(mut expr: RootSpannedExpr<String>) -> RootSpannedExpr<String> {
+pub fn clear_span(mut expr: RootExpr<String>) -> RootExpr<String> {
     ModifySpan(|_| Span::default()).visit_expr(expr.expr_mut());
     expr
 }
 
 /// Start all positions from 0
-pub fn zero_index(mut expr: RootSpannedExpr<String>) -> RootSpannedExpr<String> {
+pub fn zero_index(mut expr: RootExpr<String>) -> RootExpr<String> {
     ModifySpan(|span: Span<BytePos>| -> Span<BytePos> {
         Span::new(
             (span.start().to_usize() as u32 - 1).into(),

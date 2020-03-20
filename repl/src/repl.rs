@@ -5,7 +5,7 @@ use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sy
 use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
-    ast::{self, Expr, Pattern, RootSpannedExpr, SpannedPattern, Typed, TypedIdent},
+    ast::{self, Expr, Pattern, RootExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
     mk_ast_arena, pos, resolve,
@@ -367,7 +367,7 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
             match repl_line {
                 None => return Ok(()),
                 Some(ReplLine::Expr(expr)) => {
-                    RootSpannedExpr::new(arena.clone(), arena.alloc(expr))
+                    RootExpr::new(arena.clone(), arena.alloc(expr))
                 }
                 Some(ReplLine::Let(mut let_binding)) => {
                     is_let_binding = true;
@@ -390,7 +390,7 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
                     };
                     let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
                     let expr = Expr::let_binding((*arena).borrow(), let_binding, id);
-                    let eval_expr = RootSpannedExpr::new(
+                    let eval_expr = RootExpr::new(
                         arena.clone(),
                         arena.alloc(pos::spanned2(0.into(), 0.into(), expr)),
                     );

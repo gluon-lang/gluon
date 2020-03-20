@@ -27,7 +27,7 @@ use itertools::Either;
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, PatternField, RootSpannedExpr, SpannedExpr,
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr,
         SpannedPattern, TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
@@ -374,7 +374,7 @@ pub fn parse_partial_root_expr<Id, S>(
     symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
-) -> Result<RootSpannedExpr<Id>, (Option<RootSpannedExpr<Id>>, ParseErrors)>
+) -> Result<RootExpr<Id>, (Option<RootExpr<Id>>, ParseErrors)>
 where
     Id: Clone + AsRef<str> + std::fmt::Debug,
     S: ?Sized + ParserSource,
@@ -384,11 +384,11 @@ where
     parse_partial_expr((*arena).borrow(), symbols, type_cache, input)
         .map_err(|(expr, err)| {
             (
-                expr.map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr))),
+                expr.map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr))),
                 err,
             )
         })
-        .map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr)))
+        .map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr)))
 }
 
 pub fn parse_partial_expr<'ast, Id, S>(

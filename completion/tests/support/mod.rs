@@ -3,7 +3,7 @@
 use std::{fmt, iter::FromIterator};
 
 use crate::base::{
-    ast::RootSpannedExpr,
+    ast::RootExpr,
     error::{Errors, InFile},
     kind::{ArcKind, Kind, KindEnv},
     metadata::{Metadata, MetadataEnv},
@@ -46,7 +46,7 @@ where
 
 pub fn parse_new(
     s: &str,
-) -> Result<RootSpannedExpr<Symbol>, (Option<RootSpannedExpr<Symbol>>, ParseErrors)> {
+) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);

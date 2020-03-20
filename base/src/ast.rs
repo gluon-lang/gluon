@@ -1046,7 +1046,7 @@ impl Typed for Literal {
     }
 }
 
-impl Typed for SendSpannedExpr<Symbol> {
+impl Typed for OwnedExpr<Symbol> {
     type Ident = Symbol;
 
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
@@ -1054,7 +1054,7 @@ impl Typed for SendSpannedExpr<Symbol> {
     }
 }
 
-impl Typed for RootSpannedExpr<Symbol> {
+impl Typed for RootExpr<Symbol> {
     type Ident = Symbol;
 
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
@@ -1283,27 +1283,27 @@ impl_ast_arena! {
     Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
 }
 
-pub struct RootSpannedExpr<Id: 'static> {
+pub struct RootExpr<Id: 'static> {
     // Only used to keep `expr` alive
     #[allow(dead_code)]
     arena: Arc<Arena<'static, Id>>,
     expr: *mut SpannedExpr<'static, Id>,
 }
 
-impl<Id: Eq> Eq for RootSpannedExpr<Id> {}
-impl<Id: PartialEq> PartialEq for RootSpannedExpr<Id> {
+impl<Id: Eq> Eq for RootExpr<Id> {}
+impl<Id: PartialEq> PartialEq for RootExpr<Id> {
     fn eq(&self, other: &Self) -> bool {
         self.expr() == other.expr()
     }
 }
 
-impl<Id: fmt::Debug> fmt::Debug for RootSpannedExpr<Id> {
+impl<Id: fmt::Debug> fmt::Debug for RootExpr<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.expr().fmt(f)
     }
 }
 
-impl<Id> RootSpannedExpr<Id> {
+impl<Id> RootExpr<Id> {
     pub fn new<'ast>(arena: Arc<Arena<'ast, Id>>, expr: &'ast mut SpannedExpr<'ast, Id>) -> Self {
         // SAFETY Arena<'ast> can only be constructed with an invariant lifetime which means that
         // `expr` must come from that arena. This locks the lifetime of `expr` to `arena` so that
@@ -1341,9 +1341,9 @@ impl<Id> RootSpannedExpr<Id> {
         }
     }
 
-    pub fn try_into_send(self) -> Result<SendSpannedExpr<Id>, Self> {
+    pub fn try_into_send(self) -> Result<OwnedExpr<Id>, Self> {
         match Arc::try_unwrap(self.arena) {
-            Ok(arena) => Ok(SendSpannedExpr {
+            Ok(arena) => Ok(OwnedExpr {
                 arena,
                 expr: self.expr,
             }),
@@ -1382,21 +1382,21 @@ impl<'ast, Id> OwnedArena<'ast, Id> {
     }
 }
 
-pub struct SendSpannedExpr<Id: 'static> {
+pub struct OwnedExpr<Id: 'static> {
     // Only used to keep `expr` alive
     #[allow(dead_code)]
     arena: Arena<'static, Id>,
     expr: *mut SpannedExpr<'static, Id>,
 }
 
-impl<Id: Eq> Eq for SendSpannedExpr<Id> {}
-impl<Id: PartialEq> PartialEq for SendSpannedExpr<Id> {
+impl<Id: Eq> Eq for OwnedExpr<Id> {}
+impl<Id: PartialEq> PartialEq for OwnedExpr<Id> {
     fn eq(&self, other: &Self) -> bool {
         self.expr() == other.expr()
     }
 }
 
-impl<Id: fmt::Debug> fmt::Debug for SendSpannedExpr<Id> {
+impl<Id: fmt::Debug> fmt::Debug for OwnedExpr<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.expr().fmt(f)
     }
@@ -1404,21 +1404,21 @@ impl<Id: fmt::Debug> fmt::Debug for SendSpannedExpr<Id> {
 
 /// Since the `Arena` is no longer accessible it if `self` is the only owner of
 /// the arena we can implement `Send` and  `Sync`
-unsafe impl<Id> Send for SendSpannedExpr<Id>
+unsafe impl<Id> Send for OwnedExpr<Id>
 where
     Id: Send,
     SpannedExpr<'static, Id>: Send,
 {
 }
 
-unsafe impl<Id> Sync for SendSpannedExpr<Id>
+unsafe impl<Id> Sync for OwnedExpr<Id>
 where
     Id: Sync,
     SpannedExpr<'static, Id>: Sync,
 {
 }
 
-impl<Id> SendSpannedExpr<Id> {
+impl<Id> OwnedExpr<Id> {
     pub fn with_arena<R>(
         &mut self,
         f: impl for<'ast> FnOnce(OwnedArena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,

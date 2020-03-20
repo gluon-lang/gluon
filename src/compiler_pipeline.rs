@@ -20,7 +20,7 @@ use salsa::ParallelDatabase;
 
 use crate::{
     base::{
-        ast::{self, RootSpannedExpr, SendSpannedExpr, SpannedExpr, Typed},
+        ast::{self, RootExpr, OwnedExpr, SpannedExpr, Typed},
         error::{Errors, InFile},
         fnv::FnvMap,
         metadata::Metadata,
@@ -107,18 +107,18 @@ pub fn parse_expr(
     type_cache: &TypeCache<Symbol, ArcType>,
     file: &str,
     expr_str: &str,
-) -> SalvageResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
+) -> SalvageResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
     let result = {
         mk_ast_arena!(arena);
 
         parse_expr_inner((*arena).borrow(), compiler, type_cache, file, expr_str)
             .map_err(|(expr, err)| {
                 (
-                    expr.map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr))),
+                    expr.map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr))),
                     err,
                 )
             })
-            .map(|expr| RootSpannedExpr::new(arena.clone(), arena.alloc(expr)))
+            .map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr)))
     };
     result
         .map(|expr| expr.try_into_send().unwrap())
@@ -133,7 +133,7 @@ pub struct MacroValue<E> {
 
 #[async_trait::async_trait]
 pub trait MacroExpandable {
-    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
+    type Expr: BorrowMut<OwnedExpr<Symbol>>;
 
     async fn expand_macro(
         self,
@@ -146,7 +146,7 @@ pub trait MacroExpandable {
 
 #[async_trait::async_trait]
 impl<'s> MacroExpandable for &'s str {
-    type Expr = SendSpannedExpr<Symbol>;
+    type Expr = OwnedExpr<Symbol>;
 
     async fn expand_macro(
         self,
@@ -172,8 +172,8 @@ impl<'s> MacroExpandable for &'s str {
 }
 
 #[async_trait::async_trait]
-impl<'s> MacroExpandable for &'s mut SendSpannedExpr<Symbol> {
-    type Expr = &'s mut SendSpannedExpr<Symbol>;
+impl<'s> MacroExpandable for &'s mut OwnedExpr<Symbol> {
+    type Expr = &'s mut OwnedExpr<Symbol>;
 
     async fn expand_macro(
         self,
@@ -227,8 +227,8 @@ impl<'s> MacroExpandable for &'s mut SendSpannedExpr<Symbol> {
 }
 
 #[async_trait::async_trait]
-impl MacroExpandable for SendSpannedExpr<Symbol> {
-    type Expr = SendSpannedExpr<Symbol>;
+impl MacroExpandable for OwnedExpr<Symbol> {
+    type Expr = OwnedExpr<Symbol>;
 
     async fn expand_macro(
         mut self,
@@ -257,7 +257,7 @@ pub struct Renamed<E> {
 
 #[async_trait::async_trait]
 pub trait Renameable: Sized {
-    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
+    type Expr: BorrowMut<OwnedExpr<Symbol>>;
 
     async fn rename(
         self,
@@ -301,7 +301,7 @@ where
 #[async_trait::async_trait]
 impl<E> Renameable for MacroValue<E>
 where
-    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
+    E: BorrowMut<OwnedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -330,7 +330,7 @@ pub struct WithMetadata<E> {
 
 #[async_trait::async_trait]
 pub trait MetadataExtractable: Sized {
-    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
+    type Expr: BorrowMut<OwnedExpr<Symbol>>;
 
     async fn extract_metadata(
         self,
@@ -384,7 +384,7 @@ where
 #[async_trait::async_trait]
 impl<E> MetadataExtractable for Renamed<E>
 where
-    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
+    E: BorrowMut<OwnedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -414,7 +414,7 @@ pub struct InfixReparsed<E> {
 
 #[async_trait::async_trait]
 pub trait InfixReparseable: Sized {
-    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
+    type Expr: BorrowMut<OwnedExpr<Symbol>>;
 
     async fn reparse_infix(
         self,
@@ -468,7 +468,7 @@ where
 #[async_trait::async_trait]
 impl<E> InfixReparseable for WithMetadata<E>
 where
-    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
+    E: BorrowMut<OwnedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -534,7 +534,7 @@ impl<E> TypecheckValue<E> {
 
 #[async_trait::async_trait]
 pub trait Typecheckable: Sized {
-    type Expr: BorrowMut<SendSpannedExpr<Symbol>>;
+    type Expr: BorrowMut<OwnedExpr<Symbol>>;
 
     async fn typecheck(
         self,
@@ -598,7 +598,7 @@ where
 }
 
 fn typecheck_expr(
-    expr: &mut SendSpannedExpr<Symbol>,
+    expr: &mut OwnedExpr<Symbol>,
     compiler: &mut ModuleCompiler<'_>,
     thread: &Thread,
     file: &str,
@@ -624,7 +624,7 @@ fn typecheck_expr(
 #[async_trait::async_trait]
 impl<E> Typecheckable for InfixReparsed<E>
 where
-    E: BorrowMut<SendSpannedExpr<Symbol>> + Send,
+    E: BorrowMut<OwnedExpr<Symbol>> + Send,
 {
     type Expr = E;
 
@@ -759,7 +759,7 @@ where
 #[async_trait::async_trait]
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
 where
-    E: Borrow<SendSpannedExpr<Symbol>> + Send + Sync,
+    E: Borrow<OwnedExpr<Symbol>> + Send + Sync,
     Extra: Send,
 {
     type Expr = E;
@@ -800,7 +800,7 @@ where
 #[async_trait::async_trait]
 impl<'e, E, Extra> Compileable<Extra> for &'e TypecheckValue<E>
 where
-    E: Borrow<SendSpannedExpr<Symbol>> + Send + Sync,
+    E: Borrow<OwnedExpr<Symbol>> + Send + Sync,
     Extra: Send,
 {
     type Expr = &'e E;

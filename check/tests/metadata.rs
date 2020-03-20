@@ -5,12 +5,12 @@ extern crate gluon_parser as parser;
 use std::sync::Arc;
 
 use crate::base::{
-    ast::{Argument, RootSpannedExpr},
+    ast::{Argument, RootExpr},
     metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv},
     symbol::{Symbol, SymbolRef},
 };
 
-fn metadata(env: &dyn MetadataEnv, expr: &mut RootSpannedExpr<Symbol>) -> Metadata {
+fn metadata(env: &dyn MetadataEnv, expr: &mut RootExpr<Symbol>) -> Metadata {
     Metadata::clone(&check::metadata::metadata(env, expr.expr_mut()).0)
 }
 

@@ -9,7 +9,7 @@ use crate::base::ast::*;
 use crate::parser::ParseErrors;
 use crate::support::*;
 
-fn parse(text: &str) -> Result<RootSpannedExpr<String>, ParseErrors> {
+fn parse(text: &str) -> Result<RootExpr<String>, ParseErrors> {
     parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 

@@ -9,7 +9,7 @@ use {futures::prelude::*, salsa::Database};
 
 use {
     base::{
-        ast::{self, SendSpannedExpr, TypedIdent},
+        ast::{self, OwnedExpr, TypedIdent},
         fnv::FnvMap,
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -202,7 +202,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
     fn peek_typechecked_module(
         &self,
         key: &str,
-    ) -> Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>> {
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
         self.query(TypecheckedModuleQuery)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
@@ -306,7 +306,7 @@ pub trait CompilationBase: Send {
     fn peek_typechecked_module(
         &self,
         key: &str,
-    ) -> Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>;
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
     fn peek_global(&self, key: &str) -> Option<DatabaseGlobal>;
 }
@@ -325,8 +325,8 @@ pub trait Compilation: CompilationBase {
         module: String,
         expected_type: Option<ArcType>,
     ) -> StdResult<
-        TypecheckValue<Arc<SendSpannedExpr<Symbol>>>,
-        (Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>, Error),
+        TypecheckValue<Arc<OwnedExpr<Symbol>>>,
+        (Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>, Error),
     >;
 
     #[salsa::cycle(recover_cycle_expected_type)]
@@ -425,8 +425,8 @@ async fn typechecked_module(
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<
-    TypecheckValue<Arc<SendSpannedExpr<Symbol>>>,
-    (Option<TypecheckValue<Arc<SendSpannedExpr<Symbol>>>>, Error),
+    TypecheckValue<Arc<OwnedExpr<Symbol>>>,
+    (Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>, Error),
 > {
     db.salsa_runtime_mut().report_untracked_read();
 

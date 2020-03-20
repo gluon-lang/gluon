@@ -1,13 +1,13 @@
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::RootSpannedExpr;
+use crate::base::ast::RootExpr;
 use crate::parser::ParseErrors;
 use crate::support::*;
 
 mod support;
 
-fn parse(text: &str) -> Result<RootSpannedExpr<String>, ParseErrors> {
+fn parse(text: &str) -> Result<RootExpr<String>, ParseErrors> {
     parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 

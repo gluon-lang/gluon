@@ -63,7 +63,7 @@ use std::{
 };
 
 use crate::base::{
-    ast::{self, SendSpannedExpr, SpannedExpr},
+    ast::{self, OwnedExpr, SpannedExpr},
     error::{Errors, InFile},
     filename_to_module,
     metadata::Metadata,
@@ -422,7 +422,7 @@ pub trait ThreadExt: Send + Sync {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> StdResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> StdResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
         self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
@@ -433,7 +433,7 @@ pub trait ThreadExt: Send + Sync {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> SalvageResult<SendSpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> SalvageResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
         let vm = self.thread();
         parse_expr(
             &mut ModuleCompiler::new(&mut vm.get_database()),
@@ -449,7 +449,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         file: &str,
         expr_str: &str,
-        expr: &mut SendSpannedExpr<Symbol>,
+        expr: &mut OwnedExpr<Symbol>,
     ) -> Result<ArcType> {
         let vm = self.thread();
         expr.typecheck_expected(
@@ -469,7 +469,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType)> {
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType)> {
         futures::executor::block_on(self.typecheck_str_async(file, expr_str, expected_type))
     }
 
@@ -478,7 +478,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType)> {
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType)> {
         let vm = self.thread();
         {
             let mut db = vm.get_database_mut();
@@ -498,7 +498,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         filename: &str,
         expr_str: &str,
-        expr: &SendSpannedExpr<Symbol>,
+        expr: &OwnedExpr<Symbol>,
     ) -> Result<CompiledModule> {
         let vm = self.thread();
         TypecheckValue {
@@ -570,7 +570,7 @@ pub trait ThreadExt: Send + Sync {
         &self,
         file: &str,
         expr_str: &str,
-    ) -> Result<(Arc<SendSpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
 
         let module_name = filename_to_module(file);

@@ -2243,7 +2243,7 @@ pub mod tests {
         vm::{RootedThread, Thread},
     };
 
-    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::RootSpannedExpr<Symbol> {
+    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::RootExpr<Symbol> {
         base::mk_ast_arena!(arena);
         let expr = arena.alloc(
             self::parser::parse_expr(
@@ -2254,7 +2254,7 @@ pub mod tests {
             )
             .unwrap(),
         );
-        ast::RootSpannedExpr::new(arena.clone(), expr)
+        ast::RootExpr::new(arena.clone(), expr)
     }
 
     pub struct PatternEq<'a>(pub &'a Expr<'a>);

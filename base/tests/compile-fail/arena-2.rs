@@ -1,7 +1,7 @@
 extern crate gluon_base;
 
 use gluon_base::{
-    ast::{Arena, Expr, RootSpannedExpr},
+    ast::{Arena, Expr, RootExpr},
     mk_ast_arena, pos,
 };
 
@@ -17,5 +17,5 @@ fn main() {
     ));
 
     // Should fail
-    RootSpannedExpr::new(arena1, arena2_expr);
+    RootExpr::new(arena1, arena2_expr);
 }
