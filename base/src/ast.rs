@@ -261,10 +261,15 @@ pub enum Literal {
 /// Pattern which contains a location
 pub type SpannedPattern<'ast, Id> = Spanned<Pattern<'ast, Id>, BytePos>;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct PatternField<Id, P> {
-    pub name: Spanned<Id, BytePos>,
-    pub value: Option<P>,
+#[derive(Eq, PartialEq, Debug)]
+pub enum PatternField<'ast, Id> {
+    Type {
+        name: Spanned<Id, BytePos>,
+    },
+    Value {
+        name: Spanned<Id, BytePos>,
+        value: Option<SpannedPattern<'ast, Id>>,
+    },
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -278,8 +283,7 @@ pub enum Pattern<'ast, Id> {
     /// Record pattern, eg. `{ x, y = foo }`
     Record {
         typ: ArcType<Id>,
-        types: &'ast mut [PatternField<Id, Id>],
-        fields: &'ast mut [PatternField<Id, SpannedPattern<'ast, Id>>],
+        fields: &'ast mut [PatternField<'ast, Id>],
         implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
@@ -292,6 +296,10 @@ pub enum Pattern<'ast, Id> {
     /// An invalid pattern
     Error,
 }
+
+// Safeguard against growing Pattern
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
 
 impl<Id> Default for Pattern<'_, Id> {
     fn default() -> Self {
@@ -851,9 +859,16 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
         } => {
             v.visit_typ(typ);
             for field in &$($mut)* **fields {
-                v.visit_spanned_ident(&$($mut)* field.name);
-                if let Some(ref $($mut)* pattern) = field.value {
-                    v.visit_pattern(pattern);
+                match field {
+                    PatternField::Value { name, value: ref $($mut)* pattern, } => {
+                        v.visit_spanned_ident(name);
+                        if let Some(pattern) = pattern {
+                        v.visit_pattern(pattern);
+                        }
+                    }
+                    PatternField::Type { name, .. } => {
+                        v.visit_spanned_ident(name);
+                    }
                 }
             }
         }
@@ -1198,8 +1213,7 @@ macro_rules! impl_ast_arena {
 impl_ast_arena! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
-    PatternField<Id, Id> => pattern_field_types,
-    PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
+    PatternField<'ast, Id> => pattern_field,
     ExprField<Id, ArcType<Id>> => expr_field_types,
     ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     TypeBinding<'ast, Id> => type_bindings,

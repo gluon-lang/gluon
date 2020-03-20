@@ -15,7 +15,7 @@ use crate::{ReplLine, Variant, new_ident};
 use crate::token::{Token, StringLiteral};
 use crate::ordered_float::NotNan;
 
-use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv, TempVecs, TempVecStart, Slice};
+use crate::{Error, ErrorEnv, FieldExpr, MutIdentEnv, TempVecs, TempVecStart, Slice};
 
 grammar<'input, 'env, 'ast, Id>(
     input: &'input dyn crate::ParserSource,
@@ -546,16 +546,16 @@ ArgType: (ArgType, AstType<'ast, Id>) = {
 
 // Patterns
 
-FieldPattern : FieldPattern<'ast, Id> = {
-    <id: Sp<Ident>> "=" <body: Sp<Pattern>> =>
-        FieldPattern::Value(id, Some(body)),
+PatternField : PatternField<'ast, Id> = {
+    <name: Sp<Ident>> "=" <body: Sp<Pattern>> =>
+        PatternField::Value { name, value: Some(body) },
 
     <Sp<IdentStr>> => {
-        let id = pos::spanned(<>.span, env.from_str(<>.value));
+        let name = pos::spanned(<>.span, env.from_str(<>.value));
         if <>.value.starts_with(char::is_uppercase) {
-            FieldPattern::Type(id, None)
+            PatternField::Type { name }
         } else {
-            FieldPattern::Value(id, None)
+            PatternField::Value { name, value: None }
         }
     },
 };
@@ -581,47 +581,16 @@ AtomicPattern: Pattern<'ast, Id> = {
             _ => Pattern::Tuple { typ: type_cache.hole(), elems },
         },
 
-    "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
-        let mut types_len = 0;
-        let mut values_len = 0;
-        for field in &fields {
-            match field {
-                FieldPattern::Type(..) => types_len += 1,
-                FieldPattern::Value(..) => values_len += 1,
-            }
-        }
-
-        let mut types = mem::take(temp_vecs.select());
-        types.reserve(types_len);
-        let mut values = mem::take(temp_vecs.select());
-        values.reserve(values_len);
-
-        for field in fields {
-            match field {
-                FieldPattern::Type(id, typ) => types.push(PatternField {
-                    name: id,
-                    value: typ
-                }),
-                FieldPattern::Value(id, field) => values.push(PatternField {
-                    name: id,
-                    value: field
-                }),
-            }
-        }
-
+    "{" <fields: CommaSlice<PatternField>> <implicit_import: Sp<"?"?>> "}" => {
         let implicit_import_span = implicit_import.span;
 
-        let pattern = Pattern::Record {
+        Pattern::Record {
             typ: type_cache.hole(),
-            types: arena.alloc_extend(types.drain(..)),
-            fields: arena.alloc_extend(values.drain(..)),
+            fields,
             implicit_import: implicit_import
                 .value
                 .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start())))),
-        };
-        *temp_vecs.select() = types;
-        *temp_vecs.select() = values;
-        pattern
+        }
     },
 };
 

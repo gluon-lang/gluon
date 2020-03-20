@@ -27,8 +27,8 @@ use itertools::Either;
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, RootSpannedExpr, SpannedExpr, SpannedPattern,
-        TypedIdent, ValueBinding,
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootSpannedExpr, SpannedExpr,
+        SpannedPattern, TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
@@ -232,11 +232,6 @@ impl Error {
     }
 }
 
-pub enum FieldPattern<'ast, Id> {
-    Type(Spanned<Id, BytePos>, Option<Id>),
-    Value(Spanned<Id, BytePos>, Option<SpannedPattern<'ast, Id>>),
-}
-
 #[derive(Debug)]
 pub enum FieldExpr<'ast, Id> {
     Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
@@ -317,8 +312,7 @@ macro_rules! impl_temp_vec {
 impl_temp_vec! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
-    ast::PatternField<Id, Id> => pattern_field_types,
-    ast::PatternField<Id, SpannedPattern<'ast, Id>> => pattern_field,
+    ast::PatternField<'ast, Id> => pattern_field,
     ast::ExprField<Id, ArcType<Id>> => expr_field_types,
     ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     ast::TypeBinding<'ast, Id> => type_bindings,
@@ -581,8 +575,17 @@ where
                     self.insert_infix(&id.name, pattern.span);
                 }
                 Pattern::Record { ref fields, .. } => {
-                    for field in fields.iter().filter(|field| field.value.is_none()) {
-                        self.insert_infix(&field.name.value, field.name.span);
+                    for name in fields.iter().filter_map(|field| match field {
+                        PatternField::Value { name, value } => {
+                            if value.is_none() {
+                                Some(name)
+                            } else {
+                                None
+                            }
+                        }
+                        PatternField::Type { .. } => None,
+                    }) {
+                        self.insert_infix(&name.value, name.span);
                     }
                 }
                 _ => (),
