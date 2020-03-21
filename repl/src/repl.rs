@@ -366,9 +366,7 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
             };
             match repl_line {
                 None => return Ok(()),
-                Some(ReplLine::Expr(expr)) => {
-                    RootExpr::new(arena.clone(), arena.alloc(expr))
-                }
+                Some(ReplLine::Expr(expr)) => RootExpr::new(arena.clone(), arena.alloc(expr)),
                 Some(ReplLine::Let(mut let_binding)) => {
                     is_let_binding = true;
                     // We can't compile function bindings by only looking at `let_binding.expr`
@@ -385,7 +383,10 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
                                     arena.alloc(let_binding.name),
                                 ),
                             );
-                            TypedIdent::new(id)
+                            TypedIdent {
+                                name: id,
+                                typ: let_binding.resolved_type.clone(),
+                            }
                         }
                     };
                     let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));

@@ -745,17 +745,29 @@ pub struct Translator<'a, 'e> {
     ident_replacements: RefCell<FnvMap<Symbol, Symbol>>,
     env: &'e dyn PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
+    error_symbol: TypedIdent<Symbol>,
     dummy_record_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a, 'e> Translator<'a, 'e> {
     pub fn new(env: &'e dyn PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
+        let hole: ArcType = Type::hole();
         Translator {
             allocator: Arc::new(Allocator::new()),
             ident_replacements: Default::default(),
             env,
-            dummy_symbol: TypedIdent::new(Symbol::from("")),
-            dummy_record_symbol: TypedIdent::new(Symbol::from("<record>")),
+            dummy_symbol: TypedIdent {
+                name: Symbol::from(""),
+                typ: hole.clone(),
+            },
+            error_symbol: TypedIdent {
+                name: Symbol::from("@error"),
+                typ: hole.clone(),
+            },
+            dummy_record_symbol: TypedIdent {
+                name: Symbol::from("<record>"),
+                typ: hole.clone(),
+            },
         }
     }
 
@@ -1005,7 +1017,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                             last_span = expr.span;
                             self.translate(expr)
                         }
-                        None => Expr::Ident(TypedIdent::new(field.name.value.clone()), last_span),
+                        None => Expr::Ident(
+                            TypedIdent {
+                                name: field.name.value.clone(),
+                                typ: self.dummy_symbol.typ.clone(),
+                            },
+                            last_span,
+                        ),
                     };
                     if needs_bindings {
                         let typ = expr.env_type_of(&self.env);
@@ -1379,10 +1397,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn error_expr(&'a self, msg: &str) -> Expr<'a> {
         let arena = &self.allocator.arena;
-        let error = arena.alloc(Expr::Ident(
-            TypedIdent::new(Symbol::from("@error")),
-            Span::default(),
-        ));
+        let error = arena.alloc(Expr::Ident(self.error_symbol.clone(), Span::default()));
         let args = arena.alloc_fixed(
             Some(Expr::Const(Literal::String(msg.into()), Span::default())).into_iter(),
         );
@@ -1651,6 +1666,18 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             groups.len() == iter.by_ref().count() && **iter.current_type() == Type::EmptyRow
         };
 
+        let default_alt = if complete {
+            None
+        } else {
+            Some(Alternative {
+                pattern: Pattern::Ident(TypedIdent {
+                    name: Symbol::from("_"),
+                    typ: self.0.dummy_symbol.typ.clone(),
+                }),
+                expr: default,
+            })
+        };
+
         let new_alts = group_order
             .into_iter()
             .map(|key| {
@@ -1688,14 +1715,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     expr: expr,
                 }
             })
-            .chain(if complete {
-                None
-            } else {
-                Some(Alternative {
-                    pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                    expr: default,
-                })
-            })
+            .chain(default_alt)
             .collect::<Vec<_>>();
         let expr = Expr::Match(
             variables[0],
@@ -1774,6 +1794,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             }
         }
 
+        let default_alt = Alternative {
+            pattern: Pattern::Ident(self.0.dummy_symbol.clone()),
+            expr: default,
+        };
+
         let new_alts = group_order
             .into_iter()
             .map(|key| {
@@ -1795,10 +1820,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     expr: expr,
                 }
             })
-            .chain(Some(Alternative {
-                pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                expr: default,
-            }))
+            .chain(Some(default_alt))
             .collect::<Vec<_>>();
 
         let expr = Expr::Match(

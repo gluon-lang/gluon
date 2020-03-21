@@ -453,6 +453,7 @@ pub struct Compiler<'a> {
     source_name: String,
     emit_debug_info: bool,
     empty_symbol: Symbol,
+    hole: ArcType,
 }
 
 impl<'a> KindEnv for Compiler<'a> {
@@ -497,6 +498,7 @@ impl<'a> Compiler<'a> {
             source: source,
             source_name: source_name,
             emit_debug_info: emit_debug_info,
+            hole: Type::hole(),
         }
     }
 
@@ -1047,7 +1049,11 @@ impl<'a> Compiler<'a> {
 
                             // Add a dummy variable for the record itself so the correct number
                             // of slots are removed when exiting
-                            function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
+                            function.new_stack_var(
+                                self,
+                                self.empty_symbol.clone(),
+                                self.hole.clone(),
+                            );
 
                             let record_index = function.stack_size() - 1;
                             for pattern_field in fields {
@@ -1075,7 +1081,7 @@ impl<'a> Compiler<'a> {
                                             bind.as_ref().unwrap_or(&name.name).clone(),
                                             field.typ.clone(),
                                         ),
-                                        None => (self.empty_symbol.clone(), Type::hole()),
+                                        None => (self.empty_symbol.clone(), self.hole.clone()),
                                     };
                                 function.push_stack_var(self, name, typ);
                             }
