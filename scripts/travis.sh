@@ -9,8 +9,8 @@ if [ -z $NO_NORMAL_TEST ]; then
     cargo test --features "test" --all "$@"
     cargo test --features "test" --all --bins "$@"
     cargo test --features "test" --all --examples "$@"
-    cargo test --features "test" --benches "$@" -- --test
-    cargo test --features "test" -p gluon_parser --benches "$@" -- --test
+    cargo test --features "test" --all --benches "$@"
+    cargo test --features "test" -p gluon_parser --benches "$@"
     echo "" | cargo run --features "test" --example 24
     cargo run --features "test" --example marshalling
 

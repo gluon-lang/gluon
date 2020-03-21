@@ -1,10 +1,5 @@
 #[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
 extern crate pretty_assertions;
-#[macro_use]
-extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -45,7 +40,7 @@ f 42
     assert_req!(result, Ok(Type::int()));
 
     // Verify that the insert implicit argument have the renamed symbol
-    match expr.value {
+    match expr.expr().value {
         Expr::LetBindings(_, ref expr) => match expr.value {
             Expr::LetBindings(ref bind, ref app) => match app.value {
                 Expr::App {
@@ -81,7 +76,7 @@ f 42
 #[implicit]
 let i = 123
 f ?i 42"#,
-        pretty_expr(text, &expr).trim()
+        pretty_expr(text, expr.expr()).trim()
     );
 }
 
@@ -162,12 +157,13 @@ let eq_int l r : Int -> Int -> Bool = True
 let eq_string l r : String -> String -> Bool = True
 "" == ""
 "#;
-    let (mut expr, _result) = support::typecheck_expr(text);
+    let (expr, _result) = support::typecheck_expr(text);
+    let mut expr = expr.expr();
 
     loop {
-        match expr.value {
+        match &expr.value {
             ast::Expr::LetBindings(_, body) => {
-                expr = *body;
+                expr = body;
             }
             _ => match expr.value {
                 ast::Expr::Infix {
@@ -261,7 +257,7 @@ f (Cons 1 Nil)
         text: &'static str,
         done: bool,
     }
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'a, '_> for Visitor {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
@@ -285,7 +281,7 @@ f (Cons 1 Nil)
         }
     }
     let mut visitor = Visitor { text, done: false };
-    visitor.visit_expr(&expr);
+    visitor.visit_expr(&expr.expr());
     assert!(visitor.done);
 }
 
@@ -363,7 +359,7 @@ g 2
         text: &'static str,
         done: bool,
     }
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'a, '_> for Visitor {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
@@ -382,7 +378,7 @@ g 2
         }
     }
     let mut visitor = Visitor { text, done: false };
-    visitor.visit_expr(&expr);
+    visitor.visit_expr(&expr.expr());
     assert!(visitor.done);
 }
 
@@ -400,14 +396,15 @@ let eq_string l r : String -> String -> Bool = True
 let f eq l r : (a -> a -> Bool) -> a -> a -> Bool = eq l r
 f (==) 1 2
 "#;
-    let (mut expr, result) = support::typecheck_expr(text);
+    let (expr, result) = support::typecheck_expr(text);
+    let mut expr = expr.expr();
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     loop {
-        match expr.value {
+        match &expr.value {
             ast::Expr::LetBindings(_, body) => {
-                expr = *body;
+                expr = body;
             }
             _ => match expr.value {
                 ast::Expr::App { ref args, .. } if args.len() == 3 => {
@@ -701,7 +698,7 @@ type State s a = s -> (s, a)
 
 let any x = any x
 
-let impls = 
+let impls =
     let applicative : Applicative (State s) = { }
 
     { applicative }
@@ -771,7 +768,7 @@ let (<) l r : [Ord a] -> a -> a -> Bool =
         text: &'static str,
         done: bool,
     }
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'a, '_> for Visitor {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
@@ -797,7 +794,7 @@ let (<) l r : [Ord a] -> a -> a -> Bool =
         }
     }
     let mut visitor = Visitor { text, done: false };
-    visitor.visit_expr(&expr);
+    visitor.visit_expr(&expr.expr());
     assert!(visitor.done);
 }
 
@@ -806,7 +803,7 @@ fn disambiguate_distinct_records() {
     let _ = ::env_logger::try_init();
     let text = r#"
 #[implicit]
-type Implicit a = { f : a -> String } 
+type Implicit a = { f : a -> String }
 
 type Test1 = { x : Int }
 let t1_test : Implicit Test1 = { f = \x -> "" }
@@ -888,7 +885,7 @@ type Derived a = { base : Base a, y : a }
 #[implicit]
 type Derived2 a = { derived : Derived a, z : a }
 
-let { ? } = 
+let { ? } =
     let base : Base Int = { x = 0 }
     let derived : Derived Int = { base, y = 1 }
     let derived2 : Derived2 Int = { derived, z = 2 }
@@ -906,7 +903,7 @@ test_check_err! {
 break_infinite_implicit_resolve_early,
     r#"
 #[implicit]
-type Implicit a = { f : a -> String } 
+type Implicit a = { f : a -> String }
 
 type Test a = { x : a }
 

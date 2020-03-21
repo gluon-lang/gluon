@@ -20,7 +20,7 @@ use futures::{
 use itertools::Itertools;
 
 use crate::base::{
-    ast::{expr_to_path, Expr, Literal, SpannedExpr},
+    ast::{self, expr_to_path, Expr, Literal, SpannedExpr},
     filename_to_module,
     fnv::FnvMap,
     pos,
@@ -585,11 +585,12 @@ where
         }
     }
 
-    fn expand<'a>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
         &self,
-        macros: &mut MacroExpander<'a>,
-        args: Vec<SpannedExpr<Symbol>>,
-    ) -> MacroFuture<'a> {
+        macros: &'b mut MacroExpander<'a>,
+        _arena: &'b mut ast::OwnedArena<'ast, Symbol>,
+        args: &'b mut [SpannedExpr<'ast, Symbol>],
+    ) -> MacroFuture<'r, 'ast> {
         fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, Error> {
             if args.len() != 1 {
                 return Err(Error::String("Expected import to get 1 argument".into()).into());
@@ -639,21 +640,31 @@ where
                     let result = db
                         .import(modulename)
                         .await
-                        .map_err(|err| MacroError::message(err.to_string()))
-                        .map(move |expr| pos::spanned(span, expr));
+                        .map_err(|err| MacroError::message(err.to_string()));
                     drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
                     let _ = tx.send(result);
                 }))
                 .unwrap();
-            Box::pin(rx.map(|r| {
-                r.unwrap_or_else(|err| Err(MacroError::new(Error::String(err.to_string()))))
-            }))
+            Box::pin(async move {
+                Ok(From::from(move || {
+                    rx.map(move |r| {
+                        r.unwrap_or_else(|err| Err(MacroError::new(Error::String(err.to_string()))))
+                            .map(move |id| pos::spanned(span, Expr::Ident(id)).into())
+                    })
+                    .boxed()
+                }))
+            })
         } else {
             Box::pin(async move {
-                db.import(modulename)
-                    .map_err(|err| MacroError::message(err.to_string()))
-                    .map_ok(move |expr| pos::spanned(span, expr))
-                    .await
+                Ok(From::from(move || {
+                    async move {
+                        db.import(modulename)
+                            .map_err(|err| MacroError::message(err.to_string()))
+                            .map_ok(move |id| pos::spanned(span, Expr::Ident(id)))
+                            .await
+                    }
+                    .boxed()
+                }))
             })
         }
     }

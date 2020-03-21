@@ -1,15 +1,12 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use crate::base::kind::{Kind, KindCache};
-use crate::base::types::{Field, Type};
+use crate::base::{
+    kind::{Kind, KindCache},
+    mk_ast_arena,
+    types::{Field, TypeContext},
+};
 use crate::check::kindcheck::KindCheck;
 
 use crate::support::{intern, typ, MockEnv, MockIdentEnv};
@@ -220,17 +217,19 @@ let { Test3 } = { Test, Test2, x = 2 }
 
 #[test]
 fn row_kinds() {
+    mk_ast_arena!(arena);
+    let mut arena = (*arena).borrow();
     let env = MockEnv::new();
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 
-    let mut typ = Type::empty_row();
+    let mut typ = arena.empty_row();
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert_eq!(result, Ok(Kind::row()));
 
-    let mut typ = Type::extend_row(
-        vec![Field::new(intern("x"), Type::int())],
-        Type::empty_row(),
+    let mut typ = arena.clone().extend_row(
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.int())]),
+        arena.empty_row(),
     );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert_eq!(result, Ok(Kind::row()));
@@ -238,17 +237,22 @@ fn row_kinds() {
 
 #[test]
 fn row_kinds_error() {
+    mk_ast_arena!(arena);
+    let mut arena = (*arena).borrow();
     let env = MockEnv::new();
     let mut ident_env = MockIdentEnv::new();
     let mut kindcheck = KindCheck::new(&env, &mut ident_env, KindCache::new());
 
-    let mut typ = Type::extend_row(vec![Field::new(intern("x"), Type::int())], Type::int());
+    let mut typ = arena.clone().extend_row(
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.int())]),
+        arena.int(),
+    );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
 
-    let mut typ = Type::extend_row(
-        vec![Field::new(intern("x"), Type::empty_row())],
-        Type::empty_row(),
+    let mut typ = arena.clone().extend_row(
+        arena.alloc_extend(vec![Field::new(intern("x"), arena.empty_row())]),
+        arena.empty_row(),
     );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
@@ -315,7 +319,7 @@ let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { stat
     match ve with
     | Pure value -> wrap { state, value }
     | Impure e f ->
-        match extract_state e with 
+        match extract_state e with
         | Get ->
             loop state (f state)
         | Put state ->

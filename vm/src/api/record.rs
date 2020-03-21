@@ -105,9 +105,9 @@ where
                     if self_symbol.is_none() {
                         match **typ {
                             Type::Ident(ref id)
-                                if id.declared_name() == field_name.declared_name() =>
+                                if id.name.declared_name() == field_name.declared_name() =>
                             {
-                                self_symbol = Some(id.clone())
+                                self_symbol = Some(id.name.clone())
                             }
                             _ => (),
                         }

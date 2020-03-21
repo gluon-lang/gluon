@@ -1,9 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
@@ -11,13 +5,13 @@ extern crate gluon_parser as parser;
 use std::sync::Arc;
 
 use crate::base::{
-    ast::{Argument, SpannedExpr},
+    ast::{Argument, RootExpr},
     metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv},
     symbol::{Symbol, SymbolRef},
 };
 
-fn metadata(env: &dyn MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
-    Metadata::clone(&check::metadata::metadata(env, expr).0)
+fn metadata(env: &dyn MetadataEnv, expr: &mut RootExpr<Symbol>) -> Metadata {
+    Metadata::clone(&check::metadata::metadata(env, expr.expr_mut()).0)
 }
 
 mod support;

@@ -1,35 +1,33 @@
 use crate::base::{
-    ast::{AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
+    ast::{self, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
     pos,
     symbol::{Symbol, Symbols},
-    types::{remove_forall, row_iter, Type},
+    types::{remove_forall, row_iter, KindedIdent, Type, TypeContext},
 };
 
 use crate::macros::Error;
 
 use crate::derive::*;
 
-pub fn generate(
+pub fn generate<'ast>(
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
-    bind: &TypeBinding<Symbol>,
-) -> Result<ValueBinding<Symbol>, Error> {
+    bind: &TypeBinding<'ast, Symbol>,
+) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
     let deserializer_fn = TypedIdent::new(symbols.simple_symbol("deserializer"));
 
     let field_deserialize = symbols.simple_symbol("field");
-    let deserializer_ident = ident(span, symbols.simple_symbol("deserializer"));
+    let deserializer_ident = {
+        let id = symbols.simple_symbol("deserializer");
+        move || ident(span, id.clone())
+    };
 
-    let self_type: AstType<_> = Type::app(
-        Type::ident(bind.alias.value.name.clone()),
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(Type::generic)
-            .collect(),
-    );
+    let mut self_type = {
+        let mut arena = arena;
+        move || bind.alias.value.self_type(&mut arena)
+    };
 
     let deserializer_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Record(ref row) => {
@@ -39,50 +37,41 @@ pub fn generate(
                 })
                 .collect();
 
-            sequence_actions(
+            arena.sequence_actions(
                 symbols,
                 span,
                 &field_symbols,
                 pos::spanned(
                     span,
                     Expr::Record {
-                        exprs: field_symbols
-                            .iter()
-                            .map(|id| ExprField {
-                                name: pos::spanned(span, id.name.clone()),
-                                value: None,
-                                metadata: Default::default(),
-                            })
-                            .collect(),
-                        types: Vec::new(),
+                        exprs: arena.alloc_extend(field_symbols.iter().map(|id| ExprField {
+                            name: pos::spanned(span, id.name.clone()),
+                            value: None,
+                            metadata: Default::default(),
+                        })),
+                        types: &mut [],
                         typ: Type::hole(),
                         base: None,
                     },
                 ),
                 &mut |field| {
-                    app(
+                    arena.app(
                         span,
                         field_deserialize.clone(),
-                        vec![
-                            literal(span, field.declared_name()),
-                            deserializer_ident.clone(),
-                        ],
+                        vec![literal(span, field.declared_name()), deserializer_ident()],
                     )
                 },
             )
         }
         Type::Variant(ref row) => row_iter(row)
             .fold(None, |acc, variant| {
-                let deserialize_variant = app(
+                let deserialize_variant = arena.app(
                     span,
                     symbols.simple_symbol("map"),
-                    vec![
-                        ident(span, variant.name.clone()),
-                        deserializer_ident.clone(),
-                    ],
+                    vec![ident(span, variant.name.clone()), deserializer_ident()],
                 );
                 Some(match acc {
-                    Some(prev) => infix(
+                    Some(prev) => arena.infix(
                         span,
                         prev,
                         symbols.simple_symbol("<|>"),
@@ -95,7 +84,7 @@ pub fn generate(
         _ => return Err(Error::message("Unable to derive Deserialize for this type")),
     };
 
-    let serialization_import = generate_import_(
+    let serialization_import = arena.generate_import_(
         span,
         symbols,
         &["ValueDeserializer"],
@@ -103,18 +92,19 @@ pub fn generate(
         true,
         "std.json.de",
     );
-    let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
-    let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
-    let alternative_import = generate_import(span, symbols, &[], &["<|>"], "std.alternative");
+    let functor_import = arena.generate_import(span, symbols, &[], &["map"], "std.functor");
+    let applicative_import = arena.generate_import(span, symbols, &[], &["<*>"], "std.applicative");
+    let alternative_import = arena.generate_import(span, symbols, &[], &["<|>"], "std.alternative");
 
     let deserializer_binding = ValueBinding {
         name: pos::spanned(span, Pattern::Ident(deserializer_fn.clone())),
-        args: Vec::new(),
+        args: &mut [],
         expr: deserializer_expr,
         metadata: Default::default(),
-        typ: Some(Type::app(
-            Type::ident(symbols.simple_symbol("ValueDeserializer")),
-            collect![self_type.clone()],
+        typ: Some(TypeContext::app(
+            &mut arena.clone(),
+            arena.ident(KindedIdent::new(symbols.simple_symbol("ValueDeserializer"))),
+            arena.clone().alloc_extend(Some(self_type())),
         )),
         resolved_type: Type::hole(),
     };
@@ -123,12 +113,12 @@ pub fn generate(
         span,
         Expr::Record {
             typ: Type::hole(),
-            types: Vec::new(),
-            exprs: vec![ExprField {
+            types: &mut [],
+            exprs: arena.alloc_extend(vec![ExprField {
                 metadata: Default::default(),
                 name: pos::spanned(span, symbols.simple_symbol("deserializer")),
                 value: Some(ident(span, deserializer_fn.name.clone())),
-            }],
+            }]),
             base: None,
         },
     );
@@ -143,7 +133,7 @@ pub fn generate(
     .into_iter()
     .rev()
     .fold(export_record_expr, |expr, bind| {
-        pos::spanned(span, Expr::let_binding(bind, expr))
+        pos::spanned(span, Expr::let_binding(arena, bind, expr))
     });
 
     Ok(ValueBinding {
@@ -154,10 +144,16 @@ pub fn generate(
                 bind.alias.value.name.declared_name()
             )))),
         ),
-        args: Vec::new(),
+        args: &mut [],
         expr: deserializer_record_expr,
         metadata: Default::default(),
-        typ: Some(binding_type(symbols, "Deserialize", self_type, bind)),
+        typ: Some(binding_type(
+            arena,
+            symbols,
+            "Deserialize",
+            self_type(),
+            bind,
+        )),
         resolved_type: Type::hole(),
     })
 }

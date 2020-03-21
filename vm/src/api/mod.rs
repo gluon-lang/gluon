@@ -421,7 +421,7 @@ fn insert_forall_walker_fields(
 ) -> Option<ArcType> {
     match &**typ {
         Type::ExtendRow { fields, rest } => {
-            let new_fields = types::walk_move_types(fields, |field| {
+            let new_fields = types::walk_move_types(&mut (), fields, |_, field| {
                 insert_forall(variables, &field.typ).map(|typ| Field {
                     name: field.name.clone(),
                     typ,

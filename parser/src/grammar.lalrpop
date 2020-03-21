@@ -1,24 +1,31 @@
+use std::{str::FromStr, mem};
+
 use crate::itertools::{Either, Itertools};
 
 use crate::base::{
-    ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
+    ast::{self, Alternative, Argument, Array, AstType, Do, Expr, ExprField, KindedIdent, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
     kind::{ArcKind, Kind},
     pos::{self, BytePos, HasSpan, Spanned},
-    types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache},
+    types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache, TypeContext},
     metadata::{Attribute, Metadata, Comment},
 };
-
-use std::str::FromStr;
 
 use crate::{ReplLine, Variant, new_ident};
 use crate::token::{Token, StringLiteral};
 use crate::ordered_float::NotNan;
 
-use crate::{Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
+use crate::{Error, ErrorEnv, FieldExpr, MutIdentEnv, TempVecs, TempVecStart, Slice};
 
-grammar<'input, 'env, Id>(input: &'input dyn crate::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
-    where Id: Clone + AsRef<str>;
+grammar<'input, 'env, 'ast, Id>(
+    input: &'input dyn crate::ParserSource,
+    type_cache: &TypeCache<Id, ArcType<Id>>,
+    arena: ast::ArenaRef<'_, 'ast, Id>,
+    env: MutIdentEnv<'env, Id>,
+    errors: ErrorEnv<'env, 'input>,
+    temp_vecs: &mut TempVecs<'ast, Id>,
+)
+    where Id: Clone + AsRef<str> + std::fmt::Debug;
 
 extern {
     type Location = BytePos;
@@ -79,17 +86,47 @@ extern {
 
 SingleComma: () = {
     "," => (),
-    <!> => errors.push(<>.error)
+    RecoverError,
 };
 
-Sep<Rule, Separator>: Vec<Rule> =
-    <mut rules: (<Rule> Separator)*> <last: Rule?> => {
-        rules.extend(last);
-        rules
+#[inline]
+SepTemp<Rule, Separator>: TempVecStart<Rule> = {
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule?> => {
+        let start = start.unwrap_or_else(|| temp_vecs.start());
+        if let Some(last) = last {
+            temp_vecs.select().push(last);
+        }
+        start
+    }
+};
+
+#[inline]
+CommaTemp<Rule>: TempVecStart<Rule> = {
+    SepTemp<Rule, SingleComma>
+};
+
+#[inline]
+SepSlice1<Rule, Separator>: &'ast mut Slice<Rule> =
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule> => {
+        match start {
+            Some(start) => arena.alloc_extend(temp_vecs.drain(start).chain(Some(last))),
+            None => arena.alloc_extend(Some(last)),
+        }
     };
 
-Comma<Rule>: Vec<Rule> = {
-    Sep<Rule, SingleComma>
+
+#[inline]
+SepSlice<Rule, Separator>: &'ast mut Slice<Rule> =
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule?> => {
+        match start {
+            Some(start) => arena.alloc_extend(temp_vecs.drain(start).chain(last)),
+            None => arena.alloc_extend(last),
+        }
+    };
+
+#[inline]
+CommaSlice<Rule>: &'ast mut Slice<Rule> = {
+    SepSlice<Rule, SingleComma>
 };
 
 Sp<Rule>: Spanned<Rule, BytePos> =
@@ -99,6 +136,38 @@ Sp<Rule>: Spanned<Rule, BytePos> =
 IdentStr: &'input str = {
     "identifier" => <>,
     "(" <"operator"> ")" => <>,
+};
+
+VecStart<T>: TempVecStart<T> = {
+    T => {
+        let start = temp_vecs.start();
+        temp_vecs.select().push(<>);
+        start
+    },
+};
+
+Many1Rest<T>: () = {
+    <T> => temp_vecs.select().push(<>),
+    Many1Rest<T> <T> => {
+        temp_vecs.select().push(<>);
+    }
+};
+
+#[inline]
+Many1Vec<T>: TempVecStart<T> = {
+    <VecStart<T>>,
+    <VecStart<T>> Many1Rest<T>,
+};
+
+Many<T>: &'ast mut Slice<T> = {
+    => &mut [],
+    Many1<T>,
+};
+
+Many1<T>: &'ast mut Slice<T> = {
+    Many1Vec<T> => {
+        arena.alloc_extend(temp_vecs.drain(<>))
+    }
 };
 
 RecoverError: () = {
@@ -216,28 +285,30 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
-RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
+RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> = {
     <metadata: Metadata?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
-            Alias::from(AliasData::new(
+            Alias::new_with(
+                &mut arena.clone(),
                 id.value,
                 args.into_iter()
                     .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                     .collect(),
-                AstType::with_metadata(metadata, alias),
-            )),
+                AstType::with_metadata(arena, metadata, alias),
+            ),
         ))
     },
     <metadata: Metadata?> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
-            Alias::new(
+            Alias::new_with(
+                &mut arena.clone(),
                 id.value,
                 Vec::new(),
-                AstType::with_metadata(metadata, pos::spanned(span, Type::Hole)),
+                AstType::with_metadata(arena, metadata, pos::spanned(span, Type::Hole)),
             ),
         ))
     },
@@ -248,27 +319,28 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
             });
             Either::Left(Field::new(
                 id.clone(),
-                Alias::new(
+                Alias::new_with(
+                    &mut arena.clone(),
                     id,
                     Vec::new(),
-                    AstType::with_metadata(metadata, typ),
+                    AstType::with_metadata(arena, metadata, typ),
                 ),
             ))
         } else {
             Either::Right(Field::new(
                 id,
-                AstType::with_metadata(metadata, typ),
+                AstType::with_metadata(arena, metadata, typ),
             ))
         }
     },
 };
 
-VariantField: Variant<Id> = {
+VariantField: Variant<'ast, Id> = {
     "|" <CtorIdent> <AtomicType*> => Variant::Simple(<>),
     "|" <CtorIdent> ":" <Type> => Variant::Gadt(<>)
 };
 
-VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
+VariantType: (Vec<Id>, Vec<Variant<'ast, Id>>, Option<AstType<'ast, Id>>) = {
 
     <row: VariantField+> <rest: (".." <AtomicType>)?> => {
         (Vec::new(), row, rest)
@@ -280,18 +352,21 @@ VariantType: (Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>) = {
     }
 };
 
-TypeTop: Either<AstType<Id>, Spanned<(Vec<Id>, Vec<Variant<Id>>, Option<AstType<Id>>), BytePos>> = {
+TypeTop: Either<AstType<'ast, Id>, Spanned<(Vec<Id>, Vec<Variant<'ast, Id>>, Option<AstType<'ast, Id>>), BytePos>> = {
     Type => Either::Left(<>),
     <rest: Sp<(".." <AtomicType>)>> => {
         let Spanned { span, value: rest } = rest;
         Either::Left(
-            pos::spanned(span, Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())).into()
+            AstType::new(
+                arena,
+                pos::spanned(span, Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Default::default(), rest }))))
+            ),
         )
     },
     <Sp<VariantType>> => Either::Right(<>),
 };
 
-TypeBinding: Box<TypeBinding<Id>> = {
+TypeBinding: TypeBinding<'ast, Id> = {
     <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
         if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
@@ -302,56 +377,57 @@ TypeBinding: Box<TypeBinding<Id>> = {
         let body = match body {
             Either::Left(body) => body,
             Either::Right(Spanned { span, value: (forall_params, variants, rest) }) => {
-                let rest: AstType<_> = rest.unwrap_or_else(|| pos::spanned(span, Type::EmptyRow).into());
+                let rest: AstType<_> = rest.unwrap_or_else(|| AstType::new(arena, pos::spanned(span, Type::EmptyRow)));
                 let row = if variants.is_empty() {
                     rest
                 } else {
-                    let fields = variants.into_iter()
-                        .map(|variant| match variant {
-                            Variant::Gadt(name, mut typ) => {
-                                {
-                                    let mut typ = &mut typ;
-                                    while let Type::Function(arg_type, _, ret) = &mut **typ {
-                                        *arg_type = ArgType::Constructor;
-                                        typ = ret;
+                    let fields = arena.clone().alloc_extend(
+                        variants.into_iter()
+                            .map(|variant| match variant {
+                                Variant::Gadt(name, mut typ) => {
+                                    {
+                                        let mut typ = &mut typ;
+                                        while let Type::Function(arg_type, _, ret) = &mut **typ {
+                                            *arg_type = ArgType::Constructor;
+                                            typ = ret;
+                                        }
                                     }
+                                    Field::new(name, typ)
                                 }
-                                Field::new(name, typ)
-                            }
-                            Variant::Simple(name, types) => Field::new(
-                                name,
-                                Type::function_type(
-                                    ArgType::Constructor,
-                                    types,
-                                    Type::opaque(),
-                                )
-                            ),
-                        })
-                        .collect();
-                    AstType::from(pos::spanned(span, Type::ExtendRow { fields, rest }))
+                                Variant::Simple(name, types) => Field::new(
+                                    name,
+                                    arena.clone().function_type(
+                                        ArgType::Constructor,
+                                        types,
+                                        arena.clone().opaque(),
+                                    )
+                                ),
+                            }),
+                    );
+                    AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields, rest }))
                 };
 
-                AstType::from(Type::forall(
-                    forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole())).collect(),
-                    AstType::from(pos::spanned(span, Type::Variant(row)))
-                ))
+                arena.clone().forall(
+                    arena.alloc_extend(forall_params.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole()))),
+                    AstType::new(arena, pos::spanned(span, Type::Variant(row)))
+                )
             }
         };
 
-        Box::new(TypeBinding {
+        TypeBinding {
             metadata: metadata.unwrap_or_default(),
             name: type_name.clone(),
             alias: pos::spanned(body.span(), AliasData::new(type_name.value.clone(), params, body)),
             finalized_alias: None,
-        })
+        }
     },
 };
 
-Effect: Field<Id, AstType<Id>> = {
+Effect: Field<Id, AstType<'ast, Id>> = {
     <name: Ident> ":" <typ: Type> => Field { <> }
 };
 
-AtomicType_: Type<Id, AstType<Id>> = {
+AtomicType_: Type<Id, AstType<'ast, Id>> = {
     "(" "->" ")" =>
         Type::Builtin(BuiltinType::Function),
 
@@ -363,7 +439,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
                 match BuiltinType::from_str(last) {
                     Ok(ty) => Type::Builtin(ty),
                     Err(_) if last.starts_with(char::is_uppercase) => {
-                        Type::Ident(env.from_str(last))
+                        Type::Ident(KindedIdent { name: env.from_str(last), typ: type_cache.kind_cache.hole() })
                     }
                     Err(_) => {
                         Type::Generic(Generic::new(env.from_str(last), type_cache.kind_cache.hole()))
@@ -382,54 +458,64 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
     "(" <rest: Sp<(".." <AtomicType>)>> ")" => {
         let Spanned { span, value: rest } = rest;
-        Type::Variant(pos::spanned(span, Type::ExtendRow { fields: Vec::new(), rest }).into())
+        Type::Variant(AstType::new(arena, pos::spanned(span, Type::ExtendRow { fields: Default::default(), rest })))
     },
 
 
-    "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
-        let rest = rest.unwrap_or_else(Type::empty_row);
-        Type::Effect(Type::extend_row(fields, rest))
+    "[" "|" <fields: SepSlice<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
+        let rest = rest.unwrap_or_else(|| arena.clone().empty_row());
+        Type::Effect(arena.clone().extend_row(fields, rest))
     },
 
-    "(" <elems: Comma<Type>> ")" =>
-        match elems.len() {
+    "(" <elems: CommaTemp<Type>> ")" => {
+        let mut elems = temp_vecs.drain(elems);
+        match elems.size_hint().0 {
             // Parenthesized type
-            1 => elems.into_iter().next().unwrap().into_inner(),
-            _ => Type::tuple_(env, elems),
-        },
+            1 => mem::take(&mut *elems.next().unwrap()), // TODO Avoid mem take
+            _ => arena.clone().tuple_(env, elems),
+        }
+    },
 
-    "{" <row: Comma<RecordField>> <rest: ("|" <Type>)?> "}" => {
-        let (types, fields) = row.into_iter().partition_map(|x| x);
-        Type::Record(Type::extend_full_row(
+    "{" <row: CommaTemp<RecordField>> <rest: ("|" <Type>)?> "}" => {
+        let mut types = Vec::new();
+        let fields = arena.alloc_extend(temp_vecs.drain(row).filter_map(|either| match either {
+            Either::Left(l) => {
+                types.push(l);
+                None
+            }
+            Either::Right(r) => Some(r),
+        }));
+        let types = arena.alloc_extend(types);
+        Type::Record(arena.clone().extend_full_row(
             types,
             fields,
-            rest.unwrap_or_else(Type::empty_row),
+            rest.unwrap_or_else(|| arena.clone().empty_row()),
         ))
     },
 };
 
-AtomicType : AstType<Id> = {
-    <typ: Sp<AtomicType_>> => AstType::from(typ),
+AtomicType: AstType<'ast, Id> = {
+    <typ: Sp<AtomicType_>> => AstType::new(arena, typ),
 };
 
 AppType_ = {
     AtomicType_,
 
-    <ty: AtomicType> <args: AtomicType+> =>
-        Type::App(ty, args.into_iter().collect()),
+    <ty: AtomicType> <args: Many1<AtomicType>> =>
+        Type::App(ty, args),
 };
 
-AppType : AstType<Id> = {
-    <typ: Sp<AppType_>> => AstType::from(typ),
+AppType: AstType<'ast, Id> = {
+    <typ: Sp<AppType_>> => AstType::new(arena, typ),
 };
 
 Type_ = {
     AppType_,
     "forall" <args: Ident+> "." <ty: Type> =>
-        Type::Forall(args.into_iter()
-                         .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
-                         .collect(),
-                     ty),
+        Type::Forall(
+            arena.alloc_extend(args.into_iter().map(|id| Generic::new(id, type_cache.kind_cache.hole()))),
+            ty,
+        ),
 
     <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
         Type::Function(
@@ -439,39 +525,39 @@ Type_ = {
         )
 };
 
-Type: AstType<Id> = {
-    <typ: Sp<Type_>> => AstType::from(typ),
+Type: AstType<'ast, Id> = {
+    <typ: Sp<Type_>> => AstType::new(arena, typ),
 };
 
-ArgType: (ArgType, AstType<Id>) = {
+ArgType: (ArgType, AstType<'ast, Id>) = {
     <AppType> => (ArgType::Explicit, <>),
     <l: @L> "[" <typ: Type_> "]" <r: @R> =>
-        (ArgType::Implicit, AstType::from(pos::spanned2(l, r, typ))),
+        (ArgType::Implicit, AstType::new(arena, pos::spanned2(l, r, typ))),
 };
 
 // Patterns
 
-FieldPattern : FieldPattern<Id> = {
-    <id: Sp<Ident>> "=" <body: Sp<Pattern>> =>
-        FieldPattern::Value(id, Some(body)),
+PatternField : PatternField<'ast, Id> = {
+    <name: Sp<Ident>> "=" <body: Sp<Pattern>> =>
+        PatternField::Value { name, value: Some(body) },
 
     <Sp<IdentStr>> => {
-        let id = pos::spanned(<>.span, env.from_str(<>.value));
+        let name = pos::spanned(<>.span, env.from_str(<>.value));
         if <>.value.starts_with(char::is_uppercase) {
-            FieldPattern::Type(id, None)
+            PatternField::Type { name }
         } else {
-            FieldPattern::Value(id, None)
+            PatternField::Value { name, value: None }
         }
     },
 };
 
-AtomicPattern: Pattern<Id> = {
+AtomicPattern: Pattern<'ast, Id> = {
     <l: @L> <id: Ident> <r: @R> "@" <pat: Sp<AtomicPattern>> =>
-        Pattern::As(pos::spanned2(l, r, id), Box::new(pat)),
+        Pattern::As(pos::spanned2(l, r, id), arena.alloc(pat)),
 
     <id: Ident> =>
         if env.string(&id).starts_with(char::is_uppercase) {
-            Pattern::Constructor(new_ident(type_cache, id), Vec::new())
+            Pattern::Constructor(new_ident(type_cache, id), &mut [])
         } else {
             Pattern::Ident(new_ident(type_cache, id))
         },
@@ -479,45 +565,19 @@ AtomicPattern: Pattern<Id> = {
     <l: Literal> =>
         Pattern::Literal(l),
 
-    "(" <elems: Comma<Sp<Pattern>>> ")" =>
-        match elems.len() {
+    "(" <elems: CommaSlice<Sp<Pattern>>> ")" =>
+        match elems {
             // Parenthesized pattern
-            1 => elems.into_iter().next().unwrap().value,
-            _ => Pattern::Tuple { typ: type_cache.hole(), elems: elems },
+            [e] => mem::take(&mut e.value),
+            _ => Pattern::Tuple { typ: type_cache.hole(), elems },
         },
 
-    "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
-        let mut types_len = 0;
-        let mut values_len = 0;
-        for field in &fields {
-            match field {
-                FieldPattern::Type(..) => types_len += 1,
-                FieldPattern::Value(..) => values_len += 1,
-            }
-        }
-
-        let mut types = Vec::with_capacity(types_len);
-        let mut values = Vec::with_capacity(values_len);
-
-        for field in fields {
-            match field {
-                FieldPattern::Type(id, typ) => types.push(PatternField {
-                    name: id,
-                    value: typ
-                }),
-                FieldPattern::Value(id, field) => values.push(PatternField {
-                    name: id,
-                    value: field
-                }),
-            }
-        }
-
+    "{" <fields: CommaSlice<PatternField>> <implicit_import: Sp<"?"?>> "}" => {
         let implicit_import_span = implicit_import.span;
 
         Pattern::Record {
             typ: type_cache.hole(),
-            types: types,
-            fields: values,
+            fields,
             implicit_import: implicit_import
                 .value
                 .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start())))),
@@ -528,7 +588,7 @@ AtomicPattern: Pattern<Id> = {
 NoErrorPattern = {
     AtomicPattern,
 
-    <id: Ident> <args: Sp<AtomicPattern>+> => {
+    <id: Ident> <args: Many1<Sp<AtomicPattern>>> => {
         let id = new_ident(type_cache, id);
 
         Pattern::Constructor(id, args)
@@ -537,9 +597,8 @@ NoErrorPattern = {
 
 Pattern = {
     NoErrorPattern,
-    <!> => {
+    RecoverError => {
         debug!("Recovering from pattern error");
-        errors.push(<>.error);
         Pattern::Error
     },
 };
@@ -554,23 +613,21 @@ Literal: Literal = {
     "float literal" => Literal::Float(<>),
 };
 
-Alternative: Alternative<Id> = {
+Alternative: Alternative<'ast, Id> = {
     "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
         Alternative {
             pattern: pat,
             expr: super::shrink_hidden_spans(expr),
         }
     },
-    "|" <pat: Sp<NoErrorPattern>> <err: !> <end: @R>  => {
-        errors.push(err.error);
+    "|" <pat: Sp<NoErrorPattern>> RecoverError <end: @R>  => {
         let span = pos::Span::new(pat.span.end(), end);
         Alternative {
             pattern: pat,
             expr: pos::spanned(span, Expr::Error(None)),
         }
     },
-    "|" <start: @R> <err: !> <end: @R>  => {
-        errors.push(err.error);
+    "|" <start: @R> RecoverError <end: @R>  => {
         let span = pos::Span::new(start, end);
         Alternative {
             pattern: pos::spanned(span, Pattern::Error),
@@ -579,19 +636,19 @@ Alternative: Alternative<Id> = {
     },
 };
 
-FieldExpr: Box<FieldExpr<Id>> = {
+FieldExpr: FieldExpr<'ast, Id> = {
     <metadata: Metadata?> <id: Sp<Ident>> "=" <body: SpExpr> => {
-        Box::new(FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body)))
+        FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body))
     },
 
     <metadata: Metadata?> <id_str: Sp<IdentStr>> => {
         let metadata = metadata.unwrap_or_default();
         let id = pos::spanned(id_str.span, env.from_str(id_str.value));
-        Box::new(if id_str.value.starts_with(char::is_uppercase) {
+        if id_str.value.starts_with(char::is_uppercase) {
             FieldExpr::Type(metadata, id, None)
         } else {
             FieldExpr::Value(metadata, id, None)
-        })
+        }
     },
 };
 
@@ -608,34 +665,34 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
     }
 };
 
-ValueBinding: Box<ValueBinding<Id>> = {
+ValueBinding: ValueBinding<'ast, Id> = {
     <metadata: Metadata?> <mut bind: PlainValueBinding> => {
         bind.metadata = metadata.unwrap_or_default();
         bind
     }
 };
 
-PlainValueBinding: Box<ValueBinding<Id>> = {
+PlainValueBinding: ValueBinding<'ast, Id> = {
     "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: Metadata::default(),
             name,
             typ,
             resolved_type: type_cache.hole(),
-            args: vec![],
+            args: Default::default(),
             expr,
-        })
+        }
     },
 
-    "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        Box::new(ValueBinding {
+    "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+        ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
             args,
             expr,
-        }),
+        },
 
     // Error recovery
 
@@ -645,35 +702,35 @@ PlainValueBinding: Box<ValueBinding<Id>> = {
             token: (span.start(), Token::In, span.end()),
             expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
         });
-        Box::new(ValueBinding {
+        ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: None,
             resolved_type: type_cache.hole(),
-            args: Vec::new(),
+            args: Default::default(),
             expr: pos::spanned(span, Expr::Error(None)),
-        })
+        }
     }
 };
 
-RecursiveValueBinding: Box<ValueBinding<Id>> = {
-    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: ValueArgument*> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        Box::new(ValueBinding {
+RecursiveValueBinding: ValueBinding<'ast, Id> = {
+    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+        ValueBinding {
             metadata: metadata.unwrap_or_default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
             args,
             expr,
-        }),
+        },
 };
 
-RecordExprBase: Option<SpannedExpr<Id>> = {
+RecordExprBase: Option<SpannedExpr<'ast, Id>> = {
     ".." <SpExpr> => Some(<>),
     => None
 };
 
-AtomicExpr: Expr<Id> = {
+AtomicExpr: Expr<'ast, Id> = {
     <id: Ident> =>
         Expr::Ident(new_ident(type_cache, id)),
 
@@ -685,36 +742,26 @@ AtomicExpr: Expr<Id> = {
     //     Expr::Getter(id),
 
     <expr: SpAtomicExpr> "." <id: Ident> =>
-        Expr::Projection(Box::new(expr), id, type_cache.hole()),
+        Expr::Projection(arena.alloc(expr), id, type_cache.hole()),
 
-    <expr: SpAtomicExpr> "." <err: !> => {
-        errors.push(err.error);
-        Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
+    <expr: SpAtomicExpr> "." RecoverError => {
+        Expr::Projection(arena.alloc(expr), env.from_str(""), type_cache.hole())
     },
 
-    "(" <elems: Comma<SpExpr>> ")" =>
-        Expr::Tuple { typ: type_cache.hole(), elems: elems },
+    "(" <elems: CommaSlice<SpExpr>> ")" =>
+        Expr::Tuple { typ: type_cache.hole(), elems },
 
-    "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
+    "[" <exprs: CommaSlice<SpExpr>> "]" => Expr::Array(Array {
             typ: type_cache.hole(),
-            exprs: elems,
+            exprs,
         }),
 
-    "{" <fields: Comma<FieldExpr>> <base: RecordExprBase> "}" => {
-        let mut types_len = 0;
-        let mut values_len = 0;
-        for field in &fields {
-            match **field {
-                FieldExpr::Type(..) => types_len += 1,
-                FieldExpr::Value(..) => values_len += 1,
-            }
-        }
+    "{" <fields: CommaTemp<FieldExpr>> <base: RecordExprBase> "}" => {
+        let mut types = mem::take(temp_vecs.select());
+        let mut values = mem::take(temp_vecs.select());
 
-        let mut types = Vec::with_capacity(types_len);
-        let mut values = Vec::with_capacity(values_len);
-
-        for field in fields {
-            match *field {
+        for field in temp_vecs.drain(fields) {
+            match field {
                 FieldExpr::Type(metadata, id, typ) => types.push(ExprField {
                     metadata,
                     name: id,
@@ -728,31 +775,34 @@ AtomicExpr: Expr<Id> = {
             }
         }
 
-        Expr::Record {
+        let expr = Expr::Record {
             typ: type_cache.hole(),
-            types: types,
-            exprs: values,
-            base: base.map(Box::new),
-        }
+            types: arena.alloc_extend(types.drain(..)),
+            exprs: arena.alloc_extend(values.drain(..)),
+            base: base.map(|e| arena.alloc(e)),
+        };
+        *temp_vecs.select() = types;
+        *temp_vecs.select() = values;
+        expr
     },
 };
 
-SpAtomicExpr: SpannedExpr<Id> = {
+SpAtomicExpr: SpannedExpr<'ast, Id> = {
     <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
 };
 
-ImplicitArg: SpannedExpr<Id> = {
+ImplicitArg: SpannedExpr<'ast, Id> = {
     "?" <arg: Sp<AtomicExpr>> => arg
 };
 
 AppExpr = {
     AtomicExpr,
 
-    <expr: SpAtomicExpr> <implicit_args: ImplicitArg+> =>
-        Expr::App { func: Box::new(expr), implicit_args, args: Vec::new() },
+    <expr: SpAtomicExpr> <implicit_args: Many1<ImplicitArg>> =>
+        Expr::App { func: arena.alloc(expr), implicit_args, args: &mut [] },
 
-    <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
-        Expr::App { func: Box::new(expr), implicit_args, args },
+    <expr: SpAtomicExpr> <implicit_args: Many<ImplicitArg>> <args: Many1<SpAtomicExpr>> =>
+        Expr::App { func: arena.alloc(expr), implicit_args, args },
 };
 
 
@@ -765,82 +815,78 @@ LambdaArgument: Argument<SpannedIdent<Id>> = {
 InfixExpr = {
     AppExpr,
 
-    "\\" <args: LambdaArgument+> "->" <body: SpExpr> =>
+    "\\" <args: Many1<LambdaArgument>> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
             args,
-            body: Box::new(body),
+            body: arena.alloc(body),
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
+        Expr::Infix { lhs: arena.alloc(lhs), op, rhs: arena.alloc(super::shrink_hidden_spans(rhs)), implicit_args: &mut [], },
 };
 
 
-InExpr: SpannedExpr<Id> = {
+InExpr: SpannedExpr<'ast, Id> = {
     "in" <SpExpr>,
-    <err: Sp<!>> => {
-        errors.push(err.value.error);
+    <err: Sp<RecoverError>> => {
         pos::spanned(err.span, Expr::Error(None))
     }
 };
 
-Expr: Expr<Id> = {
+Expr: Expr<'ast, Id> = {
     InfixExpr,
 
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
-        Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
+        Expr::IfElse(arena.alloc(pred), arena.alloc(if_true), arena.alloc(if_false)),
 
-    "match" <body: SpExpr> "with" <arms: Alternative+> =>
-        Expr::Match(Box::new(body), arms),
+    "match" <body: SpExpr> "with" <arms: Many1<Alternative>> =>
+        Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(ValueBindings::Plain(binding), Box::new(body))
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(binding)), arena.alloc(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
-        Expr::TypeBindings(vec![*binding], Box::new(body))
+        Expr::TypeBindings(arena.alloc_extend(Some(binding)), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
-        let mut bindings = bindings.into_iter().map(|x| *x).collect::<Vec<_>>();
+    <metadata: Metadata?> "rec" <mut bindings: Many1<RecursiveValueBinding>> <body: InExpr> => {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
-        Expr::LetBindings(ValueBindings::Recursive(bindings), Box::new(body))
+        Expr::LetBindings(ValueBindings::Recursive(bindings), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: TypeBinding+> <body: InExpr> => {
-        let mut bindings = bindings.into_iter().map(|x| *x).collect::<Vec<_>>();
+    <metadata: Metadata?> "rec" <mut bindings: Many1<TypeBinding>> <body: InExpr> => {
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
-        Expr::TypeBindings(bindings, Box::new(body))
+        Expr::TypeBindings(bindings, arena.alloc(body))
     },
 
     DoExpression,
 
     BlockExpr,
 
-    ! => {
-        errors.push(<>.error);
+    RecoverError => {
         Expr::Error(None)
     }
 };
 
-DoExpression: Expr<Id> = {
+DoExpression: Expr<'ast, Id> = {
     "do" <bind: DoBinding> <body: SpExpr> => {
         let bind = *bind;
-        Expr::Do(Do { id: Some(bind.0), bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
+        Expr::Do(arena.alloc(Do { id: Some(bind.0), bound: arena.alloc(bind.1), body: arena.alloc(body), flat_map_id: None }))
     },
 
     "seq" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(Do { id: None, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
+        Expr::Do(arena.alloc(Do { id: None, bound: arena.alloc(bound), body: arena.alloc(body), flat_map_id: None }))
     },
 };
 
 
-DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
+DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
     <id: Sp<Pattern>> "=" <bound: SpExpr> "in" => Box::new((id, bound)),
 
     // Error recovery
@@ -855,23 +901,22 @@ DoBinding: Box<(SpannedPattern<Id>, SpannedExpr<Id>)> = {
     },
 };
 
-BlockExpr: Expr<Id> = {
-    "block open" <mut exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
-        exprs.push(last);
+BlockExpr: Expr<'ast, Id> = {
+    "block open" <exprs: SepSlice1<SpExpr, "block separator">> "block close" => {
         Expr::Block(exprs)
     },
 };
 
-SpExpr: SpannedExpr<Id> = {
+SpExpr: SpannedExpr<'ast, Id> = {
     <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
 };
 
-pub TopExpr: SpannedExpr<Id> = {
+pub TopExpr: SpannedExpr<'ast, Id> = {
     "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
-pub ReplLine: Option<Box<ReplLine<Id>>> = {
+pub ReplLine: Option<Box<ReplLine<'ast, Id>>> = {
     <TopExpr> => Some(Box::new(ReplLine::Expr(<>))),
-    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(*<>))),
+    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(<>))),
     => None,
 };

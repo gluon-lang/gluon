@@ -22,17 +22,21 @@ extern crate serde_state as serde;
 use std::fmt;
 
 macro_rules! type_cache {
-    ($name: ident ($($args: ident),*) ($($arg: ident : $arg_type: ty),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
+    ($name: ident ($($args: ident),*) $( where [ $($where_: tt)* ] )? ($($arg: ident : $arg_type: ty),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
 
         #[derive(Debug, Clone)]
-        pub struct $name<$($args),*> {
+        pub struct $name<$($args),*>
+            $(where $($where_)* )?
+        {
             $(pub $arg : $arg_type,)*
             $(pub $id : $typ,)+
             _marker: ::std::marker::PhantomData<( $($args),* )>,
         }
 
         impl<$($args),*> Default for $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>>,
+            where
+                $typ: From<$inner_type<$($args,)*>>,
+                $( $($where_)* )?
         {
             fn default() -> Self {
                 $name::new()
@@ -40,7 +44,9 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>>,
+            where
+                $typ: From<$inner_type<$($args,)*>>,
+                $( $($where_)* )?
         {
             pub fn new() -> Self {
                 $name {
@@ -54,7 +60,9 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: Clone,
+            where
+                $typ: Clone,
+                $( $($where_)* )?
         {
             $(
                 pub fn $id(&self) -> $typ {

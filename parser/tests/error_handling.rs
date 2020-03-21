@@ -1,4 +1,3 @@
-extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 
@@ -7,70 +6,44 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use crate::base::ast::{Expr, Pattern, PatternField, TypedIdent};
-use crate::base::pos::{self, BytePos, Span, Spanned};
-use crate::base::types::Type;
+use crate::base::{
+    ast::{Expr, Pattern, PatternField, TypedIdent},
+    mk_ast_arena,
+    pos::{self, BytePos},
+    types::Type,
+};
 
 use crate::parser::{Error, ParseErrors, TokenizeError};
 
 use crate::support::*;
 
-// The expected tokens aren't very interesting since they may change fairly often
-fn remove_expected(errors: ParseErrors) -> ParseErrors {
-    let f = |mut err: Spanned<Error, _>| {
-        match err.value {
-            Error::UnexpectedToken(_, ref mut expected)
-            | Error::UnexpectedEof(ref mut expected) => expected.clear(),
-            _ => (),
-        }
-        err.span = Span::default();
-        err
-    };
-    ParseErrors::from(errors.into_iter().map(f).collect::<Vec<_>>())
-}
-
-#[test]
-fn empty_input() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse("");
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(expr, Some(error()));
-
-    let error = Error::UnexpectedEof(vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    assert_eq!(
-        remove_expected(err),
+test_parse_error! {
+    empty_input,
+    "",
+    |_: base::ast::ArenaRef<'_, '_, String>| error(),
+    {
+        let error = Error::UnexpectedEof(vec![]);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
-    );
+    }
 }
 
-#[test]
-fn missing_match_expr() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    missing_match_expr,
+    r#"
     match with
     | x -> x
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        case(
+    "#,
+    |arena| case(arena,
             error(),
             vec![(Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))],
-        )
-    );
+        ),
+    {
 
-    let error = Error::UnexpectedToken("With".into(), vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    assert_eq!(
-        remove_expected(err),
+        let error = Error::UnexpectedToken("With".into(), vec![]);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
-    );
+    }
 }
 
 #[test]
@@ -157,177 +130,109 @@ let x = 1
     assert!(result.is_err());
 }
 
-#[test]
-fn missing_pattern() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    missing_pattern,
+    r#"
     match 1 with
     | -> x
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        case(int(1), vec![(Pattern::Error, id("x"))])
-    );
-
-    let error = Error::UnexpectedToken("RArrow".into(), vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    assert_eq!(
-        remove_expected(err),
+    "#,
+    |arena| case(arena, int(1), vec![(Pattern::Error, id("x"))]),
+    {
+        let error = Error::UnexpectedToken("RArrow".into(), vec![]);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
-    );
+    }
 }
 
-#[test]
-fn incomplete_alternative() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_alternative,
+    r#"
     match 1 with
     | //
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        case(int(1), vec![(Pattern::Error, error())])
-    );
+    "#,
+    |arena| case(arena, int(1), vec![(Pattern::Error, error())]),
+    {
 
-    let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    assert_eq!(
-        remove_expected(err),
+        let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
-    );
+    }
 }
 
-#[test]
-fn incomplete_alternative_before_complete_alternative() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_alternative_before_complete_alternative,
+    r#"
     match 1 with
     | //
     | x -> x
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        case(
+    "#,
+    |arena| case(arena,
             int(1),
             vec![
                 (Pattern::Error, error()),
                 (Pattern::Ident(TypedIdent::new(intern("x"))), id("x")),
             ],
-        )
-    );
-
-    let error = Error::UnexpectedToken("Pipe".into(), vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    assert_eq!(
-        remove_expected(err),
+        ),
+    {
+        let error = Error::UnexpectedToken("Pipe".into(), vec![]);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
-    );
+    }
 }
 
-#[test]
-fn incomplete_alternative_with_partial_pattern() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_alternative_with_partial_pattern,
+    r#"
     match 1 with
     | { x = }
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        case(
+    "#,
+    |arena| case(arena,
             int(1),
             vec![(
                 Pattern::Record {
                     typ: Type::hole(),
-                    types: vec![],
-                    fields: vec![PatternField {
+                    fields: arena.alloc_extend(vec![PatternField::Value {
                         name: no_loc(intern("x")),
                         value: Some(no_loc(Pattern::Error)),
-                    }],
+                    }]),
                     implicit_import: None,
                 },
                 error(),
             )],
-        )
-    );
-
-    let errors = vec![
+        ),
+    vec![
         no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
         no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-    ];
-    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+    ],
 }
 
-#[test]
-fn incomplete_let_binding() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_let_binding,
+    r#"
     let test =
     1
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        let_("test", no_loc(Expr::Error(None)), int(1),)
-    );
-
-    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
-    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+    "#,
+    |arena| let_(arena, "test", no_loc(Expr::Error(None)), int(1),),
+    vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))]
 }
 
-#[test]
-fn incomplete_let_binding_2() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_let_binding_2,
+    r#"
     let test = io
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, err) = result.unwrap_err();
-
-    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
-    assert_eq!(remove_expected(err), ParseErrors::from(errors));
-
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        let_("test", id("io"), no_loc(Expr::Error(None)))
-    );
+    "#,
+    |arena| let_(arena, "test", id("io"), no_loc(Expr::Error(None))),
+    vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))],
 }
 
-#[test]
-fn incomplete_let_binding_3() {
-    let _ = ::env_logger::try_init();
-
-    let expr = r#"
+test_parse_error! {
+    incomplete_let_binding_3,
+    r#"
     let test
     1
-    "#;
-    let result = parse(expr);
-    assert!(result.is_err());
-    let (expr, _err) = result.unwrap_err();
-    assert_eq!(
-        clear_span(expr.unwrap()),
-        let_("test", no_loc(Expr::Error(None)), int(1),)
-    );
+    "#,
+    |arena| let_(arena, "test", no_loc(Expr::Error(None)), int(1),),
+    vec![no_loc(Error::UnexpectedToken("In".into(), vec![]))],
 }
 
 #[test]
@@ -359,7 +264,7 @@ fn missing_close_paren() {
     assert!(result.is_err());
     let (_expr, err) = result.unwrap_err();
 
-    let error = Error::UnexpectedEof([")", ",", "]"].iter().map(|s| s.to_string()).collect());
+    let error = Error::UnexpectedEof([")", ","].iter().map(|s| s.to_string()).collect());
     let span = pos::span(BytePos::from(30), BytePos::from(30));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
@@ -409,21 +314,14 @@ fn invalid_variant() {
     assert!(parse(r#"type X = | r in ()"#).is_err());
 }
 
-#[test]
-fn error_in_do_1() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse(
+test_parse_error! {
+error_in_do_1,
         r#"
 do x
 1
 "#,
-    );
-
-    assert_eq!(
-        clear_span(result.unwrap_err().0.expect("Expression")),
-        do_("x", no_loc(Expr::Error(None)), int(1),)
-    );
+    |arena| do_(arena, "x", no_loc(Expr::Error(None)), int(1)),
+    vec![no_loc(Error::UnexpectedToken("In".into(), vec![]))],
 }
 
 #[test]
@@ -437,9 +335,12 @@ do
 "#,
     );
 
+    let e = clear_span(result.unwrap_err().0.expect("Expression"));
+    mk_ast_arena!(arena);
     assert_eq!(
-        clear_span(result.unwrap_err().0.expect("Expression")),
+        *e.expr(),
         do_2(
+            arena.borrow(),
             Some(no_loc(Pattern::Error)),
             no_loc(Expr::Error(None)),
             int(1),

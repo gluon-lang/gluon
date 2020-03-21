@@ -1,19 +1,16 @@
-extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 #[macro_use]
 extern crate collect_mac;
-#[macro_use]
-extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use crate::base::{
-    ast::{self, Typed},
+    ast::{self, KindedIdent, Typed},
     kind::Kind,
-    types::{Alias, AliasData, ArcType, Field, Generic, Type},
+    types::{Alias, AliasData, ArcType, Field, Generic, Type, TypeExt},
 };
 
 use crate::support::*;
@@ -35,7 +32,10 @@ macro_rules! assert_pass {
 fn make_ident_type(typ: ArcType) -> ArcType {
     use crate::base::types::walk_move_type;
     walk_move_type(typ, &mut |typ: &ArcType| match **typ {
-        Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
+        Type::Alias(ref alias) => Some(Type::ident(KindedIdent {
+            name: alias.name.clone(),
+            typ: alias.kind(&Default::default()).into_owned(),
+        })),
         _ => None,
     })
 }
@@ -166,7 +166,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     let expected = Ok(typ("Float"));
 
     assert_req!(result, expected);
-    match expr.value {
+    match expr.expr().value {
         ast::Expr::LetBindings(ref bindings, _) => {
             assert_eq!(
                 bindings[0].expr.env_type_of(&env).to_string(),
@@ -227,7 +227,7 @@ in test2 1";
     let expected = Ok(typ("Int"));
 
     assert_req!(result, expected);
-    assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
+    assert_match!(expr.expr().value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
         assert_match!(**binds[0].resolved_type.remove_forall(), Type::Function(_, ref arg, _) => {
             assert_match!(**arg, Type::Generic(_) => ())
@@ -274,7 +274,11 @@ type Option a = | None | Some a
 in Some 1
 ";
     let result = support::typecheck(text);
-    let expected = Ok(support::typ_a("Option", vec![typ("Int")]));
+    let expected = Ok(support::typ_a(
+        "Option",
+        Kind::function(Kind::typ(), Kind::typ()),
+        vec![typ("Int")],
+    ));
 
     assert_req!(result.map(make_ident_type), expected);
 }
@@ -313,7 +317,10 @@ in eq_Int
     let bool = Type::alias(
         support::intern_unscoped("Bool"),
         Vec::new(),
-        Type::ident(support::intern_unscoped("Bool")),
+        Type::ident(KindedIdent {
+            name: support::intern_unscoped("Bool"),
+            typ: Kind::typ(),
+        }),
     );
     let eq = alias(
         "Eq",
@@ -552,7 +559,11 @@ type Test a = | Test a
 Test 1
 "#;
     let result = support::typecheck(text);
-    let expected = Ok(support::typ_a("Test", vec![typ("Int")]));
+    let expected = Ok(support::typ_a(
+        "Test",
+        Kind::function(Kind::typ(), Kind::typ()),
+        vec![typ("Int")],
+    ));
 
     assert_req!(result.map(make_ident_type), expected);
 }
@@ -623,7 +634,11 @@ let rhs : Data Int = {
 in Node { value = 1, tree = Empty } rhs
 "#;
     let result = support::typecheck(text);
-    let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
+    let expected = Ok(support::typ_a(
+        "Tree",
+        Kind::function(Kind::typ(), Kind::typ()),
+        vec![typ("Int")],
+    ));
 
     assert_req!(result.map(make_ident_type), expected);
 }
@@ -1052,7 +1067,7 @@ let (<*>) : f (a -> b) -> f a -> f b = any ()
 #[infix(right, 9)]
 let (<<) : (b -> c) -> (a -> b) -> a -> c = any ()
 
-let alternative ?alt : [Alternative m] -> Alternative (StateT s m) = 
+let alternative ?alt : [Alternative m] -> Alternative (StateT s m) =
     let or sra srb = alt.or << sra <*> srb
     { or }
 

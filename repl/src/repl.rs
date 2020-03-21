@@ -5,10 +5,10 @@ use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sy
 use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
-    ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent},
+    ast::{self, Expr, Pattern, RootExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
-    pos, resolve,
+    mk_ast_arena, pos, resolve,
     symbol::{Symbol, SymbolModule},
     types::{ArcType, TypeExt},
     DebugLevel,
@@ -144,7 +144,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     let suggestions = completion::suggest(
         &thread.get_env(),
         file_map.span(),
-        &expr,
+        &expr.expr(),
         file_map.span().start() + pos::ByteOffset::from(pos as i64),
     );
     Ok(suggestions
@@ -345,70 +345,89 @@ fn eval_line(
 async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
     let mut db = vm.get_database();
     let mut module_compiler = vm.module_compiler(&mut db);
-    let repl_line = {
-        let result = {
-            let filemap = vm.get_database().add_filemap("line", line);
-            let mut module = SymbolModule::new("line".into(), module_compiler.mut_symbols());
-            parse_partial_repl_line(&mut module, &*filemap)
-        };
-        match result {
-            Ok(x) => x,
-            Err((_, err)) => {
-                let code_map = vm.get_database().code_map();
-                return Err(InFile::new(code_map, err).into());
-            }
-        }
-    };
-    let result = match repl_line {
-        None => return Ok(()),
-        Some(ReplLine::Expr(expr)) => {
-            expr.run_expr(&mut module_compiler, vm.clone(), "line", line, None)
-                .await
-        }
-        Some(ReplLine::Let(mut let_binding)) => {
-            let unpack_pattern = let_binding.name.clone();
-            // We can't compile function bindings by only looking at `let_binding.expr`
-            // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
-            // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
-            let id = match unpack_pattern.value {
-                Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
-                _ => {
-                    let id = Symbol::from("repl_temp");
-                    let_binding.name = pos::spanned(
-                        let_binding.name.span,
-                        Pattern::As(
-                            pos::spanned(let_binding.name.span, id.clone()),
-                            Box::new(let_binding.name),
-                        ),
-                    );
-                    TypedIdent::new(id)
+    let mut is_let_binding = false;
+    let mut eval_expr = {
+        let eval_expr = {
+            mk_ast_arena!(arena);
+            let repl_line = {
+                let result = {
+                    let filemap = vm.get_database().add_filemap("line", line);
+                    let mut module =
+                        SymbolModule::new("line".into(), module_compiler.mut_symbols());
+                    parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap)
+                };
+                match result {
+                    Ok(x) => x,
+                    Err((_, err)) => {
+                        let code_map = vm.get_database().code_map();
+                        return Err(InFile::new(code_map, err).into());
+                    }
                 }
             };
-            let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-            let expr = Expr::let_binding(let_binding, id);
-            let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
-            eval_expr
-                .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
-                .await
-                .and_then(move |value| {
-                    // Hack to get around borrow-checker. Method-chaining didn't work,
-                    // even with #[feature(nll)]. Seems like a bug
-                    let temp = set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
-                    temp.and(Ok(value))
-                })
-        }
+            match repl_line {
+                None => return Ok(()),
+                Some(ReplLine::Expr(expr)) => {
+                    RootExpr::new(arena.clone(), arena.alloc(expr))
+                }
+                Some(ReplLine::Let(mut let_binding)) => {
+                    is_let_binding = true;
+                    // We can't compile function bindings by only looking at `let_binding.expr`
+                    // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
+                    // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
+                    let id = match let_binding.name.value {
+                        Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
+                        _ => {
+                            let id = Symbol::from("repl_temp");
+                            let_binding.name = pos::spanned(
+                                let_binding.name.span,
+                                Pattern::As(
+                                    pos::spanned(let_binding.name.span, id.clone()),
+                                    arena.alloc(let_binding.name),
+                                ),
+                            );
+                            TypedIdent::new(id)
+                        }
+                    };
+                    let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
+                    let expr = Expr::let_binding((*arena).borrow(), let_binding, id);
+                    let eval_expr = RootExpr::new(
+                        arena.clone(),
+                        arena.alloc(pos::spanned2(0.into(), 0.into(), expr)),
+                    );
+                    eval_expr
+                }
+            }
+        };
+        eval_expr.try_into_send().unwrap()
     };
-    result.map(move |ExecuteValue { value, typ, .. }| {
-        let vm = value.vm();
-        let env = vm.get_env();
-        let debug_level = vm.global_env().get_debug_level();
-        println!(
-            "{}",
-            ValuePrinter::new(&env, &typ, value.get_variant(), &debug_level)
-                .width(80)
-                .max_level(5)
-        );
-    })
+
+    let ExecuteValue { value, typ, .. } = (&mut eval_expr)
+        .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
+        .await?;
+    if is_let_binding {
+        let mut expr = eval_expr.expr();
+        let mut last_bind = None;
+        loop {
+            match &expr.value {
+                Expr::LetBindings(binds, body) => {
+                    last_bind = Some(&binds[0]);
+                    expr = body;
+                }
+                _ => break,
+            }
+        }
+        set_globals(&vm, &last_bind.unwrap().name, &typ, &value.as_ref())?;
+    }
+    let vm = value.vm();
+    let env = vm.get_env();
+    let debug_level = vm.global_env().get_debug_level();
+    println!(
+        "{}",
+        ValuePrinter::new(&env, &typ, value.get_variant(), &debug_level)
+            .width(80)
+            .max_level(5)
+    );
+    Ok(())
 }
 
 fn set_globals(
@@ -443,8 +462,8 @@ fn set_globals(
                 resolve::remove_aliases_cow(&env, &mut type_cache, typ)
             };
 
-            for pattern_field in fields.iter() {
-                let field_name: &Symbol = &pattern_field.name.value;
+            for (name, pattern_value) in ast::pattern_values(fields) {
+                let field_name: &Symbol = &name.value;
                 // if the record didn't have a field with this name,
                 // there should have already been a type error. So we can just panic here
                 let field_value: RootedValue<&Thread> = value
@@ -464,12 +483,12 @@ fn set_globals(
                     })
                     .typ
                     .clone();
-                match pattern_field.value {
+                match pattern_value {
                     Some(ref sub_pattern) => {
                         set_globals(vm, sub_pattern, &field_type, &field_value)?
                     }
                     None => vm.set_global(
-                        Symbol::from(format!("@{}", pattern_field.name.value.declared_name())),
+                        Symbol::from(format!("@{}", name.value.declared_name())),
                         field_type.to_owned(),
                         Default::default(),
                         field_value.get_value(),

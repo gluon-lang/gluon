@@ -9,7 +9,7 @@ use crate::base::ast::*;
 use crate::parser::ParseErrors;
 use crate::support::*;
 
-fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
+fn parse(text: &str) -> Result<RootExpr<String>, ParseErrors> {
     parse_string(&mut MockEnv::new(), text).map_err(|(_, err)| err)
 }
 
@@ -41,7 +41,7 @@ g ""
 
     match result {
         Ok(expr) => {
-            if let Expr::Block(ref exprs) = expr.value {
+            if let Expr::Block(ref exprs) = expr.expr().value {
                 assert_eq!(exprs.len(), 2);
             } else {
                 assert!(false, "Expected block, found {:?}", expr);
@@ -154,7 +154,7 @@ match x with
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    match result.as_ref().unwrap().value {
+    match result.as_ref().unwrap().expr().value {
         Expr::Match(_, ref alts) => assert_eq!(alts.len(), 2),
         ref x => panic!("{:?}", x),
     }
@@ -190,8 +190,8 @@ fn close_lambda_on_implicit_statement() {
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    match result.unwrap().value {
-        Expr::Block(ref exprs) if exprs.len() == 2 => (),
+    match &result.as_ref().unwrap().expr().value {
+        Expr::Block(exprs) if exprs.len() == 2 => (),
         expr => assert!(false, "{:?}", expr),
     }
 }
@@ -213,9 +213,9 @@ else
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    if let Expr::LetBindings(_, ref expr) = result.as_ref().unwrap().value {
+    if let Expr::LetBindings(_, ref expr) = result.as_ref().unwrap().expr().value {
         if let Expr::IfElse(_, _, ref if_false) = expr.value {
-            if let Expr::Block(_) = if_false.as_ref().value {
+            if let Expr::Block(_) = if_false.value {
                 return;
             }
         }
@@ -257,7 +257,7 @@ match True with
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    if let Expr::Block(ref exprs) = result.as_ref().unwrap().value {
+    if let Expr::Block(ref exprs) = result.as_ref().unwrap().expr().value {
         assert_eq!(2, exprs.len());
         return;
     }

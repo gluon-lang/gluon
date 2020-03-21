@@ -2,14 +2,16 @@ use std::borrow::Cow;
 
 use {
     proc_macro2::{Span, TokenStream},
-    shared::{map_type_params, split_for_impl},
     syn::{
         self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
         Generics, Ident, Type, Variant,
     },
 };
 
-use attr;
+use crate::{
+    attr,
+    shared::{map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");

@@ -1,4 +1,4 @@
-pub use crate::base::types::{ArcType as RcType, Flags, TypeExt};
+pub use crate::base::types::{ArcType as RcType, Flags, TypeExt, TypePtr};
 
 #[cfg(test)]
 mod tests {

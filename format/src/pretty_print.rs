@@ -6,7 +6,8 @@ use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use self::types::pretty_print as pretty_types;
 use base::ast::{
-    Do, Expr, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding, ValueBindings,
+    Do, Expr, Literal, Pattern, PatternField, SpannedExpr, SpannedPattern, ValueBinding,
+    ValueBindings,
 };
 use base::kind::Kind;
 use base::metadata::Attribute;
@@ -778,31 +779,32 @@ where
             Pattern::Ident(ref id) => pretty_types::ident(arena, id.as_ref()),
             Pattern::Record {
                 ref fields,
-                ref types,
                 ref implicit_import,
                 ..
             } => {
                 let iter = self.comma_sep(
-                    types
+                    fields
                         .iter()
-                        .map(|field| {
-                            pos::spanned(field.name.span, arena.text(field.name.value.as_ref()))
-                        })
-                        .chain(fields.iter().map(|field| {
-                            let doc = chain![arena;
-                                pretty_types::ident(arena, field.name.value.as_ref()),
-                                match field.value {
-                                    Some(ref new_name) => {
-                                        chain![arena;
-                                            " = ",
-                                            self.pretty_pattern(new_name)
-                                        ]
+                        .map(|field| match field {
+                            PatternField::Type { name } => {
+                                pos::spanned(name.span, arena.text(name.value.as_ref()))
+                            }
+                            PatternField::Value { name, value } => {
+                                let doc = chain![arena;
+                                    pretty_types::ident(arena, name.value.as_ref()),
+                                    match value {
+                                        Some(ref new_name) => {
+                                            chain![arena;
+                                                " = ",
+                                                self.pretty_pattern(new_name)
+                                            ]
+                                        }
+                                        None => arena.nil(),
                                     }
-                                    None => arena.nil(),
-                                }
-                            ];
-                            pos::spanned(field.name.span, doc)
-                        }))
+                                ];
+                                pos::spanned(name.span, doc)
+                            }
+                        })
                         .chain(
                             implicit_import
                                 .as_ref()
@@ -814,7 +816,7 @@ where
                 chain![arena;
                     "{",
                     doc,
-                    if types.is_empty() && fields.is_empty() && implicit_import.is_none() {
+                    if fields.is_empty() && implicit_import.is_none() {
                         arena.nil()
                     } else {
                         arena.space()

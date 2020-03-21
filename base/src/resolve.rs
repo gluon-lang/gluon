@@ -1,9 +1,9 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, iter::FromIterator};
 
 use crate::{
     fnv::FnvMap,
     symbol::Symbol,
-    types::{AliasData, AliasRef, Type, TypeContext, TypeEnv, TypeExt},
+    types::{AliasData, AliasRef, Generic, Type, TypeContext, TypeEnv, TypeExt},
 };
 
 quick_error! {
@@ -56,7 +56,15 @@ impl<T> AliasRemover<T> {
         self.reduced_aliases.clear();
         self.named_variables.clear();
     }
+}
 
+impl<T> AliasRemover<T>
+where
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
+{
     pub fn canonical_alias<'t, F>(
         &mut self,
         env: &dyn TypeEnv<Type = T>,
@@ -66,7 +74,6 @@ impl<T> AliasRemover<T> {
     ) -> Result<Cow<'t, T>, Error>
     where
         F: FnMut(&AliasRef<Symbol, T>) -> bool,
-        T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
     {
         Ok(match peek_alias(env, typ) {
             Ok(Some(alias)) => {
@@ -101,10 +108,7 @@ impl<T> AliasRemover<T> {
         env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
-    ) -> Result<T, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<T, Error> {
         loop {
             typ = match self.remove_alias_to_concrete(env, interner, &typ, |_| true)? {
                 Some((typ, args)) => match *typ {
@@ -138,10 +142,7 @@ impl<T> AliasRemover<T> {
         env: &dyn TypeEnv<Type = T>,
         interner: &mut impl TypeContext<Symbol, T>,
         typ: T,
-    ) -> Result<T, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<T, Error> {
         self.remove_aliases_predicate(env, interner, typ, |_| true)
     }
 
@@ -151,10 +152,7 @@ impl<T> AliasRemover<T> {
         interner: &mut impl TypeContext<Symbol, T>,
         mut typ: T,
         mut predicate: impl FnMut(&AliasData<Symbol, T>) -> bool,
-    ) -> Result<T, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<T, Error> {
         loop {
             typ = match self.remove_alias(env, interner, &typ, &mut predicate)? {
                 Some(typ) => typ,
@@ -169,10 +167,7 @@ impl<T> AliasRemover<T> {
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &T,
         predicate: impl FnOnce(&AliasData<Symbol, T>) -> bool,
-    ) -> Result<Option<T>, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<Option<T>, Error> {
         Ok(self
             .remove_alias_to_concrete(env, interner, typ, predicate)?
             .map(|(non_replaced_type, unapplied_args)| {
@@ -190,10 +185,7 @@ impl<T> AliasRemover<T> {
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
         predicate: impl FnOnce(&AliasData<Symbol, T>) -> bool,
-    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error> {
         match peek_alias(env, &typ)? {
             Some(ref alias) if predicate(alias) => {
                 self.remove_alias_to_concrete_inner(interner, typ, alias)
@@ -207,10 +199,7 @@ impl<T> AliasRemover<T> {
         interner: &mut impl TypeContext<Symbol, T>,
         typ: &'a T,
         alias: &AliasRef<Symbol, T>,
-    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error>
-    where
-        T: TypeExt<Id = Symbol> + ::std::fmt::Display,
-    {
+    ) -> Result<Option<(T, Cow<'a, [T]>)>, Error> {
         if self.reduced_aliases.iter().any(|name| *name == alias.name) {
             return Err(Error::SelfRecursiveAlias(alias.name.clone()));
         }
@@ -254,7 +243,10 @@ pub fn remove_aliases<T>(
     mut typ: T,
 ) -> T
 where
-    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     while let Ok(Some(new)) = remove_alias(env, interner, &typ) {
         typ = new;
@@ -269,7 +261,10 @@ pub fn remove_aliases_cow<'t, T>(
     typ: &'t T,
 ) -> Cow<'t, T>
 where
-    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     match remove_alias(env, interner, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, interner, typ)),
@@ -288,6 +283,9 @@ pub fn canonical_alias<'t, F, T>(
 where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
     T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) => {
@@ -320,7 +318,10 @@ pub fn remove_alias<T>(
     typ: &T,
 ) -> Result<Option<T>, Error>
 where
-    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T> + FromIterator<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
@@ -341,7 +342,10 @@ pub fn peek_alias<'t, T>(
     typ: &'t T,
 ) -> Result<Option<AliasRef<Symbol, T>>, Error>
 where
-    T: TypeExt<Id = Symbol> + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T::Types: Clone + Default + Extend<T>,
+    T::Generics: Clone + FromIterator<Generic<Symbol>>,
+    T::Fields: Clone,
 {
     let maybe_alias = typ.applied_alias();
 

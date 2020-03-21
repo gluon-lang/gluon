@@ -114,7 +114,7 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff8eb72df928aafb99fe5d37b383f2fe25bd2a765e3e5f7c365916b6f2463a29"
 dependencies = [
- "term",
+ "term 0.5.2",
 ]
 
 [[package]]
@@ -419,9 +419,9 @@ checksum = "f168712e49987bd2f51cb855c4585999e12b1a0abdff60fea4b81b41f2010264"
 
 [[package]]
 name = "compiletest_rs"
-version = "0.3.25"
+version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f75b10a18fb53549fdd090846eb01c7f8593914494d1faabc4d3005c436e417a"
+checksum = "d7d8975604ebad8b6660796802377eb6495045c5606168fc1b8d19a4dd9bfa46"
 dependencies = [
  "diff",
  "filetime",
@@ -434,6 +434,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "tester",
  "winapi 0.3.8",
 ]
 
@@ -1085,7 +1086,7 @@ dependencies = [
  "futures 0.3.1",
  "gluon_base",
  "gluon_check",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_completion",
  "gluon_format",
  "gluon_parser",
@@ -1127,8 +1128,11 @@ dependencies = [
  "codespan",
  "codespan-reporting",
  "collect-mac",
+ "compiletest_rs",
  "either",
+ "env_logger 0.7.1",
  "fnv",
+ "gluon_codegen 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "hashbrown 0.6.3",
  "itertools",
  "log 0.4.8",
@@ -1141,6 +1145,7 @@ dependencies = [
  "serde_derive_state",
  "serde_state",
  "smallvec 0.6.13",
+ "typed-arena",
  "vec_map",
 ]
 
@@ -1164,7 +1169,7 @@ dependencies = [
  "ena",
  "env_logger 0.7.1",
  "gluon_base",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_format",
  "gluon_parser",
  "itertools",
@@ -1192,6 +1197,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gluon_codegen"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "720c5da0383b0b50795f45b29aafc53bb03671a2e7b37992002eca7d0e76fc39"
+dependencies = [
+ "proc-macro2 1.0.6",
+ "quote 1.0.2",
+ "syn 1.0.7",
+]
+
+[[package]]
 name = "gluon_completion"
 version = "0.13.1"
 dependencies = [
@@ -1203,6 +1219,7 @@ dependencies = [
  "gluon_check",
  "gluon_parser",
  "itertools",
+ "quick-error",
  "walkdir",
 ]
 
@@ -1282,7 +1299,7 @@ dependencies = [
  "env_logger 0.7.1",
  "futures 0.3.1",
  "gluon",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_completion",
  "gluon_doc",
  "gluon_format",
@@ -1317,7 +1334,7 @@ dependencies = [
  "gluon",
  "gluon_base",
  "gluon_check",
- "gluon_codegen",
+ "gluon_codegen 0.13.1",
  "gluon_parser",
  "itertools",
  "lalrpop",
@@ -1656,7 +1673,7 @@ dependencies = [
  "serde_derive",
  "sha2",
  "string_cache",
- "term",
+ "term 0.5.2",
  "unicode-xid 0.1.0",
 ]
 
@@ -3259,12 +3276,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "term"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0863a3345e70f61d613eab32ee046ccd1bcc5f9105fe402c61fcd0c13eeb8b5"
+dependencies = [
+ "dirs 2.0.2",
+ "winapi 0.3.8",
+]
+
+[[package]]
 name = "termcolor"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96d6098003bde162e4277c70665bd87c326f5a0c3f3fbfb285787fa482d54e6e"
 dependencies = [
  "wincolor",
+]
+
+[[package]]
+name = "tester"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7647e6d732eb84375d8e7abda37818f81861ddbfc7235e33f4983cb254b71e4f"
+dependencies = [
+ "getopts",
+ "libc",
+ "term 0.6.1",
 ]
 
 [[package]]

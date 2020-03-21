@@ -7,18 +7,25 @@ use std::{
     slice,
 };
 
-use either::Either;
+use {either::Either, itertools::Itertools, ordered_float::NotNan};
 
-use itertools::Itertools;
-
-use crate::metadata::{Comment, Metadata};
-use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
-use crate::resolve::remove_aliases_cow;
-use crate::symbol::Symbol;
-use crate::types::{
-    self, Alias, AliasData, ArcType, ArgType, Flags, NullInterner, Type, TypeEnv, TypeExt,
+#[cfg(feature = "serde")]
+use crate::{
+    serde::de::DeserializeState,
+    serialization::{SeSeed, Seed},
 };
-use ordered_float::NotNan;
+
+use crate::{
+    kind::ArcKind,
+    metadata::{Comment, Metadata},
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    resolve::remove_aliases_cow,
+    symbol::Symbol,
+    types::{
+        self, Alias, AliasData, ArcType, ArgType, Field, Generic, NullInterner, Type, TypeEnv,
+        TypeExt, TypePtr,
+    },
+};
 
 pub trait DisplayEnv {
     type Ident;
@@ -67,79 +74,53 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-struct InnerAstType<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct InnerAstType<'ast, Id> {
     metadata: Option<Metadata>,
-    typ: Spanned<Type<Id, AstType<Id>>, BytePos>,
+    typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct AstType<Id> {
-    _typ: Box<InnerAstType<Id>>,
+#[derive(Eq, PartialEq, Debug)]
+pub struct AstType<'ast, Id> {
+    _typ: &'ast mut InnerAstType<'ast, Id>,
 }
 
-impl<Id> Deref for AstType<Id> {
-    type Target = Type<Id, AstType<Id>>;
+// Workaround https://github.com/rust-lang/rust/issues/70083
+unsafe impl<'ast, Id> Send for AstType<'ast, Id> where Id: Send {}
+unsafe impl<'ast, Id> Sync for AstType<'ast, Id> where Id: Sync {}
+
+impl<'ast, Id> Deref for AstType<'ast, Id> {
+    type Target = Type<Id, AstType<'ast, Id>>;
 
     fn deref(&self) -> &Self::Target {
         &self._typ.typ.value
     }
 }
 
-impl<Id> DerefMut for AstType<Id> {
+impl<'ast, Id> DerefMut for AstType<'ast, Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self._typ.typ.value
     }
 }
 
-impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
+impl<Id: AsRef<str>> fmt::Display for AstType<'_, Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", types::TypeFormatter::new(self))
     }
 }
 
-impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
-    fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
-        AstType {
-            _typ: Box::new(InnerAstType {
-                metadata: None,
-                typ,
-            }),
-        }
-    }
-}
-
-impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
-    fn from(typ: Type<Id, AstType<Id>>) -> Self {
-        Self::from(pos::spanned2(0.into(), 0.into(), typ))
-    }
-}
-
-impl<Id> From<(Type<Id, AstType<Id>>, Flags)> for AstType<Id> {
-    fn from((typ, _): (Type<Id, AstType<Id>>, Flags)) -> AstType<Id> {
-        Self::from(typ)
-    }
-}
-
-impl<Id> HasSpan for AstType<Id> {
+impl<Id> HasSpan for AstType<'_, Id> {
     fn span(&self) -> Span<BytePos> {
         self._typ.typ.span
     }
 }
 
-impl<Id> TypeExt for AstType<Id>
-where
-    Id: Clone,
-{
+impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Id = Id;
-
-    fn new(typ: Type<Id, Self>) -> Self {
-        Self::from(typ)
-    }
-
-    fn strong_count(_typ: &Self) -> usize {
-        1
-    }
+    type Types = &'ast mut [AstType<'ast, Id>];
+    type Generics = &'ast mut [Generic<Id>];
+    type Fields = &'ast mut [Field<Id, Self>];
+    type TypeFields = &'ast mut [Field<Id, Alias<Id, Self>>];
 }
 
 pub trait HasMetadata {
@@ -151,19 +132,39 @@ pub trait HasMetadata {
     }
 }
 
-impl<Id> HasMetadata for AstType<Id> {
+impl<Id> HasMetadata for AstType<'_, Id> {
     fn metadata(&self) -> Option<&Metadata> {
         self._typ.metadata.as_ref()
     }
 }
 
-impl<Id> AstType<Id> {
-    pub fn with_metadata<T>(metadata: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
+impl<'ast, Id> AstType<'ast, Id> {
+    pub fn new(
+        arena: ArenaRef<'_, 'ast, Id>,
+        typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
+    ) -> Self {
+        AstType {
+            _typ: arena.alloc(InnerAstType {
+                metadata: None,
+                typ,
+            }),
+        }
+    }
+
+    pub fn new_no_loc(arena: ArenaRef<'_, 'ast, Id>, typ: Type<Id, AstType<'ast, Id>>) -> Self {
+        Self::new(arena, pos::spanned2(0.into(), 0.into(), typ))
+    }
+
+    pub fn with_metadata<T>(
+        arena: ArenaRef<'_, 'ast, Id>,
+        metadata: T,
+        typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
+    ) -> Self
     where
         T: Into<Option<Metadata>>,
     {
         AstType {
-            _typ: Box::new(InnerAstType {
+            _typ: arena.alloc(InnerAstType {
                 metadata: metadata.into(),
                 typ,
             }),
@@ -177,11 +178,7 @@ impl<Id> AstType<Id> {
         self._typ.metadata = metadata.into();
     }
 
-    pub fn into_inner(self) -> Type<Id, Self> {
-        self._typ.typ.value
-    }
-
-    pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {
+    pub fn remove_single_forall(&mut self) -> &mut AstType<'ast, Id> {
         match self._typ.typ.value {
             Type::Forall(_, ref mut typ) => typ,
             _ => self,
@@ -189,25 +186,49 @@ impl<Id> AstType<Id> {
     }
 }
 
-impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
-    fn as_mut(&mut self) -> &mut SpannedAstType<Id> {
+impl<'ast, Id> AsMut<SpannedAstType<'ast, Id>> for AstType<'ast, Id> {
+    fn as_mut(&mut self) -> &mut SpannedAstType<'ast, Id> {
         &mut self._typ.typ
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Default)]
+pub type KindedIdent<Id> = TypedIdent<Id, ArcKind>;
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(de_parameters = "U", deserialize_state = "Seed<Id, U>")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(bound(deserialize = "
+           T: DeserializeState<'de, Seed<Id, U>>,
+           U: Clone
+                + TypePtr<Id = Id>
+                + From<Type<Id, U>>
+                + std::any::Any
+                + DeserializeState<'de, Seed<Id, U>>,
+           Id: DeserializeState<'de, Seed<Id, U>>
+                + Clone
+                + std::any::Any
+                + DeserializeState<'de, Seed<Id, U>>"))
+)]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub struct TypedIdent<Id = Symbol, T = ArcType<Id>> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
 }
 
-impl<Id> TypedIdent<Id> {
-    pub fn new(name: Id) -> TypedIdent<Id>
-    where
-        Id: PartialEq,
-    {
+impl<Id, T> TypedIdent<Id, T>
+where
+    T: Default,
+{
+    pub fn new(name: Id) -> TypedIdent<Id, T> {
         TypedIdent {
-            typ: Type::hole(),
+            typ: T::default(),
             name,
         }
     }
@@ -238,33 +259,45 @@ pub enum Literal {
 }
 
 /// Pattern which contains a location
-pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
+pub type SpannedPattern<'ast, Id> = Spanned<Pattern<'ast, Id>, BytePos>;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct PatternField<Id, P> {
-    pub name: Spanned<Id, BytePos>,
-    pub value: Option<P>,
+#[derive(Eq, PartialEq, Debug)]
+pub enum PatternField<'ast, Id> {
+    Type {
+        name: Spanned<Id, BytePos>,
+    },
+    Value {
+        name: Spanned<Id, BytePos>,
+        value: Option<SpannedPattern<'ast, Id>>,
+    },
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Pattern<Id> {
+impl<Id> PatternField<'_, Id> {
+    pub fn name(&self) -> &Spanned<Id, BytePos> {
+        match self {
+            PatternField::Type { name } | PatternField::Value { name, .. } => name,
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub enum Pattern<'ast, Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
-    As(Spanned<Id, BytePos>, Box<SpannedPattern<Id>>),
+    As(Spanned<Id, BytePos>, &'ast mut SpannedPattern<'ast, Id>),
     /// Constructor pattern, eg. `Cons x xs`
-    Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
+    Constructor(TypedIdent<Id>, &'ast mut [SpannedPattern<'ast, Id>]),
     /// Ident pattern, eg: `x`
     Ident(TypedIdent<Id>),
     /// Record pattern, eg. `{ x, y = foo }`
     Record {
         typ: ArcType<Id>,
-        types: Vec<PatternField<Id, Id>>,
-        fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
+        fields: &'ast mut [PatternField<'ast, Id>],
         implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
     Tuple {
         typ: ArcType<Id>,
-        elems: Vec<SpannedPattern<Id>>,
+        elems: &'ast mut [SpannedPattern<'ast, Id>],
     },
     /// A literal pattern
     Literal(Literal),
@@ -272,112 +305,169 @@ pub enum Pattern<Id> {
     Error,
 }
 
-impl<Id> Default for Pattern<Id> {
+pub fn pattern_names<'a, 'ast, Id>(
+    fields: &'a [PatternField<'ast, Id>],
+) -> impl Iterator<Item = &'a Spanned<Id, BytePos>> + Captures<'ast> {
+    fields.iter().map(|field| field.name())
+}
+
+pub fn pattern_values<'a, 'ast, Id>(
+    fields: &'a [PatternField<'ast, Id>],
+) -> impl Iterator<
+    Item = (
+        &'a Spanned<Id, BytePos>,
+        &'a Option<SpannedPattern<'ast, Id>>,
+    ),
+> {
+    fields.iter().filter_map(|field| match field {
+        PatternField::Type { .. } => None,
+        PatternField::Value { name, value } => Some((name, value)),
+    })
+}
+
+pub fn pattern_values_mut<'a, 'ast, Id>(
+    fields: &'a mut [PatternField<'ast, Id>],
+) -> impl Iterator<
+    Item = (
+        &'a mut Spanned<Id, BytePos>,
+        &'a mut Option<SpannedPattern<'ast, Id>>,
+    ),
+> {
+    fields.iter_mut().filter_map(|field| match field {
+        PatternField::Type { .. } => None,
+        PatternField::Value { name, value } => Some((name, value)),
+    })
+}
+
+#[doc(hidden)]
+pub trait Captures<'a> {}
+impl<T> Captures<'_> for T {}
+
+pub fn pattern_types<'a, 'ast, Id>(
+    fields: &'a mut [PatternField<'ast, Id>],
+) -> impl Iterator<Item = &'a mut Spanned<Id, BytePos>> + Captures<'ast> {
+    fields.iter_mut().filter_map(|field| match field {
+        PatternField::Type { name } => Some(name),
+        PatternField::Value { .. } => None,
+    })
+}
+
+// Safeguard against growing Pattern
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
+
+impl<Id> Default for Pattern<'_, Id> {
     fn default() -> Self {
         Pattern::Error
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Alternative<Id> {
-    pub pattern: SpannedPattern<Id>,
-    pub expr: SpannedExpr<Id>,
+#[derive(Eq, PartialEq, Debug)]
+pub struct Alternative<'ast, Id> {
+    pub pattern: SpannedPattern<'ast, Id>,
+    pub expr: SpannedExpr<'ast, Id>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Array<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Array<'ast, Id> {
     pub typ: ArcType<Id>,
-    pub exprs: Vec<SpannedExpr<Id>>,
+    pub exprs: &'ast mut [SpannedExpr<'ast, Id>],
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Lambda<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct Lambda<'ast, Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<Argument<SpannedIdent<Id>>>,
-    pub body: Box<SpannedExpr<Id>>,
+    pub args: &'ast mut [Argument<SpannedIdent<Id>>],
+    pub body: &'ast mut SpannedExpr<'ast, Id>,
 }
 
-pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
+pub type SpannedExpr<'ast, Id> = Spanned<Expr<'ast, Id>, BytePos>;
 
 pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
-pub type SpannedAlias<Id> = Spanned<AliasData<Id, AstType<Id>>, BytePos>;
+pub type SpannedAlias<'ast, Id> = Spanned<AliasData<Id, AstType<'ast, Id>>, BytePos>;
 
-pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
+pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos>;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Do<Id> {
-    pub id: Option<SpannedPattern<Id>>,
-    pub bound: Box<SpannedExpr<Id>>,
-    pub body: Box<SpannedExpr<Id>>,
-    pub flat_map_id: Option<Box<SpannedExpr<Id>>>,
+#[derive(Eq, PartialEq, Debug)]
+pub struct Do<'ast, Id> {
+    pub id: Option<SpannedPattern<'ast, Id>>,
+    pub bound: &'ast mut SpannedExpr<'ast, Id>,
+    pub body: &'ast mut SpannedExpr<'ast, Id>,
+    pub flat_map_id: Option<&'ast mut SpannedExpr<'ast, Id>>,
 }
 
 /// The representation of gluon's expression syntax
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Expr<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub enum Expr<'ast, Id> {
     /// Identifiers
     Ident(TypedIdent<Id>),
     /// Literal values
     Literal(Literal),
     /// Function application, eg. `f x`
     App {
-        func: Box<SpannedExpr<Id>>,
-        implicit_args: Vec<SpannedExpr<Id>>,
-        args: Vec<SpannedExpr<Id>>,
+        func: &'ast mut SpannedExpr<'ast, Id>,
+        implicit_args: &'ast mut [SpannedExpr<'ast, Id>],
+        args: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Lambda abstraction, eg. `\x y -> x * y`
-    Lambda(Lambda<Id>),
+    Lambda(Lambda<'ast, Id>),
     /// If-then-else conditional
     IfElse(
-        Box<SpannedExpr<Id>>,
-        Box<SpannedExpr<Id>>,
-        Box<SpannedExpr<Id>>,
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut SpannedExpr<'ast, Id>,
     ),
     /// Pattern match expression
-    Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
+    Match(
+        &'ast mut SpannedExpr<'ast, Id>,
+        &'ast mut [Alternative<'ast, Id>],
+    ),
     /// Infix operator expression eg. `f >> g`
     Infix {
-        lhs: Box<SpannedExpr<Id>>,
+        lhs: &'ast mut SpannedExpr<'ast, Id>,
         op: SpannedIdent<Id>,
-        rhs: Box<SpannedExpr<Id>>,
-        implicit_args: Vec<SpannedExpr<Id>>,
+        rhs: &'ast mut SpannedExpr<'ast, Id>,
+        implicit_args: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Record field projection, eg. `value.field`
-    Projection(Box<SpannedExpr<Id>>, Id, ArcType<Id>),
+    Projection(&'ast mut SpannedExpr<'ast, Id>, Id, ArcType<Id>),
     /// Array construction
-    Array(Array<Id>),
+    Array(Array<'ast, Id>),
     /// Record construction
     Record {
         typ: ArcType<Id>,
-        types: Vec<ExprField<Id, ArcType<Id>>>,
-        exprs: Vec<ExprField<Id, SpannedExpr<Id>>>,
-        base: Option<Box<SpannedExpr<Id>>>,
+        types: &'ast mut [ExprField<Id, ArcType<Id>>],
+        exprs: &'ast mut [ExprField<Id, SpannedExpr<'ast, Id>>],
+        base: Option<&'ast mut SpannedExpr<'ast, Id>>,
     },
     /// Tuple construction
     Tuple {
         typ: ArcType<Id>,
-        elems: Vec<SpannedExpr<Id>>,
+        elems: &'ast mut [SpannedExpr<'ast, Id>],
     },
     /// Declare a series of value bindings
-    LetBindings(ValueBindings<Id>, Box<SpannedExpr<Id>>),
+    LetBindings(ValueBindings<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>),
     /// Declare a series of type aliases
-    TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
+    TypeBindings(
+        &'ast mut [TypeBinding<'ast, Id>],
+        &'ast mut SpannedExpr<'ast, Id>,
+    ),
     /// A group of sequenced expressions
-    Block(Vec<SpannedExpr<Id>>),
-    Do(Do<Id>),
+    Block(&'ast mut [SpannedExpr<'ast, Id>]),
+    Do(&'ast mut Do<'ast, Id>),
     MacroExpansion {
-        original: Box<SpannedExpr<Id>>,
-        replacement: Box<SpannedExpr<Id>>,
+        original: &'ast mut SpannedExpr<'ast, Id>,
+        replacement: &'ast mut SpannedExpr<'ast, Id>,
     },
-    Annotated(Box<SpannedExpr<Id>>, ArcType<Id>),
+    Annotated(&'ast mut SpannedExpr<'ast, Id>, ArcType<Id>),
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -385,23 +475,41 @@ pub enum Expr<Id> {
     ),
 }
 
-impl<Id> Expr<Id> {
+// Safeguard against growing Expr
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 64] = [0; std::mem::size_of::<Expr<'static, Symbol>>()];
+
+impl<'ast, Id> Expr<'ast, Id> {
     pub fn rec_let_bindings(
-        binds: Vec<ValueBinding<Id>>,
-        expr: impl Into<Box<SpannedExpr<Id>>>,
+        arena: ArenaRef<'_, 'ast, Id>,
+        binds: impl IntoIterator<Item = ValueBinding<'ast, Id>>,
+        expr: SpannedExpr<'ast, Id>,
     ) -> Self {
-        Expr::LetBindings(ValueBindings::Recursive(binds), expr.into())
+        let binds = arena.alloc_extend(binds);
+        if binds.is_empty() {
+            expr.value
+        } else {
+            Expr::LetBindings(ValueBindings::Recursive(binds), arena.alloc(expr))
+        }
     }
 
-    pub fn annotated<'a>(expr: SpannedExpr<Id>, typ: ArcType<Id>) -> SpannedExpr<Id>
+    pub fn annotated<'a>(
+        arena: ArenaRef<'_, 'ast, Id>,
+        expr: SpannedExpr<'ast, Id>,
+        typ: ArcType<Id>,
+    ) -> SpannedExpr<'ast, Id>
     where
         Id: From<&'a str> + Clone,
     {
-        pos::spanned(expr.span, Expr::Annotated(expr.into(), typ))
+        pos::spanned(expr.span, Expr::Annotated(arena.alloc(expr), typ))
     }
 
-    pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
-        Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
+    pub fn let_binding(
+        arena: ArenaRef<'_, 'ast, Id>,
+        bind: ValueBinding<'ast, Id>,
+        expr: SpannedExpr<'ast, Id>,
+    ) -> Self {
+        Expr::LetBindings(ValueBindings::Plain(arena.alloc(bind)), arena.alloc(expr))
     }
 
     pub fn kind(&self) -> &'static str {
@@ -430,20 +538,25 @@ impl<Id> Expr<Id> {
     }
 }
 
-impl<Id> Default for Expr<Id> {
+impl<'ast, Id> Default for Expr<'ast, Id> {
     fn default() -> Self {
         Expr::Error(None)
     }
 }
 
-impl<Id> Expr<Id> {
-    pub fn app(func: SpannedExpr<Id>, args: Vec<SpannedExpr<Id>>) -> Self {
+impl<'ast, Id> Expr<'ast, Id> {
+    pub fn app(
+        arena: ArenaRef<'_, 'ast, Id>,
+        func: SpannedExpr<'ast, Id>,
+        args: impl IntoIterator<Item = SpannedExpr<'ast, Id>>,
+    ) -> Self {
+        let args = arena.alloc_extend(args);
         if args.is_empty() {
             func.value
         } else {
             Expr::App {
-                func: func.into(),
-                implicit_args: Vec::new(),
+                func: arena.alloc(func),
+                implicit_args: &mut [],
                 args,
             }
         }
@@ -453,7 +566,7 @@ impl<Id> Expr<Id> {
     pub fn field_iter<'a>(
         &'a self,
     ) -> impl Iterator<
-        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>,
+        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<'ast, Id>>>,
     > + 'a {
         let (types, exprs) = match *self {
             Expr::Record {
@@ -473,21 +586,21 @@ impl<Id> Expr<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct TypeBinding<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct TypeBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
-    pub alias: SpannedAlias<Id>,
+    pub alias: SpannedAlias<'ast, Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
 
-impl<Id> TypeBinding<Id> {
+impl<Id> TypeBinding<'_, Id> {
     pub fn span(&self) -> Span<BytePos> {
         Span::new(self.name.span.start(), self.alias.span.end())
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Default, Eq, PartialEq, Debug, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
@@ -510,13 +623,13 @@ impl<Id> Argument<Id> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum ValueBindings<Id> {
-    Plain(Box<ValueBinding<Id>>),
-    Recursive(Vec<ValueBinding<Id>>),
+#[derive(Eq, PartialEq, Debug)]
+pub enum ValueBindings<'ast, Id> {
+    Plain(&'ast mut ValueBinding<'ast, Id>),
+    Recursive(&'ast mut [ValueBinding<'ast, Id>]),
 }
 
-impl<Id> ValueBindings<Id> {
+impl<'ast, Id> ValueBindings<'ast, Id> {
     pub fn is_recursive(&self) -> bool {
         match self {
             ValueBindings::Plain(ref bind) => !bind.args.is_empty(),
@@ -525,8 +638,8 @@ impl<Id> ValueBindings<Id> {
     }
 }
 
-impl<Id> Deref for ValueBindings<Id> {
-    type Target = [ValueBinding<Id>];
+impl<'ast, Id> Deref for ValueBindings<'ast, Id> {
+    type Target = [ValueBinding<'ast, Id>];
     fn deref(&self) -> &Self::Target {
         match self {
             ValueBindings::Plain(bind) => slice::from_ref(&**bind),
@@ -535,7 +648,7 @@ impl<Id> Deref for ValueBindings<Id> {
     }
 }
 
-impl<Id> DerefMut for ValueBindings<Id> {
+impl<'ast, Id> DerefMut for ValueBindings<'ast, Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             ValueBindings::Plain(bind) => slice::from_mut(&mut **bind),
@@ -544,35 +657,35 @@ impl<Id> DerefMut for ValueBindings<Id> {
     }
 }
 
-impl<'a, Id> IntoIterator for &'a ValueBindings<Id> {
-    type IntoIter = slice::Iter<'a, ValueBinding<Id>>;
-    type Item = &'a ValueBinding<Id>;
+impl<'a, 'ast, Id> IntoIterator for &'a ValueBindings<'ast, Id> {
+    type IntoIter = slice::Iter<'a, ValueBinding<'ast, Id>>;
+    type Item = &'a ValueBinding<'ast, Id>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl<'a, Id> IntoIterator for &'a mut ValueBindings<Id> {
-    type IntoIter = slice::IterMut<'a, ValueBinding<Id>>;
-    type Item = &'a mut ValueBinding<Id>;
+impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
+    type IntoIter = slice::IterMut<'a, ValueBinding<'ast, Id>>;
+    type Item = &'a mut ValueBinding<'ast, Id>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct ValueBinding<Id> {
+#[derive(Eq, PartialEq, Debug)]
+pub struct ValueBinding<'ast, Id> {
     pub metadata: Metadata,
-    pub name: SpannedPattern<Id>,
-    pub typ: Option<AstType<Id>>,
+    pub name: SpannedPattern<'ast, Id>,
+    pub typ: Option<AstType<'ast, Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<Argument<SpannedIdent<Id>>>,
-    pub expr: SpannedExpr<Id>,
+    pub args: &'ast mut [Argument<SpannedIdent<Id>>],
+    pub expr: SpannedExpr<'ast, Id>,
 }
 
-impl<T> Default for ValueBinding<T>
+impl<T> Default for ValueBinding<'_, T>
 where
     T: PartialEq,
 {
@@ -588,7 +701,7 @@ where
     }
 }
 
-impl<Id> ValueBinding<Id> {
+impl<'ast, Id> ValueBinding<'ast, Id> {
     pub fn span(&self) -> Span<BytePos> {
         Span::new(self.name.span.start(), self.expr.span.end())
     }
@@ -600,14 +713,14 @@ macro_rules! visitor {
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
 /// default the `visit_*` functions just walk the tree. If they are overridden the user will need to
 /// call `walk_*` to continue traversing the tree.
-pub trait $trait_name<'a> {
-    type Ident: 'a;
+pub trait $trait_name<'a, 'ast> {
+    type Ident: 'a + 'ast;
 
-    fn visit_expr(&mut self, e: &'a $($mut)* SpannedExpr<Self::Ident>) {
-        walk_expr(self, e);
+    fn visit_expr(&mut self, e: &'a $($mut)* SpannedExpr<'ast, Self::Ident>) {
+        walk_expr(self, e)
     }
 
-    fn visit_pattern(&mut self, e: &'a $($mut)* SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a $($mut)* SpannedPattern<'ast, Self::Ident>) {
         walk_pattern(self, &$($mut)* e.value);
     }
 
@@ -619,24 +732,28 @@ pub trait $trait_name<'a> {
         self.visit_typ(&$($mut)* id.typ)
     }
 
-    fn visit_alias(&mut self, alias: &'a $($mut)* SpannedAlias<Self::Ident>) {
+    fn visit_alias(&mut self, alias: &'a $($mut)* SpannedAlias<'ast, Self::Ident>) {
         walk_alias(self, alias)
     }
     fn visit_spanned_ident(&mut self, _: &'a $($mut)* Spanned<Self::Ident, BytePos>) {}
     fn visit_typ(&mut self, _: &'a $($mut)* ArcType<Self::Ident>) {}
-    fn visit_ast_type(&mut self, s: &'a $($mut)* SpannedAstType<Self::Ident>) {
+    fn visit_ast_type(&mut self, s: &'a $($mut)* SpannedAstType<'ast, Self::Ident>) {
         walk_ast_type(self, s);
     }
 }
 
-pub fn walk_alias<'a, V: ?Sized + $trait_name<'a>>(
+pub fn walk_alias<'a, 'ast, V>(
     v: &mut V,
-    alias: &'a $($mut)* SpannedAlias<V::Ident>,
-) {
+    alias: &'a $($mut)* SpannedAlias<'ast, V::Ident>,
+)
+    where V: ?Sized + $trait_name<'a, 'ast>,
+{
     v.visit_ast_type(&$($mut)* alias.value.$unresolved_type()._typ.typ);
 }
 
-pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* SpannedExpr<V::Ident>) {
+pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Ident>)
+    where V: ?Sized + $trait_name<'a, 'ast>,
+{
     match e.value {
         Expr::IfElse(ref $($mut)* pred, ref $($mut)* if_true, ref $($mut)* if_false) => {
             v.visit_expr(pred);
@@ -652,14 +769,14 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             v.visit_expr(lhs);
             v.visit_spanned_typed_ident(op);
             v.visit_expr(rhs);
-            for arg in implicit_args {
+            for arg in &$($mut)* **implicit_args {
                 v.visit_expr(arg);
             }
         }
         Expr::LetBindings(ref $($mut)* bindings, ref $($mut)* body) => {
             for bind in bindings {
                 v.visit_pattern(&$($mut)* bind.name);
-                for arg in &$($mut)* bind.args {
+                for arg in &$($mut)* *bind.args {
                     v.visit_spanned_typed_ident(&$($mut)* arg.name);
                 }
                 v.visit_typ(&$($mut)* bind.resolved_type);
@@ -676,10 +793,10 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             ref $($mut)* args,
         } => {
             v.visit_expr(func);
-            for arg in implicit_args {
+            for arg in &$($mut)* **implicit_args {
                 v.visit_expr(arg);
             }
-            for arg in args {
+            for arg in & $($mut)* **args {
                 v.visit_expr(arg);
             }
         }
@@ -689,14 +806,14 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
         }
         Expr::Match(ref $($mut)* expr, ref $($mut)* alts) => {
             v.visit_expr(expr);
-            for alt in alts {
+            for alt in &$($mut)* **alts {
                 v.visit_pattern(&$($mut)* alt.pattern);
                 v.visit_expr(&$($mut)* alt.expr);
             }
         }
         Expr::Array(ref $($mut)* a) => {
             v.visit_typ(&$($mut)* a.typ);
-            for expr in &$($mut)* a.exprs {
+            for expr in &$($mut)* *a.exprs {
                 v.visit_expr(expr);
             }
         }
@@ -708,10 +825,10 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             ..
         } => {
             v.visit_typ(typ);
-            for typ in types {
+            for typ in &$($mut)* **types {
                 v.visit_spanned_ident(&$($mut)* typ.name);
             }
-            for field in exprs {
+            for field in &$($mut)* **exprs {
                 v.visit_spanned_ident(&$($mut)* field.name);
                 if let Some(ref $($mut)* expr) = field.value {
                     v.visit_expr(expr);
@@ -726,11 +843,11 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             ref $($mut)* elems,
         } => {
             v.visit_typ(typ);
-            for expr in elems {
+            for expr in &$($mut)* **elems {
                 v.visit_expr(expr);
             }
         }
-        Expr::Block(ref $($mut)* exprs) => for expr in exprs {
+        Expr::Block(ref $($mut)* exprs) => for expr in &$($mut)* **exprs {
             v.visit_expr(expr);
         },
 
@@ -752,13 +869,13 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
 
         Expr::Lambda(ref $($mut)* lambda) => {
             v.visit_ident(&$($mut)* lambda.id);
-            for arg in &$($mut)* lambda.args {
+            for arg in &$($mut)* *lambda.args {
                 v.visit_spanned_typed_ident(&$($mut)* arg.name);
             }
             v.visit_expr(&$($mut)* lambda.body);
         }
         Expr::TypeBindings(ref $($mut)* bindings, ref $($mut)* expr) => {
-            for binding in bindings {
+            for binding in &$($mut)* **bindings {
                 v.visit_spanned_ident(&$($mut)* binding.name);
                 v.visit_alias(&$($mut)* binding.alias);
             }
@@ -778,48 +895,55 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_pattern<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, p: &'a $($mut)* Pattern<V::Ident>) {
-    match *p {
-        Pattern::As(ref $($mut)* id, ref $($mut)* pat) => {
+pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'a $($mut)* Pattern<'ast, V::Ident>) {
+    match p {
+        Pattern::As(id, pat) => {
             v.visit_spanned_ident(id);
             v.visit_pattern(pat);
         }
-        Pattern::Constructor(ref $($mut)* id, ref $($mut)* args) => {
+        Pattern::Constructor(id, args) => {
             v.visit_ident(id);
-            for arg in args {
+            for arg in &$($mut)* **args {
                 v.visit_pattern(arg);
             }
         }
         Pattern::Record {
-            ref $($mut)* typ,
-            ref $($mut)* fields,
+            typ,
+            fields,
             ..
         } => {
             v.visit_typ(typ);
-            for field in fields {
-                v.visit_spanned_ident(&$($mut)* field.name);
-                if let Some(ref $($mut)* pattern) = field.value {
-                    v.visit_pattern(pattern);
+            for field in &$($mut)* **fields {
+                match field {
+                    PatternField::Value { name, value: ref $($mut)* pattern, } => {
+                        v.visit_spanned_ident(name);
+                        if let Some(pattern) = pattern {
+                        v.visit_pattern(pattern);
+                        }
+                    }
+                    PatternField::Type { name, .. } => {
+                        v.visit_spanned_ident(name);
+                    }
                 }
             }
         }
         Pattern::Tuple {
-            ref $($mut)* typ,
-            ref $($mut)* elems,
+            typ,
+            elems,
         } => {
             v.visit_typ(typ);
-            for elem in elems {
+            for elem in &$($mut)* **elems {
                 v.visit_pattern(elem);
             }
         }
-        Pattern::Ident(ref $($mut)* id) => v.visit_ident(id),
+        Pattern::Ident(id) => v.visit_ident(id),
         Pattern::Literal(_) | Pattern::Error => (),
     }
 }
 
-pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
+pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
     v: &mut V,
-    s: &'a $($mut)* SpannedAstType<V::Ident>,
+    s: &'a $($mut)* SpannedAstType<'ast, V::Ident>,
 ) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
@@ -831,7 +955,7 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
             v.visit_ast_type(&$($mut)* ret._typ.typ);
         }
         Type::App(ref $($mut)* ast_type, ref $($mut)* ast_types) => {
-            for ast_type in ast_types {
+            for ast_type in & $($mut)* **ast_types {
                 v.visit_ast_type(&$($mut)* ast_type._typ.typ);
             }
             v.visit_ast_type(&$($mut)* ast_type._typ.typ)
@@ -844,7 +968,7 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
             ref $($mut)* fields,
             ref $($mut)* rest,
         } => {
-            for field in fields {
+            for field in & $($mut)* **fields {
                 v.visit_ast_type(&$($mut)* field.typ._typ.typ);
             }
             v.visit_ast_type(&$($mut)* rest._typ.typ);
@@ -853,7 +977,7 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
             ref $($mut)* types,
             ref $($mut)* rest,
         } => {
-            for field in types {
+            for field in & $($mut)* **types {
                 if let Some(alias) = field.typ.$try_get_alias() {
                     v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
                 }
@@ -922,7 +1046,23 @@ impl Typed for Literal {
     }
 }
 
-impl Typed for Expr<Symbol> {
+impl Typed for OwnedExpr<Symbol> {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        self.expr().try_type_of(env)
+    }
+}
+
+impl Typed for RootExpr<Symbol> {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
+        self.expr().try_type_of(env)
+    }
+}
+
+impl Typed for Expr<'_, Symbol> {
     type Ident = Symbol;
 
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
@@ -962,7 +1102,7 @@ impl<T: Typed> Typed for Spanned<T, BytePos> {
     }
 }
 
-impl Typed for Pattern<Symbol> {
+impl Typed for Pattern<'_, Symbol> {
     type Ident = Symbol;
     fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType, String> {
         // Identifier patterns might be a function so use the identifier's type instead
@@ -1002,35 +1142,10 @@ pub fn is_operator_char(c: char) -> bool {
 }
 
 pub fn is_operator_byte(c: u8) -> bool {
-    macro_rules! match_token {
-        ($($x: pat),*) => {
-            match c {
-                $($x)|* => true,
-                _ => false,
-            }
-        }
-    }
-    match_token! {
-        b'!',
-        b'#',
-        b'$',
-        b'%',
-        b'&',
-        b'*',
-        b'+',
-        b'-',
-        b'.',
-        b'/',
-        b'<',
-        b'=',
-        b'>',
-        b'?',
-        b'@',
-        b'\\',
-        b'^',
-        b'|',
-        b'~',
-        b':'
+    match c {
+        b'!' | b'#' | b'$' | b'%' | b'&' | b'*' | b'+' | b'-' | b'.' | b'/' | b'<' | b'='
+        | b'>' | b'?' | b'@' | b'\\' | b'^' | b'|' | b'~' | b':' => true,
+        _ => false,
     }
 }
 
@@ -1042,12 +1157,12 @@ pub fn is_constructor(s: &str) -> bool {
 }
 
 pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(), &'static str> {
-    match expr.value {
-        Expr::Ident(ref id) => {
+    match &expr.value {
+        Expr::Ident(id) => {
             path.push_str(id.name.declared_name());
             Ok(())
         }
-        Expr::Projection(ref expr, ref id, _) => {
+        Expr::Projection(expr, id, _) => {
             expr_to_path(expr, path)?;
             path.push('.');
             path.push_str(id.declared_name());
@@ -1055,4 +1170,301 @@ pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(),
         }
         _ => Err("Expected a string literal or path to import"),
     }
+}
+
+use std::mem;
+use std::sync::Arc;
+
+pub struct ArenaRef<'a, 'ast, Id>(
+    &'ast Arena<'ast, Id>,
+    PhantomData<&'a &'ast Arena<'ast, Id>>,
+);
+
+impl<'a, 'ast, Id> Copy for ArenaRef<'a, 'ast, Id> {}
+impl<'a, 'ast, Id> Clone for ArenaRef<'a, 'ast, Id> {
+    fn clone(&self) -> Self {
+        Self(self.0, PhantomData)
+    }
+}
+
+impl<'a, 'ast, Id> ArenaRef<'a, 'ast, Id> {
+    pub fn alloc<T>(self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Id> + 'ast,
+    {
+        value.alloc(&self.0)
+    }
+
+    pub fn alloc_extend<T>(self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Id> + 'ast,
+    {
+        T::alloc_extend(iter, &self.0)
+    }
+}
+
+pub trait AstAlloc<'ast, Id>: Sized {
+    fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self;
+    fn alloc_extend(
+        iter: impl IntoIterator<Item = Self>,
+        arena: &'ast Arena<'ast, Id>,
+    ) -> &'ast mut [Self];
+}
+
+macro_rules! impl_ast_arena {
+    ($( $ty: ty => $field: ident ),+ $(,)?) => {
+
+        pub struct Arena<'ast, Id> {
+        $(
+            $field: typed_arena::Arena<$ty>,
+        )+
+        }
+
+        impl<'ast, Id> Arena<'ast, Id> {
+            pub unsafe fn new(_: &'ast InvariantLifetime<'ast>) -> Self {
+                Arena {
+                    $(
+                        $field: typed_arena::Arena::new(),
+                    )+
+                }
+            }
+
+            pub fn borrow(&'ast self) -> ArenaRef<'_, 'ast, Id> {
+                ArenaRef(self, PhantomData)
+            }
+
+            pub fn alloc<T>(&'ast self, value: T) -> &'ast mut T
+            where
+                T: AstAlloc<'ast, Id>,
+            {
+                value.alloc(self)
+            }
+
+            pub fn alloc_extend<T>(&'ast self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+            where
+                T: AstAlloc<'ast, Id>,
+            {
+                T::alloc_extend(iter, self)
+            }
+        }
+
+        $(
+        impl<'ast, Id> AstAlloc<'ast, Id> for $ty {
+            fn alloc(self, arena: &'ast Arena<'ast, Id>) -> &'ast mut Self {
+                arena.$field.alloc(self)
+            }
+
+            fn alloc_extend(
+                iter: impl IntoIterator<Item = Self>,
+                arena: &'ast Arena<'ast, Id>,
+            ) -> &'ast mut [Self] {
+                arena.$field.alloc_extend(iter)
+            }
+        }
+        )+
+    };
+}
+
+impl_ast_arena! {
+    SpannedExpr<'ast, Id> => exprs,
+    SpannedPattern<'ast, Id> => patterns,
+    PatternField<'ast, Id> => pattern_field,
+    ExprField<Id, ArcType<Id>> => expr_field_types,
+    ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    TypeBinding<'ast, Id> => type_bindings,
+    ValueBinding<'ast, Id> => value_bindings,
+    Do<'ast, Id> => do_exprs,
+    Alternative<'ast, Id> => alts,
+    Argument<SpannedIdent<Id>> => args,
+    InnerAstType<'ast, Id> => types,
+    AstType<'ast, Id> => type_ptrs,
+    Generic<Id> => generics,
+    Field<Id, AstType<'ast, Id>> => type_fields,
+    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+}
+
+pub struct RootExpr<Id: 'static> {
+    // Only used to keep `expr` alive
+    #[allow(dead_code)]
+    arena: Arc<Arena<'static, Id>>,
+    expr: *mut SpannedExpr<'static, Id>,
+}
+
+impl<Id: Eq> Eq for RootExpr<Id> {}
+impl<Id: PartialEq> PartialEq for RootExpr<Id> {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr() == other.expr()
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for RootExpr<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.expr().fmt(f)
+    }
+}
+
+impl<Id> RootExpr<Id> {
+    pub fn new<'ast>(arena: Arc<Arena<'ast, Id>>, expr: &'ast mut SpannedExpr<'ast, Id>) -> Self {
+        // SAFETY Arena<'ast> can only be constructed with an invariant lifetime which means that
+        // `expr` must come from that arena. This locks the lifetime of `expr` to `arena` so that
+        // the expression won't be dropped before the arena is
+        unsafe {
+            Self {
+                arena: mem::transmute::<Arc<Arena<Id>>, Arc<Arena<Id>>>(arena),
+                expr: mem::transmute::<*mut SpannedExpr<Id>, *mut SpannedExpr<Id>>(expr),
+            }
+        }
+    }
+
+    pub fn with_arena<R>(
+        &mut self,
+        f: impl for<'ast> FnOnce(&'ast Arena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,
+    ) -> R {
+        let (arena, expr) = self.arena_expr();
+        f(arena, expr)
+    }
+
+    pub fn expr(&self) -> &SpannedExpr<'_, Id> {
+        unsafe { mem::transmute::<&SpannedExpr<Id>, &SpannedExpr<Id>>(&*self.expr) }
+    }
+
+    pub fn expr_mut(&mut self) -> &mut SpannedExpr<'_, Id> {
+        self.arena_expr().1
+    }
+
+    pub fn arena_expr(&mut self) -> (&Arena<'_, Id>, &mut SpannedExpr<'_, Id>) {
+        unsafe {
+            (
+                mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena),
+                mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr),
+            )
+        }
+    }
+
+    pub fn try_into_send(self) -> Result<OwnedExpr<Id>, Self> {
+        match Arc::try_unwrap(self.arena) {
+            Ok(arena) => Ok(OwnedExpr {
+                arena,
+                expr: self.expr,
+            }),
+            Err(arena) => Err(Self {
+                arena,
+                expr: self.expr,
+            }),
+        }
+    }
+}
+
+pub struct OwnedArena<'ast, Id>(&'ast Arena<'ast, Id>);
+
+// SAFETY OwnedArena is only created if we own the arena. Since `Arena` is `Send` we then we can
+// construct one instance of this at a time which is send (like a mutable refernce, but we can't
+// give out a mutable reference itself since that could be used to free the arena).
+unsafe impl<'ast, Id> Send for OwnedArena<'ast, Id> {}
+
+impl<'ast, Id> OwnedArena<'ast, Id> {
+    pub fn borrow(&self) -> ArenaRef<'_, 'ast, Id> {
+        ArenaRef(self.0, PhantomData)
+    }
+
+    pub fn alloc<T>(&self, value: T) -> &'ast mut T
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        self.0.alloc(value)
+    }
+
+    pub fn alloc_extend<T>(&self, iter: impl IntoIterator<Item = T>) -> &'ast mut [T]
+    where
+        T: AstAlloc<'ast, Id>,
+    {
+        self.0.alloc_extend(iter)
+    }
+}
+
+pub struct OwnedExpr<Id: 'static> {
+    // Only used to keep `expr` alive
+    #[allow(dead_code)]
+    arena: Arena<'static, Id>,
+    expr: *mut SpannedExpr<'static, Id>,
+}
+
+impl<Id: Eq> Eq for OwnedExpr<Id> {}
+impl<Id: PartialEq> PartialEq for OwnedExpr<Id> {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr() == other.expr()
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for OwnedExpr<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.expr().fmt(f)
+    }
+}
+
+/// Since the `Arena` is no longer accessible it if `self` is the only owner of
+/// the arena we can implement `Send` and  `Sync`
+unsafe impl<Id> Send for OwnedExpr<Id>
+where
+    Id: Send,
+    SpannedExpr<'static, Id>: Send,
+{
+}
+
+unsafe impl<Id> Sync for OwnedExpr<Id>
+where
+    Id: Sync,
+    SpannedExpr<'static, Id>: Sync,
+{
+}
+
+impl<Id> OwnedExpr<Id> {
+    pub fn with_arena<R>(
+        &mut self,
+        f: impl for<'ast> FnOnce(OwnedArena<'ast, Id>, &'ast mut SpannedExpr<'ast, Id>) -> R,
+    ) -> R {
+        let (arena, expr) = self.arena_expr();
+        f(arena, expr)
+    }
+
+    pub fn expr(&self) -> &SpannedExpr<'_, Id> {
+        unsafe { mem::transmute::<&SpannedExpr<Id>, &SpannedExpr<Id>>(&*self.expr) }
+    }
+
+    pub fn expr_mut(&mut self) -> &mut SpannedExpr<'_, Id> {
+        self.arena_expr().1
+    }
+
+    pub fn arena_expr(&mut self) -> (OwnedArena<'_, Id>, &mut SpannedExpr<'_, Id>) {
+        unsafe {
+            (
+                OwnedArena(mem::transmute::<&Arena<Id>, &Arena<Id>>(&self.arena)),
+                mem::transmute::<&mut SpannedExpr<Id>, &mut SpannedExpr<Id>>(&mut *self.expr),
+            )
+        }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Default)]
+pub struct InvariantLifetime<'a>(std::marker::PhantomData<fn(&'a ()) -> &'a ()>);
+
+// Copied from the compact_arena crate
+#[macro_export]
+macro_rules! mk_ast_arena {
+    ($name: ident) => {
+        let tag = $crate::ast::InvariantLifetime::default();
+        let $name = unsafe { std::sync::Arc::new($crate::ast::Arena::new(&tag)) };
+        let _guard;
+        // this doesn't make it to MIR, but ensures that borrowck will not
+        // unify the lifetimes of two macro calls by binding the lifetime to
+        // drop scope
+        if false {
+            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
+            impl<'tag> ::core::ops::Drop for Guard<'tag> {
+                fn drop(&mut self) {}
+            }
+            _guard = Guard(&tag);
+        }
+    };
 }

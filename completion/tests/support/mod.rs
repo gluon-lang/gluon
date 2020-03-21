@@ -1,15 +1,18 @@
 #![allow(unused)]
 
-extern crate codespan;
+use std::{fmt, iter::FromIterator};
 
 use crate::base::{
-    ast::SpannedExpr,
-    error::InFile,
+    ast::RootExpr,
+    error::{Errors, InFile},
     kind::{ArcKind, Kind, KindEnv},
     metadata::{Metadata, MetadataEnv},
-    pos::BytePos,
+    pos::{BytePos, Spanned},
     symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
-    types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+    types::{
+        self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv,
+        TypeExt, TypePtr,
+    },
 };
 
 use crate::check::{
@@ -17,9 +20,14 @@ use crate::check::{
     typecheck::{self, Typecheck},
 };
 
-use crate::parser::{parse_partial_expr, reparse_infix, ParseErrors};
+use crate::parser::{parse_partial_root_expr, reparse_infix, ParseErrors};
 
 use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+#[path = "../../../check/tests/support/mod.rs"]
+mod check_support;
+
+pub use self::check_support::*;
 
 pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
     codespan::FileMap::new("test".into(), src.to_string())
@@ -27,32 +35,22 @@ pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
         .expect("Position is not in source")
 }
 
-/// Returns a reference to the interner stored in TLD
-pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
-    thread_local!(static INTERNER: Rc<RefCell<Symbols>>
-    = Rc::new(RefCell::new(Symbols::new())));
-
-    INTERNER.with(|interner| interner.clone())
-}
-
-pub fn intern(s: &str) -> Symbol {
-    let interner = get_local_interner();
-    let mut interner = interner.borrow_mut();
-
-    if s.starts_with(char::is_lowercase) {
-        interner.symbol(SymbolData::<&Name>::from(s))
-    } else {
-        SymbolModule::new("test".into(), &mut interner).scoped_symbol(s)
-    }
+pub(crate) fn in_file_error<E>(text: &str, errors: Errors<Spanned<E, BytePos>>) -> InFile<E>
+where
+    E: fmt::Display,
+{
+    let mut source = codespan::CodeMap::new();
+    source.add_filemap("test".into(), text.into());
+    InFile::new(source, errors)
 }
 
 pub fn parse_new(
     s: &str,
-) -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ParseErrors)> {
+) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &TypeCache::new(), s)
+    parse_partial_root_expr(&mut module, &TypeCache::new(), s)
 }
 
 pub struct MockEnv {
@@ -66,7 +64,7 @@ impl MockEnv {
         let mut interner = interner.borrow_mut();
 
         let bool_sym = interner.simple_symbol("Bool");
-        let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+        let bool_ty = Type::app(Type::ident(KindedIdent::new(bool_sym.clone())), collect![]);
 
         MockEnv {
             bool: Alias::new(bool_sym, Vec::new(), bool_ty),
@@ -116,90 +114,6 @@ impl MetadataEnv for MockEnv {
     }
 }
 
-pub fn typecheck_expr_expected(
-    text: &str,
-    expected: Option<&ArcType>,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
-) {
-    let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
-
-    let env = MockEnv::new();
-    let interner = get_local_interner();
-    let mut interner = interner.borrow_mut();
-
-    let mut code_map = codespan::CodeMap::new();
-    let source = code_map.add_filemap("test".into(), text.into());
-
-    rename::rename(
-        &*source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
-
-    let result = tc.typecheck_expr_expected(&mut expr, expected);
-
-    (expr, result.map_err(|err| InFile::new(code_map, err)))
-}
-
-pub fn typecheck_expr(
-    text: &str,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
-) {
-    typecheck_expr_expected(text, None)
-}
-
-pub fn typecheck_partial_expr(
-    text: &str,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
-) {
-    let mut expr = match parse_new(text) {
-        Ok(e) | Err((Some(e), _)) => e,
-        Err((None, err)) => panic!("{}", err),
-    };
-
-    let env = MockEnv::new();
-    let interner = get_local_interner();
-    let mut interner = interner.borrow_mut();
-
-    let mut code_map = codespan::CodeMap::new();
-    let source = code_map.add_filemap("test".into(), text.into());
-
-    rename::rename(
-        &*source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
-
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
-
-    let result = tc.typecheck_expr(&mut expr);
-
-    (expr, result.map_err(|err| InFile::new(code_map, err)))
-}
-
 pub fn typ(s: &str) -> ArcType {
     assert!(!s.is_empty());
     typ_a(s, Vec::new())
@@ -207,7 +121,8 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 where
-    T: From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
+    T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(!s.is_empty());
 
@@ -218,9 +133,12 @@ where
         }
         Err(()) => {
             if args.is_empty() {
-                Type::ident(intern(s))
+                Type::ident(KindedIdent::new(intern(s)))
             } else {
-                Type::app(Type::ident(intern(s)), args.into_iter().collect())
+                Type::app(
+                    Type::ident(KindedIdent::new(intern(s))),
+                    args.into_iter().collect(),
+                )
             }
         }
     }

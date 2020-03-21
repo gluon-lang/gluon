@@ -5,7 +5,7 @@
 //! Custom derives for the following `gluon`-Traits are available:
 //!
 //! ### Getable
-//!   
+//!
 //! Derives `Getable` for any enum or struct as long as all fields also implement
 //! `Getable` (generic type parameters included). If the type is generic over a
 //! lifetime, the lifetime will be constrained to that of the `'vm` lifetime in the
@@ -152,11 +152,8 @@
 
 #![recursion_limit = "128"]
 
-extern crate proc_macro;
-extern crate proc_macro2;
 #[macro_use]
 extern crate quote;
-extern crate syn;
 
 mod attr;
 mod functor;

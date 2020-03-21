@@ -245,18 +245,18 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
     }
 
     struct DocVisitor(Vec<(String, String)>);
-    impl<'a> Visitor<'a> for DocVisitor {
+    impl Visitor<'_, '_> for DocVisitor {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {
-            match expr.value {
-                Expr::LetBindings(ref binds, _) => {
-                    for bind in binds {
-                        if let Some(ref comment) = bind.metadata.comment {
+        fn visit_expr(&mut self, expr: &SpannedExpr<'_, Symbol>) {
+            match &expr.value {
+                Expr::LetBindings(binds, _) => {
+                    for bind in &**binds {
+                        if let Some(comment) = &bind.metadata.comment {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
-                                let name = match bind.name.value {
-                                    Pattern::Ident(ref id) => id.name.declared_name(),
+                                let name = match &bind.name.value {
+                                    Pattern::Ident(id) => id.name.declared_name(),
                                     _ => "Unknown",
                                 };
                                 self.0.push((format!("{}", name), String::from(source)));
@@ -264,8 +264,8 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                         }
                     }
                 }
-                Expr::TypeBindings(ref binds, _) => {
-                    for bind in binds {
+                Expr::TypeBindings(binds, _) => {
+                    for bind in &**binds {
                         if let Some(ref comment) = bind.metadata.comment {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
@@ -303,7 +303,7 @@ async fn run_doc_tests<'t>(
     let convert_test_fn =
         vm.get_global::<OwnedFunction<fn(TestEff) -> TestFn>>("convert_test_fn")?;
 
-    let tests = gather_doc_tests(&expr);
+    let tests = gather_doc_tests(&expr.expr());
     Ok(tests
         .into_iter()
         .map(move |(test_name, test_source)| {

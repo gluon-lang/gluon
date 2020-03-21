@@ -15,7 +15,7 @@ fn new_vm() -> RootedThread {
 fn doc_check(module: &str, expected: doc::Record) {
     let vm = new_vm();
     let (expr, typ) = vm.typecheck_str("basic", module, None).unwrap();
-    let (meta, _) = metadata(&vm.get_env(), &expr);
+    let (meta, _) = metadata(&vm.get_env(), &expr.expr());
 
     let out = doc::record(
         "basic",
