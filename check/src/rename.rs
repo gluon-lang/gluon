@@ -10,7 +10,7 @@ use crate::base::{
     scoped_map::ScopedMap,
     source::Source,
     symbol::{Symbol, SymbolData, SymbolModule},
-    types::Type,
+    types::{ArcType, Type},
 };
 
 struct Environment {
@@ -35,6 +35,7 @@ pub fn rename<'s, 'ast>(
         scope: Vec<Symbol>,
         env: Environment,
         ast_arena: ast::ArenaRef<'s, 'ast, Symbol>,
+        hole: ArcType,
     }
 
     impl<'a, 'b, 's, 'ast> RenameVisitor<'a, 'b, 's, 'ast> {
@@ -287,7 +288,7 @@ pub fn rename<'s, 'ast>(
                         Span::new(expr.span.end(), expr.span.start() + ByteOffset::from(2)),
                         Expr::Ident(TypedIdent {
                             name: flat_map,
-                            typ: Type::hole(),
+                            typ: self.hole.clone(),
                         }),
                     )));
 
@@ -382,6 +383,7 @@ pub fn rename<'s, 'ast>(
             stack: ScopedMap::new(),
         },
         ast_arena,
+        hole: Type::hole(),
     };
     visitor.visit_expr(expr);
 }

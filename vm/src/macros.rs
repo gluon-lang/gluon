@@ -555,9 +555,9 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                     expander,
                     ..
                 } = self;
-                let generated_bindings = binds
-                    .iter()
-                    .flat_map(|bind| {
+                let mut generated_bindings = Vec::new();
+                for bind in &**binds {
+                    generated_bindings.extend(
                         bind.metadata
                             .attributes
                             .iter()
@@ -572,10 +572,9 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                                     }
                                 }
                             })
-                            .flatten()
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
+                            .flatten(),
+                    );
+                }
                 if !generated_bindings.is_empty() {
                     let next_expr = mem::take(*body);
                     body.value =
