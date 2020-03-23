@@ -2,6 +2,7 @@
 name = "gluon"
 version = "0.13.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
+keywords = ["script", "scripting", "language"]
 build = "build.rs"
 edition = "2018"
 
