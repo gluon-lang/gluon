@@ -33,7 +33,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
 
     let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });
 
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let gluon = match container.crate_name {
         CrateName::Some(ref ident) => quote! {

@@ -162,6 +162,7 @@ mod pushable;
 mod shared;
 mod trace;
 mod userdata;
+mod ast_clone;
 mod vm_type;
 
 #[doc(hidden)]
@@ -199,3 +200,10 @@ pub fn trace(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn functor(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     functor::derive(input.into()).into()
 }
+
+#[doc(hidden)]
+#[proc_macro_derive(AstClone, attributes(gluon))]
+pub fn ast_clone(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    ast_clone::derive(input.into()).into()
+}
+

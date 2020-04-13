@@ -86,10 +86,7 @@ where
     Span::new(start, end)
 }
 
-pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos>
-where
-    Pos: Ord,
-{
+pub fn spanned<T, Pos>(span: Span<Pos>, value: T) -> Spanned<T, Pos> {
     Spanned { span, value }
 }
 

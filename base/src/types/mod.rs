@@ -19,8 +19,10 @@ use {
     smallvec::SmallVec,
 };
 
+use gluon_codegen::AstClone;
+
 use crate::{
-    ast::{EmptyEnv, HasMetadata, IdentEnv},
+    ast::{AstClone, EmptyEnv, HasMetadata, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
     merge::{merge, merge_collect},
@@ -284,7 +286,7 @@ pub struct TypeVariable {
 
 forward_eq_hash! { <> for TypeVariable { id } }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -310,7 +312,7 @@ forward_eq_hash! { <Id> for Skolem<Id> { id } }
 
 /// FIXME Distinguish generic id's so we only need to compare them by `id` (currently they will get
 /// the wrong kind assigned to them otherwise)
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -339,7 +341,7 @@ impl<Id> Generic<Id> {
 
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and
 /// dereferenced to `AliasRef`
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -517,7 +519,7 @@ where
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
 /// for cheap conversion back into a type as well.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -643,7 +645,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -751,7 +753,7 @@ where
     }
 }
 
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
@@ -838,7 +840,7 @@ impl Default for ArgType {
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -867,6 +869,10 @@ impl Default for ArgType {
     ))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[gluon(ast_clone_bounds = "T::Generics: AstClone<'ast, Id>,
+                            T::Types: AstClone<'ast, Id>,
+                            T::Fields: AstClone<'ast, Id>,
+                            T::TypeFields: AstClone<'ast, Id>")]
 pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,

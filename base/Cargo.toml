@@ -33,7 +33,7 @@ either = "1"
 vec_map = "0.8"
 typed-arena = "1"
 
-gluon_codegen = "0.13.1" # GLUON
+gluon_codegen = { version = "0.13.1", path = "../codegen" } # GLUON
 
 serde = { version = "1.0.0", features = ["rc"], optional = true }
 serde_state = { version = "0.4.0", features = ["rc"], optional = true }
@@ -46,7 +46,6 @@ compiletest_rs = { version = "0.3.23", optional = true }
 [dev-dependencies]
 env_logger = "0.7"
 pretty_assertions = "0.6"
-
 
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state"]

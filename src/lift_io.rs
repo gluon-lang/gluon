@@ -1,11 +1,9 @@
-use std::mem;
-
 use gluon_codegen::Trace;
 
 use {
     base::{
         ast::{
-            self, Argument, AstType, EmptyEnv, Expr, ExprField, Pattern, SpannedExpr, Typed,
+            self, AstClone, Argument, AstType, EmptyEnv, Expr, ExprField, Pattern, SpannedExpr, Typed,
             TypedIdent, ValueBinding,
         },
         pos::{self, BytePos, Span},
@@ -61,7 +59,7 @@ impl Macro for LiftIo {
                 }
             }
 
-            let module = mem::take(module);
+            let module = (*module).ast_clone(arena.borrow());
             let span = module.span;
 
             let vm = env.vm;
