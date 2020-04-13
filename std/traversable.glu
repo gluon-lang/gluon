@@ -13,11 +13,11 @@ type Traversable t = {
 }
 
 let traverse ?t ?a : forall a b m .
-    [Traversable t]
-        -> [Applicative m]
-        -> (a -> m b)
-        -> t a
-        -> m (t b)
+        [Traversable t]
+            -> [Applicative m]
+            -> (a -> m b)
+            -> t a
+            -> m (t b)
     =
     t.traverse a
 

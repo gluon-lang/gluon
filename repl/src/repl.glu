@@ -38,7 +38,7 @@ type Cmd = {
 type Commands = Map String Cmd
 in
 let run_interruptible_io action :
-        IO String
+    IO String
         -> Eff (ReplEffect r) (Result String String)
     =
     do eval_thread = lift <| thread.new_thread ()

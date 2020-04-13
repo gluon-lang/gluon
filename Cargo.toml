@@ -148,6 +148,3 @@ debug = 1
 
 [profile.release]
 debug = 1
-
-[patch.crates-io]
-pretty = { path = "../pretty.rs", version = "0.9.0" }

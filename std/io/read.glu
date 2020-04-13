@@ -48,7 +48,7 @@ let read_to_string reader : [Read a] -> a -> IO (Option String) =
 /// Constructs a `read_to_end` function from a `read` function. If it is more efficient,
 /// implementors of `Read` should provide their own, specialized version.
 let default_read_to_end read : forall a .
-    (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte)
+        (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte)
     =
     let read_to_end_rec buf reader =
         do result = read reader default_buf_len

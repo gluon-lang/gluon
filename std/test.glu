@@ -73,7 +73,7 @@ let assert_success : [Show e]
     run_error >> flat_map assert_ok
 
 let assert_throws : forall e .
-    [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+        [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
     =
     run_error >> flat_map assert_err
 

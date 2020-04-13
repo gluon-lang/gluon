@@ -2531,7 +2531,7 @@ where
 
         let doc = self.pretty_(printer);
         match **typ {
-            Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
+            Type::ExtendRow { .. } | Type::Variant(..) => doc,
             _ => {
                 let comment = printer.comments_before(typ.span().start());
                 comment.append(doc)
@@ -2561,8 +2561,10 @@ where
                         })),
                         "."
                     ].group(),
-                    arena.line(),
-                    top(typ).pretty(printer)
+                    chain![arena;
+                        printer.space_before(typ.span().start()),
+                        top(typ).pretty_(printer)
+                    ].nest(INDENT)
                 ];
                 p.enclose(Prec::Function, arena, doc).group()
             }
@@ -2635,11 +2637,11 @@ where
                         _ => {
                             doc = chain![arena;
                                 doc,
-                                    if first {
-                                        arena.nil()
-                                    } else {
-                                        arena.line()
-                                    },
+                                if first {
+                                    arena.nil()
+                                } else {
+                                    arena.hardline()
+                                },
                                 ".. ",
                                 top(row).pretty(printer)
                             ];
@@ -2903,7 +2905,7 @@ where
             Some((arg_type, arg, ret)) => chain![arena;
                 chain![arena;
                     if arg_type == ArgType::Implicit { arena.text("[") } else { arena.nil() },
-                    dt(Prec::Function, arg).pretty(printer),
+                    dt(Prec::Function, arg).pretty_(printer),
                     if arg_type == ArgType::Implicit { arena.text("]") } else { arena.nil() },
                 ].group(),
                 printer.space_after(arg.span().end()),

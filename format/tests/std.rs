@@ -5,12 +5,14 @@ use std::{
     env,
     fs::File,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use difference::assert_diff;
 
 use gluon::{RootedThread, ThreadExt, VmBuilder};
+
+type Error = Box<dyn std::error::Error>;
 
 fn new_vm() -> RootedThread {
     VmBuilder::new()
@@ -49,92 +51,51 @@ fn test_format(name: &str) {
     }
 }
 
-#[test]
-fn bool() {
-    test_format("std/bool.glu");
+fn test_files(path: &str) -> Result<Vec<PathBuf>, Error> {
+    let paths: Vec<_> = walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|f| {
+            f.ok().and_then(|f| {
+                let path = f.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("glu") {
+                    Some(path.to_owned())
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    assert!(!paths.is_empty(), "Expected test files");
+    Ok(paths)
 }
 
-#[test]
-fn char() {
-    test_format("std/char.glu");
+#[tokio::main]
+async fn main() {
+    if let Err(err) = main_().await {
+        eprintln!("{}", err);
+        std::process::exit(1);
+    }
 }
 
-#[test]
-fn function() {
-    test_format("std/function.glu");
-}
+async fn main_() -> Result<(), Error> {
+    let files = test_files("../std")?;
 
-#[test]
-fn map() {
-    test_format("std/map.glu");
-}
-
-#[test]
-fn option() {
-    test_format("std/option.glu");
-}
-
-#[test]
-fn prelude() {
-    test_format("std/prelude.glu");
-}
-
-#[test]
-fn result() {
-    test_format("std/result.glu");
-}
-
-#[test]
-fn state() {
-    test_format("std/state.glu");
-}
-
-#[test]
-fn stream() {
-    test_format("std/stream.glu");
-}
-
-#[test]
-fn string() {
-    test_format("std/string.glu");
-}
-
-#[test]
-fn test() {
-    test_format("std/test.glu");
-}
-
-#[test]
-fn types() {
-    test_format("std/types.glu");
-}
-
-#[test]
-fn unit() {
-    test_format("std/unit.glu");
-}
-
-#[test]
-fn writer() {
-    test_format("std/writer.glu");
-}
-
-#[test]
-fn parser() {
-    test_format("std/parser.glu");
-}
-
-#[test]
-fn random() {
-    test_format("std/random.glu");
-}
-
-#[test]
-fn repl() {
-    test_format("repl/src/repl.glu");
-}
-
-#[test]
-fn json_de() {
-    test_format("std/json/de.glu");
+    let report = tensile::tokio_console_runner(
+        tensile::group(
+            "fmt",
+            files
+                .into_iter()
+                .map(|file| {
+                    let name = file.display().to_string();
+                    tensile::test(name.clone(), move || test_format(&name))
+                })
+                .collect(),
+        ),
+        &Default::default(),
+    )
+    .await?;
+    if !report.passes() {
+        return Err("Some tests failed".into());
+    }
+    Ok(())
 }

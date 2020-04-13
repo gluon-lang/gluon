@@ -8,7 +8,8 @@ let { (<<) } = import! std.function
 
 /// The `Lift` effect allows a regular monad (usually `IO`) to be used in an `Eff` monad
 type Lift m r a =
-    | Lift (m a) .. r
+    | Lift (m a)
+    .. r
 
 let send_lift f : Lift m r a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! lift f) Pure
 

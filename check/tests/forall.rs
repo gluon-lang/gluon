@@ -1236,7 +1236,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a . | Ok\n.. a".to_string())
+        Ok("forall a .\n    | Ok\n    .. a".to_string())
     );
 }
 

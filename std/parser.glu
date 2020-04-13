@@ -19,7 +19,7 @@ type ParseResult a = Result Error { value : a, buffer : OffsetString }
 
 /// `Parser` is a monad which parses a `String` into structured values
 type Parser a =
-        OffsetString
+    OffsetString
         -> ParseResult a
 
 let parser : Parser a -> Parser a = id

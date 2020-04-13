@@ -166,8 +166,8 @@ let {
 fn preserve_comments_in_function_types() {
     let expr = r#"#!/bin/gluon
 let x :
-        /* first */
-        Int
+    /* first */
+    Int
         /* Int */
         ->
         // Float
@@ -712,7 +712,7 @@ let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA =
 fn function_type_dont_split_app() {
     let expr = r#"
 let run_interruptible_io :
-        IO String
+    IO String
         -> LOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOONG
     =
     ()
@@ -750,7 +750,7 @@ fn comment_in_lambda() {
 fn long_type() {
     let expr = r#"
 let assert_throws : forall e .
-    [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+        [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
     =
     run_error >> flat_map assert_err
 

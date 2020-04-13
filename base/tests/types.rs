@@ -264,9 +264,9 @@ fn show_variant() {
     let typ: ArcType<&str> = Type::variant(vec![
         Field::new(
             "A",
-            Type::function(vec![Type::int()], Type::ident(KindedIdent::new("A"))),
+            Type::function(vec![Type::int()], Type::opaque()),
         ),
-        Field::new("B", Type::ident(KindedIdent::new("A"))),
+        Field::new("B", Type::opaque()),
     ]);
     assert_eq_display!(format!("{}", typ), "| A Int\n| B");
 }
@@ -323,7 +323,7 @@ fn break_record() {
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&printer, &typ))
-        .append(arena.newline());
+        .append(arena.hardline());
     assert_eq_display!(
         format!("{}", typ.1.pretty(80)),
         r#"aaaaaaaaabbbbbbbbbbcccccccccc {

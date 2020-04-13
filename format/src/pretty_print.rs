@@ -940,14 +940,7 @@ where
 
             Some(
                 if i != 1 {
-                    arena
-                        .text(
-                            (0..20)
-                                .map(|_| format!("         {}", i))
-                                .collect::<String>(),
-                        )
-                         // .flat_alt(arena.as_string(i)) // FIXME
-                                                      .flat_alt(arena.nil())
+                    arena.fail().flat_alt(arena.nil())
                 } else {
                     // The last one should always apply
                     arena.nil()

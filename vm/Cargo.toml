@@ -33,7 +33,7 @@ log = "0.4"
 ordered-float = "1"
 parking_lot = "0.9"
 petgraph = "0.4"
-pretty = "0.9"
+pretty = "0.10"
 quick-error = "1.1.0"
 regex = { version = "1", optional = true }
 smallvec = "0.6"

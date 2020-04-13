@@ -35,14 +35,9 @@ let modify f : (s -> s) -> Eff [| state : State s | r |] () =
 
 /// Eliminate the `State` effect and return the state and the computed value
 let run_state s eff : forall s .
-
-
-
-
-
         s
-        -> Eff [| state : State s | r |] a
-        -> Eff [| | r |] { state : s, value : a }
+            -> Eff [| state : State s | r |] a
+            -> Eff [| | r |] { state : s, value : a }
     =
     let loop state ve : s
             -> Eff [| state : State s | r |] a

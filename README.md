@@ -93,14 +93,8 @@ let { (*>), (<*), wrap } = import! std.applicative
 
 let { for } = import! std.traversable
 
-type Op =
-    | Add
-    | Sub
-    | Div
-    | Mul
-type Expr =
-    | Int Int
-    | Binop Expr Op Expr
+type Op = | Add | Sub | Div | Mul
+type Expr = | Int Int | Binop Expr Op Expr
 
 let parse : String -> Result String Expr =
     // Gluon has a small parser combinator library which makes it easy to define an expression parser
@@ -116,9 +110,7 @@ let parse : String -> Result String Expr =
         lazy_parser,
         chainl1,
         (<?>),
-        ?
-    } =
-        import! std.parser
+        ? } = import! std.parser
     let { (<|>) } = import! std.alternative
 
     let lex x = x <* spaces
@@ -131,14 +123,13 @@ let parse : String -> Result String Expr =
         | Err _ -> parser.fail "Unable to parse integer"
 
     let operator =
-        satisfy_map
-            (\c ->
-                match c with
-                | '*' -> Some Mul
-                | '+' -> Some Add
-                | '-' -> Some Sub
-                | '/' -> Some Div
-                | _ -> None)
+        satisfy_map (\c ->
+            match c with
+            | '*' -> Some Mul
+            | '+' -> Some Add
+            | '-' -> Some Sub
+            | '/' -> Some Div
+            | _ -> None)
             <?> "operator"
 
     rec
@@ -154,6 +145,9 @@ let parse : String -> Result String Expr =
 
     let expr _ = binop ()
     in
+
+    // Gluon makes it possible to partially apply functions which we use here to scope all parser functions
+    // inside the `let parse` binding above.
     let parse : String -> Result String Expr = parser.parse (expr () <* spaces)
     parse
 
@@ -181,9 +175,7 @@ let eval expr : Expr -> Int =
             | Mul -> (*)
         f (eval l) (eval r)
 
-do
-digits
-=
+do digits =
     let gen_digit = random.thread_rng.gen_int_range 1 10
     do a = gen_digit
     do b = gen_digit
@@ -191,9 +183,7 @@ digits
     do d = gen_digit
     wrap [a, b, c, d]
 
-let print_digits = for
-    digits
-    (\d ->
+let print_digits = for digits (\d ->
         seq io.print " "
         io.print (show d))
 seq io.print "Four digits:" *> print_digits *> io.println ""
@@ -209,7 +199,8 @@ let guess_loop _ =
         | Ok expr ->
             if validate digits expr then
                 let result = eval expr
-                if result == 24 then io.println "Correct!"
+                if result == 24
+                then io.println "Correct!"
                 else io.println ("Incorrect, " <> int.show.show result <> " != 24") *> guess_loop ()
             else
                 io.println

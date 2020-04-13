@@ -97,6 +97,8 @@ impl pretty::Render for SymbolLinkRenderer {
         self.un_escaped.push_str(s);
         Ok(s.len())
     }
+
+    fn fail_doc(&self) {}
 }
 
 impl pretty::RenderAnnotated<'_, String> for SymbolLinkRenderer {
