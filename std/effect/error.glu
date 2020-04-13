@@ -44,10 +44,6 @@ let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] 
 
 /// Catches an "exception", allowing the effect to continue executing
 let catch eff handler : forall e .
-
-
-
-
         Eff [| error : Error e | r |] a
         -> (e -> Eff [| error : Error e | r |] a)
         -> Eff [| error : Error e | r |] a

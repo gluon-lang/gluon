@@ -15,5 +15,5 @@ type Group a = {
 }
 
 {
-    Group
+    Group,
 }

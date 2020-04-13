@@ -155,9 +155,12 @@ let string : ValueDeserializer String = \input ->
 let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
     match input with
     | Array xs ->
-        do value = for xs (\v ->
-                do state = a v
-                Ok state.value)
+        do value =
+            for
+                xs
+                (\v ->
+                    do state = a v
+                    Ok state.value)
         Ok { value, input }
     | _ -> Err (error_msg "Expected array")
 

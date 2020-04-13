@@ -2728,11 +2728,6 @@ where
         };
 
         let mut doc = arena.text(open);
-        let empty_fields = match **row {
-            Type::EmptyRow => true,
-            _ => false,
-        };
-
         doc = match **row {
             Type::EmptyRow => doc,
             Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => doc
@@ -2744,7 +2739,7 @@ where
                 .append(top(row).pretty(printer))
                 .nest(INDENT),
         };
-        if !empty_fields && open != "(" {
+        if open != "(" {
             doc = doc.append(hardline);
         }
 

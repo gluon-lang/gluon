@@ -85,8 +85,7 @@ let monad : Monad Parser = {
 let { flat_map } = import! std.monad
 
 let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } =
-    if stream.start == stream.end then
-        None
+    if stream.start == stream.end then None
     else
         let c = string.char_at stream.buffer stream.start
         let char_len = char.len_utf8 c
@@ -228,8 +227,7 @@ let one_of s : String -> Parser Char =
         (\first ->
             let len = string.len s
             let one_of_ i =
-                if i == len then
-                    False
+                if i == len then False
                 else
                     let c = string.char_at s i
                     if first == c then True

@@ -20,16 +20,19 @@ in
 let empty : Stream a = lazy (\_ -> Empty)
 
 let from f : (Int -> Option a) -> Stream a =
-    let go i = lazy (\_ ->
-            match f i with
-            | Some x -> Value x (go (i + 1))
-            | None -> Empty)
+    let go i =
+        lazy
+            (\_ ->
+                match f i with
+                | Some x -> Value x (go (i + 1))
+                | None -> Empty)
     go 0
 
 let of xs : Array a -> Stream a =
-    from (\i ->
-        if i < array.len xs then Some (array.index xs i)
-        else None)
+    from
+        (\i ->
+            if i < array.len xs then Some (array.index xs i)
+            else None)
 
 let repeat x : a -> Stream a =
     lazy (\_ -> Value x (repeat x))
@@ -59,8 +62,7 @@ let take n xs : Int -> Stream a -> Stream a =
         match uncons xs with
         | Some (y, ys) -> lazy (\_ -> Value y (take (n - 1) ys))
         | None -> empty
-    else
-        empty
+    else empty
 
 /// Checks if the stream is empty
 ///
@@ -99,10 +101,11 @@ let to_list : Stream a -> List a =
     foldr Cons Nil
 
 let zip_with f xs ys : (a -> b -> c) -> Stream a -> Stream b -> Stream c =
-    lazy (\_ ->
-        match (force xs, force ys) with
-        | (Value x rest_xs, Value y rest_ys) -> Value (f x y) (zip_with f rest_xs rest_ys)
-        | (_, _) -> Empty)
+    lazy
+        (\_ ->
+            match (force xs, force ys) with
+            | (Value x rest_xs, Value y rest_ys) -> Value (f x y) (zip_with f rest_xs rest_ys)
+            | (_, _) -> Empty)
 
 let eq ?eq : [Eq a] -> Eq (Stream a) =
     let stream_eq l r =
@@ -157,10 +160,11 @@ let monoid : Monoid (Stream a) = {
 
 let functor : Functor Stream =
     let map f xs : (a -> b) -> Stream a -> Stream b =
-        lazy (\_ ->
-            match force xs with
-            | Value x rest_xs -> Value (f x) (map f rest_xs)
-            | Empty -> Empty)
+        lazy
+            (\_ ->
+                match force xs with
+                | Value x rest_xs -> Value (f x) (map f rest_xs)
+                | Empty -> Empty)
 
     { map }
 

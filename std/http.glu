@@ -27,11 +27,13 @@ let {
     ResponseBody,
     HttpEffect,
     HttpState,
-    Uri, } = import! std.http.types
+    Uri
+} =
+    import! std.http.types
 let http_prim = lift_io! lift (import! std.http.prim)
 
 let status =
-    let code : Int -> StatusCode = id 
+    let code : Int -> StatusCode = id
     {
         ok = code 200,
         moved_permanently = 301,
@@ -44,7 +46,7 @@ let status =
     }
 
 let method =
-    let method : String -> Method = id 
+    let method : String -> Method = id
     {
         get = method "GET",
         post = method "POST",
@@ -62,8 +64,7 @@ let make : Eff (HttpEffect r) a -> Eff (HttpEffect r) a = id
 /// Handles the request if `predicate` returns `True
 let test predicate : (Request -> Bool) -> Eff (HttpEffect r) () =
     do state = get
-    if predicate state.request
-    then wrap ()
+    if predicate state.request then wrap ()
     else empty
 
 /// Handles `Get` requests
@@ -100,10 +101,14 @@ let write_response bytes : Array Byte -> Eff (HttpEffect r) () =
 
 /// Throws an exception which aborts the current handler. Can be caught with `catch_error`
 let fail msg : String -> Eff (HttpEffect r) a =
-    empty // TODO use msg
+    empty
+// TODO use msg
 
 /// Recovers from an exception thrown by `fail`
-let catch_error action catch : Eff (HttpEffect r) a -> (String -> Eff (HttpEffect r) a) -> Eff (HttpEffect r) a =
+let catch_error action catch : Eff (HttpEffect r) a
+        -> (String -> Eff (HttpEffect r) a)
+        -> Eff (HttpEffect r) a
+    =
     do opt = alt.run_alt action empty
     match opt with
     | None -> catch "empty"
@@ -112,16 +117,21 @@ let catch_error action catch : Eff (HttpEffect r) a -> (String -> Eff (HttpEffec
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Eff (HttpEffect r) Response -> HttpState -> IO Response =
     do opt =
-        run_lift <|
-            eval_state state <|
-            run_alt handler empty
+        run_lift <| eval_state state <| run_alt handler empty
     match opt with
-    | None -> 
-        run_lift (http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found, .. response })
+    | None ->
+        run_lift
+            (http_prim.write_response state.response (string.as_bytes "Page not found")
+                    *> wrap
+                        {
+                            status = status.not_found,
+                            ..
+                            response
+                        })
     | Some response -> wrap response
 
-let show_uri: Show Uri = {
-    show = http_prim.uri.to_string
+let show_uri : Show Uri = {
+    show = http_prim.uri.to_string,
 }
 
 let default_listen_settings = { port = 80, tls_cert = None }

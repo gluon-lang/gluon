@@ -22,7 +22,7 @@ let create_file path : String -> IO File =
     io_prim.open_file_with path [Create, Write, Truncate]
 
 let functor : Functor IO = {
-    map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x))
+    map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x)),
 }
 
 let applicative : Applicative IO =
@@ -43,7 +43,7 @@ let read : Read File = {
 
 let write : Write File = {
     write_slice = io_prim.write_slice_file,
-    flush = io_prim.flush_file
+    flush = io_prim.flush_file,
 }
 
 let disposable : Disposable File = {
