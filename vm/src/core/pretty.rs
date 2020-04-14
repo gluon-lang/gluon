@@ -5,7 +5,7 @@ use crate::base::types::{Type, TypeExt};
 
 use crate::core::{Alternative, Expr, Literal, Named, Pattern};
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 #[derive(Clone, Copy)]
 pub enum Prec {
@@ -126,7 +126,7 @@ impl<'a> Expr<'a> {
                                     expr.pretty(arena, Prec::Top),
                                     arena.space()
                                 ].group().nest(INDENT),
-                                arena.newline()
+                                arena.hardline()
                             ].group()
                         }
                         Named::Recursive(ref closures) => {
@@ -147,7 +147,7 @@ impl<'a> Expr<'a> {
                                         closure.expr.pretty(arena, Prec::Top),
                                         arena.space()
                                     ].group().nest(INDENT),
-                                    arena.newline()
+                                    arena.hardline()
                                 ].group()
                             }))
                         }
@@ -158,7 +158,9 @@ impl<'a> Expr<'a> {
             }
             Expr::Match(expr, alts) => match alts.first() {
                 Some(
-                    alt @ &Alternative {
+                    alt
+                    @
+                    &Alternative {
                         pattern: Pattern::Record(..),
                         ..
                     },
@@ -177,14 +179,14 @@ impl<'a> Expr<'a> {
                             "match ",
                             expr.pretty(arena, Prec::Top),
                             " with",
-                            arena.newline(),
+                            arena.hardline(),
                             chain![arena;
                                 "| ",
                                 alt.pattern.pretty(arena),
                                 arena.space(),
                                 "->"
                             ].group(),
-                            arena.newline(),
+                            arena.hardline(),
                             alt.expr.pretty(arena, Prec::Top).group()
                         ]
                         .group();
@@ -196,7 +198,7 @@ impl<'a> Expr<'a> {
                         "match ",
                         expr.pretty(arena, Prec::Top),
                         " with",
-                        arena.newline(),
+                        arena.hardline(),
                         arena.concat(alts.iter().map(|alt| {
                             chain![arena;
                                 "| ",
@@ -205,7 +207,7 @@ impl<'a> Expr<'a> {
                                 arena.space(),
                                 alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
                             ].nest(INDENT)
-                        }).intersperse(arena.newline()))
+                        }).intersperse(arena.hardline()))
                     ]
                     .group();
                     prec.enclose(arena, doc)

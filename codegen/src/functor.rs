@@ -23,7 +23,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
 fn gen_impl(ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     assert!(generics.type_params().count() > 0);
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let map_methods = generics
         .type_params()

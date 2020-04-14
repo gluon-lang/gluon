@@ -148,7 +148,7 @@ where
                         arena.space(),
                         TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
-                    arena.newline(),
+                    arena.hardline(),
                     "Found:",
                     chain![&arena;
                         arena.space(),
@@ -158,9 +158,9 @@ where
                 .group();
                 let doc = chain![&arena;
                     "Expected the following types to be equal",
-                    arena.newline(),
+                    arena.hardline(),
                     types,
-                    arena.newline(),
+                    arena.hardline(),
                     arena.as_string(errors.len()),
                     " errors were found during unification:"
                 ];

@@ -10,7 +10,7 @@ let { Show } = import! std.show
 
 let additive =
     let semigroup : Semigroup Int = {
-        append = \x y -> x #Int+ y
+        append = \x y -> x #Int+ y,
     }
 
     let monoid : Monoid Int = {
@@ -27,7 +27,7 @@ let additive =
 
 let multiplicative =
     let semigroup : Semigroup Int = {
-        append = \x y -> x #Int* y
+        append = \x y -> x #Int* y,
     }
 
     let monoid : Monoid Int = {
@@ -38,7 +38,7 @@ let multiplicative =
     { semigroup, monoid }
 
 let eq : Eq Int = {
-    (==) = \l r -> l #Int== r
+    (==) = \l r -> l #Int== r,
 }
 
 let ord : Ord Int = {
@@ -56,7 +56,7 @@ let num : Num Int = {
 }
 
 let show : Show Int = {
-    show = (import! std.prim).show_int
+    show = (import! std.prim).show_int,
 }
 
 {

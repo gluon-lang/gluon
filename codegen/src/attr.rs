@@ -34,6 +34,7 @@ pub struct Container {
     pub newtype: bool,
     pub skip: bool,
     pub clone: bool,
+    pub ast_clone_bounds: Option<String>,
 }
 
 impl Container {
@@ -45,6 +46,7 @@ impl Container {
         let mut newtype = false;
         let mut skip = false;
         let mut clone = false;
+        let mut ast_clone_bounds = None;
 
         for meta_items in item.attrs.iter().filter_map(get_gluon_meta_items) {
             for meta_item in meta_items {
@@ -77,6 +79,11 @@ impl Container {
                         clone = true;
                     }
 
+                    Meta(NameValue(ref m)) if m.path.is_ident("ast_clone_bounds") => {
+                        ast_clone_bounds =
+                            Some(get_lit_str(&m.path, &m.path, &m.lit).unwrap().value())
+                    }
+
                     _ => panic!("unexpected gluon container attribute: {:?}", meta_item),
                 }
             }
@@ -88,6 +95,7 @@ impl Container {
             newtype,
             skip,
             clone,
+            ast_clone_bounds,
         }
     }
 }

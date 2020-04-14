@@ -11,7 +11,7 @@ type Alternative f = {
     /// An associative binary operation.
     ///
     /// Evaluates to the first argument if it is not `empty`, otherwise evaluates to the second argument.
-    or : forall a . f a -> f a -> f a,
+    or : forall a . f a -> f a -> f a
 }
 
 let empty ?alt : [Alternative f] -> f a = alt.empty
@@ -26,5 +26,7 @@ let (<|>) : [Alternative f] -> f a -> f a -> f a = or
 
 {
     Alternative,
-    empty, or, (<|>),
+    empty,
+    or,
+    (<|>),
 }

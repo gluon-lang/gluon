@@ -2,16 +2,16 @@ let { Eff, ? } = import! std.effect
 let { State, send_state, make_call } = import! std.effect.st
 let prim @ { StringBuf } = import! std.effect.st.string.prim
 
-let new : forall s . Eff [| st : State s | r | ] (StringBuf s) =
+let new : forall s . Eff [| st : State s | r |] (StringBuf s) =
     send_state (make_call prim.new)
 
-let len buf : StringBuf s -> Eff [| st : State s | r | ] Int =
+let len buf : StringBuf s -> Eff [| st : State s | r |] Int =
     send_state (make_call (\_ -> prim.len buf))
 
-let push_str buf str : StringBuf s -> String -> Eff [| st : State s | r | ] () =
+let push_str buf str : StringBuf s -> String -> Eff [| st : State s | r |] () =
     send_state (make_call (\_ -> prim.push_str buf str))
 
-let slice buf start end : StringBuf s -> Int -> Int -> Eff [| st : State s | r | ] String =
+let slice buf start end : StringBuf s -> Int -> Int -> Eff [| st : State s | r |] String =
     send_state (make_call (\_ -> prim.slice buf start end))
 
 /// ```
@@ -29,7 +29,7 @@ let slice buf start end : StringBuf s -> Int -> Int -> Eff [| st : State s | r |
 ///     string_buf.read buf
 /// assert_eq (run_pure (st.run_state action)) "field: 123"
 /// ```
-let read buf : StringBuf s -> Eff [| st : State s | r | ] String =
+let read buf : StringBuf s -> Eff [| st : State s | r |] String =
     do l = len buf
     slice buf 0 l
 

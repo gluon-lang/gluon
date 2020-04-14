@@ -15,7 +15,8 @@ type Writer s r a =
 let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s r a = convert_variant! x
 
 #[inline(never)]
-let send_writer f : Writer s r a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! writer f) Pure
+let send_writer f : Writer s r a -> Eff [| writer : Writer s | r |] a =
+    Impure (convert_effect! writer f) Pure
 
 /// Outputs `s`
 let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
@@ -23,12 +24,14 @@ let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
 
 /// Eliminates `Writer`, returning the output and computed value. Each output through `tell` are
 /// joined via its `Monoid` instance
-let run_writer eff : forall s . [Monoid s] -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] { value : a, writer : s } =
+let run_writer eff : forall s .
+        [Monoid s] -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] { value : a, writer : s }
+    =
     let loop writer ve : s -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] _ =
         match ve with
         | Pure value -> wrap { value, writer }
         | Impure e f ->
-            match extract_writer e with 
+            match extract_writer e with
             | Tell w ->
                 loop (writer <> w) (f ())
             | rest ->

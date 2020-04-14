@@ -511,8 +511,7 @@ fn long_type_error_format() {
         &*err.to_string(),
         r#"Expected the following types to be equal
 Expected: Int
-Found:
-    Int
+Found: Int
         -> loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
 0 errors were found during unification:
 "#

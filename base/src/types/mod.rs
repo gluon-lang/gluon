@@ -19,8 +19,10 @@ use {
     smallvec::SmallVec,
 };
 
+use gluon_codegen::AstClone;
+
 use crate::{
-    ast::{EmptyEnv, HasMetadata, IdentEnv},
+    ast::{AstClone, EmptyEnv, HasMetadata, IdentEnv},
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
     merge::{merge, merge_collect},
@@ -284,7 +286,7 @@ pub struct TypeVariable {
 
 forward_eq_hash! { <> for TypeVariable { id } }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -310,7 +312,7 @@ forward_eq_hash! { <Id> for Skolem<Id> { id } }
 
 /// FIXME Distinguish generic id's so we only need to compare them by `id` (currently they will get
 /// the wrong kind assigned to them otherwise)
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -339,7 +341,7 @@ impl<Id> Generic<Id> {
 
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and
 /// dereferenced to `AliasRef`
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -517,7 +519,7 @@ where
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
 /// for cheap conversion back into a type as well.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -643,7 +645,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -751,7 +753,7 @@ where
     }
 }
 
-#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
@@ -838,7 +840,7 @@ impl Default for ArgType {
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
@@ -867,6 +869,10 @@ impl Default for ArgType {
     ))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[gluon(ast_clone_bounds = "T::Generics: AstClone<'ast, Id>,
+                            T::Types: AstClone<'ast, Id>,
+                            T::Fields: AstClone<'ast, Id>,
+                            T::TypeFields: AstClone<'ast, Id>")]
 pub enum Type<Id, T: TypePtr<Id = Id> = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -1204,6 +1210,17 @@ where
                 Type::Builtin(BuiltinType::Array) => true,
                 _ => false,
             },
+            _ => false,
+        }
+    }
+
+    fn is_simple_constructor(&self) -> bool {
+        let mut typ = self;
+        while let Some((_, ret)) = typ.as_function() {
+            typ = ret;
+        }
+        match typ {
+            Type::Opaque => true,
             _ => false,
         }
     }
@@ -2499,18 +2516,7 @@ where
     }
 }
 
-#[macro_export]
-macro_rules! chain {
-    ($alloc: expr; $first: expr, $($rest: expr),+) => {{
-        let mut doc = ::pretty::DocBuilder($alloc, $first.into());
-        $(
-            doc = doc.append($rest);
-        )*
-        doc
-    }}
-}
-
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 impl<'a, I, T> DisplayType<'a, T>
 where
@@ -2521,12 +2527,28 @@ where
     where
         A: Clone,
     {
+        let typ = self.typ;
+
+        let doc = self.pretty_(printer);
+        match **typ {
+            Type::ExtendRow { .. } | Type::Variant(..) => doc,
+            _ => {
+                let comment = printer.comments_before(typ.span().start());
+                comment.append(doc)
+            }
+        }
+    }
+
+    fn pretty_<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = printer.arena;
 
         let p = self.prec;
         let typ = self.typ;
 
-        let doc = match **typ {
+        match **typ {
             Type::Hole => arena.text("_"),
             Type::Error => arena.text("!"),
             Type::Opaque => arena.text("<opaque>"),
@@ -2535,14 +2557,16 @@ where
                     chain![arena;
                         "forall ",
                         arena.concat(args.iter().map(|arg| {
-                            arena.text(arg.id.as_ref()).append(arena.space())
+                            arena.text(arg.id.as_ref()).append(arena.line())
                         })),
                         "."
                     ].group(),
-                    arena.space(),
-                    top(typ).pretty(printer)
+                    chain![arena;
+                        printer.space_before(typ.span().start()),
+                        top(typ).pretty_(printer)
+                    ].nest(INDENT)
                 ];
-                p.enclose(Prec::Function, arena, doc)
+                p.enclose(Prec::Function, arena, doc).group()
             }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Skolem(ref skolem) => chain![
@@ -2556,11 +2580,11 @@ where
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
                 None => {
-                    let doc = dt(Prec::Top, t).pretty(printer);
+                    let doc = dt(Prec::Top, t).pretty_(printer);
                     let arg_doc = arena.concat(args.iter().map(|arg| {
-                        arena
-                            .space()
-                            .append(dt(Prec::Constructor, arg).pretty(printer))
+                        printer
+                            .space_before(arg.span().start())
+                            .append(dt(Prec::Constructor, arg).pretty_(printer))
                     }));
                     let doc = doc.append(arg_doc.nest(INDENT));
                     p.enclose(Prec::Constructor, arena, doc).group()
@@ -2580,40 +2604,44 @@ where
                             ..
                         } => {
                             doc = doc.append(arena.concat(fields.iter().map(|field| {
-                                let typ = remove_forall(&field.typ);
                                 chain![arena;
                                     if first {
                                         first = false;
                                         arena.nil()
                                     } else {
-                                        arena.newline()
+                                        arena.hardline()
                                     },
-                                    "| ",
-                                    field.name.as_ref(),
-                                    if typ.as_function().is_some() {
-                                        arena.concat(arg_iter(typ).map(|arg| {
+                                    chain![arena;
+                                        "| ",
+                                        field.name.as_ref(),
+                                        if field.typ.is_simple_constructor() {
+                                            arena.concat(arg_iter(&field.typ).map(|arg| {
+                                                chain![arena;
+                                                    " ",
+                                                    dt(Prec::Constructor, arg).pretty(printer)
+                                                ]
+                                            }))
+                                        } else {
                                             chain![arena;
-                                                " ",
-                                                dt(Prec::Constructor, arg).pretty(printer)
-                                            ]
-                                        }))
-                                    } else {
-                                        arena.concat(row_iter(typ).map(|field| {
-                                            chain![arena;
-                                                " ",
-                                                dt(Prec::Constructor, &field.typ).pretty(printer)
-                                            ]
-                                        }))
-                                    }
+                                                " :",
+                                                arena.line(),
+                                                top(&field.typ).pretty(printer),
+                                            ].nest(INDENT)
+                                        }
+                                    ]
+                                    .group()
                                 ]
-                                .group()
                             })));
                             rest
                         }
                         _ => {
                             doc = chain![arena;
                                 doc,
-                                arena.newline(),
+                                if first {
+                                    arena.nil()
+                                } else {
+                                    arena.hardline()
+                                },
                                 ".. ",
                                 top(row).pretty(printer)
                             ];
@@ -2678,17 +2706,6 @@ where
                     .intersperse(arena.text(".")),
             ),
             Type::Alias(ref alias) => printer.symbol(&alias.name),
-        };
-        match **typ {
-            Type::App(..)
-            | Type::ExtendRow { .. }
-            | Type::ExtendTypeRow { .. }
-            | Type::Variant(..)
-            | Type::Function(..) => doc,
-            _ => {
-                let comment = printer.comments_before(typ.span().start());
-                comment.append(doc)
-            }
         }
     }
 
@@ -2704,33 +2721,28 @@ where
     {
         let arena = printer.arena;
 
-        let forced_newline = row_iter(row).any(|field| field.typ.comment().is_some());
+        let forced_hardline = row_iter(row).any(|field| field.typ.comment().is_some());
 
-        let newline = if forced_newline {
-            arena.newline()
+        let hardline = if forced_hardline {
+            arena.hardline()
         } else {
-            arena.space()
+            arena.line()
         };
 
         let mut doc = arena.text(open);
-        let empty_fields = match **row {
-            Type::EmptyRow => true,
-            _ => false,
-        };
-
         doc = match **row {
             Type::EmptyRow => doc,
             Type::ExtendRow { .. } | Type::ExtendTypeRow { .. } => doc
                 .append(top(row).pretty_row(open, printer, pretty_field))
                 .nest(INDENT),
             _ => doc
-                .append(arena.space())
+                .append(arena.line())
                 .append("| ")
                 .append(top(row).pretty(printer))
                 .nest(INDENT),
         };
-        if !empty_fields && open != "(" {
-            doc = doc.append(newline);
+        if open != "(" {
+            doc = doc.append(hardline);
         }
 
         doc.append(close).group()
@@ -2760,12 +2772,12 @@ where
                 }
             }
         };
-        let forced_newline = fields.iter().any(|field| field.typ.comment().is_some());
+        let forced_hardline = fields.iter().any(|field| field.typ.comment().is_some());
 
-        let newline = if forced_newline {
-            arena.newline()
+        let hardline = if forced_hardline {
+            arena.hardline()
         } else {
-            arena.space()
+            arena.line()
         };
 
         let print_any_field = fields
@@ -2784,9 +2796,9 @@ where
 
             let f = chain![arena;
                 field.name.as_ref(),
-                arena.space(),
+                arena.line(),
                 arena.concat(field.typ.params().iter().map(|param| {
-                    arena.text(param.id.as_ref()).append(arena.space())
+                    arena.text(param.id.as_ref()).append(arena.line())
                 })),
                 arena.text("= "),
                 if filter == Filter::RetainKey {
@@ -2794,14 +2806,14 @@ where
                 } else {
                      top(&field.typ.typ).pretty(printer)
                 },
-                if i + 1 != types_len || print_any_field {
+            if i + 1 != types_len || print_any_field {
                     arena.text(",")
                 } else {
                     arena.nil()
                 }
             ]
             .group();
-            doc = doc.append(newline.clone()).append(f);
+            doc = doc.append(hardline.clone()).append(f);
         }
 
         let mut row_iter = row_iter(typ);
@@ -2835,29 +2847,29 @@ where
             let space_before = if i == 0 && open == "(" {
                 arena.nil()
             } else {
-                newline.clone()
+                hardline.clone()
             };
             doc = doc.append(space_before).append(f);
         }
         typ = row_iter.typ;
 
         let doc = if filtered {
-            if let Doc::Nil = doc.1 {
+            if let Doc::Nil = *doc.1 {
                 chain![arena;
-                    newline.clone(),
+                    hardline.clone(),
                     "..."
                 ]
             } else {
                 chain![arena;
-                    newline.clone(),
+                    hardline.clone(),
                     "...,",
                     doc,
-                    if let Doc::Space = newline.1 {
-                        arena.text(",")
-                    } else {
+                    if forced_hardline {
                         arena.nil()
+                    } else {
+                        arena.text(",")
                     },
-                    newline.clone(),
+                    hardline.clone(),
                     "..."
                 ]
             }
@@ -2867,7 +2879,7 @@ where
         match **typ {
             Type::EmptyRow => doc,
             _ => doc
-                .append(arena.space())
+                .append(arena.line())
                 .append("| ")
                 .append(top(typ).pretty(printer)),
         }
@@ -2891,9 +2903,11 @@ where
         let arena = printer.arena;
         match self.typ.as_function_with_type() {
             Some((arg_type, arg, ret)) => chain![arena;
-                if arg_type == ArgType::Implicit { "[" } else { "" },
-                dt(Prec::Function, arg).pretty(printer),
-                if arg_type == ArgType::Implicit { "]" } else { "" },
+                chain![arena;
+                    if arg_type == ArgType::Implicit { arena.text("[") } else { arena.nil() },
+                    dt(Prec::Function, arg).pretty_(printer),
+                    if arg_type == ArgType::Implicit { arena.text("]") } else { arena.nil() },
+                ].group(),
                 printer.space_after(arg.span().end()),
                 "-> ",
                 top(ret).pretty_function_(printer)

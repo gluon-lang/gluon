@@ -216,19 +216,18 @@ impl<E: fmt::Display> InFile<E> {
         self.error
     }
 
-    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> io::Result<String>
+    pub fn emit_string(&self) -> io::Result<String>
     where
         E: AsDiagnostic,
     {
         let mut output = Vec::new();
         self.emit(
             &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-            code_map,
         )?;
         Ok(String::from_utf8(output).unwrap())
     }
 
-    pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> io::Result<()>
+    pub fn emit<W>(&self, writer: &mut W) -> io::Result<()>
     where
         W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
         E: AsDiagnostic,
@@ -242,7 +241,7 @@ impl<E: fmt::Display> InFile<E> {
             if i != 0 {
                 writeln!(writer)?;
             }
-            ::codespan_reporting::emit(&mut *writer, &code_map, &diagnostic)?;
+            ::codespan_reporting::emit(&mut *writer, &self.source, &diagnostic)?;
         }
         Ok(())
     }
@@ -254,7 +253,7 @@ impl<E: fmt::Display + AsDiagnostic> fmt::Display for InFile<E> {
         {
             let mut writer = ::codespan_reporting::termcolor::NoColor::new(&mut buffer);
 
-            self.emit(&mut writer, &self.source)
+            self.emit(&mut writer)
                 .map_err(|_| fmt::Error)?;
         }
 

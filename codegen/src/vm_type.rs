@@ -31,7 +31,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         quote! { #ty: _gluon_api::VmType, #ty::Type: Sized }
     });
 
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let gluon = match container.crate_name {
         CrateName::Some(ref ident) => quote! {

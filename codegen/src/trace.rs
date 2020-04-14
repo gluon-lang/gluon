@@ -123,7 +123,7 @@ fn gen_impl(
     // generate bounds like T: Getable for every type parameter
     let trace_bounds = create_trace_bounds(&generics);
 
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let dummy_const = Ident::new(
         &format!("_IMPL_TRAVERSEABLE_FOR_{}", ident),

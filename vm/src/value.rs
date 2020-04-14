@@ -662,7 +662,7 @@ impl<'t> ValuePrinter<'t> {
     }
 }
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 struct InternalPrinter<'a, 't> {
     typ: &'t ArcType,

@@ -332,7 +332,7 @@ fn eval_line(
                 Ok(x) => IO::Value(x),
                 Err(err) => {
                     let mut stderr = termcolor::StandardStream::stderr(color.into());
-                    if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
+                    if let Err(err) = err.emit(&mut stderr) {
                         eprintln!("{}", err);
                     }
                     IO::Value(())
@@ -632,9 +632,7 @@ pub async fn run(
         .use_standard_lib(use_std_lib)
         .run_io(true);
 
-    compile_repl(&vm)
-        .await
-        .map_err(|err| err.emit_string(&vm.get_database().code_map()).unwrap())?;
+    compile_repl(&vm).await?;
 
     let mut repl: OwnedFunction<fn(_) -> _> = vm.get_global("repl")?;
     debug!("Starting repl");

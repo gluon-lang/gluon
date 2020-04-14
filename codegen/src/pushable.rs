@@ -128,7 +128,7 @@ fn gen_impl(
     push_impl: TokenStream,
 ) -> TokenStream {
     let pushable_bounds = create_pushable_bounds(&generics);
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &["'__vm"]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &["'__vm"]);
 
     let dummy_const = Ident::new(&format!("_IMPL_PUSHABLE_FOR_{}", ident), Span::call_site());
 

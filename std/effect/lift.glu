@@ -7,14 +7,15 @@ let { Monad, flat_map } = import! std.monad
 let { (<<) } = import! std.function
 
 /// The `Lift` effect allows a regular monad (usually `IO`) to be used in an `Eff` monad
-type Lift m r a = | Lift (m a) .. r
+type Lift m r a =
+    | Lift (m a)
+    .. r
 
 let send_lift f : Lift m r a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! lift f) Pure
 
 let extract_state x : forall m . [| lift : Lift m | r |] a -> Lift m r a = convert_variant! x
 
 /// "Lifts" a monadic action into the `Eff` monad. Since monads do not compose this can only be
-// done once and `run_lift` must be the outermost effect eliminator
 let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
 
 /// Eliminates the lifted monad `m`. Can only be used once all other effects have been eliminated
@@ -23,10 +24,10 @@ let run_lift eff : [Monad m] -> Eff [| lift : Lift m |] a -> m a =
         match ve with
         | Pure v -> wrap v
         | Impure e f ->
-            match extract_state e with 
+            match extract_state e with
             | Lift m ->
                 do a = m
-                loop (f a) 
+                loop (f a)
             | _ -> error "Impossible: Lift should always be the only remaining variant"
     loop eff
 

@@ -109,6 +109,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayvec"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
+
+[[package]]
 name = "ascii-canvas"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -220,7 +226,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5850aeee1552f495dd0250014cf64b82b7c8879a89d83b33bbdace2cc4f63182"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.4.12",
  "constant_time_eq",
 ]
 
@@ -591,7 +597,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fedcd6772e37f3da2a9af9bf12ebe046c0dfe657992377b4df982a2b54cd37a9"
 dependencies = [
- "arrayvec",
+ "arrayvec 0.4.12",
  "cfg-if",
  "crossbeam-utils",
  "lazy_static",
@@ -1086,7 +1092,7 @@ dependencies = [
  "futures 0.3.1",
  "gluon_base",
  "gluon_check",
- "gluon_codegen 0.13.1",
+ "gluon_codegen",
  "gluon_completion",
  "gluon_format",
  "gluon_parser",
@@ -1132,12 +1138,12 @@ dependencies = [
  "either",
  "env_logger 0.7.1",
  "fnv",
- "gluon_codegen 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon_codegen",
  "hashbrown 0.6.3",
  "itertools",
  "log 0.4.8",
  "ordered-float",
- "pretty",
+ "pretty 0.10.0",
  "pretty_assertions",
  "quick-error",
  "serde",
@@ -1145,7 +1151,7 @@ dependencies = [
  "serde_derive_state",
  "serde_state",
  "smallvec 0.6.13",
- "typed-arena",
+ "typed-arena 1.7.0",
  "vec_map",
 ]
 
@@ -1169,12 +1175,12 @@ dependencies = [
  "ena",
  "env_logger 0.7.1",
  "gluon_base",
- "gluon_codegen 0.13.1",
+ "gluon_codegen",
  "gluon_format",
  "gluon_parser",
  "itertools",
  "log 0.4.8",
- "pretty",
+ "pretty 0.10.0",
  "pretty_assertions",
  "quick-error",
  "rpds",
@@ -1193,17 +1199,6 @@ dependencies = [
  "quote 1.0.2",
  "serde",
  "serde_derive",
- "syn 1.0.7",
-]
-
-[[package]]
-name = "gluon_codegen"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "720c5da0383b0b50795f45b29aafc53bb03671a2e7b37992002eca7d0e76fc39"
-dependencies = [
- "proc-macro2 1.0.6",
- "quote 1.0.2",
  "syn 1.0.7",
 ]
 
@@ -1239,7 +1234,7 @@ dependencies = [
  "lazy_static",
  "log 0.4.8",
  "opener",
- "pretty",
+ "pretty 0.10.0",
  "pulldown-cmark 0.6.0",
  "rayon",
  "regex 1.3.1",
@@ -1262,8 +1257,11 @@ dependencies = [
  "gluon_base",
  "itertools",
  "log 0.4.8",
- "pretty",
+ "pretty 0.10.0",
  "pretty_assertions",
+ "tensile",
+ "tokio 0.2.9",
+ "walkdir",
 ]
 
 [[package]]
@@ -1282,7 +1280,7 @@ dependencies = [
  "lalrpop-util",
  "log 0.4.8",
  "ordered-float",
- "pretty",
+ "pretty 0.9.0",
  "pretty_assertions",
  "quick-error",
 ]
@@ -1299,7 +1297,7 @@ dependencies = [
  "env_logger 0.7.1",
  "futures 0.3.1",
  "gluon",
- "gluon_codegen 0.13.1",
+ "gluon_codegen",
  "gluon_completion",
  "gluon_doc",
  "gluon_format",
@@ -1334,7 +1332,7 @@ dependencies = [
  "gluon",
  "gluon_base",
  "gluon_check",
- "gluon_codegen 0.13.1",
+ "gluon_codegen",
  "gluon_parser",
  "itertools",
  "lalrpop",
@@ -1343,7 +1341,7 @@ dependencies = [
  "ordered-float",
  "parking_lot 0.9.0",
  "petgraph",
- "pretty",
+ "pretty 0.10.0",
  "pretty_assertions",
  "quick-error",
  "regex 1.3.1",
@@ -1354,7 +1352,7 @@ dependencies = [
  "serde_state",
  "slab",
  "smallvec 0.6.13",
- "typed-arena",
+ "typed-arena 1.7.0",
 ]
 
 [[package]]
@@ -2256,11 +2254,22 @@ checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
 name = "pretty"
-version = "0.5.2"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60c0d9f6fc88ecdd245d90c1920ff76a430ab34303fc778d33b1d0a4c3bf6d3"
+checksum = "1891757f8427ce41706957fde1fec1b86aee3e335bd50320257705061507a24c"
 dependencies = [
- "typed-arena",
+ "arrayvec 0.5.1",
+ "typed-arena 2.0.1",
+]
+
+[[package]]
+name = "pretty"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad9940b913ee56ddd94aec2d3cd179dd47068236f42a1a6415ccf9d880ce2a61"
+dependencies = [
+ "arrayvec 0.5.1",
+ "typed-arena 2.0.1",
 ]
 
 [[package]]
@@ -3579,6 +3588,12 @@ name = "typed-arena"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9b2228007eba4120145f785df0f6c92ea538f5a3635a612ecf4e334c8c1446d"
+
+[[package]]
+name = "typed-arena"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0685c84d5d54d1c26f7d3eb96cd41550adb97baed141a761cf335d3d33bcd0ae"
 
 [[package]]
 name = "typenum"

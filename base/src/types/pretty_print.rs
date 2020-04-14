@@ -33,25 +33,25 @@ pub fn doc_comment<'a, A>(
                 comment
                     .content
                     .lines()
-                    .map(|line| arena.text("/// ").append(line).append(arena.newline())),
+                    .map(|line| arena.text("/// ").append(line).append(arena.hardline())),
             ),
             CommentType::Block => chain![arena;
                 "/**",
-                arena.newline(),
+                arena.hardline(),
                 arena.concat(comment.content.lines().map(|line| {
                     let line = line.trim();
                     if line.is_empty() {
-                        arena.newline()
+                        arena.hardline()
                     } else {
                         chain![arena;
                             " ",
                             line,
-                            arena.newline()
+                            arena.hardline()
                         ]
                     }
                 })),
                 "*/",
-                arena.newline()
+                arena.hardline()
             ],
         },
         None => arena.nil(),
@@ -212,11 +212,9 @@ impl<'a, I, A> Printer<'a, I, A> {
     }
 
     pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
-        let (doc, comments) = self.comments_before_(pos);
-        if let Doc::Nil = doc.1 {
-            self.arena.space()
-        } else if comments {
-            self.arena.space().append(doc).append(self.arena.space())
+        let doc = self.comments_before(pos);
+        if let Doc::Nil = *doc.1 {
+            self.arena.line()
         } else {
             doc
         }
@@ -225,87 +223,138 @@ impl<'a, I, A> Printer<'a, I, A> {
     pub fn space_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         let doc = self.comments_after(end);
-        if let Doc::Nil = doc.1 {
-            arena.space()
+        if let Doc::Nil = *doc.1 {
+            arena.line()
         } else {
-            arena.space().append(doc)
+            doc
+        }
+    }
+
+    pub fn nilline_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
+        let doc = self.comments_before(pos);
+        if let Doc::Nil = *doc.1 {
+            self.arena.line_()
+        } else {
+            doc
+        }
+    }
+
+    pub fn nilline_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
+        let arena = self.arena;
+        let doc = self.comments_after(end);
+        if let Doc::Nil = *doc.1 {
+            arena.line_()
+        } else {
+            doc
         }
     }
 
     pub fn comments_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
-        let (doc, comments) = self.comments_before_(pos);
-        if comments {
-            doc.append(self.arena.space())
-        } else {
-            doc
+        if pos == BytePos::none() {
+            return self.arena.nil();
         }
-    }
-
-    fn comments_before_(&self, pos: BytePos) -> (DocBuilder<'a, Arena<'a, A>, A>, bool) {
-        let arena = self.arena;
-
-        if pos == 0.into() {
-            return (arena.nil(), false);
-        }
-
-        let mut doc = arena.nil();
-        let mut comments = 0;
-        for comment in self
-            .source
-            .comments_between(Span::new(self.source.span().start(), pos))
-            .rev()
-        {
-            let x = if comment.is_empty() {
-                arena.newline()
-            } else if comment.starts_with("//") {
-                arena.text(comment).append(arena.newline())
-            } else {
-                comments += 1;
-                arena.text(comment)
-            };
-            doc = x.append(doc);
-        }
-        (doc, comments != 0)
+        let (comments_after, mut doc, comments_before) = self.make_comments_doc(
+            pos,
+            self.source
+                .comments_between(Span::new(self.source.span().start(), pos))
+                .rev(),
+            |l, r| r.append(l),
+        );
+        doc = match comments_before {
+            CommentLike::Line | CommentLike::Block => self.arena.line().append(doc),
+            CommentLike::Empty => doc,
+        };
+        doc = match comments_after {
+            CommentLike::Block => doc.append(self.arena.line()),
+            CommentLike::Line | CommentLike::Empty => doc,
+        };
+        doc
     }
 
     pub fn comments_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
-        let (doc, block_comments, _) =
-            self.comments_count(Span::new(end, self.source.span().end()));
-        if block_comments == 0 {
-            doc
-        } else {
-            let arena = self.arena;
-            chain![arena;
-                doc,
-                arena.space()
-            ]
-        }
+        let (doc, _) = self.comments_count(Span::new(end, self.source.span().end()));
+        doc
     }
 
-    pub fn comments_count(
-        &self,
-        span: Span<BytePos>,
-    ) -> (DocBuilder<'a, Arena<'a, A>, A>, usize, bool) {
-        let arena = self.arena;
-
-        if span.start() == 0.into() {
-            return (arena.nil(), 0, false);
+    pub fn comments_count(&self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a, A>, A>, usize) {
+        if span.start() == BytePos::none() || span.end() == BytePos::none() {
+            return (self.arena.nil(), 0);
         }
 
         let mut comments = 0;
-        let mut ends_with_newline = false;
-        let doc = arena.concat(self.source.comments_between(span).map(|comment| {
-            ends_with_newline = false;
-            if comment.is_empty() {
-                ends_with_newline = true;
-                arena.newline()
-            } else if comment.starts_with("//") {
-                arena.text(comment).append(arena.newline())
-            } else {
-                comments += 1;
-                arena.text(comment)
+        let (comments_before, mut doc, comments_after) = self.make_comments_doc(
+            span.start(),
+            self.source.comments_between(span).inspect(|comment| {
+                if !comment.is_empty() {
+                    comments += 1
+                }
+            }),
+            |l, r| l.append(r),
+        );
+
+        match comments_before {
+            CommentLike::Line | CommentLike::Block => {
+                // Avoid inserting an extra space before comments at the start of the file
+                if self.source.span().start() != span.start() {
+                    doc = self.arena.line().append(doc)
+                }
             }
-        }));
-        (doc, comments, ends_with_newline)
+            CommentLike::Empty => (),
+        }
+        doc = match comments_after {
+            CommentLike::Block => doc.append(self.arena.line()),
+            CommentLike::Line | CommentLike::Empty => doc,
+        };
+        (doc, comments)
     }
+
+    fn make_comments_doc(
+        &self,
+        pos: BytePos,
+        iterable: impl IntoIterator<Item = &'a str>,
+        mut append: impl FnMut(
+            DocBuilder<'a, Arena<'a, A>, A>,
+            DocBuilder<'a, Arena<'a, A>, A>,
+        ) -> DocBuilder<'a, Arena<'a, A>, A>,
+    ) -> (CommentLike, DocBuilder<'a, Arena<'a, A>, A>, CommentLike) {
+        let arena = self.arena;
+
+        if pos == 0.into() {
+            return (CommentLike::Empty, arena.nil(), CommentLike::Empty);
+        }
+
+        let mut doc = arena.nil();
+        let mut comments_before = CommentLike::Empty;
+        let mut comments_after = CommentLike::Empty;
+        for (i, comment) in iterable.into_iter().enumerate() {
+            let x = if comment.is_empty() {
+                comments_after = CommentLike::Empty;
+                arena.hardline()
+            } else if comment.starts_with("//") {
+                if i == 0 {
+                    comments_before = CommentLike::Line;
+                }
+                comments_after = CommentLike::Line;
+
+                arena.text(comment).append(arena.hardline())
+            } else {
+                if i == 0 {
+                    comments_before = CommentLike::Block;
+                }
+                comments_after = CommentLike::Block;
+
+                arena.text(comment)
+            };
+            doc = append(doc, x);
+        }
+
+        (comments_before, doc, comments_after)
+    }
+}
+
+#[derive(Debug)]
+enum CommentLike {
+    Block,
+    Line,
+    Empty,
 }

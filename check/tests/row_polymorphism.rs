@@ -274,7 +274,7 @@ else
 
     assert_req!(
         result.map(|t| t.to_string()),
-        Ok("forall a . | A Int\n| B String\n.. a")
+        Ok("forall a .\n    | A Int\n    | B String\n    .. a")
     );
 }
 

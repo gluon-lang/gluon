@@ -4,7 +4,7 @@ let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.pre
 
 let additive =
     let semigroup : Semigroup Byte = {
-        append = \x y -> x #Byte+ y
+        append = \x y -> x #Byte+ y,
     }
 
     let monoid : Monoid Byte = {
@@ -21,7 +21,7 @@ let additive =
 
 let multiplicative =
     let semigroup : Semigroup Byte = {
-        append = \x y -> x #Byte* y
+        append = \x y -> x #Byte* y,
     }
 
     let monoid : Monoid Byte = {
@@ -32,7 +32,7 @@ let multiplicative =
     { semigroup, monoid }
 
 let eq : Eq Byte = {
-    (==) = \l r -> l #Byte== r
+    (==) = \l r -> l #Byte== r,
 }
 
 let ord : Ord Byte = {
@@ -50,7 +50,7 @@ let num : Num Byte = {
 }
 
 let show : Show Byte = {
-    show = (import! std.prim).show_byte
+    show = (import! std.prim).show_byte,
 }
 
 {

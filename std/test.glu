@@ -73,10 +73,9 @@ let assert_success : [Show e]
     run_error >> flat_map assert_ok
 
 let assert_throws : forall e .
-    [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+        [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
     =
-    run_error
-        >> flat_map assert_err
+    run_error >> flat_map assert_err
 
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
     do test = run_writer test
@@ -101,14 +100,14 @@ rec let run_io test : TestEffIO r a -> IO () =
     group,
 
     assert,
-    
+
     assert_eq,
     assert_neq,
     assert_lt,
     assert_lte,
     assert_gt,
     assert_gte,
- 
+
     assert_ok,
     assert_err,
     assert_success,

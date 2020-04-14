@@ -1,21 +1,25 @@
 use std::{iter, ops};
 
-use codespan::{ByteOffset, RawOffset};
-use itertools::{Either, Itertools};
-use pretty::{Arena, Doc, DocAllocator, DocBuilder};
+use {
+    codespan::{ByteOffset, RawOffset},
+    itertools::{Either, Itertools},
+    pretty::{Arena, Doc, DocAllocator, DocBuilder},
+};
 
 use self::types::pretty_print as pretty_types;
-use base::ast::{
-    Do, Expr, Literal, Pattern, PatternField, SpannedExpr, SpannedPattern, ValueBinding,
-    ValueBindings,
+use base::{
+    ast::{
+        Do, Expr, Literal, Pattern, PatternField, SpannedExpr, SpannedPattern, ValueBinding,
+        ValueBindings,
+    },
+    kind::Kind,
+    metadata::Attribute,
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    source,
+    types::{self, ArgType, Prec, Type},
 };
-use base::kind::Kind;
-use base::metadata::Attribute;
-use base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use base::source;
-use base::types::{self, ArgType, Prec, Type};
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 macro_rules! newlines_iter {
     ($self_:ident, $iterable:expr) => {
@@ -35,20 +39,16 @@ macro_rules! rev_newlines_iter {
     };
 }
 
-fn is_newline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
-    if let Doc::Newline = doc.1 {
+fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
+    if let Doc::Nil = *doc.1 {
         true
     } else {
         false
     }
 }
 
-fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
-    if let Doc::Nil = doc.1 {
-        true
-    } else {
-        false
-    }
+fn trailing_comma<'a, A>(arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A> {
+    arena.text(",").flat_alt(arena.nil())
 }
 
 pub(super) struct Printer<'a, I: 'a, A: 'a> {
@@ -58,7 +58,9 @@ pub(super) struct Printer<'a, I: 'a, A: 'a> {
 
 impl<'a, I, A> Printer<'a, I, A>
 where
-    I: AsRef<str>,
+    I: AsRef<str> + std::fmt::Debug + 'a,
+    A: std::fmt::Debug,
+    A: 'a,
 {
     pub(super) fn new(
         arena: &'a Arena<'a, A>,
@@ -71,16 +73,15 @@ where
         }
     }
 
-    pub(super) fn format(&self, width: usize, newline: &'a str, expr: &'a SpannedExpr<I>) -> String
+    pub(super) fn format(&self, width: usize, hardline: &'a str, expr: &'a SpannedExpr<I>) -> String
     where
         A: Clone,
     {
-        self.pretty_expr(expr)
-            .1
-            .pretty(width)
+        let doc = self.pretty_expr(expr).1;
+        doc.pretty(width)
             .to_string()
             .lines()
-            .map(|s| format!("{}{}", s.trim_end(), newline))
+            .map(|s| format!("{}{}", s.trim_end(), hardline))
             .collect()
     }
 
@@ -88,8 +89,10 @@ where
     where
         A: Clone,
     {
-        self.pretty_expr_with_shebang_line(expr)
-            .append(self.comments(Span::new(expr.span.end(), self.source.span().end())))
+        let e = self
+            .pretty_expr_with_shebang_line(expr)
+            .append(self.comments(Span::new(expr.span.end(), self.source.span().end())));
+        e
     }
 
     fn pretty_expr_with_shebang_line(
@@ -131,7 +134,7 @@ where
             while expr.span.start() == 0.into() {
                 expr = match expr.value {
                     Expr::TypeBindings(_, ref expr) | Expr::LetBindings(_, ref expr) => expr,
-                    _ => expr,
+                    _ => break,
                 };
             }
         }
@@ -140,7 +143,8 @@ where
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
 
-        let comments = self.comments(Span::new(previous_end, expr.span.start()));
+        let span = Span::new(previous_end, expr.span.start());
+        let comments = self.comments(span);
         let doc = match expr.value {
             Expr::App {
                 ref implicit_args,
@@ -173,7 +177,7 @@ where
                             .exprs
                             .iter()
                             .map(|elem| pretty(elem))
-                            .intersperse(arena.text(",").append(arena.space())),
+                            .intersperse(arena.text(",").append(arena.line())),
                     ),
                 )
                 .append("]")
@@ -201,21 +205,7 @@ where
 
             Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref()),
 
-            Expr::IfElse(ref body, ref if_true, ref if_false) => {
-                let space = newline(arena, expr);
-                chain![arena;
-                    chain![arena;
-                        "if ",
-                        pretty(body),
-                        arena.space(),
-                        "then"
-                    ].group(),
-                    space.clone().append(pretty(if_true)).nest(INDENT).group(),
-                    space.clone(),
-                    "else",
-                    self.pretty_else_expr(space, if_false)
-                ]
-            }
+            Expr::IfElse(..) => self.pretty_if_expr(expr),
 
             Expr::Infix {
                 ref lhs,
@@ -225,17 +215,13 @@ where
             } => chain![arena;
                 pretty(lhs).group(),
                 chain![arena;
-                    newline(arena, rhs),
+                    hardline(arena, rhs),
                     op.value.name.as_ref(),
                     " ",
                     pretty(rhs).group()
                 ].nest(INDENT)
-            ],
-
-            Expr::Lambda(_) => {
-                let (arguments, body) = self.pretty_lambda(previous_end, expr);
-                arguments.group().append(body)
-            }
+            ]
+            .group(),
 
             Expr::LetBindings(ref binds, ref body) => {
                 let binding = |bind: &'a ValueBinding<I>| {
@@ -258,19 +244,22 @@ where
                         ].group(),
                         match bind.typ {
                             None => arena.nil(),
-                            Some(ref typ) => arena.text(": ")
-                                .append(types::pretty_print(self, typ))
-                                .append(self.space_after(typ.span().end()))
-                                .nest(INDENT),
+                            Some(ref typ) => {
+                                arena.text(": ")
+                                    .append(types::pretty_print(self, typ))
+                                    .append(self.space_after(typ.span().end()))
+                                    .nest(INDENT)
+                            },
                         },
                         "="
-                    ];
+                    ]
+                    .group();
                     chain![arena;
                         pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
                         self.pretty_attributes(&bind.metadata.attributes),
-                        self.hang(decl, &bind.expr).group(),
+                        self.hang(decl, (self.space_before(bind.expr.span.start()), true), &bind.expr).group(),
                         if self.formatter.expanded {
-                            arena.newline()
+                            arena.hardline()
                         } else {
                             arena.nil()
                         }
@@ -282,7 +271,7 @@ where
                 };
                 chain![arena;
                     if is_recursive {
-                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.newline() })
+                        arena.text("rec").append(if binds.len() == 1 { arena.softline() } else { arena.hardline() })
                     } else {
                         arena.nil()
                     },
@@ -293,7 +282,7 @@ where
                     ),
                     if is_recursive {
                         match body.value {
-                            Expr::LetBindings(..) => arena.newline().append(arena.text("in")),
+                            Expr::LetBindings(..) => arena.hardline().append(arena.text("in")),
                             _ => arena.nil()
                         }
                     } else {
@@ -338,15 +327,15 @@ where
                     pretty(expr),
                     " with"
                 ].group(),
-                arena.newline(),
+                arena.hardline(),
                 arena.concat(alts.iter().map(|alt| {
                     chain![arena;
                         "| ",
                         self.pretty_pattern(&alt.pattern),
                         " ->",
-                        self.hang(arena.nil(), &alt.expr).group()
+                        self.hang(arena.nil(), (self.space_before(alt.expr.span.start()), true), &alt.expr).group()
                     ]
-                }).intersperse(arena.newline()))
+                }).intersperse(arena.hardline()))
             ],
 
             Expr::Projection(ref expr, ref field, _) => chain![arena;
@@ -355,31 +344,16 @@ where
                 pretty_types::ident(arena, field.as_ref())
             ],
 
-            Expr::Record { .. } => {
-                let (x, y) = self.pretty_lambda(previous_end, expr);
-                x.append(y).group()
+            Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda(_) => {
+                self.hang(arena.nil(), (arena.nil(), false), expr)
             }
-
-            Expr::Tuple { ref elems, .. } => chain![arena;
-                "(",
-                arena.concat(
-                    self.comma_sep_paren(
-                    elems
-                        .iter()
-                        .map(|elem| pos::spanned(elem.span, pretty(elem))),
-                    |spanned| spanned.value,
-                    ),
-                ),
-                ")"
-            ]
-            .group(),
 
             Expr::TypeBindings(ref binds, ref body) => {
                 let is_recursive = binds.len() > 1;
 
                 chain![arena;
                     if is_recursive && binds.len() != 1 {
-                        arena.text("rec").append(arena.newline())
+                        arena.text("rec").append(arena.hardline())
                     } else {
                         arena.nil()
                     },
@@ -388,7 +362,7 @@ where
                     self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
 
                     if is_recursive && binds.len() == 1 {
-                        arena.text("rec").append(arena.space())
+                        arena.text("rec").append(arena.line())
                     } else {
                         arena.nil()
                     },
@@ -405,6 +379,14 @@ where
                             Type::Record(_) | Type::Variant(_) => (),
                             _ => type_doc = type_doc.nest(INDENT),
                         }
+                        let variant =
+                            match &**typ {
+                                Type::Variant(row) => match &**row {
+                                    Type::ExtendRow { fields, .. } => !fields.is_empty(),
+                                    _ => false,
+                                }
+                                _ => false,
+                            };
                         chain![arena;
                             if i != 0 {
                                 chain![arena;
@@ -426,40 +408,37 @@ where
                                             "(",
                                             arg.id.as_ref(),
                                             " :",
-                                            arena.space(),
+                                            arena.line(),
                                             pretty_kind(arena, Prec::Top, &arg.kind).group(),
                                             ")"
                                         ].group()
                                     } else {
                                         arena.text(arg.id.as_ref())
                                     },
-                                    arena.space()
+                                    arena.line()
                                 ]
                             })).group(),
-                            match **typ {
-                                Type::Variant(_) => {
-                                    chain![arena;
-                                        "=",
-                                        arena.newline(),
-                                        type_doc
-                                    ].nest(INDENT)
-                                }
-                                _ => {
-                                    chain![arena;
-                                        "= ",
-                                        type_doc
-                                    ].group()
-                                }
+                            "=",
+                            if variant {
+                                chain![arena;
+                                    arena.hardline(),
+                                    type_doc
+                                ].nest(INDENT)
+                            } else {
+                                chain![arena;
+                                    arena.space(),
+                                    type_doc
+                                ].group()
                             }
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     if is_recursive {
-                        arena.newline().append(arena.text("in"))
+                        arena.hardline().append(arena.text("in"))
                     } else {
                         arena.nil()
                     },
                     if self.formatter.expanded {
-                        arena.newline()
+                        arena.hardline()
                     } else {
                         arena.nil()
                     },
@@ -472,31 +451,31 @@ where
                 ref bound,
                 ref body,
                 ..
-            }) => chain![arena;
+            }) => {
+                let from = match id {
+                    Some(pattern) => chain![arena;
+                        "do",
+                        self.space_before(pattern.span.start()),
+                        self.pretty_pattern(pattern),
+                        self.space_after(pattern.span.end()),
+                        "="
+                    ],
+                    None => arena.text("seq"),
+                };
                 chain![arena;
-                    match id {
-                        Some(pattern) => chain![arena;
-                            "do",
-                            self.space_before(pattern.span.start()),
-                            self.pretty_pattern(pattern),
-                            self.space_after(pattern.span.end()),
-                            "="
-                        ],
-                        None => arena.text("seq"),
-                    },
-                    self.hang(arena.nil(), bound).group()
-                ].group(),
-                self.pretty_expr_(bound.span.end(), body)
-            ],
+                    self.hang(from, (self.space_before(bound.span.start()), true), bound),
+                    self.pretty_expr_(bound.span.end(), body)
+                ]
+            }
             Expr::MacroExpansion { ref original, .. } => {
                 return self.pretty_expr_(previous_end, original);
             }
             Expr::Annotated(ref expr, ref typ) => chain![
                 arena;
                 pretty(expr).group(),
-                arena.space(),
+                arena.line(),
                 ":",
-                arena.space(),
+                arena.line(),
                 types::pretty_print(self, typ)
             ],
             Expr::Error(_) => arena.text("<error>"),
@@ -505,7 +484,7 @@ where
     }
 
     fn space(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a, A>, A> {
-        self.whitespace(span, self.arena.space())
+        self.whitespace(span, self.arena.line())
     }
 
     fn whitespace(
@@ -513,50 +492,56 @@ where
         span: Span<BytePos>,
         default: DocBuilder<'a, Arena<'a, A>, A>,
     ) -> DocBuilder<'a, Arena<'a, A>, A> {
-        let arena = self.arena;
-        let (doc, count, ends_with_newline) = self.comments_count(span);
-        if let Doc::Nil = doc.1 {
+        let (doc, _) = self.comments_count(span);
+        if let Doc::Nil = *doc.1 {
             default
-        } else if count == 0 {
-            // No comments, only newlines from the iterator
-            doc
-        } else if ends_with_newline {
-            arena.space().append(doc)
         } else {
-            arena.space().append(doc).append(arena.space())
+            doc
         }
     }
 
-    fn pretty_else_expr(
-        &self,
-        space: DocBuilder<'a, Arena<'a, A>, A>,
-        if_false: &'a SpannedExpr<I>,
-    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    fn pretty_if_expr(&self, mut expr: &'a SpannedExpr<I>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         A: Clone,
     {
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
         let arena = self.arena;
-        match if_false.value {
-            Expr::IfElse(ref body, ref if_true, ref if_false) => chain![arena;
+
+        let mut doc = arena.nil();
+        let mut prefix: Option<DocBuilder<Arena<A>, A>> = None;
+        while let Expr::IfElse(body, if_true, if_false) = &expr.value {
+            let next = chain![arena;
                 chain![arena;
-                    " if ",
+                    prefix.map(|prefix| prefix.append(" ")).unwrap_or_else(|| arena.nil()),
+                    "if ",
                     pretty(body),
-                    arena.space(),
+                    arena.line(),
                     "then"
                 ].group(),
-                space.clone().append(pretty(if_true)).nest(INDENT).group(),
-                space.clone(),
-                "else",
-                self.pretty_else_expr(space, if_false)
-            ],
-            _ => space.append(pretty(if_false)).nest(INDENT).group(),
+                arena.line().append(pretty(if_true)).nest(INDENT).group(),
+            ]
+            .group();
+            doc = doc.append(next).append(arena.line());
+            prefix = Some(arena.text("else"));
+            expr = if_false;
         }
+        chain![arena;
+            doc,
+            chain![arena;
+                prefix.unwrap(),
+                arena.line(),
+                pretty(expr),
+            ].nest(INDENT).group(),
+        ]
     }
 
     fn pretty_lambda(
         &self,
-        previous_end: BytePos,
+        decls: &mut Vec<(
+            (DocBuilder<'a, Arena<'a, A>, A>, bool),
+            DocBuilder<'a, Arena<'a, A>, A>,
+        )>,
+        body_spacing: (DocBuilder<'a, Arena<'a, A>, A>, bool),
         expr: &'a SpannedExpr<I>,
     ) -> (
         DocBuilder<'a, Arena<'a, A>, A>,
@@ -568,21 +553,20 @@ where
         let arena = self.arena;
         match expr.value {
             Expr::Lambda(ref lambda) => {
-                let decl = chain![arena;
+                let from = chain![arena;
                     "\\",
                     arena.concat(lambda.args.iter().map(|arg| {
                         arena.text(arg.name.value.name.as_ref()).append(" ")
                     })),
                     "->"
                 ];
-                let (next_lambda, body) =
-                    self.pretty_lambda(lambda.body.span.start(), &lambda.body);
-                if let Doc::Nil = next_lambda.1 {
-                    let decl = decl.append(self.space_before(lambda.body.span.start()));
-                    (decl, body)
-                } else {
-                    (decl.append(arena.space()).append(next_lambda), body)
-                }
+                decls.push((body_spacing, from));
+                let (body, trailer) = self.pretty_lambda(
+                    decls,
+                    (self.space_before(lambda.body.span.start()), true),
+                    &lambda.body,
+                );
+                (body, trailer)
             }
             Expr::Record {
                 ref types,
@@ -590,6 +574,9 @@ where
                 ref base,
                 ..
             } => {
+                decls.push((body_spacing, arena.text("{")));
+                decls.push(((arena.nil(), false), arena.nil()));
+
                 let ordered_iter = || expr.value.field_iter();
                 let spans = || {
                     ordered_iter().map(|x| {
@@ -612,7 +599,7 @@ where
                     .zip(rev_newlines_iter!(self, spans()))
                     .collect::<Vec<_>>();
 
-                let mut line = newline(arena, expr);
+                let mut line = hardline(arena, expr);
                 // If there are any explicit line breaks then we need put each field on a separate
                 // line
                 let newline_in_fields = newlines
@@ -628,7 +615,7 @@ where
                     .as_ref()
                     .map_or(false, |base| !is_nil(&self.space_before(base.span.start())));
                 if newline_in_fields || newline_in_base | newline_from_doc_comment {
-                    line = arena.newline();
+                    line = arena.hardline();
                 }
 
                 let last_field_end = spans()
@@ -651,11 +638,11 @@ where
                                     match r.value {
                                         Some(ref expr) => {
                                             let x = chain![arena;
-                                            id,
-                                            self.space_after(r.name.span.end()),
-                                            "="
-                                        ];
-                                            self.hang(x, expr)
+                                                id,
+                                                self.space_after(r.name.span.end()),
+                                                "="
+                                            ];
+                                            self.hang(x, (self.space_before(expr.span.start()), true), expr).group()
                                         }
                                         None => id,
                                     }
@@ -665,18 +652,16 @@ where
                         }),
                         |spanned| spanned.value,
                     ))
-                    .append(
-                        if (!exprs.is_empty() || !types.is_empty()) && is_newline(&line) {
-                            arena.text(",")
-                        } else {
-                            arena.nil()
-                        },
-                    )
+                    .append(if !types.is_empty() || !exprs.is_empty() {
+                        trailing_comma(arena)
+                    } else {
+                        arena.nil()
+                    })
                     .append(match *base {
                         Some(ref base) => {
                             let comments = self.comments_after(last_field_end);
                             chain![arena;
-                                if let Doc::Nil = comments.1 {
+                                if let Doc::Nil = *comments.1 {
                                     line.clone()
                                 } else {
                                     comments
@@ -692,11 +677,68 @@ where
                     .append(
                         self.whitespace(Span::new(last_element_end, expr.span.end()), line.clone()),
                     )
-                    .group()
-                    .append("}");
-                (arena.text("{"), record)
+                    .group();
+
+                (record, arena.text("}"))
             }
-            _ => (arena.nil(), self.pretty_expr_(previous_end, expr)),
+
+            Expr::Tuple {
+                elems: [ref inner], ..
+            } => {
+                let decl = arena.text("(");
+
+                decls.push((body_spacing, decl));
+
+                let (body, end) = self.pretty_lambda(
+                    decls,
+                    (self.comments_before(inner.span.start()), true),
+                    inner,
+                );
+
+                (body, end.append(")"))
+            }
+
+            Expr::Tuple { ref elems, .. } => {
+                let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
+
+                decls.push((body_spacing, arena.text("(")));
+                decls.push(((arena.nil(), true), arena.nil()));
+
+                let inner = arena.concat(
+                    self.comma_sep_paren(
+                        elems
+                            .iter()
+                            .map(|elem| pos::spanned(elem.span, pretty(elem))),
+                        |spanned| spanned.value,
+                    ),
+                );
+                let tuple = chain![arena;
+                    self.nilline_after(expr.span.start() + ByteOffset::from(1)),
+                    inner,
+                    trailing_comma(arena),
+                ]
+                .group();
+
+                let end = if elems.is_empty() {
+                    arena.nil()
+                } else {
+                    self.nilline_before(expr.span.end() - ByteOffset::from(1))
+                };
+                (tuple, end.append(arena.text(")")))
+            }
+
+            _ => {
+                let body_spacing = match &*(body_spacing.0).1 {
+                    Doc::Nil if forced_new_line(expr) => (arena.hardline(), body_spacing.1),
+                    Doc::FlatAlt(
+                        pretty::RefDoc(Doc::Line),
+                        pretty::RefDoc(Doc::BorrowedText(" ")),
+                    ) if forced_new_line(expr) => (arena.hardline(), body_spacing.1),
+                    _ => body_spacing,
+                };
+                decls.push((body_spacing, arena.nil()));
+                (self.pretty_expr_(expr.span.start(), expr), arena.nil())
+            }
         }
     }
 
@@ -738,7 +780,7 @@ where
                     None => arena.nil(),
                 },
                 "]",
-                arena.newline()
+                arena.hardline()
             ]
         }))
     }
@@ -819,7 +861,7 @@ where
                     if fields.is_empty() && implicit_import.is_none() {
                         arena.nil()
                     } else {
-                        arena.space()
+                        arena.line()
                     },
                     "}"
                 ]
@@ -844,66 +886,79 @@ where
     fn hang(
         &self,
         from: DocBuilder<'a, Arena<'a, A>, A>,
+        body_spacing: (DocBuilder<'a, Arena<'a, A>, A>, bool),
         expr: &'a SpannedExpr<I>,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         A: Clone,
     {
-        let arena = self.arena;
-        let (arguments, body) = self.pretty_lambda(expr.span.start(), expr);
-        match expr.value {
-            Expr::Record { .. } => {
-                let opening = arguments;
-                let spaces = self.space_before(expr.span.start());
-                // If there are just spaces between `=`/`->` and the opening brace (`{`) we hang
-                // the opening brace next to the `=` and only indent the body of the record
-                // let x = {
-                //     y,
-                // }
-                // Instead of
-                // let x =
-                //     {
-                //         y,
-                //     }
-                let needs_indent = if let Doc::Space = spaces.1 {
-                    false
-                } else {
-                    true
-                };
-                let doc = chain![arena;
-                    chain![arena;
-                        from,
-                        spaces,
-                        opening
-                    ].group(),
-                    body
-                ]
-                .group();
-                if needs_indent {
-                    doc.nest(INDENT)
-                } else {
-                    doc
-                }
-            }
-            _ => {
-                let mut spaces = self.space_before(expr.span.start());
-                if let Doc::Space = spaces.1 {
-                    match expr.value {
-                        Expr::Lambda(..) => (),
-                        _ => spaces = newline(arena, expr),
-                    }
-                }
+        let mut decls = Vec::new();
+        decls.push(((self.arena.nil(), false), from));
 
-                from.append(
-                    chain![arena;
-                        spaces,
-                        arguments
-                    ]
-                    .group()
-                    .append(body)
-                    .nest(INDENT),
-                )
+        let (body, end) = self.pretty_lambda(&mut decls, body_spacing, expr);
+
+        self.hang_parts(&decls, body, end).group()
+    }
+
+    fn hang_parts(
+        &self,
+        from: &[(
+            (DocBuilder<'a, Arena<'a, A>, A>, bool),
+            DocBuilder<'a, Arena<'a, A>, A>,
+        )],
+        body: DocBuilder<'a, Arena<'a, A>, A>,
+        trailer: DocBuilder<'a, Arena<'a, A>, A>,
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
+        assert!(from.len() >= 1);
+        let arena = self.arena;
+
+        let mut iter = (1..from.len()).filter_map(|i| {
+            let (before, after) = from.split_at(i);
+
+            let before = before
+                .iter()
+                .rev()
+                .cloned()
+                .fold(arena.nil(), |next, ((body_spacing, _), from)| {
+                    body_spacing.append(from).append(next).group()
+                });
+
+            let after = after.iter().rev().cloned().fold(
+                body.clone(),
+                |next, ((body_spacing, nest), from)| {
+                    let doc = body_spacing.append(from).append(next);
+                    if nest {
+                        doc.nest(INDENT)
+                    } else {
+                        doc
+                    }
+                },
+            );
+
+            Some(
+                if i != 1 {
+                    arena.fail().flat_alt(arena.nil())
+                } else {
+                    // The last one should always apply
+                    arena.nil()
+                }
+                .append(before)
                 .group()
+                .append(after)
+                .append(trailer.clone())
+                .group(),
+            )
+        });
+
+        match iter.next() {
+            None => unreachable!(),
+            Some(first) => {
+                let x = iter.fold(first, |a, b| b.union(a));
+
+                x
             }
         }
     }
@@ -944,9 +999,9 @@ where
             .rev()
             .map(|comment| {
                 if comment.is_empty() {
-                    arena.newline()
+                    arena.hardline()
                 } else if comment.starts_with("//") {
-                    arena.text(comment).append(arena.newline())
+                    arena.text(comment).append(arena.hardline())
                 } else {
                     arena.text(comment)
                 }
@@ -979,10 +1034,11 @@ where
 
 impl<'a, 'e, F, I, J, T, U, A> Iterator for CommaSeparated<'a, 'e, F, I, J, U, A>
 where
-    I: AsRef<str>,
+    I: AsRef<str> + std::fmt::Debug,
     F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
     J: Iterator<Item = T>,
     T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
+    A: std::fmt::Debug,
 {
     type Item = DocBuilder<'a, Arena<'a, A>, A>;
 
@@ -1025,7 +1081,7 @@ fn pretty_kind<'a, A>(
         Kind::Function(ref a, ref r) => {
             let doc = chain![arena;
                 pretty_kind(arena, Prec::Function, a),
-                arena.space(),
+                arena.line(),
                 "-> ",
                 pretty_kind(arena, Prec::Top, r)
             ];
@@ -1034,14 +1090,14 @@ fn pretty_kind<'a, A>(
     }
 }
 
-fn newline<'a, Id, A>(
+fn hardline<'a, Id, A>(
     arena: &'a Arena<'a, A>,
     expr: &'a SpannedExpr<Id>,
 ) -> DocBuilder<'a, Arena<'a, A>, A> {
     if forced_new_line(expr) {
-        arena.newline()
+        arena.hardline()
     } else {
-        arena.space()
+        arena.line()
     }
 }
 

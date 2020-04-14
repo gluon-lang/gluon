@@ -9,6 +9,8 @@ use std::{
 
 use {either::Either, itertools::Itertools, ordered_float::NotNan};
 
+use gluon_codegen::AstClone;
+
 #[cfg(feature = "serde")]
 use crate::{
     serde::de::DeserializeState,
@@ -74,13 +76,13 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct InnerAstType<'ast, Id> {
     metadata: Option<Metadata>,
     typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct AstType<'ast, Id> {
     _typ: &'ast mut InnerAstType<'ast, Id>,
 }
@@ -261,7 +263,7 @@ pub enum Literal {
 /// Pattern which contains a location
 pub type SpannedPattern<'ast, Id> = Spanned<Pattern<'ast, Id>, BytePos>;
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub enum PatternField<'ast, Id> {
     Type {
         name: Spanned<Id, BytePos>,
@@ -280,7 +282,7 @@ impl<Id> PatternField<'_, Id> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub enum Pattern<'ast, Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
     As(Spanned<Id, BytePos>, &'ast mut SpannedPattern<'ast, Id>),
@@ -362,19 +364,19 @@ impl<Id> Default for Pattern<'_, Id> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct Alternative<'ast, Id> {
     pub pattern: SpannedPattern<'ast, Id>,
     pub expr: SpannedExpr<'ast, Id>,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct Array<'ast, Id> {
     pub typ: ArcType<Id>,
     pub exprs: &'ast mut [SpannedExpr<'ast, Id>],
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct Lambda<'ast, Id> {
     pub id: TypedIdent<Id>,
     pub args: &'ast mut [Argument<SpannedIdent<Id>>],
@@ -389,14 +391,14 @@ pub type SpannedAlias<'ast, Id> = Spanned<AliasData<Id, AstType<'ast, Id>>, Byte
 
 pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos>;
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ExprField<Id, E> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct Do<'ast, Id> {
     pub id: Option<SpannedPattern<'ast, Id>>,
     pub bound: &'ast mut SpannedExpr<'ast, Id>,
@@ -405,7 +407,7 @@ pub struct Do<'ast, Id> {
 }
 
 /// The representation of gluon's expression syntax
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub enum Expr<'ast, Id> {
     /// Identifiers
     Ident(TypedIdent<Id>),
@@ -586,7 +588,7 @@ impl<'ast, Id> Expr<'ast, Id> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct TypeBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
@@ -600,11 +602,11 @@ impl<Id> TypeBinding<'_, Id> {
     }
 }
 
-#[derive(Clone, Default, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Default, Eq, PartialEq, Debug, Hash, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
-pub struct Argument<Id> {
+pub struct Argument<N> {
     pub arg_type: ArgType,
-    pub name: Id,
+    pub name: N,
 }
 
 impl<Id> Argument<Id> {
@@ -623,7 +625,7 @@ impl<Id> Argument<Id> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub enum ValueBindings<'ast, Id> {
     Plain(&'ast mut ValueBinding<'ast, Id>),
     Recursive(&'ast mut [ValueBinding<'ast, Id>]),
@@ -675,7 +677,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ValueBinding<'ast, Id> {
     pub metadata: Metadata,
     pub name: SpannedPattern<'ast, Id>,
@@ -1467,4 +1469,122 @@ macro_rules! mk_ast_arena {
             _guard = Guard(&tag);
         }
     };
+}
+
+pub trait AstClone<'ast, Id> {
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self;
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for Option<T>
+where
+    T: AstClone<'ast, Id>,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        self.as_ref().map(|x| x.ast_clone(arena))
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for PhantomData<T> {
+    fn ast_clone(&self, _arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        PhantomData
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for Arc<[crate::types::AliasData<Id, T>]>
+where
+    Id: Clone + AstClone<'ast, Id>,
+    T: AstClone<'ast, Id>,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        Arc::from(self.iter().map(|e| e.ast_clone(arena)).collect::<Vec<_>>())
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for Vec<T>
+where
+    T: Clone,
+{
+    fn ast_clone(&self, _arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        self.clone()
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for crate::types::AppVec<T>
+where
+    T: Clone,
+{
+    fn ast_clone(&self, _arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        self.clone()
+    }
+}
+
+impl<'ast, Id, T, P> AstClone<'ast, Id> for Spanned<T, P>
+where
+    T: AstClone<'ast, Id>,
+    P: Clone,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        pos::spanned(self.span.clone(), self.value.ast_clone(arena))
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for TypedIdent<Id, T>
+where
+    Id: Clone,
+    T: AstClone<'ast, Id>,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        TypedIdent {
+            name: self.name.clone(),
+            typ: self.typ.ast_clone(arena),
+        }
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for &'ast mut [T]
+where
+    T: AstClone<'ast, Id> + AstAlloc<'ast, Id>,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        let elems: Vec<_> = self.iter().map(|e| e.ast_clone(arena)).collect();
+        arena.alloc_extend(elems)
+    }
+}
+
+impl<'ast, Id, T> AstClone<'ast, Id> for &'ast mut T
+where
+    T: AstClone<'ast, Id> + AstAlloc<'ast, Id>,
+{
+    fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
+        arena.alloc((**self).ast_clone(arena))
+    }
+}
+
+macro_rules! impl_ast_clone {
+    ($($ty: ty $(where [$($where_: tt)*])? ,)*) => {
+        $(
+            impl<'ast, Id> AstClone<'ast, Id> for $ty
+                $( where $($where_)* )?
+            {
+                fn ast_clone(&self, _arena: ArenaRef<'_, 'ast, Id>) -> Self {
+                    self.clone()
+                }
+            }
+        )*
+    };
+}
+
+impl_ast_clone! {
+    ArcType<Id>,
+    Literal,
+    Metadata,
+    crate::types::TypeVariable,
+    ArcKind,
+    crate::types::ArgType,
+    crate::types::BuiltinType,
+    usize,
+    u32,
+    bool,
+    BytePos,
+    Symbol,
 }

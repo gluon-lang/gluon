@@ -12,11 +12,14 @@ type Traversable t = {
     traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
-let traverse ?t ?a : forall a b m . [Traversable t] -> [Applicative m]
-        -> (a -> m b)
-        -> t a
-        -> m (t b)
-    = t.traverse a
+let traverse ?t ?a : forall a b m .
+        [Traversable t]
+            -> [Applicative m]
+            -> (a -> m b)
+            -> t a
+            -> m (t b)
+    =
+    t.traverse a
 
 let sequence : [Traversable t] -> [Applicative m] -> t (m a) -> m (t a) =
     traverse (\x -> x)
