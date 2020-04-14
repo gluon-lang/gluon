@@ -1,3 +1,38 @@
+<a name="v0.14.0"></a>
+## v0.14.0 (2020-04-14)
+
+
+#### Bug Fixes
+
+*   Rework how hanging lambda/parens are handled ([732f09f3](https://github.com/gluon-lang/gluon/commit/732f09f3c4c866f8b1b1be231a39604b8e2128e8))
+*   Accept filenames that start with `.`/`..` as modules ([01e450bb](https://github.com/gluon-lang/gluon/commit/01e450bbc2f0737ecc80fde112174f52585c3445))
+*   Don't deadlock when collecting and cloning a thread concurrently ([5886f59f](https://github.com/gluon-lang/gluon/commit/5886f59ff68cbfe029fc6a1697784d2800f42b0a))
+* **check:**  Reject programs which misspecifies the number of patterns ([248387d9](https://github.com/gluon-lang/gluon/commit/248387d9c8d8121ab0f25645f79f7a47aeedfb25), closes [#807](https://github.com/gluon-lang/gluon/issues/807))
+* **doc:**  Correct the style.css path ([4e629ab5](https://github.com/gluon-lang/gluon/commit/4e629ab5afb923ec0e097935f02f42717a2b51d5))
+* **format:**  Improve tuple multiline formatting ([5122fe38](https://github.com/gluon-lang/gluon/commit/5122fe38f4c1360c13bf2ff483b6a7d35f2e7d2d))
+
+#### Features
+
+*   Add AstClone to clone arena allocated ASTs ([3ee7bd28](https://github.com/gluon-lang/gluon/commit/3ee7bd28bdc7126f5f4401e6fbe3368da94aa921))
+*   Compile modules in parallel using salsa-async ([e0ab1811](https://github.com/gluon-lang/gluon/commit/e0ab18115a99115e54294b7240bb5d0360d4043a))
+*   Compile modules in parallel ([57fca165](https://github.com/gluon-lang/gluon/commit/57fca165df50ff61ba87fb81d34dc4087f7ebc60))
+*   Add Function::call_any ([2c06104f](https://github.com/gluon-lang/gluon/commit/2c06104fe2454f6636d811e77384945b4744a4bf))
+*   Export Array from the prelude ([16eb3456](https://github.com/gluon-lang/gluon/commit/16eb3456ca864b7f6c12d7145d15a1c07fb683dc))
+*   Allow serde_json::Value to be marshalled to std.json.Value ([aabdec86](https://github.com/gluon-lang/gluon/commit/aabdec86f49bda922fa01c9c1c84f32fdf2e3011))
+* **check:**
+  *  Avoid propagating errors on lift_io! misuse ([3dbabe53](https://github.com/gluon-lang/gluon/commit/3dbabe5355aeb6b4f61dfa8bdae95b6593f5575c))
+  *  Avoid generating more errors from a type that could not be imported ([752e2bce](https://github.com/gluon-lang/gluon/commit/752e2bce68f6ef7726f0cc92a5b0e194648eb743))
+
+#### Performance
+
+*   Avoid some unnecessary allocations ([089bae4c](https://github.com/gluon-lang/gluon/commit/089bae4c4578d36163ec9a84ee83bbfc6e41ab04))
+*   Shrink the size of Pattern ([75fb8840](https://github.com/gluon-lang/gluon/commit/75fb8840001f3e4d17ada88077b111024d673cf9))
+*   Avoid hashing symbols twice ([0cfb52c8](https://github.com/gluon-lang/gluon/commit/0cfb52c871e80272a087311f230c11a5ad218c39))
+*   Allocate all temporaries into the same Vec ([af945c4a](https://github.com/gluon-lang/gluon/commit/af945c4ad177839aa881d88aefa199b0c9f79aac))
+* **compiler:**  Hoist a remove_alias call out from match alternatives ([c13172e2](https://github.com/gluon-lang/gluon/commit/c13172e2c9ee1fabbf267d83101458af47231436))
+
+
+
 <a name="v0.13.1"></a>
 ### v0.13.1 (2019-10-29)
 

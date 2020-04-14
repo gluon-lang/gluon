@@ -1,5 +1,5 @@
 //! REPL for the gluon programming language
-#![doc(html_root_url = "https://docs.rs/gluon_repl/0.4.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_repl/0.13.1")] // # GLUON
 
 #[macro_use]
 extern crate log;

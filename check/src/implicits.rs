@@ -372,10 +372,6 @@ impl<'a, 'b, 'ast> ResolveImplicitsVisitor<'a, 'b, 'ast> {
                     Some(Ok(replacement)) => Some(replacement),
                     Some(Err(err)) => {
                         debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
-                        error!(
-                            "UnableToResolveImplicit {:?} {} {:#?}",
-                            id.name, id.typ, expr
-                        );
 
                         self.tc.errors.push(Spanned {
                             span: expr.span,
