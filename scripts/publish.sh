@@ -4,6 +4,13 @@ VERSION=$(echo $1 | sed 's/v//')
 shift
 
 declare -a PROJECTS=(
+    gluon_base
+    gluon_codegen
+    gluon_parser
+    gluon_check
+    gluon_completion
+    gluon_vm
+    gluon_format
     gluon
     gluon_c-api
     gluon_doc
@@ -14,8 +21,8 @@ for PROJECT in "${PROJECTS[@]}"
 do
     PROJECT_PATH=$(echo "$PROJECT" | sed 's/gluon_//' | sed 's/gluon/./')
     echo $PROJECT_PATH
-    (cd "${PROJECT_PATH}" && cargo publish "$@")
-    if [[ $? ]]; then
+
+    if cd "${PROJECT_PATH}" && cargo publish "$@"; then
         exit 1
     fi
     echo "Waiting for ${PROJECT} to publish"
