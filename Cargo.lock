@@ -1090,6 +1090,7 @@ dependencies = [
  "failure",
  "failure_derive",
  "futures 0.3.1",
+ "gluon-salsa",
  "gluon_base",
  "gluon_check",
  "gluon_codegen",
@@ -1110,7 +1111,6 @@ dependencies = [
  "rand 0.7.2",
  "rand_xorshift 0.2.0",
  "regex 1.3.1",
- "salsa",
  "serde",
  "serde_derive",
  "serde_derive_state",
@@ -1123,6 +1123,36 @@ dependencies = [
  "tokio-tls",
  "tower-service",
  "walkdir",
+]
+
+[[package]]
+name = "gluon-salsa"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18b93088a65118183f1b1dfe7ca629ca99f81d1b3fb4eed66a447bfd5d3b5823"
+dependencies = [
+ "async-trait",
+ "crossbeam",
+ "futures 0.3.1",
+ "gluon-salsa-macros",
+ "indexmap",
+ "log 0.4.8",
+ "parking_lot 0.10.0",
+ "rand 0.7.2",
+ "rustc-hash",
+ "smallvec 1.1.0",
+]
+
+[[package]]
+name = "gluon-salsa-macros"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "118ca3427c8528856c15a83b574ee52a95ed2647e4c77cd0191485c2e014ed88"
+dependencies = [
+ "heck",
+ "proc-macro2 1.0.6",
+ "quote 1.0.2",
+ "syn 1.0.7",
 ]
 
 [[package]]
@@ -2850,34 +2880,6 @@ name = "ryu"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa8506c1de11c9c4e4c38863ccbe02a305c8188e85a05a784c9e11e1c3910c8"
-
-[[package]]
-name = "salsa"
-version = "0.14.1"
-source = "git+https://github.com/Marwes/salsa?rev=3fddf72#3fddf726fffd496b004b67390842a1ca49cff53b"
-dependencies = [
- "async-trait",
- "crossbeam",
- "futures 0.3.1",
- "indexmap",
- "log 0.4.8",
- "parking_lot 0.10.0",
- "rand 0.7.2",
- "rustc-hash",
- "salsa-macros",
- "smallvec 1.1.0",
-]
-
-[[package]]
-name = "salsa-macros"
-version = "0.14.1"
-source = "git+https://github.com/Marwes/salsa?rev=3fddf72#3fddf726fffd496b004b67390842a1ca49cff53b"
-dependencies = [
- "heck",
- "proc-macro2 1.0.6",
- "quote 1.0.2",
- "syn 1.0.7",
-]
 
 [[package]]
 name = "same-file"
