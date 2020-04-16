@@ -4,6 +4,14 @@ VERSION=$(echo $1 | sed 's/v//')
 shift
 
 declare -a PROJECTS=(
+    gluon_codegen
+    gluon_base
+    gluon_parser
+    gluon_check
+    gluon_completion
+    gluon_vm
+    gluon_format
+    gluon
     gluon_c-api
     gluon_doc
     gluon_repl
