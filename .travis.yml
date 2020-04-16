@@ -32,11 +32,11 @@ matrix:
     env: WASM=1
 
     # Only for deployment
-  - if: tag IS present
-    env:
-      - TARGET=x86_64-unknown-freebsd
-      - DEPLOY=1
-      - DISABLE_TESTS=1
+    # - if: tag IS present
+    #   env:
+    #     - TARGET=x86_64-unknown-freebsd
+    #     - DEPLOY=1
+    #     - DISABLE_TESTS=1
   - if: tag IS present
     env:
       - TARGET=x86_64-pc-windows-gnu
