@@ -123,5 +123,5 @@ after_deploy:
 - >
     if [[ $CURRENT_TAG != "" ]] && [[ $TRAVIS_RUST_VERSION == "stable" ]]; then
         cargo login $CRATES_IO_TOKEN
-        ./scripts/publish.sh
+        ./scripts/publish.sh "${CURRENT_TAG}"
     fi

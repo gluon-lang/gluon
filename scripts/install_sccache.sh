@@ -8,7 +8,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # the temp directory used, within $DIR
 # omit the -p parameter to create a temporal directory in the default location
-WORK_DIR=`mktemp -d -p "$DIR"`
+WORK_DIR=`mktemp -d "$DIR.XXXXXXXX"`
 
 # check if tmp dir was created
 if [[ ! "$WORK_DIR" || ! -d "$WORK_DIR" ]]; then
@@ -17,7 +17,7 @@ if [[ ! "$WORK_DIR" || ! -d "$WORK_DIR" ]]; then
 fi
 
 # deletes the temp directory
-function cleanup {      
+function cleanup {
   rm -rf "$WORK_DIR"
   echo "Deleted temp working directory $WORK_DIR"
 }
@@ -39,6 +39,6 @@ pushd ${WORK_DIR}
 curl -L "https://github.com/mozilla/sccache/releases/download/${VERSION}/$SCCACHE_VERSION.tar.gz" | tar -xvz
 mv $SCCACHE_VERSION/sccache .
 chmod +x ./sccache
-mv ./sccache $HOME/bin/ 
+mv ./sccache $HOME/bin/
 
 popd
