@@ -28,6 +28,7 @@ gluon_format = { version = "0.14.0", path = "../format" } # GLUON
 gluon_doc = { version = "0.14.0", path = "../doc" } # GLUON
 
 app_dirs = "1.0.0"
+failure = "0.1"
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-threaded", "rt-core", "macros", "signal"] }
 clap = "2.22.0"
@@ -39,7 +40,7 @@ rustyline = "5.0.1"
 walkdir = "2"
 codespan = "0.3"
 codespan-reporting = "0.3"
-
+quick-error = "1.0.0"
 
 serde = "1"
 serde_derive = "1"

@@ -19,6 +19,7 @@ use std::{
     sync::Arc,
 };
 
+use quick_error::quick_error;
 use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
@@ -28,11 +29,27 @@ use gluon::{base, parser, vm};
 use crate::base::filename_to_module;
 
 use gluon::{
-    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Error, Result, Thread,
+    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread,
     ThreadExt,
 };
 
 mod repl;
+
+quick_error! {
+/// Error type wrapping all possible errors that can be generated from gluon
+#[derive(Debug)]
+#[allow(deprecated)]
+enum Error {
+    Failure(err: failure::Error) {
+        display("{}", err)
+        from()
+    }
+    Gluon(err: gluon::Error) {
+        display("{}", err)
+        from()
+    }
+}
+}
 
 const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
     name: "gluon-repl",
@@ -212,7 +229,7 @@ async fn fmt_stdio(opt: &Opt) -> Result<()> {
     Ok(())
 }
 
-async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::Error> {
+async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -248,8 +265,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gl
             let input = &doc_opt.input;
             let output = &doc_opt.output;
             let thread = new_vm_async().await;
-            gluon_doc::generate_for_path(&thread, input, output)
-                .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
+            gluon_doc::generate_for_path(&thread, input, output)?;
         }
         None => {
             if opt.interactive {
@@ -283,14 +299,17 @@ async fn main() {
     let result = run(&opt, opt.color, &vm).await;
     if let Err(err) = result {
         match err {
-            Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
-            _ => {
+            Error::Gluon(gluon::Error::VM(VMError::Message(_))) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
+            Error::Gluon(err) => {
                 let mut stderr = termcolor::StandardStream::stderr(color.into());
                 if let Err(err) = err.emit(&mut stderr) {
                     eprintln!("{}", err);
                 } else {
                     eprintln!("");
                 }
+            }
+            Error::Failure(err) => {
+                eprintln!("{}", err);
             }
         }
         ::std::process::exit(1);
