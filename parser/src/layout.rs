@@ -1,6 +1,6 @@
 use crate::base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 
-use crate::token::{self, SpannedToken, Token};
+use crate::token::{self, BorrowedToken, SpannedToken, Token};
 
 quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -136,7 +136,7 @@ where
         }
     }
 
-    fn continue_block(&mut self, context: Context, token: &Token) -> Result<bool> {
+    fn continue_block(&mut self, context: Context, token: &BorrowedToken) -> Result<bool> {
         let in_rec = self.indent_levels.stack.len() >= 2
             && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context == Context::Rec;
 
@@ -145,7 +145,11 @@ where
                 || (*token != Token::Rec && self.scan_continue_block(context, token)?)))
     }
 
-    fn scan_continue_block(&mut self, context: Context, first_token: &Token) -> Result<bool> {
+    fn scan_continue_block(
+        &mut self,
+        context: Context,
+        first_token: &BorrowedToken,
+    ) -> Result<bool> {
         let expected_token = match context {
             Context::Let => Token::Let,
             Context::Type => Token::Type,
@@ -218,7 +222,7 @@ where
     fn layout_token(
         &mut self,
         token: SpannedToken<'input>,
-        layout_token: Token<'input>,
+        layout_token: BorrowedToken<'input>,
     ) -> SpannedToken<'input> {
         let span = token.span;
         self.unprocessed_tokens.push(token);
@@ -600,7 +604,7 @@ where
     }
 }
 
-fn token_closes_context(token: &Token, context: Context) -> bool {
+fn token_closes_context(token: &BorrowedToken, context: Context) -> bool {
     match (token, context) {
         (&Token::Else, Context::If)
         | (&Token::RBrace, Context::Brace)
@@ -620,7 +624,7 @@ impl<'input, Tokens> Iterator for Layout<'input, Tokens>
 where
     Tokens: Iterator<Item = token::Result<SpannedToken<'input>>>,
 {
-    type Item = Result<(BytePos, Token<'input>, BytePos)>;
+    type Item = Result<(BytePos, BorrowedToken<'input>, BytePos)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.layout_next_token() {

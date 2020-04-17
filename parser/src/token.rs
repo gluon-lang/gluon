@@ -16,17 +16,17 @@ use crate::{
 };
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub enum Token<'input> {
-    ShebangLine(&'input str),
-    Identifier(&'input str),
-    Operator(&'input str),
+pub enum Token<S> {
+    ShebangLine(S),
+    Identifier(S),
+    Operator(S),
 
-    StringLiteral(StringLiteral<'input>),
+    StringLiteral(StringLiteral<S>),
     CharLiteral(char),
     IntLiteral(i64),
     ByteLiteral(u8),
     FloatLiteral(NotNan<f64>),
-    DocComment(Comment<&'input str>),
+    DocComment(Comment<S>),
 
     Rec,
     Else,
@@ -68,7 +68,10 @@ pub enum Token<'input> {
     EOF, // Required for the layout algorithm
 }
 
-impl<'input> fmt::Display for Token<'input> {
+impl<S> fmt::Display for Token<S>
+where
+    S: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
 
@@ -127,13 +130,76 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
-pub enum StringLiteral<'input> {
-    Escaped(&'input str),
-    Raw(&'input str),
+impl<S> Token<S> {
+    pub(crate) fn map<R>(self, f: impl FnOnce(S) -> R) -> Token<R> {
+        use self::Token::*;
+        match self {
+            ShebangLine(s) => ShebangLine(f(s)),
+            Identifier(s) => Identifier(f(s)),
+            Operator(s) => Operator(f(s)),
+            StringLiteral(s) => StringLiteral(match s {
+                self::StringLiteral::Escaped(s) => self::StringLiteral::Escaped(f(s)),
+                self::StringLiteral::Raw(s) => self::StringLiteral::Raw(f(s)),
+            }),
+            CharLiteral(x) => CharLiteral(x),
+            IntLiteral(x) => IntLiteral(x),
+            ByteLiteral(x) => ByteLiteral(x),
+            FloatLiteral(x) => FloatLiteral(x),
+            DocComment(Comment { typ, content }) => DocComment(Comment {
+                typ,
+                content: f(content),
+            }),
+
+            Rec => Rec,
+            Else => Else,
+            Forall => Forall,
+            If => If,
+            In => In,
+            Let => Let,
+            Do => Do,
+            Seq => Seq,
+            Match => Match,
+            Then => Then,
+            Type => Type,
+            With => With,
+
+            LBrace => LBrace,
+            LBracket => LBracket,
+            LParen => LParen,
+
+            RBrace => RBrace,
+            RBracket => RBracket,
+            RParen => RParen,
+
+            At => At,
+            Colon => Colon,
+            Comma => Comma,
+            Dot => Dot,
+            DotDot => DotDot,
+            Equals => Equals,
+            Lambda => Lambda,
+            Pipe => Pipe,
+            RArrow => RArrow,
+            Question => Question,
+
+            OpenBlock => OpenBlock,
+            CloseBlock => CloseBlock,
+            Semi => Semi,
+
+            AttributeOpen => AttributeOpen,
+
+            EOF => EOF,
+        }
+    }
 }
 
-impl StringLiteral<'_> {
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub enum StringLiteral<S> {
+    Escaped(S),
+    Raw(S),
+}
+
+impl StringLiteral<&'_ str> {
     pub fn unescape(&self) -> String {
         match self {
             StringLiteral::Escaped(s) => unescape_string_literal(s),
@@ -164,7 +230,8 @@ fn unescape_string_literal(mut s: &str) -> String {
     string
 }
 
-pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
+pub type BorrowedToken<'input> = Token<&'input str>;
+pub type SpannedToken<'input> = Spanned<Token<&'input str>, Location>;
 
 pub type SpError = Spanned<Error, Location>;
 pub type Result<T, E = SpError> = std::result::Result<T, E>;
@@ -396,7 +463,7 @@ impl<'input> Tokenizer<'input> {
                         // FIXME: whitespace alignment
                         let doc = Token::DocComment(Comment {
                             typ: CommentType::Block,
-                            content: &comment[3..].trim(),
+                            content: comment[3..].trim(),
                         });
                         return Ok(Some(pos::spanned2(start, end, doc)));
                     } else {
@@ -786,7 +853,7 @@ mod test {
         }))
     }
 
-    fn test(input: &str, expected: Vec<(&str, Token)>) {
+    fn test(input: &str, expected: Vec<(&str, BorrowedToken<'_>)>) {
         use crate::base::source::Source;
 
         let mut tokenizer = tokenizer(input);
