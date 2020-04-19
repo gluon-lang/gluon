@@ -12,7 +12,7 @@ use crate::base::{
 };
 
 use crate::{ReplLine, Variant, new_ident};
-use crate::token::{Token, StringLiteral};
+use crate::token::{Token, BorrowedToken, StringLiteral};
 use crate::ordered_float::NotNan;
 
 use crate::{Error, ErrorEnv, FieldExpr, MutIdentEnv, TempVecs, TempVecStart, Slice};
@@ -31,11 +31,11 @@ extern {
     type Location = BytePos;
     type Error = Spanned<Error, BytePos>;
 
-    enum Token<'input> {
+    enum BorrowedToken<'input> {
         "shebang line" => Token::ShebangLine(<&'input str>),
         "identifier" => Token::Identifier(<&'input str>),
         "operator" => Token::Operator(<&'input str>),
-        "string literal" => Token::StringLiteral(<StringLiteral<'input>>),
+        "string literal" => Token::StringLiteral(<StringLiteral<&'input str>>),
         "char literal" => Token::CharLiteral(<char>),
         "int literal" => Token::IntLiteral(<i64>),
         "byte literal" => Token::ByteLiteral(<u8>),
@@ -259,7 +259,7 @@ AtomicKind: ArcKind = {
                     l.into(),
                     r.into(),
                     Error::UnexpectedToken(
-                        "identifier".to_string(),
+                        Token::Identifier(id.into()),
                         ["_", "Row", "Type"].iter().map(|s| s.to_string()).collect())),
             }),
         }

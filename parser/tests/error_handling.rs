@@ -6,14 +6,15 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use crate::base::{
-    ast::{Expr, Pattern, PatternField, TypedIdent},
-    mk_ast_arena,
-    pos::{self, BytePos},
-    types::Type,
+use {
+    base::{
+        ast::{Expr, Pattern, PatternField, TypedIdent},
+        mk_ast_arena,
+        pos::{self, BytePos},
+        types::Type,
+    },
+    parser::{Error, ParseErrors, Token, TokenizeError},
 };
-
-use crate::parser::{Error, ParseErrors, TokenizeError};
 
 use crate::support::*;
 
@@ -40,7 +41,7 @@ test_parse_error! {
         ),
     {
 
-        let error = Error::UnexpectedToken("With".into(), vec![]);
+        let error = Error::UnexpectedToken(Token::With, vec![]);
         let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
     }
@@ -61,8 +62,8 @@ y
     );
     let span = pos::span(BytePos::from(0), BytePos::from(0));
     let errors = ParseErrors::from(vec![
-        pos::spanned(span, Error::UnexpectedToken("IntLiteral".into(), vec![])),
-        pos::spanned(span, Error::UnexpectedToken("CloseBlock".into(), vec![])),
+        pos::spanned(span, Error::UnexpectedToken(Token::IntLiteral(2), vec![])),
+        pos::spanned(span, Error::UnexpectedToken(Token::CloseBlock, vec![])),
     ]);
 
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
@@ -138,7 +139,7 @@ test_parse_error! {
     "#,
     |arena| case(arena, int(1), vec![(Pattern::Error, id("x"))]),
     {
-        let error = Error::UnexpectedToken("RArrow".into(), vec![]);
+        let error = Error::UnexpectedToken(Token::RArrow, vec![]);
         let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
     }
@@ -153,7 +154,7 @@ test_parse_error! {
     |arena| case(arena, int(1), vec![(Pattern::Error, error())]),
     {
 
-        let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
+        let error = Error::UnexpectedToken(Token::CloseBlock, vec![]);
         let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
     }
@@ -174,7 +175,7 @@ test_parse_error! {
             ],
         ),
     {
-        let error = Error::UnexpectedToken("Pipe".into(), vec![]);
+        let error = Error::UnexpectedToken(Token::Pipe, vec![]);
         let span = pos::span(BytePos::from(0), BytePos::from(0));
         ParseErrors::from(vec![pos::spanned(span, error)])
     }
@@ -201,8 +202,8 @@ test_parse_error! {
             )],
         ),
     vec![
-        no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
+        no_loc(Error::UnexpectedToken(Token::RBrace, vec![])),
+        no_loc(Error::UnexpectedToken(Token::CloseBlock, vec![])),
     ],
 }
 
@@ -213,7 +214,7 @@ test_parse_error! {
     1
     "#,
     |arena| let_(arena, "test", no_loc(Expr::Error(None)), int(1),),
-    vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))]
+    vec![no_loc(Error::UnexpectedToken(Token::CloseBlock, vec![]))]
 }
 
 test_parse_error! {
@@ -222,7 +223,7 @@ test_parse_error! {
     let test = io
     "#,
     |arena| let_(arena, "test", id("io"), no_loc(Expr::Error(None))),
-    vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))],
+    vec![no_loc(Error::UnexpectedToken(Token::CloseBlock, vec![]))],
 }
 
 test_parse_error! {
@@ -232,7 +233,7 @@ test_parse_error! {
     1
     "#,
     |arena| let_(arena, "test", no_loc(Expr::Error(None)), int(1),),
-    vec![no_loc(Error::UnexpectedToken("In".into(), vec![]))],
+    vec![no_loc(Error::UnexpectedToken(Token::In, vec![]))],
 }
 
 #[test]
@@ -321,7 +322,7 @@ do x
 1
 "#,
     |arena| do_(arena, "x", no_loc(Expr::Error(None)), int(1)),
-    vec![no_loc(Error::UnexpectedToken("In".into(), vec![]))],
+    vec![no_loc(Error::UnexpectedToken(Token::In, vec![]))],
 }
 
 #[test]

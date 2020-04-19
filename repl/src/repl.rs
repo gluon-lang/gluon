@@ -164,6 +164,36 @@ struct Completer {
 
 impl rustyline::Helper for Completer {}
 
+impl rustyline::validate::Validator for Completer {
+    fn validate(
+        &self,
+        ctx: &mut rustyline::validate::ValidationContext,
+    ) -> rustyline::Result<rustyline::validate::ValidationResult> {
+        let line = ctx.input();
+
+        let is_incomplete = |err: &gluon::parser::ParseErrors| {
+            use gluon::parser::Token;
+
+            err.iter().any(|err| match &err.value {
+                gluon::parser::Error::UnexpectedToken(Token::CloseBlock, _) => true,
+                _ => false,
+            })
+        };
+
+        let mut db = self.thread.get_database();
+        let mut module_compiler = self.thread.module_compiler(&mut db);
+        mk_ast_arena!(arena);
+        let filemap = self.thread.get_database().add_filemap("line", line);
+        let mut module = SymbolModule::new("line".into(), module_compiler.mut_symbols());
+        match parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap) {
+            Err((_, err)) if is_incomplete(&err) => {
+                Ok(rustyline::validate::ValidationResult::Incomplete)
+            }
+            Ok(_) | Err(_) => Ok(rustyline::validate::ValidationResult::Valid(None)),
+        }
+    }
+}
+
 impl rustyline::hint::Hinter for Completer {
     fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
         self.hinter.hint(line, pos, ctx)

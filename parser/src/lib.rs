@@ -27,8 +27,8 @@ use itertools::Either;
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr,
-        SpannedPattern, TypedIdent, ValueBinding,
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr, SpannedPattern,
+        TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
@@ -42,11 +42,12 @@ use crate::base::{
 use crate::{
     infix::{Fixity, OpMeta, OpTable, Reparser},
     layout::Layout,
-    token::{Token, Tokenizer},
+    token::{BorrowedToken, Tokenizer},
 };
 
 pub use crate::{
     infix::Error as InfixError, layout::Error as LayoutError, token::Error as TokenizeError,
+    token::Token,
 };
 
 lalrpop_mod!(
@@ -68,7 +69,7 @@ fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIden
 }
 
 type LalrpopError<'input> =
-    lalrpop_util::ParseError<BytePos, Token<'input>, Spanned<Error, BytePos>>;
+    lalrpop_util::ParseError<BytePos, BorrowedToken<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
@@ -156,13 +157,13 @@ quick_error! {
         InvalidToken {
             display("Invalid token")
         }
-        UnexpectedToken(token: String, expected: Vec<String>) {
+        UnexpectedToken(token: Token<String>, expected: Vec<String>) {
             display("Unexpected token: {}{}", token, Expected(&expected))
         }
         UnexpectedEof(expected: Vec<String>) {
             display("Unexpected end of file{}", Expected(&expected))
         }
-        ExtraToken(token: String) {
+        ExtraToken(token: Token<String>) {
             display("Extra token: {}", token)
         }
         Infix(err: InfixError) {
@@ -206,7 +207,7 @@ impl Error {
                 pos::spanned2(
                     lpos,
                     rpos,
-                    Error::UnexpectedToken(token.to_string(), expected),
+                    Error::UnexpectedToken(token.map(|s| s.into()), expected),
                 )
             }
             UnrecognizedEOF {
@@ -226,7 +227,7 @@ impl Error {
             }
             ExtraToken {
                 token: (lpos, token, rpos),
-            } => pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string())),
+            } => pos::spanned2(lpos, rpos, Error::ExtraToken(token.map(|s| s.into()))),
             User { error } => error,
         }
     }
