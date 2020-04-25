@@ -665,64 +665,59 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
     }
 };
 
-ValueBinding: ValueBinding<'ast, Id> = {
-    <metadata: Metadata?> <mut bind: PlainValueBinding> => {
-        bind.metadata = metadata.unwrap_or_default();
-        bind
-    }
-};
-
-PlainValueBinding: ValueBinding<'ast, Id> = {
-    "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
-        ValueBinding {
-            metadata: Metadata::default(),
+ValueBinding: &'ast mut ValueBinding<'ast, Id> = {
+    <metadata: Metadata?> "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
+        arena.alloc(ValueBinding {
+            metadata: metadata.unwrap_or_default(),
             name,
             typ,
             resolved_type: type_cache.hole(),
             args: Default::default(),
             expr,
-        }
+        })
     },
 
-    "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        ValueBinding {
-            metadata: Metadata::default(),
-            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
-            typ,
-            resolved_type: type_cache.hole(),
-            args,
-            expr,
-        },
-
-    // Error recovery
-
-    "let" <name: Sp<Ident>> => {
-        let span = pos::Span::new(name.span.end(), name.span.end());
-        errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
-            token: (span.start(), Token::In, span.end()),
-            expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
-        });
-        ValueBinding {
-            metadata: Metadata::default(),
-            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
-            typ: None,
-            resolved_type: type_cache.hole(),
-            args: Default::default(),
-            expr: pos::spanned(span, Expr::Error(None)),
-        }
-    }
-};
-
-RecursiveValueBinding: ValueBinding<'ast, Id> = {
-    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
-        ValueBinding {
+    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+        arena.alloc(ValueBinding {
             metadata: metadata.unwrap_or_default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
             args,
             expr,
-        },
+        }),
+
+    // Error recovery
+
+    <metadata: Metadata?> "let" <name: Sp<Ident>> => {
+        let span = pos::Span::new(name.span.end(), name.span.end());
+        errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
+            token: (span.start(), Token::In, span.end()),
+            expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
+        });
+        arena.alloc(ValueBinding {
+            metadata: metadata.unwrap_or_default(),
+            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
+            typ: None,
+            resolved_type: type_cache.hole(),
+            args: Default::default(),
+            expr: pos::spanned(span, Expr::Error(None)),
+        })
+    }
+};
+
+RecursiveValueBinding: () = {
+    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+        temp_vecs.select().push(
+            ValueBinding {
+                metadata: metadata.unwrap_or_default(),
+                name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
+                typ,
+                resolved_type: type_cache.hole(),
+                args,
+                expr,
+            }
+        ),
 };
 
 RecordExprBase: Option<SpannedExpr<'ast, Id>> = {
@@ -844,14 +839,15 @@ Expr: Expr<'ast, Id> = {
         Expr::Match(arena.alloc(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(ValueBindings::Plain(arena.alloc(binding)), arena.alloc(body))
+        Expr::LetBindings(ValueBindings::Plain(binding), arena.alloc(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
         Expr::TypeBindings(arena.alloc_extend(Some(binding)), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <mut bindings: Many1<RecursiveValueBinding>> <body: InExpr> => {
+    <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
+        let bindings: &mut [ValueBinding<_>] = arena.alloc_extend(temp_vecs.drain_n(bindings.len()));
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;
         }
@@ -917,6 +913,6 @@ pub TopExpr: SpannedExpr<'ast, Id> = {
 
 pub ReplLine: Option<Box<ReplLine<'ast, Id>>> = {
     <TopExpr> => Some(Box::new(ReplLine::Expr(<>))),
-    "block open" <PlainValueBinding> "block close" => Some(Box::new(ReplLine::Let(<>))),
+    "block open" <ValueBinding> "block close" => Some(Box::new(ReplLine::Let(<>))),
     => None,
 };
