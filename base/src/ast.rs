@@ -90,6 +90,7 @@ pub struct AstType<'ast, Id> {
 // Workaround https://github.com/rust-lang/rust/issues/70083
 unsafe impl<'ast, Id> Send for AstType<'ast, Id> where Id: Send {}
 unsafe impl<'ast, Id> Sync for AstType<'ast, Id> where Id: Sync {}
+impl<'ast, Id> std::panic::RefUnwindSafe for AstType<'ast, Id> where Id: std::panic::RefUnwindSafe {}
 
 impl<'ast, Id> Deref for AstType<'ast, Id> {
     type Target = Type<Id, AstType<'ast, Id>>;
