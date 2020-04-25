@@ -285,17 +285,19 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
+GenericIdent: Generic<Id> = {
+    Ident => Generic::new(<>, type_cache.kind_cache.hole()),
+};
+
 RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> = {
-    <metadata: Metadata?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
+    <metadata: Metadata?> <id: Sp<Ident>> <args: Many<GenericIdent>> <alias: ("=" <Sp<Type_>>)> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
             Alias::new_with(
                 &mut arena.clone(),
                 id.value,
-                args.into_iter()
-                    .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
-                    .collect(),
+                args,
                 AstType::with_metadata(arena, metadata, alias),
             ),
         ))
@@ -307,7 +309,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
             Alias::new_with(
                 &mut arena.clone(),
                 id.value,
-                Vec::new(),
+                Default::default(),
                 AstType::with_metadata(arena, metadata, pos::spanned(span, Type::Hole)),
             ),
         ))
@@ -322,7 +324,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
                 Alias::new_with(
                     &mut arena.clone(),
                     id,
-                    Vec::new(),
+                    Default::default(),
                     AstType::with_metadata(arena, metadata, typ),
                 ),
             ))
@@ -367,7 +369,7 @@ TypeTop: Either<AstType<'ast, Id>, Spanned<(Vec<Id>, Vec<Variant<'ast, Id>>, Opt
 };
 
 TypeBinding: TypeBinding<'ast, Id> = {
-    <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: TypeParam*> "=" <body: TypeTop> => {
+    <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: Many<TypeParam>> "=" <body: TypeTop> => {
         if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(type_name.span, format!("A type must start with an uppercase letter").into()),

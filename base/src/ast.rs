@@ -20,7 +20,7 @@ use crate::{
 use crate::{
     kind::ArcKind,
     metadata::{BaseMetadata, Comment},
-    pos::{self, BytePos, HasSpan, Positioned, Span, Spanned},
+    pos::{self, BytePos, HasSpan, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{
@@ -1493,7 +1493,8 @@ impl<'ast, Id, T> AstClone<'ast, Id> for PhantomData<T> {
 impl<'ast, Id, T> AstClone<'ast, Id> for Arc<[crate::types::AliasData<Id, T>]>
 where
     Id: Clone + AstClone<'ast, Id>,
-    T: AstClone<'ast, Id>,
+    T: AstClone<'ast, Id> + TypePtr<Id = Id>,
+    T::Generics: AstClone<'ast, Id>,
 {
     fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
         Arc::from(self.iter().map(|e| e.ast_clone(arena)).collect::<Vec<_>>())

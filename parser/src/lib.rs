@@ -36,7 +36,7 @@ use crate::base::{
     mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
     symbol::Symbol,
-    types::{Alias, ArcType, Field, TypeCache},
+    types::{Alias, ArcType, Field, Generic, TypeCache},
 };
 
 use crate::{
@@ -333,6 +333,7 @@ impl_temp_vec! {
     FieldExpr<'ast, Id> => field_expr,
     ast::InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
+    Generic<Id> => generics,
     Field<Id, AstType<'ast, Id>> => type_fields,
     Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
     Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,

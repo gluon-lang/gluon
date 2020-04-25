@@ -381,7 +381,7 @@ pub fn type_decl<'ast>(
         vec![TypeBinding {
             metadata: BaseMetadata::default(),
             name: no_loc(name.clone()),
-            alias: no_loc(AliasData::new(name, args, typ)),
+            alias: no_loc(AliasData::new(name, arena.alloc_extend(args), typ)),
             finalized_alias: None,
         }],
         body,
@@ -454,11 +454,12 @@ pub fn error<'ast>() -> SpExpr<'ast> {
 }
 
 pub fn alias<'ast, Id>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     name: Id,
     args: Vec<Generic<Id>>,
     typ: AstType<'ast, Id>,
 ) -> Spanned<AliasData<Id, AstType<'ast, Id>>, BytePos> {
-    no_loc(AliasData::new(name, args, typ))
+    no_loc(AliasData::new(name, arena.alloc_extend(args), typ))
 }
 
 pub fn line_comment(s: &str) -> BaseMetadata {
@@ -510,13 +511,14 @@ where
         ),
     );
     Alias::new_with(
-        &mut arena,
+        &mut arena.clone(),
         s.into(),
-        params
-            .iter()
-            .cloned()
-            .map(|g| Generic::new(g.into(), Kind::hole()))
-            .collect(),
+        arena.alloc_extend(
+            params
+                .iter()
+                .cloned()
+                .map(|g| Generic::new(g.into(), Kind::hole())),
+        ),
         variants,
     )
     .into_type()
