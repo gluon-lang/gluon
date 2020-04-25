@@ -1,14 +1,18 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::base::ast::Visitor;
-use crate::base::ast::{
-    self, Argument, AstType, Expr, HasMetadata, Pattern, PatternField, SpannedExpr, SpannedPattern,
-    ValueBinding,
+#[cfg(feature = "serde_derive")]
+use serde_derive::{Deserialize, Serialize};
+
+use crate::base::{
+    ast::{
+        self, Argument, AstType, Expr, HasMetadata, Pattern, PatternField, SpannedExpr,
+        SpannedPattern, ValueBinding, Visitor,
+    },
+    fnv::FnvMap,
+    metadata::{BaseMetadata, Metadata, MetadataEnv},
+    symbol::{Name, Symbol},
+    types::{row_iter, TypeExt},
 };
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::{Metadata, MetadataEnv};
-use crate::base::symbol::{Name, Symbol};
-use crate::base::types::{row_iter, TypeExt};
 
 struct Environment<'b> {
     env: &'b dyn MetadataEnv,
@@ -110,6 +114,19 @@ impl MaybeMetadata {
         }
     }
 
+    fn merge_base(metadata: &BaseMetadata, other: &MaybeMetadata) -> MaybeMetadata {
+        if metadata.has_data() {
+            match other {
+                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.clone().into())),
+                MaybeMetadata::Data(other) => {
+                    MaybeMetadata::Data(Arc::new(Metadata::from(metadata.clone()).merge_ref(other)))
+                }
+            }
+        } else {
+            other.clone()
+        }
+    }
+
     fn get_module(&self, key: &str) -> Option<&Arc<Metadata>> {
         match self {
             MaybeMetadata::Empty => None,
@@ -131,12 +148,13 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: MaybeMetadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = MaybeMetadata::merge(&bind.metadata, &metadata);
+                    let metadata = MaybeMetadata::merge_base(&bind.metadata, &metadata);
                     self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let mut metadata = MaybeMetadata::merge(&bind.metadata, &metadata).into_owned();
+                    let mut metadata =
+                        MaybeMetadata::merge_base(&bind.metadata, &metadata).into_owned();
                     metadata.args = bind
                         .args
                         .iter()
@@ -296,7 +314,8 @@ pub fn metadata(
                             Some(ref expr) => self.metadata_expr(expr),
                             None => self.metadata(&field.name.value).into(),
                         };
-                        let maybe_metadata = MaybeMetadata::merge(&field.metadata, &maybe_metadata);
+                        let maybe_metadata =
+                            MaybeMetadata::merge_base(&field.metadata, &maybe_metadata);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata {
                             let field_name = String::from(field.name.value.as_ref());
                             module.insert(field_name, metadata);
@@ -353,8 +372,8 @@ pub fn metadata(
                     for bind in &**bindings {
                         let type_metadata = Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
-                            || bind.metadata.clone(),
-                            |m| m.merge(bind.metadata.clone()),
+                            || bind.metadata.clone().into(),
+                            |m| m.merge(bind.metadata.clone().into()),
                         );
 
                         if metadata.has_data() {
@@ -388,7 +407,7 @@ pub fn metadata(
                     let field_metadata = match field.typ.metadata() {
                         Some(other_metadata) => {
                             let mut metadata = field_metadata.unwrap_or_default();
-                            metadata.merge_with_ref(other_metadata);
+                            metadata.merge_with_base_ref(other_metadata);
                             Some(metadata)
                         }
                         None => field_metadata,

@@ -32,7 +32,7 @@ use crate::base::{
     },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
-    metadata::Metadata,
+    metadata::{BaseMetadata, Metadata},
     mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
     symbol::Symbol,
@@ -235,9 +235,9 @@ impl Error {
 
 #[derive(Debug)]
 pub enum FieldExpr<'ast, Id> {
-    Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Type(BaseMetadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
     Value(
-        Metadata,
+        BaseMetadata,
         Spanned<Id, BytePos>,
         Option<SpannedExpr<'ast, Id>>,
     ),
@@ -400,7 +400,7 @@ pub mod t {
             TypedIdent, ValueBinding, ValueBindings,
         },
         kind::{ArcKind, Kind},
-        metadata::{Attribute, Comment, Metadata},
+        metadata::{Attribute, BaseMetadata, Comment},
         pos::{self, BytePos, HasSpan, Spanned},
         types::{
             Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache,
@@ -482,8 +482,8 @@ pub mod t {
             Variant63(TempVecStart<Alternative<'_, String>>),
             Variant64(TempVecStart<Argument<SpannedIdent<String>>>),
             Variant65(TempVecStart<TypeBinding<'_, String>>),
-            Variant66(Metadata),
-            Variant67(::std::option::Option<Metadata>),
+            Variant66(BaseMetadata),
+            Variant67(::std::option::Option<BaseMetadata>),
             Variant68(TypedIdent<String>),
             Variant69(::std::option::Option<PatternField<'_, String>>),
             Variant70(Option<SpannedExpr<'_, String>>),

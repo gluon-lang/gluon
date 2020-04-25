@@ -19,8 +19,8 @@ use crate::{
 
 use crate::{
     kind::ArcKind,
-    metadata::{Comment, Metadata},
-    pos::{self, BytePos, HasSpan, Span, Spanned},
+    metadata::{BaseMetadata, Comment},
+    pos::{self, BytePos, HasSpan, Positioned, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{
@@ -78,7 +78,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct InnerAstType<'ast, Id> {
-    metadata: Option<Metadata>,
+    metadata: Option<BaseMetadata>,
     typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
@@ -126,7 +126,7 @@ impl<'ast, Id> TypePtr for AstType<'ast, Id> {
 }
 
 pub trait HasMetadata {
-    fn metadata(&self) -> Option<&Metadata>;
+    fn metadata(&self) -> Option<&BaseMetadata>;
 
     fn comment(&self) -> Option<&Comment> {
         self.metadata()
@@ -135,7 +135,7 @@ pub trait HasMetadata {
 }
 
 impl<Id> HasMetadata for AstType<'_, Id> {
-    fn metadata(&self) -> Option<&Metadata> {
+    fn metadata(&self) -> Option<&BaseMetadata> {
         self._typ.metadata.as_ref()
     }
 }
@@ -163,7 +163,7 @@ impl<'ast, Id> AstType<'ast, Id> {
         typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
     ) -> Self
     where
-        T: Into<Option<Metadata>>,
+        T: Into<Option<BaseMetadata>>,
     {
         AstType {
             _typ: arena.alloc(InnerAstType {
@@ -175,7 +175,7 @@ impl<'ast, Id> AstType<'ast, Id> {
 
     pub fn set_metadata<T>(&mut self, metadata: T)
     where
-        T: Into<Option<Metadata>>,
+        T: Into<Option<BaseMetadata>>,
     {
         self._typ.metadata = metadata.into();
     }
@@ -307,6 +307,10 @@ pub enum Pattern<'ast, Id> {
     Error,
 }
 
+// Safeguard against growing Pattern
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
+
 pub fn pattern_names<'a, 'ast, Id>(
     fields: &'a [PatternField<'ast, Id>],
 ) -> impl Iterator<Item = &'a Spanned<Id, BytePos>> + Captures<'ast> {
@@ -354,10 +358,6 @@ pub fn pattern_types<'a, 'ast, Id>(
     })
 }
 
-// Safeguard against growing Pattern
-#[cfg(target_pointer_width = "64")]
-const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
-
 impl<Id> Default for Pattern<'_, Id> {
     fn default() -> Self {
         Pattern::Error
@@ -393,7 +393,7 @@ pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ExprField<Id, E> {
-    pub metadata: Metadata,
+    pub metadata: BaseMetadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
@@ -590,7 +590,7 @@ impl<'ast, Id> Expr<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct TypeBinding<'ast, Id> {
-    pub metadata: Metadata,
+    pub metadata: BaseMetadata,
     pub name: Spanned<Id, BytePos>,
     pub alias: SpannedAlias<'ast, Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
@@ -679,7 +679,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ValueBinding<'ast, Id> {
-    pub metadata: Metadata,
+    pub metadata: BaseMetadata,
     pub name: SpannedPattern<'ast, Id>,
     pub typ: Option<AstType<'ast, Id>>,
     pub resolved_type: ArcType<Id>,
@@ -1577,7 +1577,7 @@ macro_rules! impl_ast_clone {
 impl_ast_clone! {
     ArcType<Id>,
     Literal,
-    Metadata,
+    BaseMetadata,
     crate::types::TypeVariable,
     ArcKind,
     crate::types::ArgType,

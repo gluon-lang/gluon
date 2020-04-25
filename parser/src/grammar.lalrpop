@@ -8,7 +8,7 @@ use crate::base::{
     kind::{ArcKind, Kind},
     pos::{self, BytePos, HasSpan, Spanned},
     types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache, TypeContext},
-    metadata::{Attribute, Metadata, Comment},
+    metadata::{Attribute, BaseMetadata, Comment},
 };
 
 use crate::{ReplLine, Variant, new_ident};
@@ -238,10 +238,10 @@ Attribute: Attribute = {
     "#[" <name: IdentStr> <arguments: AttributeArguments> "]" => Attribute { name: name.into(), arguments, },
 };
 
-Metadata: Metadata = {
-    <comment: DocComment> => Metadata { comment: Some(comment), .. Metadata::default() },
-    <comment: DocComment> <attributes: Attribute+> => Metadata { comment: Some(comment), attributes, .. Metadata::default() },
-    <attributes: Attribute+> => Metadata { attributes, .. Metadata::default() },
+Metadata: BaseMetadata = {
+    <comment: DocComment> => BaseMetadata { comment: Some(comment), .. BaseMetadata::default() },
+    <comment: DocComment> <attributes: Attribute+> => BaseMetadata { comment: Some(comment), attributes, .. BaseMetadata::default() },
+    <attributes: Attribute+> => BaseMetadata { attributes, .. BaseMetadata::default() },
 };
 
 // Kinds

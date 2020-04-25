@@ -26,7 +26,7 @@ use crate::{
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindCache, KindEnv},
     merge::{merge, merge_collect},
-    metadata::Metadata,
+    metadata::BaseMetadata,
     pos::{BytePos, HasSpan, Span},
     source::Source,
     symbol::{Name, Symbol, SymbolRef},
@@ -1565,7 +1565,7 @@ impl<Id> HasSpan for ArcType<Id> {
 }
 
 impl<Id> HasMetadata for ArcType<Id> {
-    fn metadata(&self) -> Option<&Metadata> {
+    fn metadata(&self) -> Option<&BaseMetadata> {
         None
     }
 }

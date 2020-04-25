@@ -54,6 +54,29 @@ impl fmt::Display for Attribute {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub struct BaseMetadata {
+    pub comment: Option<Comment>,
+    pub attributes: Vec<Attribute>,
+}
+
+impl From<BaseMetadata> for Metadata {
+    fn from(meta: BaseMetadata) -> Self {
+        let BaseMetadata {
+            comment,
+            attributes,
+        } = meta;
+        Metadata {
+            definition: None,
+            comment,
+            attributes,
+            args: Vec::new(),
+            module: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
     pub definition: Option<Symbol>,
     pub comment: Option<Comment>,
@@ -122,6 +145,29 @@ impl Metadata {
         if self.args.is_empty() {
             self.args = other.args.clone();
         }
+    }
+
+    pub fn merge_with_base_ref(&mut self, other: &BaseMetadata) {
+        if self.comment.is_none() {
+            self.comment = other.comment.clone();
+        }
+        self.attributes.extend(other.attributes.iter().cloned());
+    }
+
+    pub fn get_attribute(&self, name: &str) -> Option<&str> {
+        self.attributes()
+            .find(|attribute| attribute.name == name)
+            .map(|t| t.arguments.as_ref().map_or("", |s| s))
+    }
+
+    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.attributes.iter()
+    }
+}
+
+impl BaseMetadata {
+    pub fn has_data(&self) -> bool {
+        self.comment.is_some() || !self.attributes.is_empty()
     }
 
     pub fn get_attribute(&self, name: &str) -> Option<&str> {
