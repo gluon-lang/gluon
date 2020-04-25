@@ -8,7 +8,7 @@ use crate::base::{
     kind::{ArcKind, Kind},
     pos::{self, BytePos, HasSpan, Spanned},
     types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache, TypeContext},
-    metadata::{Attribute, BaseMetadata, Comment},
+    metadata::{Attribute, Metadata, BaseMetadata, Comment},
 };
 
 use crate::{ReplLine, Variant, new_ident};
@@ -238,10 +238,11 @@ Attribute: Attribute = {
     "#[" <name: IdentStr> <arguments: AttributeArguments> "]" => Attribute { name: name.into(), arguments, },
 };
 
-Metadata: BaseMetadata = {
-    <comment: DocComment> => BaseMetadata { comment: Some(comment), .. BaseMetadata::default() },
-    <comment: DocComment> <attributes: Attribute+> => BaseMetadata { comment: Some(comment), attributes, .. BaseMetadata::default() },
-    <attributes: Attribute+> => BaseMetadata { attributes, .. BaseMetadata::default() },
+Metadata: BaseMetadata<'ast> = {
+    <comment: DocComment> => BaseMetadata { metadata: Some(arena.alloc(Metadata { comment: Some(comment), .. Metadata::default() })) },
+    <comment: DocComment> <attributes: Attribute+> => BaseMetadata { metadata: Some(arena.alloc(Metadata { comment: Some(comment), attributes, .. Metadata::default() })) },
+    <attributes: Attribute+> => BaseMetadata { metadata: Some(arena.alloc(Metadata { attributes, .. Metadata::default() })) },
+    => BaseMetadata { metadata: None },
 };
 
 // Kinds
@@ -290,7 +291,7 @@ GenericIdent: Generic<Id> = {
 };
 
 RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> = {
-    <metadata: Metadata?> <id: Sp<Ident>> <args: Many<GenericIdent>> <alias: ("=" <Sp<Type_>>)> => {
+    <metadata: Metadata> <id: Sp<Ident>> <args: Many<GenericIdent>> <alias: ("=" <Sp<Type_>>)> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
@@ -302,7 +303,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
             ),
         ))
     },
-    <metadata: Metadata?> <id: Sp<Ident>> => {
+    <metadata: Metadata> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
@@ -314,7 +315,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
             ),
         ))
     },
-    <metadata: Metadata?> <id: Ident> ":" <typ: Sp<Type_>> => {
+    <metadata: Metadata> <id: Ident> ":" <typ: Sp<Type_>> => {
         if env.string(&id).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(typ.span, format!("Defining a kind for a type in this location is not supported yet").into()),
@@ -369,7 +370,7 @@ TypeTop: Either<AstType<'ast, Id>, Spanned<(Vec<Id>, Vec<Variant<'ast, Id>>, Opt
 };
 
 TypeBinding: TypeBinding<'ast, Id> = {
-    <metadata: Metadata?> "type" <type_name: Sp<Ident>> <params: Many<TypeParam>> "=" <body: TypeTop> => {
+    <metadata: Metadata> "type" <type_name: Sp<Ident>> <params: Many<TypeParam>> "=" <body: TypeTop> => {
         if !env.string(&type_name.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(type_name.span, format!("A type must start with an uppercase letter").into()),
@@ -417,7 +418,7 @@ TypeBinding: TypeBinding<'ast, Id> = {
         };
 
         TypeBinding {
-            metadata: metadata.unwrap_or_default(),
+            metadata,
             name: type_name.clone(),
             alias: pos::spanned(body.span(), AliasData::new(type_name.value.clone(), params, body)),
             finalized_alias: None,
@@ -639,12 +640,11 @@ Alternative: Alternative<'ast, Id> = {
 };
 
 FieldExpr: FieldExpr<'ast, Id> = {
-    <metadata: Metadata?> <id: Sp<Ident>> "=" <body: SpExpr> => {
-        FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body))
+    <metadata: Metadata> <id: Sp<Ident>> "=" <body: SpExpr> => {
+        FieldExpr::Value(metadata, id, Some(body))
     },
 
-    <metadata: Metadata?> <id_str: Sp<IdentStr>> => {
-        let metadata = metadata.unwrap_or_default();
+    <metadata: Metadata> <id_str: Sp<IdentStr>> => {
         let id = pos::spanned(id_str.span, env.from_str(id_str.value));
         if id_str.value.starts_with(char::is_uppercase) {
             FieldExpr::Type(metadata, id, None)
@@ -668,9 +668,9 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
 };
 
 ValueBinding: &'ast mut ValueBinding<'ast, Id> = {
-    <metadata: Metadata?> "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
+    <metadata: Metadata> "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
         arena.alloc(ValueBinding {
-            metadata: metadata.unwrap_or_default(),
+            metadata,
             name,
             typ,
             resolved_type: type_cache.hole(),
@@ -679,9 +679,9 @@ ValueBinding: &'ast mut ValueBinding<'ast, Id> = {
         })
     },
 
-    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+    <metadata: Metadata> "let" <name: Sp<Ident>> <args: Many1<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         arena.alloc(ValueBinding {
-            metadata: metadata.unwrap_or_default(),
+            metadata,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ,
             resolved_type: type_cache.hole(),
@@ -691,14 +691,14 @@ ValueBinding: &'ast mut ValueBinding<'ast, Id> = {
 
     // Error recovery
 
-    <metadata: Metadata?> "let" <name: Sp<Ident>> => {
+    <metadata: Metadata> "let" <name: Sp<Ident>> => {
         let span = pos::Span::new(name.span.end(), name.span.end());
         errors.push(::lalrpop_util::ParseError::UnrecognizedToken {
             token: (span.start(), Token::In, span.end()),
             expected: ["=", ":"].iter().map(|s| s.to_string()).collect(),
         });
         arena.alloc(ValueBinding {
-            metadata: metadata.unwrap_or_default(),
+            metadata,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: None,
             resolved_type: type_cache.hole(),
@@ -709,10 +709,10 @@ ValueBinding: &'ast mut ValueBinding<'ast, Id> = {
 };
 
 RecursiveValueBinding: () = {
-    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+    <metadata: Metadata> "let" <name: Sp<Ident>> <args: Many<ValueArgument>> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         temp_vecs.select().push(
             ValueBinding {
-                metadata: metadata.unwrap_or_default(),
+                metadata,
                 name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
                 typ,
                 resolved_type: type_cache.hole(),
@@ -848,18 +848,14 @@ Expr: Expr<'ast, Id> = {
         Expr::TypeBindings(arena.alloc_extend(Some(binding)), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
+    <metadata: Metadata> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
         let bindings: &mut [ValueBinding<_>] = arena.alloc_extend(temp_vecs.drain_n(bindings.len()));
-        if let Some(metadata) = metadata {
-            bindings[0].metadata = metadata;
-        }
+        bindings[0].metadata = metadata;
         Expr::LetBindings(ValueBindings::Recursive(bindings), arena.alloc(body))
     },
 
-    <metadata: Metadata?> "rec" <mut bindings: Many1<TypeBinding>> <body: InExpr> => {
-        if let Some(metadata) = metadata {
-            bindings[0].metadata = metadata;
-        }
+    <metadata: Metadata> "rec" <mut bindings: Many1<TypeBinding>> <body: InExpr> => {
+        bindings[0].metadata = metadata;
         Expr::TypeBindings(bindings, arena.alloc(body))
     },
 

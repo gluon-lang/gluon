@@ -52,26 +52,14 @@ impl fmt::Display for Attribute {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
-pub struct BaseMetadata {
-    pub comment: Option<Comment>,
-    pub attributes: Vec<Attribute>,
+#[derive(Debug, Default, Eq, PartialEq, Hash, gluon_codegen::AstClone)]
+pub struct BaseMetadata<'ast> {
+    pub metadata: Option<&'ast mut Metadata>,
 }
 
-impl From<BaseMetadata> for Metadata {
-    fn from(meta: BaseMetadata) -> Self {
-        let BaseMetadata {
-            comment,
-            attributes,
-        } = meta;
-        Metadata {
-            definition: None,
-            comment,
-            attributes,
-            args: Vec::new(),
-            module: BTreeMap::new(),
-        }
+impl From<BaseMetadata<'_>> for Metadata {
+    fn from(meta: BaseMetadata<'_>) -> Self {
+        meta.metadata.map(|m| m.clone()).unwrap_or_default()
     }
 }
 
@@ -147,11 +135,10 @@ impl Metadata {
         }
     }
 
-    pub fn merge_with_base_ref(&mut self, other: &BaseMetadata) {
-        if self.comment.is_none() {
-            self.comment = other.comment.clone();
+    pub fn merge_with_base_ref(&mut self, other: &BaseMetadata<'_>) {
+        if let Some(other) = &other.metadata {
+            self.merge_with_ref(other);
         }
-        self.attributes.extend(other.attributes.iter().cloned());
     }
 
     pub fn get_attribute(&self, name: &str) -> Option<&str> {
@@ -165,9 +152,9 @@ impl Metadata {
     }
 }
 
-impl BaseMetadata {
+impl BaseMetadata<'_> {
     pub fn has_data(&self) -> bool {
-        self.comment.is_some() || !self.attributes.is_empty()
+        self.metadata.is_some()
     }
 
     pub fn get_attribute(&self, name: &str) -> Option<&str> {
@@ -177,6 +164,6 @@ impl BaseMetadata {
     }
 
     pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
-        self.attributes.iter()
+        self.metadata.iter().flat_map(|m| m.attributes())
     }
 }

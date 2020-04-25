@@ -235,9 +235,13 @@ impl Error {
 
 #[derive(Debug)]
 pub enum FieldExpr<'ast, Id> {
-    Type(BaseMetadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Type(
+        BaseMetadata<'ast>,
+        Spanned<Id, BytePos>,
+        Option<ArcType<Id>>,
+    ),
     Value(
-        BaseMetadata,
+        BaseMetadata<'ast>,
         Spanned<Id, BytePos>,
         Option<SpannedExpr<'ast, Id>>,
     ),
@@ -323,8 +327,8 @@ impl_temp_vec! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
     ast::PatternField<'ast, Id> => pattern_field,
-    ast::ExprField<Id, ArcType<Id>> => expr_field_types,
-    ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ast::ExprField<'ast, Id, ArcType<Id>> => expr_field_types,
+    ast::ExprField<'ast, Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     ast::TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     ast::Do<'ast, Id> => do_exprs,

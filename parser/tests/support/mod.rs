@@ -13,7 +13,7 @@ use crate::base::{
     },
     error::Errors,
     kind::Kind,
-    metadata::{BaseMetadata, Comment, CommentType},
+    metadata::{BaseMetadata, Comment, CommentType, Metadata},
     mk_ast_arena,
     pos::{self, BytePos, Span, Spanned},
     types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
@@ -462,13 +462,13 @@ pub fn alias<'ast, Id>(
     no_loc(AliasData::new(name, arena.alloc_extend(args), typ))
 }
 
-pub fn line_comment(s: &str) -> BaseMetadata {
-    BaseMetadata {
+pub fn line_comment(s: &str) -> Metadata {
+    Metadata {
         comment: Some(Comment {
             typ: CommentType::Line,
             content: s.into(),
         }),
-        ..BaseMetadata::default()
+        ..Metadata::default()
     }
 }
 

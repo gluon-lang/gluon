@@ -19,7 +19,7 @@ use crate::{
 
 use crate::{
     kind::ArcKind,
-    metadata::{BaseMetadata, Comment},
+    metadata::{BaseMetadata, Comment, Metadata},
     pos::{self, BytePos, HasSpan, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
@@ -78,7 +78,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct InnerAstType<'ast, Id> {
-    metadata: Option<BaseMetadata>,
+    metadata: BaseMetadata<'ast>,
     typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
@@ -126,7 +126,7 @@ impl<'ast, Id> TypePtr for AstType<'ast, Id> {
 }
 
 pub trait HasMetadata {
-    fn metadata(&self) -> Option<&BaseMetadata>;
+    fn metadata(&self) -> Option<&Metadata>;
 
     fn comment(&self) -> Option<&Comment> {
         self.metadata()
@@ -135,8 +135,8 @@ pub trait HasMetadata {
 }
 
 impl<Id> HasMetadata for AstType<'_, Id> {
-    fn metadata(&self) -> Option<&BaseMetadata> {
-        self._typ.metadata.as_ref()
+    fn metadata(&self) -> Option<&Metadata> {
+        self._typ.metadata.metadata.as_ref().map(|m| &**m)
     }
 }
 
@@ -147,7 +147,7 @@ impl<'ast, Id> AstType<'ast, Id> {
     ) -> Self {
         AstType {
             _typ: arena.alloc(InnerAstType {
-                metadata: None,
+                metadata: Default::default(),
                 typ,
             }),
         }
@@ -163,7 +163,7 @@ impl<'ast, Id> AstType<'ast, Id> {
         typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
     ) -> Self
     where
-        T: Into<Option<BaseMetadata>>,
+        T: Into<BaseMetadata<'ast>>,
     {
         AstType {
             _typ: arena.alloc(InnerAstType {
@@ -175,7 +175,7 @@ impl<'ast, Id> AstType<'ast, Id> {
 
     pub fn set_metadata<T>(&mut self, metadata: T)
     where
-        T: Into<Option<BaseMetadata>>,
+        T: Into<BaseMetadata<'ast>>,
     {
         self._typ.metadata = metadata.into();
     }
@@ -392,8 +392,8 @@ pub type SpannedAlias<'ast, Id> = Spanned<AliasData<Id, AstType<'ast, Id>>, Byte
 pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos>;
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
-pub struct ExprField<Id, E> {
-    pub metadata: BaseMetadata,
+pub struct ExprField<'ast, Id, E> {
+    pub metadata: BaseMetadata<'ast>,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
@@ -446,8 +446,8 @@ pub enum Expr<'ast, Id> {
     /// Record construction
     Record {
         typ: ArcType<Id>,
-        types: &'ast mut [ExprField<Id, ArcType<Id>>],
-        exprs: &'ast mut [ExprField<Id, SpannedExpr<'ast, Id>>],
+        types: &'ast mut [ExprField<'ast, Id, ArcType<Id>>],
+        exprs: &'ast mut [ExprField<'ast, Id, SpannedExpr<'ast, Id>>],
         base: Option<&'ast mut SpannedExpr<'ast, Id>>,
     },
     /// Tuple construction
@@ -590,7 +590,7 @@ impl<'ast, Id> Expr<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct TypeBinding<'ast, Id> {
-    pub metadata: BaseMetadata,
+    pub metadata: BaseMetadata<'ast>,
     pub name: Spanned<Id, BytePos>,
     pub alias: SpannedAlias<'ast, Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
@@ -679,7 +679,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ValueBinding<'ast, Id> {
-    pub metadata: BaseMetadata,
+    pub metadata: BaseMetadata<'ast>,
     pub name: SpannedPattern<'ast, Id>,
     pub typ: Option<AstType<'ast, Id>>,
     pub resolved_type: ArcType<Id>,
@@ -1271,8 +1271,8 @@ impl_ast_arena! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
     PatternField<'ast, Id> => pattern_field,
-    ExprField<Id, ArcType<Id>> => expr_field_types,
-    ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ExprField<'ast, Id, ArcType<Id>> => expr_field_types,
+    ExprField<'ast, Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     Do<'ast, Id> => do_exprs,
@@ -1283,6 +1283,7 @@ impl_ast_arena! {
     Generic<Id> => generics,
     Field<Id, AstType<'ast, Id>> => type_fields,
     Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Metadata => metadata,
 }
 
 pub struct RootExpr<Id: 'static> {
@@ -1578,7 +1579,7 @@ macro_rules! impl_ast_clone {
 impl_ast_clone! {
     ArcType<Id>,
     Literal,
-    BaseMetadata,
+    Metadata,
     crate::types::TypeVariable,
     ArcKind,
     crate::types::ArgType,
