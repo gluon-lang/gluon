@@ -129,6 +129,7 @@ CommaSlice<Rule>: &'ast mut Slice<Rule> = {
     SepSlice<Rule, SingleComma>
 };
 
+#[inline]
 Sp<Rule>: Spanned<Rule, BytePos> =
     <l: @L> <rule: Rule> <r: @R> =>
         pos::spanned2(l, r, rule);
@@ -616,26 +617,32 @@ Literal: Literal = {
     "float literal" => Literal::Float(<>),
 };
 
-Alternative: Alternative<'ast, Id> = {
+Alternative: () = {
     "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
-        Alternative {
-            pattern: pat,
-            expr: super::shrink_hidden_spans(expr),
-        }
+        temp_vecs.select().push(
+            Alternative {
+                pattern: pat,
+                expr: super::shrink_hidden_spans(expr),
+            }
+        );
     },
     "|" <pat: Sp<NoErrorPattern>> RecoverError <end: @R>  => {
         let span = pos::Span::new(pat.span.end(), end);
-        Alternative {
-            pattern: pat,
-            expr: pos::spanned(span, Expr::Error(None)),
-        }
+        temp_vecs.select().push(
+            Alternative {
+                pattern: pat,
+                expr: pos::spanned(span, Expr::Error(None)),
+            }
+        );
     },
     "|" <start: @R> RecoverError <end: @R>  => {
         let span = pos::Span::new(start, end);
-        Alternative {
-            pattern: pos::spanned(span, Pattern::Error),
-            expr: pos::spanned(span, Expr::Error(None)),
-        }
+        temp_vecs.select().push(
+            Alternative {
+                pattern: pos::spanned(span, Pattern::Error),
+                expr: pos::spanned(span, Expr::Error(None)),
+            }
+        );
     },
 };
 
@@ -789,7 +796,7 @@ SpAtomicExpr: SpannedExpr<'ast, Id> = {
 };
 
 ImplicitArg: SpannedExpr<'ast, Id> = {
-    "?" <arg: Sp<AtomicExpr>> => arg
+    "?" <SpAtomicExpr>,
 };
 
 AppExpr = {
@@ -837,8 +844,10 @@ Expr: Expr<'ast, Id> = {
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
         Expr::IfElse(arena.alloc(pred), arena.alloc(if_true), arena.alloc(if_false)),
 
-    "match" <body: SpExpr> "with" <arms: Many1<Alternative>> =>
-        Expr::Match(arena.alloc(body), arms),
+    "match" <body: SpExpr> "with" <arms: Alternative+> => {
+        let arms: &mut [Alternative<_>] = arena.alloc_extend(temp_vecs.drain_n(arms.len()));
+        Expr::Match(arena.alloc(body), arms)
+    },
 
     <binding: ValueBinding> <body: InExpr> => {
         Expr::LetBindings(ValueBindings::Plain(binding), arena.alloc(body))
@@ -901,6 +910,7 @@ BlockExpr: Expr<'ast, Id> = {
     },
 };
 
+#[inline]
 SpExpr: SpannedExpr<'ast, Id> = {
     <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
 };
