@@ -255,8 +255,8 @@ where
                     ]
                     .group();
                     chain![arena;
-                        pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
-                        self.pretty_attributes(&bind.metadata.attributes),
+                        pretty_types::doc_comment(arena, bind.metadata.comment()),
+                        self.pretty_attributes(bind.metadata.attributes()),
                         self.hang(decl, (self.space_before(bind.expr.span.start()), true), &bind.expr).group(),
                         if self.formatter.expanded {
                             arena.hardline()
@@ -358,8 +358,8 @@ where
                         arena.nil()
                     },
 
-                    pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment.as_ref()),
-                    self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
+                    pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment()),
+                    self.pretty_attributes(binds.first().unwrap().metadata.attributes()),
 
                     if is_recursive && binds.len() == 1 {
                         arena.text("rec").append(arena.line())
@@ -390,8 +390,8 @@ where
                         chain![arena;
                             if i != 0 {
                                 chain![arena;
-                                    pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
-                                    self.pretty_attributes(&bind.metadata.attributes)
+                                    pretty_types::doc_comment(arena, bind.metadata.comment()),
+                                    self.pretty_attributes(bind.metadata.attributes())
                                 ]
                             } else {
                                 arena.nil()
@@ -443,7 +443,8 @@ where
                         arena.nil()
                     },
                     self.pretty_expr_(binds.last().unwrap().alias.span.end(), body)
-                ].group()
+                ]
+                .group()
             }
 
             Expr::Do(Do {
@@ -608,7 +609,7 @@ where
                 let newline_from_doc_comment = expr.value.field_iter().any(|either| {
                     either
                         .either(|f| &f.metadata, |f| &f.metadata)
-                        .comment
+                        .comment()
                         .is_some()
                 });
                 let newline_in_base = base
@@ -634,7 +635,7 @@ where
                                 let id = pretty_types::ident(arena, r.name.value.as_ref());
                                 let doc = chain![
                                     arena;
-                                    pretty_types::doc_comment(arena, r.metadata.comment.as_ref()),
+                                    pretty_types::doc_comment(arena, r.metadata.comment()),
                                     match r.value {
                                         Some(ref expr) => {
                                             let x = chain![arena;

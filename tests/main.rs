@@ -252,7 +252,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
             match &expr.value {
                 Expr::LetBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(comment) = &bind.metadata.comment {
+                        if let Some(comment) = &bind.metadata.comment() {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 let name = match &bind.name.value {
@@ -266,7 +266,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                 }
                 Expr::TypeBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(ref comment) = bind.metadata.comment {
+                        if let Some(ref comment) = bind.metadata.comment() {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 self.0.push((

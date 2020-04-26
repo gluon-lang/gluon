@@ -101,25 +101,12 @@ impl From<MaybeMetadata> for Arc<Metadata> {
 }
 
 impl MaybeMetadata {
-    fn merge(metadata: &Metadata, other: &MaybeMetadata) -> MaybeMetadata {
-        if metadata.has_data() {
-            match other {
-                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.clone())),
-                MaybeMetadata::Data(other) => {
-                    MaybeMetadata::Data(Arc::new(metadata.clone().merge_ref(other)))
-                }
-            }
-        } else {
-            other.clone()
-        }
-    }
-
     fn merge_base(metadata: &BaseMetadata, other: &MaybeMetadata) -> MaybeMetadata {
         if metadata.has_data() {
             match other {
-                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.clone().into())),
+                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.to_metadata())),
                 MaybeMetadata::Data(other) => {
-                    MaybeMetadata::Data(Arc::new(Metadata::from(metadata.clone()).merge_ref(other)))
+                    MaybeMetadata::Data(Arc::new(metadata.to_metadata().merge_ref(other)))
                 }
             }
         } else {
@@ -372,8 +359,8 @@ pub fn metadata(
                     for bind in &**bindings {
                         let type_metadata = Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
-                            || bind.metadata.clone().into(),
-                            |m| m.merge(bind.metadata.clone().into()),
+                            || bind.metadata.to_metadata(),
+                            |m| m.merge_with_base(&bind.metadata),
                         );
 
                         if metadata.has_data() {
@@ -407,7 +394,7 @@ pub fn metadata(
                     let field_metadata = match field.typ.metadata() {
                         Some(other_metadata) => {
                             let mut metadata = field_metadata.unwrap_or_default();
-                            metadata.merge_with_base_ref(other_metadata);
+                            metadata.merge_with_ref(other_metadata);
                             Some(metadata)
                         }
                         None => field_metadata,

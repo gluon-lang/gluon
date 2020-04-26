@@ -144,7 +144,7 @@ path = "examples/lisp/main.rs"
 features = ["docs_rs"]
 
 [profile.bench]
-debug = 1
+debug = 2
 
 [profile.release]
-debug = 1
+debug = 2

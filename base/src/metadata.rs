@@ -135,6 +135,11 @@ impl Metadata {
         }
     }
 
+    pub fn merge_with_base(mut self, other: &BaseMetadata<'_>) -> Self {
+        self.merge_with_base_ref(other);
+        self
+    }
+
     pub fn merge_with_base_ref(&mut self, other: &BaseMetadata<'_>) {
         if let Some(other) = &other.metadata {
             self.merge_with_ref(other);
@@ -157,6 +162,10 @@ impl BaseMetadata<'_> {
         self.metadata.is_some()
     }
 
+    pub fn comment(&self) -> Option<&Comment> {
+        self.metadata.as_ref().and_then(|m| m.comment.as_ref())
+    }
+
     pub fn get_attribute(&self, name: &str) -> Option<&str> {
         self.attributes()
             .find(|attribute| attribute.name == name)
@@ -165,5 +174,12 @@ impl BaseMetadata<'_> {
 
     pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.metadata.iter().flat_map(|m| m.attributes())
+    }
+
+    pub fn to_metadata(&self) -> Metadata {
+        self.metadata
+            .as_ref()
+            .map(|m| (**m).clone())
+            .unwrap_or_default()
     }
 }
