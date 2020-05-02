@@ -63,7 +63,7 @@ pretty_assertions = "0.6"
 # (which requires gluon_vm to be published)
 gluon = { path = "..", version = ">=0.9" }
 
-lalrpop-util = "0.17"
+lalrpop-util = "0.18"
 regex = "1"
 serde_json = "1.0.0"
 
