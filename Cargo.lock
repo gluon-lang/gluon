@@ -1325,7 +1325,7 @@ dependencies = [
  "gluon_base",
  "itertools 0.8.2",
  "lalrpop",
- "lalrpop-util 0.18.1",
+ "lalrpop-util",
  "log 0.4.8",
  "ordered-float",
  "pretty 0.9.0",
@@ -1386,8 +1386,7 @@ dependencies = [
  "gluon_parser",
  "itertools 0.8.2",
  "lalrpop",
- "lalrpop-util 0.17.2",
- "lalrpop-util 0.18.1",
+ "lalrpop-util",
  "log 0.4.8",
  "ordered-float",
  "parking_lot 0.9.0",
@@ -1732,7 +1731,7 @@ dependencies = [
  "docopt 1.1.0",
  "ena",
  "itertools 0.8.2",
- "lalrpop-util 0.18.1",
+ "lalrpop-util",
  "petgraph",
  "regex 1.3.7",
  "regex-syntax 0.6.17",
@@ -1743,12 +1742,6 @@ dependencies = [
  "term 0.5.2",
  "unicode-xid 0.2.0",
 ]
-
-[[package]]
-name = "lalrpop-util"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c277d18683b36349ab5cd030158b54856fca6bb2d5dc5263b06288f486958b7c"
 
 [[package]]
 name = "lalrpop-util"

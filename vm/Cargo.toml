@@ -28,7 +28,7 @@ crossbeam-utils = "0.6"
 frunk_core = "0.3"
 futures = { version = "0.3.1", features = ["compat", "async-await"] }
 itertools = "0.8"
-lalrpop-util = { version = "0.17", optional = true }
+lalrpop-util = { version = "0.18", optional = true }
 log = "0.4"
 ordered-float = "1"
 parking_lot = "0.9"

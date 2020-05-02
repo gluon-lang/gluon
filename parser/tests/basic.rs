@@ -139,7 +139,7 @@ test_parse! {
         );
         let binds = vec![
             TypeBinding {
-                metadata: line_comment("Test"),
+                metadata: BaseMetadata { metadata: Some(arena.alloc(line_comment("Test"))) },
                 name: no_loc(intern("Test")),
                 alias: alias(arena, intern("Test"), Vec::new(), test),
                 finalized_alias: None,
