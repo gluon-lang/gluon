@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, mem, sync::Arc};
 
 use crate::{
     ast::Argument,
@@ -157,9 +157,20 @@ impl Metadata {
     }
 }
 
-impl BaseMetadata<'_> {
+impl<'ast> BaseMetadata<'ast> {
     pub fn has_data(&self) -> bool {
         self.metadata.is_some()
+    }
+
+    pub fn merge(&mut self, metadata: BaseMetadata<'ast>) {
+        match &mut self.metadata {
+            Some(self_) => {
+                if let Some(metadata) = metadata.metadata {
+                    self_.merge_with(mem::take(metadata));
+                }
+            }
+            None => *self = metadata,
+        }
     }
 
     pub fn comment(&self) -> Option<&Comment> {

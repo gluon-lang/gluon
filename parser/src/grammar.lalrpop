@@ -859,12 +859,12 @@ Expr: Expr<'ast, Id> = {
 
     <metadata: Metadata> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
         let bindings: &mut [ValueBinding<_>] = arena.alloc_extend(temp_vecs.drain_n(bindings.len()));
-        bindings[0].metadata = metadata;
+        bindings[0].metadata.merge(metadata);
         Expr::LetBindings(ValueBindings::Recursive(bindings), arena.alloc(body))
     },
 
-    <metadata: Metadata> "rec" <mut bindings: Many1<TypeBinding>> <body: InExpr> => {
-        bindings[0].metadata = metadata;
+    <metadata: Metadata> "rec" <bindings: Many1<TypeBinding>> <body: InExpr> => {
+        bindings[0].metadata.merge(metadata);
         Expr::TypeBindings(bindings, arena.alloc(body))
     },
 
