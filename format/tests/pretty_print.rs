@@ -16,11 +16,13 @@ fn new_vm() -> RootedThread {
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let thread = new_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
     thread.format_expr(&mut format::Formatter::default(), "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     let thread = new_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
     thread.format_expr(&mut format::Formatter { expanded: true }, "test", expr)
 }
 
@@ -385,6 +387,17 @@ test 123
 
 abc ""
 // test2
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn comments_between_lambda_and_let() {
+    let expr = r#"
+\x ->
+    // abc
+    let y = x
+    y
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }

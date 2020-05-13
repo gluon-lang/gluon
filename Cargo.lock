@@ -781,6 +781,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ena"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7402b94a93c24e742487327a7cd839dc9d36fec9de9fb25b09f2dae459f36c3"
+dependencies = [
+ "log 0.4.8",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -876,6 +885,12 @@ name = "fixedbitset"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86d4de0081402f5e88cdac65c8dcdcc73118c1a7a465e2a05f0da05843a8ea33"
+
+[[package]]
+name = "fixedbitset"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37ab347416e802de484e4d03c7316c48f1ecb56574dfd4a46a80f173ce1de04d"
 
 [[package]]
 name = "flate2"
@@ -1220,7 +1235,7 @@ dependencies = [
  "codespan-reporting",
  "collect-mac",
  "difference",
- "ena",
+ "ena 0.13.1",
  "env_logger 0.7.1",
  "gluon_base",
  "gluon_codegen",
@@ -1390,7 +1405,7 @@ dependencies = [
  "log 0.4.8",
  "ordered-float",
  "parking_lot 0.9.0",
- "petgraph",
+ "petgraph 0.4.13",
  "pretty 0.10.0",
  "pretty_assertions",
  "quick-error",
@@ -1720,34 +1735,34 @@ dependencies = [
 
 [[package]]
 name = "lalrpop"
-version = "0.18.1"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de5e019883a6e9734d093f34216a3857160c6bc2a9a1ec196a177aaa737c74af"
+checksum = "d6f55673d283313791404be21209bb433f128f7e5c451986df107eb5fdbd68d2"
 dependencies = [
  "ascii-canvas",
  "atty",
  "bit-set",
  "diff",
  "docopt 1.1.0",
- "ena",
- "itertools 0.8.2",
+ "ena 0.14.0",
+ "itertools 0.9.0",
  "lalrpop-util",
- "petgraph",
+ "petgraph 0.5.0",
  "regex 1.3.7",
  "regex-syntax 0.6.17",
  "serde",
  "serde_derive",
  "sha2",
- "string_cache",
+ "string_cache 0.8.0",
  "term 0.5.2",
  "unicode-xid 0.2.0",
 ]
 
 [[package]]
 name = "lalrpop-util"
-version = "0.18.1"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d6e9bc1801eb54529fd6a020aaf9514e8193bb6b42d96d0fe7da99187efa93d"
+checksum = "f7e88f15a7d31dfa8fb607986819039127f0161058a3b248a146142d276cbd28"
 dependencies = [
  "regex 1.3.7",
 ]
@@ -1832,7 +1847,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "string_cache",
+ "string_cache 0.7.5",
  "string_cache_codegen",
  "tendril",
 ]
@@ -2228,8 +2243,18 @@ version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c3659d1ee90221741f65dd128d9998311b0e40c5d3c23a62445938214abce4f"
 dependencies = [
- "fixedbitset",
+ "fixedbitset 0.1.9",
  "ordermap",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29c127eea4a29ec6c85d153c59dc1213f33ec74cead30fe4730aecc88cc1fd92"
+dependencies = [
+ "fixedbitset 0.2.0",
+ "indexmap",
 ]
 
 [[package]]
@@ -2238,7 +2263,7 @@ version = "0.7.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3da44b85f8e8dfaec21adae67f95d93244b2ecf6ad2a692320598dcc8e6dd18"
 dependencies = [
- "phf_shared",
+ "phf_shared 0.7.24",
 ]
 
 [[package]]
@@ -2248,7 +2273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b03e85129e324ad4166b06b2c7491ae27fe3ec353af72e72cd1654c7225d517e"
 dependencies = [
  "phf_generator",
- "phf_shared",
+ "phf_shared 0.7.24",
 ]
 
 [[package]]
@@ -2257,7 +2282,7 @@ version = "0.7.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09364cc93c159b8b06b1f4dd8a4398984503483891b0c26b867cf431fb132662"
 dependencies = [
- "phf_shared",
+ "phf_shared 0.7.24",
  "rand 0.6.5",
 ]
 
@@ -2267,7 +2292,16 @@ version = "0.7.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234f71a15de2288bcb7e3b6515828d22af7ec8598ee6d24c3b526fa0a80b67a0"
 dependencies = [
- "siphasher",
+ "siphasher 0.2.3",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c00cf8b9eafe68dde5e9eaa2cef8ee84a9336a47d566ec55ca16589633b65af7"
+dependencies = [
+ "siphasher 0.3.3",
 ]
 
 [[package]]
@@ -3110,6 +3144,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b8de496cf83d4ed58b6be86c3a275b8602f6ffe98d3024a869e124147a9a3ac"
 
 [[package]]
+name = "siphasher"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa8f3741c7372e75519bd9346068370c9cdaabcc1f9599cbcf2a2719352286b7"
+
+[[package]]
 name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3165,11 +3205,24 @@ checksum = "89c058a82f9fd69b1becf8c274f412281038877c553182f1d02eb027045a2d67"
 dependencies = [
  "lazy_static",
  "new_debug_unreachable",
- "phf_shared",
+ "phf_shared 0.7.24",
  "precomputed-hash",
  "serde",
  "string_cache_codegen",
  "string_cache_shared",
+]
+
+[[package]]
+name = "string_cache"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2940c75beb4e3bf3a494cef919a747a2cb81e52571e212bfbd185074add7208a"
+dependencies = [
+ "lazy_static",
+ "new_debug_unreachable",
+ "phf_shared 0.8.0",
+ "precomputed-hash",
+ "serde",
 ]
 
 [[package]]
@@ -3179,7 +3232,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f45ed1b65bf9a4bf2f7b7dc59212d1926e9eaf00fa998988e420fd124467c6"
 dependencies = [
  "phf_generator",
- "phf_shared",
+ "phf_shared 0.7.24",
  "proc-macro2 1.0.12",
  "quote 1.0.4",
  "string_cache_shared",

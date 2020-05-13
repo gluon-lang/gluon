@@ -72,21 +72,23 @@ type LalrpopError<'input> =
     lalrpop_util::ParseError<BytePos, BorrowedToken<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
-fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
+fn shrink_hidden_spans<Id: std::fmt::Debug>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
         Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
-        | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
         | Expr::Do(Do { body: ref last, .. }) => {
             expr.span = Span::new(expr.span.start(), last.span.end())
         }
+        Expr::LetBindings(_, ref last) => expr.span = Span::new(expr.span.start(), last.span.end()),
         Expr::Lambda(ref lambda) => {
             expr.span = Span::new(expr.span.start(), lambda.body.span.end())
         }
         Expr::Block(ref mut exprs) => match exprs {
             [] => (),
-            [e] => return std::mem::take(e),
+            [e] => {
+                return std::mem::take(e);
+            }
             _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
         Expr::Match(_, ref alts) => {
