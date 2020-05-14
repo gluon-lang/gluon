@@ -151,23 +151,10 @@ struct TestEffIO;
 
 define_test_type! { TestEffIO A }
 
-struct GluonTestable<F>(F);
-
-impl<F> tensile::Testable for GluonTestable<F>
-where
-    F: Future<Output = Result<(), Error>> + Send + 'static,
-{
-    type Error = Error;
-
-    fn test(self) -> tensile::TestFuture<Self::Error> {
-        tensile::Future(self.0).test()
-    }
-}
-
 fn make_tensile_test(name: String, test: TestFn) -> tensile::Test<Error> {
     let mut test = ::std::panic::AssertUnwindSafe(test);
     tensile::test(name, {
-        GluonTestable(::std::panic::AssertUnwindSafe(async move {
+        tensile::Future(::std::panic::AssertUnwindSafe(async move {
             let test = test.call_async(()).await?;
             let action = test.vm().get_global("std.test.run_io")?;
             let mut action: OwnedFunction<fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>> =
