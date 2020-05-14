@@ -13,7 +13,7 @@ use crate::base::{
     },
     error::Errors,
     kind::Kind,
-    metadata::{Comment, CommentType, Metadata},
+    metadata::{BaseMetadata, Comment, CommentType, Metadata},
     mk_ast_arena,
     pos::{self, BytePos, Span, Spanned},
     types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
@@ -248,7 +248,7 @@ pub fn let_a<'ast>(
     no_loc(Expr::let_binding(
         arena,
         ValueBinding {
-            metadata: Metadata::default(),
+            metadata: BaseMetadata::default(),
             name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
             typ: None,
             resolved_type: Type::hole(),
@@ -379,9 +379,9 @@ pub fn type_decl<'ast>(
     type_decls(
         arena,
         vec![TypeBinding {
-            metadata: Metadata::default(),
+            metadata: BaseMetadata::default(),
             name: no_loc(name.clone()),
-            alias: no_loc(AliasData::new(name, args, typ)),
+            alias: no_loc(AliasData::new(name, arena.alloc_extend(args), typ)),
             finalized_alias: None,
         }],
         body,
@@ -414,12 +414,12 @@ pub fn record_a<'ast>(
     no_loc(Expr::Record {
         typ: Type::hole(),
         types: arena.alloc_extend(types.into_iter().map(|(name, value)| ExprField {
-            metadata: Metadata::default(),
+            metadata: BaseMetadata::default(),
             name: no_loc(name),
             value: value,
         })),
         exprs: arena.alloc_extend(fields.into_iter().map(|(name, value)| ExprField {
-            metadata: Metadata::default(),
+            metadata: BaseMetadata::default(),
             name: no_loc(name),
             value: value,
         })),
@@ -454,11 +454,12 @@ pub fn error<'ast>() -> SpExpr<'ast> {
 }
 
 pub fn alias<'ast, Id>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     name: Id,
     args: Vec<Generic<Id>>,
     typ: AstType<'ast, Id>,
 ) -> Spanned<AliasData<Id, AstType<'ast, Id>>, BytePos> {
-    no_loc(AliasData::new(name, args, typ))
+    no_loc(AliasData::new(name, arena.alloc_extend(args), typ))
 }
 
 pub fn line_comment(s: &str) -> Metadata {
@@ -510,13 +511,14 @@ where
         ),
     );
     Alias::new_with(
-        &mut arena,
+        &mut arena.clone(),
         s.into(),
-        params
-            .iter()
-            .cloned()
-            .map(|g| Generic::new(g.into(), Kind::hole()))
-            .collect(),
+        arena.alloc_extend(
+            params
+                .iter()
+                .cloned()
+                .map(|g| Generic::new(g.into(), Kind::hole())),
+        ),
         variants,
     )
     .into_type()

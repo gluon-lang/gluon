@@ -559,8 +559,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                 for bind in &**binds {
                     generated_bindings.extend(
                         bind.metadata
-                            .attributes
-                            .iter()
+                            .attributes()
                             .filter(|attr| attr.name == "derive")
                             .map(|derive| {
                                 match crate::derive::generate(arena.borrow(), symbols, derive, bind)

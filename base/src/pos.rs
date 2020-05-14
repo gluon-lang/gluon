@@ -40,6 +40,12 @@ impl fmt::Display for Location {
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+pub struct Positioned<T, Pos> {
+    pub pos: Pos,
+    pub value: T,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub struct Spanned<T, Pos> {
     pub span: Span<Pos>,

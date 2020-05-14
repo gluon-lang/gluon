@@ -139,21 +139,22 @@ test_parse! {
         );
         let binds = vec![
             TypeBinding {
-                metadata: line_comment("Test"),
+                metadata: BaseMetadata { metadata: Some(arena.alloc(line_comment("Test"))) },
                 name: no_loc(intern("Test")),
-                alias: alias(intern("Test"), Vec::new(), test),
+                alias: alias(arena, intern("Test"), Vec::new(), test),
                 finalized_alias: None,
             },
             TypeBinding {
-                metadata: Metadata {
+                metadata: BaseMetadata {
+                        metadata: Some(arena.alloc(Metadata {
                     attributes: vec![Attribute {
                         name: "a".into(),
                         arguments: None,
                     }],
                     ..Metadata::default()
-                },
+                }) ) },
                 name: no_loc(intern("Test2")),
-                alias: alias(intern("Test2"), Vec::new(), test2),
+                alias: alias(arena, intern("Test2"), Vec::new(), test2),
                 finalized_alias: None,
             },
         ];
@@ -302,7 +303,7 @@ test_parse! {
     |arena| no_loc(Expr::let_binding(
             arena,
             ValueBinding {
-                metadata: Metadata::default(),
+                metadata: BaseMetadata::default(),
                 name: no_loc(Pattern::Record {
                     typ: Type::hole(),
                     fields: arena.alloc_extend(vec![
@@ -467,12 +468,14 @@ id
         *e.expr(),
         no_loc(Expr::LetBindings(
             ValueBindings::Plain(arena.alloc(ValueBinding {
-                metadata: Metadata {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "The identity function".into(),
-                    }),
-                    ..Metadata::default()
+                metadata: BaseMetadata {
+                    metadata: Some(arena.alloc(Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "The identity function".into(),
+                        }),
+                        ..Metadata::default()
+                    }))
                 },
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                 typ: None,
@@ -504,7 +507,7 @@ id
         no_loc(Expr::LetBindings(
             ValueBindings::Recursive(arena.alloc_extend(vec![
                 ValueBinding {
-                    metadata: Metadata::default(),
+                    metadata: BaseMetadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -514,12 +517,14 @@ id
                     expr: id("x"),
                 },
                 ValueBinding {
-                    metadata: Metadata {
-                        comment: Some(Comment {
-                            typ: CommentType::Line,
-                            content: "The identity function".into(),
-                        }),
-                        ..Metadata::default()
+                    metadata: BaseMetadata {
+                        metadata: Some(arena.alloc(Metadata {
+                            comment: Some(Comment {
+                                typ: CommentType::Line,
+                                content: "The identity function".into(),
+                            }),
+                            ..Metadata::default()
+                        }))
                     },
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
                     typ: None,
@@ -551,15 +556,17 @@ id
         type_decls(
             arena,
             vec![TypeBinding {
-                metadata: Metadata {
-                    comment: Some(Comment {
-                        typ: CommentType::Block,
-                        content: "Test type".into(),
-                    }),
-                    ..Metadata::default()
+                metadata: BaseMetadata {
+                    metadata: Some(arena.alloc(Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "Test type".into(),
+                        }),
+                        ..Metadata::default()
+                    }))
                 },
                 name: no_loc(intern("Test")),
-                alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
+                alias: alias(arena, intern("Test"), Vec::new(), typ(arena, "Int")),
                 finalized_alias: None,
             }],
             id("id"),
@@ -590,15 +597,17 @@ id
             type_decls(
                 arena,
                 vec![TypeBinding {
-                    metadata: Metadata {
-                        comment: Some(Comment {
-                            typ: CommentType::Block,
-                            content: "Test type".into(),
-                        }),
-                        ..Metadata::default()
+                    metadata: BaseMetadata {
+                        metadata: Some(arena.alloc(Metadata {
+                            comment: Some(Comment {
+                                typ: CommentType::Block,
+                                content: "Test type".into(),
+                            }),
+                            ..Metadata::default()
+                        }))
                     },
                     name: no_loc(intern("Test")),
-                    alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
+                    alias: alias(arena, intern("Test"), Vec::new(), typ(arena, "Int")),
                     finalized_alias: None,
                 }],
                 id("id"),
@@ -625,15 +634,17 @@ id
         type_decls(
             arena,
             vec![TypeBinding {
-                metadata: Metadata {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "Merge\nconsecutive\nline comments.".into(),
-                    }),
-                    ..Metadata::default()
+                metadata: BaseMetadata {
+                    metadata: Some(arena.alloc(Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "Merge\nconsecutive\nline comments.".into(),
+                        }),
+                        ..Metadata::default()
+                    }))
                 },
                 name: no_loc(intern("Test")),
-                alias: alias(intern("Test"), Vec::new(), typ(arena, "Int")),
+                alias: alias(arena, intern("Test"), Vec::new(), typ(arena, "Int")),
                 finalized_alias: None,
             }],
             id("id"),
@@ -696,7 +707,7 @@ x
         *e.expr(),
         no_loc(Expr::LetBindings(
             ValueBindings::Plain(arena.alloc(ValueBinding {
-                metadata: Metadata::default(),
+                metadata: BaseMetadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                 typ: Some(arena.clone().app(
                     typ(arena, "->"),
@@ -800,23 +811,27 @@ fn doc_comment_on_record_field() {
         no_loc(Expr::Record {
             typ: Type::hole(),
             types: arena.alloc_extend(vec![ExprField {
-                metadata: Metadata {
-                    comment: Some(Comment {
-                        typ: CommentType::Block,
-                        content: "test".into(),
-                    }),
-                    ..Metadata::default()
+                metadata: BaseMetadata {
+                    metadata: Some(arena.alloc(Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "test".into(),
+                        }),
+                        ..Metadata::default()
+                    }))
                 },
                 name: no_loc("Test".into()),
                 value: None,
             }]),
             exprs: arena.alloc_extend(vec![ExprField {
-                metadata: Metadata {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "x binding".into(),
-                    }),
-                    ..Metadata::default()
+                metadata: BaseMetadata {
+                    metadata: Some(arena.alloc(Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "x binding".into(),
+                        }),
+                        ..Metadata::default()
+                    }))
                 },
                 name: no_loc("x".into()),
                 value: Some(int(1)),
@@ -866,8 +881,8 @@ fn parse_repl_line() {
     match parser::parse_partial_repl_line(arena.borrow(), &mut module, line) {
         Ok(x) => assert_eq!(
             x,
-            Some(ReplLine::Let(ValueBinding {
-                metadata: Metadata::default(),
+            Some(ReplLine::Let(arena.alloc(ValueBinding {
+                metadata: BaseMetadata::default(),
                 name: pos::spanned2(
                     // Add one to each position since codespan return 1-indexed positions
                     5.into(),
@@ -882,7 +897,7 @@ fn parse_repl_line() {
                     13.into(),
                     Expr::Ident(TypedIdent::new(intern("test")))
                 ),
-            }))
+            })))
         ),
         Err((_, err)) => panic!("{}", err),
     }
@@ -903,9 +918,10 @@ fn alias_in_record_type() {
         *e.expr(),
         no_loc(Expr::TypeBindings(
             arena.alloc_extend(vec![TypeBinding {
-                metadata: Metadata::default(),
+                metadata: BaseMetadata::default(),
                 name: no_loc(intern("Test")),
                 alias: alias(
+                    arena,
                     intern("Test"),
                     Vec::new(),
                     arena.clone().record(
@@ -914,7 +930,7 @@ fn alias_in_record_type() {
                             typ: Alias::new_with(
                                 &mut arena.clone(),
                                 intern("MyInt"),
-                                Vec::new(),
+                                &mut [],
                                 arena.clone().hole()
                             ),
                         }]),

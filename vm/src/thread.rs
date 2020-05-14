@@ -1260,7 +1260,7 @@ impl ThreadInternal for Thread {
                         );
                         e.call_state = ExternCallState::Poll
                     }
-                    _ => unreachable!("{:#?}", frame.state),
+                    _ => (),
                 }
             }
         }
@@ -1268,7 +1268,7 @@ impl ThreadInternal for Thread {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead).into();
         }
-        context = ready!(context.execute(cx))?.unwrap();
+        context = ready!(context.execute(cx))?.expect("Resume called on the top frame");
         Ok(context).into()
     }
 

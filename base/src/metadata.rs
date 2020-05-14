@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, mem, sync::Arc};
 
 use crate::{
     ast::Argument,
@@ -49,6 +49,17 @@ impl fmt::Display for Attribute {
             write!(f, "({})", arguments)?;
         }
         write!(f, "]")
+    }
+}
+
+#[derive(Debug, Default, Eq, PartialEq, Hash, gluon_codegen::AstClone)]
+pub struct BaseMetadata<'ast> {
+    pub metadata: Option<&'ast mut Metadata>,
+}
+
+impl From<BaseMetadata<'_>> for Metadata {
+    fn from(meta: BaseMetadata<'_>) -> Self {
+        meta.metadata.map(|m| m.clone()).unwrap_or_default()
     }
 }
 
@@ -124,6 +135,17 @@ impl Metadata {
         }
     }
 
+    pub fn merge_with_base(mut self, other: &BaseMetadata<'_>) -> Self {
+        self.merge_with_base_ref(other);
+        self
+    }
+
+    pub fn merge_with_base_ref(&mut self, other: &BaseMetadata<'_>) {
+        if let Some(other) = &other.metadata {
+            self.merge_with_ref(other);
+        }
+    }
+
     pub fn get_attribute(&self, name: &str) -> Option<&str> {
         self.attributes()
             .find(|attribute| attribute.name == name)
@@ -132,5 +154,43 @@ impl Metadata {
 
     pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attributes.iter()
+    }
+}
+
+impl<'ast> BaseMetadata<'ast> {
+    pub fn has_data(&self) -> bool {
+        self.metadata.is_some()
+    }
+
+    pub fn merge(&mut self, metadata: BaseMetadata<'ast>) {
+        match &mut self.metadata {
+            Some(self_) => {
+                if let Some(metadata) = metadata.metadata {
+                    self_.merge_with(mem::take(metadata));
+                }
+            }
+            None => *self = metadata,
+        }
+    }
+
+    pub fn comment(&self) -> Option<&Comment> {
+        self.metadata.as_ref().and_then(|m| m.comment.as_ref())
+    }
+
+    pub fn get_attribute(&self, name: &str) -> Option<&str> {
+        self.attributes()
+            .find(|attribute| attribute.name == name)
+            .map(|t| t.arguments.as_ref().map_or("", |s| s))
+    }
+
+    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.metadata.iter().flat_map(|m| m.attributes())
+    }
+
+    pub fn to_metadata(&self) -> Metadata {
+        self.metadata
+            .as_ref()
+            .map(|m| (**m).clone())
+            .unwrap_or_default()
     }
 }

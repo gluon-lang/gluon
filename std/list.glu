@@ -80,7 +80,6 @@ let functor : Functor List =
     { map }
 
 let applicative : Applicative List =
-
     rec let apply f xs =
         match f with
         | Cons g gs -> (functor.map g xs) <> (apply gs xs)
@@ -91,7 +90,6 @@ let applicative : Applicative List =
     { functor = functor, apply, wrap }
 
 let many ?alt x : [Alternative f] -> f a -> f (List a) =
-
     rec
     let many_v _ =
         some_v () <|> wrap Nil
@@ -100,7 +98,6 @@ let many ?alt x : [Alternative f] -> f a -> f (List a) =
     many_v ()
 
 let some ?alt x : [Alternative f] -> f a -> f (List a) =
-
     rec
     let many_v _ =
         some_v () <|> wrap Nil

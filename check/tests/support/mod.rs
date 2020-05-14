@@ -78,9 +78,7 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(
-    s: &str,
-) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
+pub fn parse_new(s: &str) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);

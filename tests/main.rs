@@ -151,23 +151,10 @@ struct TestEffIO;
 
 define_test_type! { TestEffIO A }
 
-struct GluonTestable<F>(F);
-
-impl<F> tensile::Testable for GluonTestable<F>
-where
-    F: Future<Output = Result<(), Error>> + Send + 'static,
-{
-    type Error = Error;
-
-    fn test(self) -> tensile::TestFuture<Self::Error> {
-        Box::pin(self.0)
-    }
-}
-
 fn make_tensile_test(name: String, test: TestFn) -> tensile::Test<Error> {
     let mut test = ::std::panic::AssertUnwindSafe(test);
     tensile::test(name, {
-        GluonTestable(::std::panic::AssertUnwindSafe(async move {
+        tensile::Future(::std::panic::AssertUnwindSafe(async move {
             let test = test.call_async(()).await?;
             let action = test.vm().get_global("std.test.run_io")?;
             let mut action: OwnedFunction<fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>> =
@@ -252,7 +239,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
             match &expr.value {
                 Expr::LetBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(comment) = &bind.metadata.comment {
+                        if let Some(comment) = &bind.metadata.comment() {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 let name = match &bind.name.value {
@@ -266,7 +253,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                 }
                 Expr::TypeBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(ref comment) = bind.metadata.comment {
+                        if let Some(ref comment) = bind.metadata.comment() {
                             let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 self.0.push((

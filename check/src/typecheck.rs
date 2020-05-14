@@ -1819,9 +1819,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                         typ: if let Type::Hole = **field.typ.unresolved_type() {
                             self.find_type_info_at(field.typ.unresolved_type().span(), &field.name)
                         } else {
-                            let alias_data = types::translate_alias(&field.typ, |typ| {
-                                self.translate_ast_type(typ)
-                            });
+                            let alias_data =
+                                types::translate_alias(self, &field.typ, |self_, typ| {
+                                    self_.translate_ast_type(typ)
+                                });
                             self.new_data_alias(alias_data)
                         },
                     })
@@ -2125,8 +2126,9 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             self.environment.skolem_variables.enter_scope();
             self.environment.type_variables.enter_scope();
 
-            let mut alias =
-                types::translate_alias(&bind.alias.value, |typ| self.translate_ast_type(typ));
+            let mut alias = types::translate_alias(self, &bind.alias.value, |self_, typ| {
+                self_.translate_ast_type(typ)
+            });
 
             alias.is_implicit = bind.metadata.get_attribute("implicit").is_some();
 
@@ -2151,7 +2153,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         let arc_alias_group = Alias::group(
             resolved_aliases
                 .iter()
-                .map(|a| types::translate_alias(&a, |t| self.translate_rc_type(t)))
+                .map(|a| types::translate_alias(self, &a, |self_, t| self_.translate_rc_type(t)))
                 .collect(),
         );
         let alias_group = self.subs.alias_group(resolved_aliases);

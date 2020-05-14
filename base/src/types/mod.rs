@@ -426,7 +426,7 @@ where
     pub fn new_with(
         context: &mut (impl TypeContext<Id, T> + ?Sized),
         name: Id,
-        args: Vec<Generic<Id>>,
+        args: T::Generics,
         typ: T,
     ) -> Self {
         Alias {
@@ -441,7 +441,7 @@ where
     T: TypeExt<Id = Id> + From<Type<Id, T>>,
     T::Types: Clone + Default + Extend<T>,
 {
-    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, args: T::Generics, typ: T) -> Alias<Id, T> {
         Alias {
             _typ: Type::alias(name, args, typ),
             _marker: PhantomData,
@@ -519,21 +519,29 @@ where
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
 /// for cheap conversion back into a type as well.
-#[derive(Clone, Debug, AstClone)]
+#[derive(Clone, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(deserialize = "
+    serde(bound(
+        deserialize = "
            T: DeserializeState<'de, Seed<Id, T>> + TypePtr<Id = Id> + Clone + From<Type<Id, T>> + ::std::any::Any,
-           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any"))
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any,
+           T::Generics: Default + Extend<Generic<Id>> + Clone,
+           ",
+        serialize = "
+            T: TypePtr<Id = Id> + SerializeState<SeSeed>,
+            Id: SerializeState<SeSeed>,
+            "
+    ))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
-#[cfg_attr(
-    feature = "serde_derive",
-    serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>"))
-)]
-pub struct AliasRef<Id, T> {
+#[gluon(ast_clone_bounds = "T::Generics: AstClone<'ast, Id>")]
+pub struct AliasRef<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     /// Name of the Alias
     index: usize,
     #[cfg_attr(
@@ -546,6 +554,16 @@ pub struct AliasRef<Id, T> {
     )]
     /// The other aliases defined in this group
     pub group: Arc<[AliasData<Id, T>]>,
+}
+
+impl<Id, T> fmt::Debug for AliasRef<Id, T>
+where
+    Id: fmt::Debug,
+    T: TypePtr<Id = Id> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("AliasRef").finish()
+    }
 }
 
 impl<Id, T> Eq for AliasRef<Id, T>
@@ -576,7 +594,10 @@ where
     }
 }
 
-impl<Id, T> AliasRef<Id, T> {
+impl<Id, T> AliasRef<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     pub fn try_get_alias_mut(&mut self) -> Option<&mut AliasData<Id, T>> {
         let index = self.index;
         Arc::get_mut(&mut self.group).map(|group| &mut group[index])
@@ -652,25 +673,36 @@ where
     feature = "serde_derive",
     serde(bound(deserialize = "
            T: TypePtr<Id = Id> + Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+           T::Generics: Default + Extend<Generic<Id>>,
            Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any"))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>"))
+    serde(bound(serialize = "
+            T: TypePtr<Id = Id> + SerializeState<SeSeed>,
+            Id: SerializeState<SeSeed>,
+            "))
 )]
-pub struct AliasData<Id, T> {
+#[gluon(ast_clone_bounds = "T::Generics: AstClone<'ast, Id>")]
+pub struct AliasData<Id, T: TypePtr<Id = Id>> {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    args: Vec<Generic<Id>>,
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "crate::serialization::seq")
+    )]
+    args: T::Generics,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
     pub is_implicit: bool,
 }
 
-impl<Id, T> AliasData<Id, T> {
+impl<Id, T> AliasData<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
     /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
     /// `Type::Alias` representation
     pub fn unresolved_type(&self) -> &T {
@@ -707,8 +739,11 @@ where
     }
 }
 
-impl<Id, T> AliasData<Id, T> {
-    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
+impl<Id, T> AliasData<Id, T>
+where
+    T: TypePtr<Id = Id>,
+{
+    pub fn new(name: Id, args: T::Generics, typ: T) -> AliasData<Id, T> {
         AliasData {
             name,
             args,
@@ -726,7 +761,10 @@ where
         &self.args
     }
 
-    pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
+    pub fn params_mut(&mut self) -> &mut [Generic<Id>]
+    where
+        T::Generics: DerefMut<Target = [Generic<Id>]>,
+    {
         &mut self.args
     }
 
@@ -853,7 +891,7 @@ impl Default for ArgType {
                 + std::any::Any
                 + DeserializeState<'de, Seed<Id, T>>,
            T::Types: Default + Extend<T>,
-           T::Generics: Default + Extend<Generic<Id>>,
+           T::Generics: Default + Extend<Generic<Id>> + Clone,
            T::Fields: DeserializeState<'de, Seed<Id, T>>,
            T::TypeFields: DeserializeState<'de, Seed<Id, T>>,
            Id: DeserializeState<'de, Seed<Id, T>>
@@ -3279,7 +3317,13 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).variable(typ)
         }
 
-        fn alias(&mut self, name: $id, args: Vec<$crate::types::Generic<$id>>, typ: $typ) -> $typ {
+        fn alias(
+            &mut self,
+            name: $id,
+            args: <$typ as $crate::types::TypePtr>::Generics,
+            typ: $typ,
+        ) -> $typ
+        {
             $crate::expr!(self, $($tokens)+).alias(name, args, typ)
         }
 
@@ -3295,7 +3339,7 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).builtin_type(typ)
         }
 
-        fn new_alias(&mut self, name: $id, args: Vec<$crate::types::Generic<$id>>, typ: $typ) -> $crate::types::Alias<$id, $typ> {
+        fn new_alias(&mut self, name: $id, args: <$typ as $crate::types::TypePtr>::Generics, typ: $typ) -> $crate::types::Alias<$id, $typ> {
             $crate::expr!(self, $($tokens)+).new_alias(name, args, typ)
         }
 
@@ -3558,7 +3602,7 @@ where
         self.intern(Type::Variable(typ))
     }
 
-    fn alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+    fn alias(&mut self, name: Id, args: T::Generics, typ: T) -> T {
         self.intern(Type::Alias(AliasRef {
             index: 0,
             group: Arc::from(vec![AliasData {
@@ -3618,7 +3662,7 @@ where
         }
     }
 
-    fn new_alias(&mut self, name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+    fn new_alias(&mut self, name: Id, args: T::Generics, typ: T) -> Alias<Id, T> {
         Alias {
             _typ: self.alias(name, args, typ),
             _marker: PhantomData,
@@ -4337,16 +4381,22 @@ where
     merge_collect(state, types, f, Clone::clone)
 }
 
-pub fn translate_alias<Id, T, U, F>(alias: &AliasData<Id, T>, mut translate: F) -> AliasData<Id, U>
+pub fn translate_alias<Id, T, U, F, I>(
+    interner: &mut I,
+    alias: &AliasData<Id, T>,
+    mut translate: F,
+) -> AliasData<Id, U>
 where
     T: TypePtr<Id = Id>,
+    U: TypePtr<Id = Id>,
     Id: Clone,
-    F: FnMut(&T) -> U,
+    F: FnMut(&mut I, &T) -> U,
+    I: TypeContext<Id, U>,
 {
     AliasData {
         name: alias.name.clone(),
-        args: alias.args.clone(),
-        typ: translate(&alias.typ),
+        args: interner.intern_generics(alias.args.iter().cloned()),
+        typ: translate(interner, &alias.typ),
         is_implicit: alias.is_implicit,
     }
 }
@@ -4457,7 +4507,9 @@ where
             let group: Vec<_> = alias
                 .group
                 .iter()
-                .map(|alias_data| translate_alias(alias_data, |a| translate(interner, a)))
+                .map(|alias_data| {
+                    translate_alias(interner, alias_data, |interner, a| translate(interner, a))
+                })
                 .collect();
 
             interner.intern(Type::Alias(AliasRef {

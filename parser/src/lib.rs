@@ -32,11 +32,11 @@ use crate::base::{
     },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
-    metadata::Metadata,
+    metadata::{BaseMetadata, Metadata},
     mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
     symbol::Symbol,
-    types::{Alias, ArcType, Field, TypeCache},
+    types::{Alias, ArcType, Field, Generic, TypeCache},
 };
 
 use crate::{
@@ -72,21 +72,23 @@ type LalrpopError<'input> =
     lalrpop_util::ParseError<BytePos, BorrowedToken<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
-fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
+fn shrink_hidden_spans<Id: std::fmt::Debug>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
         Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
-        | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
         | Expr::Do(Do { body: ref last, .. }) => {
             expr.span = Span::new(expr.span.start(), last.span.end())
         }
+        Expr::LetBindings(_, ref last) => expr.span = Span::new(expr.span.start(), last.span.end()),
         Expr::Lambda(ref lambda) => {
             expr.span = Span::new(expr.span.start(), lambda.body.span.end())
         }
         Expr::Block(ref mut exprs) => match exprs {
             [] => (),
-            [e] => return std::mem::take(e),
+            [e] => {
+                return std::mem::take(e);
+            }
             _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
         Expr::Match(_, ref alts) => {
@@ -235,9 +237,13 @@ impl Error {
 
 #[derive(Debug)]
 pub enum FieldExpr<'ast, Id> {
-    Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Type(
+        BaseMetadata<'ast>,
+        Spanned<Id, BytePos>,
+        Option<ArcType<Id>>,
+    ),
     Value(
-        Metadata,
+        BaseMetadata<'ast>,
         Spanned<Id, BytePos>,
         Option<SpannedExpr<'ast, Id>>,
     ),
@@ -299,6 +305,15 @@ macro_rules! impl_temp_vec {
             {
                 T::select(self).drain(start.0..)
             }
+
+            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl Iterator<Item = T> + 'a
+            where
+                T: TempVec<'ast, Id> + 'a,
+            {
+                let vec = T::select(self);
+                let start = vec.len() - n;
+                vec.drain(start..)
+            }
         }
 
         $(
@@ -314,8 +329,8 @@ impl_temp_vec! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
     ast::PatternField<'ast, Id> => pattern_field,
-    ast::ExprField<Id, ArcType<Id>> => expr_field_types,
-    ast::ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ast::ExprField<'ast, Id, ArcType<Id>> => expr_field_types,
+    ast::ExprField<'ast, Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     ast::TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     ast::Do<'ast, Id> => do_exprs,
@@ -324,6 +339,7 @@ impl_temp_vec! {
     FieldExpr<'ast, Id> => field_expr,
     ast::InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
+    Generic<Id> => generics,
     Field<Id, AstType<'ast, Id>> => type_fields,
     Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
     Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,
@@ -443,7 +459,7 @@ pub fn parse_expr<'ast>(
 #[derive(Debug, PartialEq)]
 pub enum ReplLine<'ast, Id> {
     Expr(SpannedExpr<'ast, Id>),
-    Let(ValueBinding<'ast, Id>),
+    Let(&'ast mut ValueBinding<'ast, Id>),
 }
 
 pub fn parse_partial_repl_line<'ast, Id, S>(

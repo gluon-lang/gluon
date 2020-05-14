@@ -19,7 +19,7 @@ use crate::{
 
 use crate::{
     kind::ArcKind,
-    metadata::{Comment, Metadata},
+    metadata::{BaseMetadata, Comment, Metadata},
     pos::{self, BytePos, HasSpan, Span, Spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
@@ -78,7 +78,7 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct InnerAstType<'ast, Id> {
-    metadata: Option<Metadata>,
+    metadata: BaseMetadata<'ast>,
     typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
@@ -137,7 +137,7 @@ pub trait HasMetadata {
 
 impl<Id> HasMetadata for AstType<'_, Id> {
     fn metadata(&self) -> Option<&Metadata> {
-        self._typ.metadata.as_ref()
+        self._typ.metadata.metadata.as_ref().map(|m| &**m)
     }
 }
 
@@ -148,7 +148,7 @@ impl<'ast, Id> AstType<'ast, Id> {
     ) -> Self {
         AstType {
             _typ: arena.alloc(InnerAstType {
-                metadata: None,
+                metadata: Default::default(),
                 typ,
             }),
         }
@@ -164,7 +164,7 @@ impl<'ast, Id> AstType<'ast, Id> {
         typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
     ) -> Self
     where
-        T: Into<Option<Metadata>>,
+        T: Into<BaseMetadata<'ast>>,
     {
         AstType {
             _typ: arena.alloc(InnerAstType {
@@ -176,7 +176,7 @@ impl<'ast, Id> AstType<'ast, Id> {
 
     pub fn set_metadata<T>(&mut self, metadata: T)
     where
-        T: Into<Option<Metadata>>,
+        T: Into<BaseMetadata<'ast>>,
     {
         self._typ.metadata = metadata.into();
     }
@@ -308,6 +308,10 @@ pub enum Pattern<'ast, Id> {
     Error,
 }
 
+// Safeguard against growing Pattern
+#[cfg(target_pointer_width = "64")]
+const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
+
 pub fn pattern_names<'a, 'ast, Id>(
     fields: &'a [PatternField<'ast, Id>],
 ) -> impl Iterator<Item = &'a Spanned<Id, BytePos>> + Captures<'ast> {
@@ -355,10 +359,6 @@ pub fn pattern_types<'a, 'ast, Id>(
     })
 }
 
-// Safeguard against growing Pattern
-#[cfg(target_pointer_width = "64")]
-const _: [u8; 48] = [0; std::mem::size_of::<Pattern<'static, Symbol>>()];
-
 impl<Id> Default for Pattern<'_, Id> {
     fn default() -> Self {
         Pattern::Error
@@ -393,8 +393,8 @@ pub type SpannedAlias<'ast, Id> = Spanned<AliasData<Id, AstType<'ast, Id>>, Byte
 pub type SpannedAstType<'ast, Id> = Spanned<Type<Id, AstType<'ast, Id>>, BytePos>;
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
-pub struct ExprField<Id, E> {
-    pub metadata: Metadata,
+pub struct ExprField<'ast, Id, E> {
+    pub metadata: BaseMetadata<'ast>,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
@@ -447,8 +447,8 @@ pub enum Expr<'ast, Id> {
     /// Record construction
     Record {
         typ: ArcType<Id>,
-        types: &'ast mut [ExprField<Id, ArcType<Id>>],
-        exprs: &'ast mut [ExprField<Id, SpannedExpr<'ast, Id>>],
+        types: &'ast mut [ExprField<'ast, Id, ArcType<Id>>],
+        exprs: &'ast mut [ExprField<'ast, Id, SpannedExpr<'ast, Id>>],
         base: Option<&'ast mut SpannedExpr<'ast, Id>>,
     },
     /// Tuple construction
@@ -591,7 +591,7 @@ impl<'ast, Id> Expr<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct TypeBinding<'ast, Id> {
-    pub metadata: Metadata,
+    pub metadata: BaseMetadata<'ast>,
     pub name: Spanned<Id, BytePos>,
     pub alias: SpannedAlias<'ast, Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
@@ -680,7 +680,7 @@ impl<'a, 'ast, Id> IntoIterator for &'a mut ValueBindings<'ast, Id> {
 
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct ValueBinding<'ast, Id> {
-    pub metadata: Metadata,
+    pub metadata: BaseMetadata<'ast>,
     pub name: SpannedPattern<'ast, Id>,
     pub typ: Option<AstType<'ast, Id>>,
     pub resolved_type: ArcType<Id>,
@@ -1272,8 +1272,8 @@ impl_ast_arena! {
     SpannedExpr<'ast, Id> => exprs,
     SpannedPattern<'ast, Id> => patterns,
     PatternField<'ast, Id> => pattern_field,
-    ExprField<Id, ArcType<Id>> => expr_field_types,
-    ExprField<Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ExprField<'ast, Id, ArcType<Id>> => expr_field_types,
+    ExprField<'ast, Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
     TypeBinding<'ast, Id> => type_bindings,
     ValueBinding<'ast, Id> => value_bindings,
     Do<'ast, Id> => do_exprs,
@@ -1284,6 +1284,7 @@ impl_ast_arena! {
     Generic<Id> => generics,
     Field<Id, AstType<'ast, Id>> => type_fields,
     Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Metadata => metadata,
 }
 
 pub struct RootExpr<Id: 'static> {
@@ -1494,7 +1495,8 @@ impl<'ast, Id, T> AstClone<'ast, Id> for PhantomData<T> {
 impl<'ast, Id, T> AstClone<'ast, Id> for Arc<[crate::types::AliasData<Id, T>]>
 where
     Id: Clone + AstClone<'ast, Id>,
-    T: AstClone<'ast, Id>,
+    T: AstClone<'ast, Id> + TypePtr<Id = Id>,
+    T::Generics: AstClone<'ast, Id>,
 {
     fn ast_clone(&self, arena: ArenaRef<'_, 'ast, Id>) -> Self {
         Arc::from(self.iter().map(|e| e.ast_clone(arena)).collect::<Vec<_>>())

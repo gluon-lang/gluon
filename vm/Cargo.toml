@@ -28,7 +28,7 @@ crossbeam-utils = "0.6"
 frunk_core = "0.3"
 futures = { version = "0.3.1", features = ["compat", "async-await"] }
 itertools = "0.8"
-lalrpop-util = { version = "0.17", optional = true }
+lalrpop-util = { version = "0.19", optional = true }
 log = "0.4"
 ordered-float = "1"
 parking_lot = "0.9"
@@ -52,7 +52,7 @@ gluon_codegen = { path = "../codegen", version = "0.14.1" } # GLUON
 gluon_parser = { path = "../parser", version = "0.14.1", optional = true } # GLUON
 
 [build-dependencies]
-lalrpop = { version = "0.17", optional = true }
+lalrpop = { version = "0.19", features = ["lexer"], optional = true }
 
 [dev-dependencies]
 difference = "2"
@@ -63,7 +63,7 @@ pretty_assertions = "0.6"
 # (which requires gluon_vm to be published)
 gluon = { path = "..", version = ">=0.9" }
 
-lalrpop-util = "0.17"
+lalrpop-util = "0.19"
 regex = "1"
 serde_json = "1.0.0"
 

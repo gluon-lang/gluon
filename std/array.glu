@@ -47,7 +47,6 @@ let ord ?ord : [Ord a] -> Ord (Array a) =
     { eq, compare = array_cmp }
 
 let show ?d : [Show a] -> Show (Array a) =
-
     let show xs =
         let len = prim.len xs
         if len == 0 then "[]"

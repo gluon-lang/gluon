@@ -21,7 +21,7 @@ travis-ci = { repository = "gluon-lang/gluon" }
 collect-mac = "0.1.0"
 itertools = "0.8"
 quick-error = "1.0.0"
-lalrpop-util = "0.17.2"
+lalrpop-util = "0.19"
 log = "0.4"
 pretty = "0.9"
 gluon_base = { path = "../base", version = "0.14.1" } # GLUON
@@ -36,7 +36,7 @@ difference = "2"
 pretty_assertions = "0.6"
 
 [build-dependencies]
-lalrpop = "0.17.2"
+lalrpop = "0.19"
 
 [[bench]]
 name = "parser"
