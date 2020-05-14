@@ -3394,9 +3394,9 @@ dependencies = [
 
 [[package]]
 name = "tensile"
-version = "0.6.0"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17fba15e470b9bd888273953fbca0cc40136096cac4ecb0a590ea583421be986"
+checksum = "00ff01921f8b9edb0dbff6cc6e425692324e8ac7676836a03137c09b69671c0a"
 dependencies = [
  "futures 0.3.4",
  "num_cpus",

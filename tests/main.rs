@@ -160,7 +160,7 @@ where
     type Error = Error;
 
     fn test(self) -> tensile::TestFuture<Self::Error> {
-        Box::pin(self.0)
+        tensile::Future(self.0).test()
     }
 }
 
