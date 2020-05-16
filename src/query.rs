@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use {futures::prelude::*, salsa::Database};
+use salsa::Database;
 
 use {
     base::{
@@ -27,10 +27,11 @@ use {
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
+        ExternLoader, ExternModule,
     },
 };
 
-use crate::{compiler_pipeline::*, Error, ModuleCompiler, Result, Settings};
+use crate::{compiler_pipeline::*, import::PtrEq, Error, ModuleCompiler, Result, Settings};
 
 pub use {crate::import::DatabaseSnapshot, salsa};
 
@@ -199,10 +200,7 @@ impl crate::query::CompilationBase for CompilerDatabase {
         state.add_filemap(&module, &contents[..]);
     }
 
-    fn peek_typechecked_module(
-        &self,
-        key: &str,
-    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
+    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
         self.query(TypecheckedModuleQuery)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
@@ -303,10 +301,7 @@ pub trait CompilationBase: Send {
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
 
-    fn peek_typechecked_module(
-        &self,
-        key: &str,
-    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
+    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
     fn peek_global(&self, key: &str) -> Option<DatabaseGlobal>;
 }
@@ -315,6 +310,13 @@ pub trait CompilationBase: Send {
 pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn compiler_settings(&self) -> Settings;
+
+    #[salsa::input]
+    fn extern_loader(&self, module: String) -> PtrEq<ExternLoader>;
+
+    #[salsa::cycle(recover_cycle)]
+    #[salsa::dependencies] // FIXME
+    async fn extern_module(&self, module: String) -> Result<PtrEq<(Symbol, ExternModule)>>;
 
     #[salsa::dependencies]
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
@@ -442,8 +444,8 @@ async fn typechecked_module(
             &text,
             expected_type.as_ref(),
         )
-        .map_err(|(opt, err)| (opt.map(|value| value.map(Arc::new)), err))
-        .await?;
+        .await
+        .map_err(|(opt, err)| (opt.map(|value| value.map(Arc::new)), err))?;
 
     Ok(value.map(Arc::new))
 }
@@ -457,8 +459,8 @@ async fn core_expr(
 
     let value = db
         .typechecked_module(module.clone(), expected_type)
-        .map_err(|(_, err)| err)
-        .await?;
+        .await
+        .map_err(|(_, err)| err)?;
     let settings = db.compiler_settings();
 
     let env = db.compiler();
@@ -547,10 +549,22 @@ async fn import(
 }
 
 async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
+    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+        let (id, module) = &*db.extern_module(name).await?;
+        let mut value = module.value.clone();
+        unsafe { value.vm_mut().unroot() }; // FIXME
+        return Ok(UnrootedGlobal {
+            id: id.clone(),
+            typ: module.typ.clone(),
+            metadata: Arc::new(module.metadata.clone()),
+            value: UnrootedValue(value),
+        });
+    }
+
     let TypecheckValue { metadata, typ, .. } = db
         .typechecked_module(name.clone(), None)
-        .map_err(|(_, err)| err)
-        .await?;
+        .await
+        .map_err(|(_, err)| err)?;
     let closure = db.compiled_module(name.clone(), None).await?;
 
     let module_id = closure.function.name.clone();
@@ -558,15 +572,15 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
     let vm = db.thread();
     let v = vm
         .call_thunk_top(&closure)
-        .map_ok(move |value| ExecuteValue {
+        .await
+        .map(move |value| ExecuteValue {
             id: module_id,
             expr: (),
             typ,
             value,
             metadata,
         })
-        .map_err(Error::from)
-        .await?;
+        .map_err(Error::from)?;
 
     let ExecuteValue {
         id,
@@ -594,6 +608,24 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
         metadata,
         value: UnrootedValue(value),
     })
+}
+
+async fn extern_module(
+    db: &mut dyn Compilation,
+    name: String,
+) -> Result<PtrEq<(Symbol, ExternModule)>> {
+    let symbol = Symbol::from(format!("@{}", name));
+    let loader = db.extern_loader(name);
+
+    for dep in &loader.dependencies {
+        db.import(dep.clone()).await?;
+    }
+
+    let vm = db.thread();
+    Ok(PtrEq(Arc::new((
+        symbol, // TODO
+        (loader.load_fn)(vm)?,
+    ))))
 }
 
 async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal> {

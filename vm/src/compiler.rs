@@ -1119,7 +1119,10 @@ impl<'a> Compiler<'a> {
         let current_line = self.source.line_number_at_byte(body.span().end());
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
-            match self.find(var, function).expect("free_vars: find") {
+            match self
+                .find(var, function)
+                .unwrap_or_else(|| panic!("free_vars: find {}", var))
+            {
                 Stack(index) => {
                     debug!("Load stack {}", var);
                     function.emit(Push(index))

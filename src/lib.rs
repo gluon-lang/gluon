@@ -53,8 +53,6 @@ pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
 
-use futures::prelude::*;
-
 use either::Either;
 
 use std as real_std;
@@ -245,9 +243,9 @@ impl From<Errors<Error>> for Error {
 impl Error {
     pub fn emit_string(&self) -> ::std::io::Result<String> {
         let mut output = Vec::new();
-        self.emit(
-            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-        )?;
+        self.emit(&mut ::codespan_reporting::termcolor::NoColor::new(
+            &mut output,
+        ))?;
         Ok(String::from_utf8(output).unwrap())
     }
 
@@ -587,8 +585,8 @@ pub trait ThreadExt: Send + Sync {
             ..
         } = db
             .typechecked_module(module_name, None)
-            .map_err(|(_, err)| err)
-            .await?;
+            .await
+            .map_err(|(_, err)| err)?;
 
         if db.compiler_settings().full_metadata {
             Ok((expr, typ, metadata))
@@ -700,7 +698,7 @@ pub trait ThreadExt: Send + Sync {
         let vm = self.thread();
         let expected = T::make_type(&vm);
 
-        expr_str
+        let execute_value = expr_str
             .run_expr(
                 &mut ModuleCompiler::new(&mut vm.get_database()),
                 vm,
@@ -708,13 +706,11 @@ pub trait ThreadExt: Send + Sync {
                 expr_str,
                 Some(&expected),
             )
-            .and_then(move |execute_value| async move {
-                Ok((
-                    T::from_value(vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
-            .await
+            .await?;
+        Ok((
+            T::from_value(vm, execute_value.value.get_variant()),
+            execute_value.typ,
+        ))
     }
 
     fn format_expr(&self, formatter: &mut Formatter, file: &str, input: &str) -> Result<String> {

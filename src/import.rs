@@ -11,19 +11,20 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, RwLock},
 };
 
-use async_trait::async_trait;
-use futures::{
-    future::{self, BoxFuture},
-    prelude::*,
-    task::SpawnExt,
+use {
+    async_trait::async_trait,
+    futures::{
+        future::{self},
+        prelude::*,
+        task::SpawnExt,
+    },
+    itertools::Itertools,
+    salsa::{debug::DebugQueryTable, Database},
 };
-use itertools::Itertools;
 
 use crate::base::{
     ast::{self, expr_to_path, Expr, Literal, SpannedExpr},
-    filename_to_module,
-    fnv::FnvMap,
-    pos,
+    filename_to_module, pos,
     symbol::Symbol,
     types::ArcType,
 };
@@ -32,14 +33,14 @@ use crate::vm::{
     self,
     gc::Trace,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
-    thread::{RootedThread, Thread, ThreadInternal},
+    thread::{RootedThread, Thread},
     vm::VmEnv,
     ExternLoader, ExternModule,
 };
 
 use crate::{
-    query::{Compilation, CompilerDatabase},
-    IoError, ModuleCompiler,
+    query::{Compilation, CompilationMut, CompilerDatabase},
+    IoError, ModuleCompiler, ThreadExt,
 };
 
 quick_error! {
@@ -101,11 +102,6 @@ impl Importer for DefaultImporter {
             .map_err(|err| (None, err))?;
         Ok(value.typ)
     }
-}
-
-enum UnloadedModule {
-    Source,
-    Extern(Vec<String>),
 }
 
 pub struct DatabaseSnapshot {
@@ -212,7 +208,13 @@ where
         vm: &Thread,
         module_id: &Symbol,
     ) -> Result<ArcType, (Option<ArcType>, MacroError)> {
-        Self::load_module(self, compiler, vm, module_id).await
+        assert!(module_id.is_global());
+        let modulename = module_id.name().definition_name();
+
+        self.importer
+            .import(compiler, vm, &modulename)
+            .await
+            .map_err(|(t, err)| (t, MacroError::new(err)))
     }
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         Self::snapshot(self, thread)
@@ -230,10 +232,39 @@ where
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
-    pub loaders: RwLock<FnvMap<String, ExternLoader>>,
     pub importer: I,
 
     compiler: Mutex<CompilerDatabase>,
+}
+
+#[derive(Debug)]
+pub struct PtrEq<T>(pub Arc<T>);
+
+impl<T> std::ops::Deref for PtrEq<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> Clone for PtrEq<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T> Eq for PtrEq<T> {}
+
+impl<T> PartialEq for PtrEq<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T> std::hash::Hash for PtrEq<T> {
+    fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        (&*self.0 as *const T).hash(hasher)
+    }
 }
 
 impl<I> Import<I> {
@@ -241,7 +272,6 @@ impl<I> Import<I> {
     pub fn new(importer: I) -> Import<I> {
         Import {
             paths: RwLock::new(vec![PathBuf::from(".")]),
-            loaders: RwLock::default(),
             compiler: CompilerDatabase::new_base(None).into(),
             importer: importer,
         }
@@ -256,18 +286,18 @@ impl<I> Import<I> {
         *self.paths.write().unwrap() = paths;
     }
 
-    pub fn add_loader(&self, module: &str, loader: ExternLoader) {
-        self.loaders
-            .write()
-            .unwrap()
-            .insert(String::from(module), loader);
-    }
-
-    pub fn modules(&self) -> Vec<Cow<'static, str>> {
+    pub fn modules(&self, compiler: &mut ModuleCompiler<'_>) -> Vec<Cow<'static, str>> {
         STD_LIBS
             .iter()
             .map(|t| Cow::Borrowed(t.0))
-            .chain(self.loaders.read().unwrap().keys().cloned().map(Cow::Owned))
+            .chain(
+                compiler
+                    .database
+                    .query(crate::query::ExternLoaderQuery)
+                    .entries::<Vec<_>>()
+                    .into_iter()
+                    .map(|entry| Cow::Owned(entry.key)),
+            )
             .collect()
     }
 
@@ -307,16 +337,6 @@ impl<I> Import<I> {
         let fork = self.compiler.lock().unwrap().fork(forker, thread);
 
         DatabaseFork { fork: Some(fork) }
-    }
-
-    fn get_unloaded_module(&self, module: &str) -> UnloadedModule {
-        {
-            let loaders = self.loaders.read().unwrap();
-            if let Some(loader) = loaders.get(module) {
-                return UnloadedModule::Extern(loader.dependencies.clone());
-            }
-        }
-        UnloadedModule::Source
     }
 
     pub(crate) fn get_module_source(
@@ -365,74 +385,6 @@ impl<I> Import<I> {
             }
         })
     }
-
-    pub async fn load_module(
-        &self,
-        compiler: &mut ModuleCompiler<'_>,
-        vm: &Thread,
-        module_id: &Symbol,
-    ) -> Result<ArcType, (Option<ArcType>, MacroError)>
-    where
-        I: Importer,
-    {
-        assert!(module_id.is_global());
-        let modulename = module_id.name().definition_name();
-        // Retrieve the source, first looking in the standard library included in the
-        // binary
-        let unloaded_module = self.get_unloaded_module(&modulename);
-
-        Ok(match unloaded_module {
-            UnloadedModule::Extern(dependencies) => {
-                for dep in dependencies {
-                    let dep_id = Symbol::from(if dep.starts_with('@') {
-                        dep
-                    } else {
-                        format!("@{}", dep)
-                    });
-                    self.load_module_boxed(compiler, vm, &dep_id).await?;
-                }
-
-                let ExternModule {
-                    value,
-                    typ,
-                    metadata,
-                } = (self
-                    .loaders
-                    .write()
-                    .unwrap()
-                    .get_mut(modulename)
-                    .expect("bug: Missing loader but it was already seen in get_unloaded_module")
-                    .load_fn)(vm)
-                .map_err(|err| (None, MacroError::new(err)))?;
-
-                vm.set_global(
-                    module_id.clone(),
-                    typ.clone(),
-                    metadata.into(),
-                    value.get_value(),
-                )
-                .map_err(|err| (None, MacroError::new(err)))?;
-                typ
-            }
-            UnloadedModule::Source => self
-                .importer
-                .import(compiler, vm, &modulename)
-                .await
-                .map_err(|(t, err)| (t, MacroError::new(err)))?,
-        })
-    }
-
-    fn load_module_boxed<'a, 'b>(
-        &'a self,
-        compiler: &'a mut ModuleCompiler<'b>,
-        vm: &'a Thread,
-        module_id: &'a Symbol,
-    ) -> BoxFuture<'a, Result<ArcType, (Option<ArcType>, MacroError)>>
-    where
-        I: Importer,
-    {
-        self.load_module(compiler, vm, module_id).boxed()
-    }
 }
 
 /// Adds an extern module to `thread`, letting it be loaded with `import! name` from gluon code.
@@ -479,7 +431,7 @@ impl<I> Import<I> {
 /// ```
 pub fn add_extern_module<F>(thread: &Thread, name: &str, loader: F)
 where
-    F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
+    F: Fn(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
 {
     add_extern_module_(
         thread,
@@ -497,7 +449,7 @@ pub fn add_extern_module_with_deps<F>(
     loader: F,
     dependencies: Vec<String>,
 ) where
-    F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
+    F: Fn(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
 {
     add_extern_module_(
         thread,
@@ -510,17 +462,9 @@ pub fn add_extern_module_with_deps<F>(
 }
 
 fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
-    let opt_macro = thread.get_macros().get("import");
-    let import = opt_macro
-        .as_ref()
-        .and_then(|mac| mac.downcast_ref::<Import>())
-        .unwrap_or_else(|| {
-            ice!(
-                "Can't add an extern module with a import macro. \
-                 Did you mean to create this `Thread` with `gluon::new_vm`"
-            )
-        });
-    import.add_loader(name, loader);
+    thread
+        .get_database_mut()
+        .set_extern_loader(name.into(), PtrEq(Arc::new(loader)));
 }
 
 macro_rules! add_extern_module_if {
@@ -659,9 +603,9 @@ where
                 Ok(From::from(move || {
                     async move {
                         db.import(modulename)
-                            .map_err(|err| MacroError::message(err.to_string()))
-                            .map_ok(move |id| pos::spanned(span, Expr::Ident(id)))
                             .await
+                            .map_err(|err| MacroError::message(err.to_string()))
+                            .map(move |id| pos::spanned(span, Expr::Ident(id)))
                     }
                     .boxed()
                 }))

@@ -15,12 +15,11 @@ use std::{
 
 #[cfg(feature = "serde")]
 use either::Either;
-use futures::prelude::*;
 use salsa::ParallelDatabase;
 
 use crate::{
     base::{
-        ast::{self, RootExpr, OwnedExpr, SpannedExpr, Typed},
+        ast::{self, OwnedExpr, RootExpr, SpannedExpr, Typed},
         error::{Errors, InFile},
         fnv::FnvMap,
         metadata::Metadata,
@@ -49,7 +48,7 @@ fn call<T, U>(v: T, f: impl FnOnce(T) -> U) -> U {
 }
 
 macro_rules! join_result {
-    ($result: expr, $f: expr, $join: expr $(,)?) => {{
+    ($result: expr, |$f_arg: pat| $f_body: expr, $join: expr $(,)?) => {{
         let mut first_error = None;
         let mut x = match $result {
             Ok(x) => x,
@@ -59,8 +58,9 @@ macro_rules! join_result {
             }
             Err((None, err)) => return Err((None, err)),
         };
-        let result = call(&mut x, $f)
-            .await
+
+        let $f_arg = &mut x;
+        let result = $f_body
             .map(|_| ())
             .map_err(|(value, err)| (value.map(|_| ()), err));
         if let Err((value, err)) = result {
@@ -159,12 +159,10 @@ impl<'s> MacroExpandable for &'s str {
             parse_expr(compiler, thread.global_env().type_cache(), file, self)
                 .map_err(|(x, err)| (x, err.into())),
             |expr| {
-                async move {
-                    expr.expand_macro(compiler, thread, file, expr_str)
-                        .map_ok(|_| ())
-                        .map_err(|(opt, err)| (opt.map(|_| ()), err))
-                        .await
-                }
+                expr.expand_macro(compiler, thread, file, expr_str)
+                    .await
+                    .map(|_| ())
+                    .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
             |expr| MacroValue { expr },
         )
@@ -290,7 +288,8 @@ where
                     expr: expr.borrow_mut(),
                 }
                 .rename(compiler, thread, file, expr_str)
-                .map_ok(|_| ())
+                .await
+                .map(|_| ())
                 .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
             |MacroValue { expr }| Renamed { expr },
@@ -999,23 +998,19 @@ where
         let closure = vm.global_env().new_global_thunk(&vm, module)?;
 
         let vm1 = vm.clone();
-        vm1.call_thunk_top(&closure)
-            .map_ok(move |value| ExecuteValue {
-                id: module_id,
-                expr,
-                typ,
-                value,
-                metadata,
-            })
-            .map_err(Error::from)
-            .and_then(move |v| async move {
-                if run_io {
-                    crate::compiler_pipeline::run_io(vm, v).await
-                } else {
-                    Ok(v)
-                }
-            })
-            .await
+        let value = vm1.call_thunk_top(&closure).await.map_err(Error::from)?;
+        let v = ExecuteValue {
+            id: module_id,
+            expr,
+            typ,
+            value,
+            metadata,
+        };
+        if run_io {
+            crate::compiler_pipeline::run_io(vm, v).await
+        } else {
+            Ok(v)
+        }
     }
 
     async fn load_script<T>(
@@ -1106,7 +1101,8 @@ where
         let metadata = module.metadata;
         let closure = vm.global_env().new_global_thunk(&vm, module.module)?;
         vm.call_thunk_top(&closure)
-            .map_ok(move |value| ExecuteValue {
+            .await
+            .map(move |value| ExecuteValue {
                 id: module_id,
                 expr: (),
                 typ: typ,
@@ -1114,7 +1110,6 @@ where
                 value,
             })
             .map_err(Error::from)
-            .await
     }
 
     async fn load_script<T>(
@@ -1213,7 +1208,8 @@ where
 
         let vm1 = vm.clone();
         vm1.execute_io_top(value.get_variant())
-            .map_ok(move |value| {
+            .await
+            .map(move |value| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&vm.get_env(), &mut NullInterner, &typ);
                 let actual = match **actual {
@@ -1229,7 +1225,6 @@ where
                 }
             })
             .map_err(Error::from)
-            .await
     } else {
         Ok(v)
     }
