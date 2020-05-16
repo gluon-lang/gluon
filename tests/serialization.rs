@@ -208,6 +208,16 @@ fn roundtrip_lazy() {
 }
 
 #[test]
+fn roundtrip_list() {
+    let thread = new_vm();
+    let expr = r#" import! std.list "#;
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}
+
+#[test]
 fn roundtrip_std_thread() {
     let thread = new_vm();
     let expr = r#" import! std.thread "#;
