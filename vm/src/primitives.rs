@@ -327,6 +327,29 @@ extern "C" fn discriminant_value(thread: &Thread) -> Status {
 
 #[allow(non_camel_case_types)]
 mod std {
+
+    macro_rules! bit_const_inner {
+        ($typ: ty, $($trait_: ident :: $name: ident,)*) => {
+            $(
+                #[allow(non_upper_case_globals)]
+                pub const $name: fn(l: $typ, r: $typ) -> $typ = ::std::ops::$trait_::$name;
+            )*
+        }
+    }
+
+    macro_rules! bit_const {
+        ($typ: ty) => {
+            bit_const_inner! {
+                $typ,
+                BitAnd::bitand,
+                BitOr::bitor,
+                BitXor::bitxor,
+                Shl::shl,
+                Shr::shr,
+            }
+        };
+    }
+
     pub use crate::primitives as prim;
 
     pub mod string {
@@ -338,11 +361,23 @@ mod std {
     pub mod array {
         pub use crate::primitives::array as prim;
     }
+
     pub mod byte {
         pub type prim = u8;
+
+        bit_const! { u8 }
     }
     pub mod int {
-        pub type prim = crate::types::VmInt;
+        use crate::types::VmInt;
+
+        pub type prim = VmInt;
+
+        bit_const! { VmInt }
+
+        #[allow(non_upper_case_globals)]
+        pub const arithmetic_shr: fn(l: VmInt, r: VmInt) -> VmInt = shr;
+        #[allow(non_upper_case_globals)]
+        pub const logical_shr: fn(l: u64, r: u64) -> u64 = ::std::ops::Shr::shr;
     }
     pub mod float {
         pub type prim = f64;
@@ -438,11 +473,11 @@ pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
         record! {
             min_value => std::byte::prim::min_value(),
             max_value => std::byte::prim::max_value(),
-            shl => primitive!(2, <u8 as ::std::ops::Shl<u8>>::shl),
-            shr => primitive!(2, <u8 as ::std::ops::Shr<u8>>::shr),
-            bitxor => primitive!(2, <u8 as ::std::ops::BitXor<u8>>::bitxor),
-            bitand => primitive!(2, <u8 as ::std::ops::BitAnd<u8>>::bitand),
-            bitor => primitive!(2, <u8 as ::std::ops::BitOr<u8>>::bitor),
+            shl => primitive!(2, std::byte::shl),
+            shr => primitive!(2, std::byte::shr),
+            bitxor => primitive!(2, std::byte::bitxor),
+            bitand => primitive!(2, std::byte::bitand),
+            bitor => primitive!(2, std::byte::bitor),
             count_ones => primitive!(1, std::byte::prim::count_ones),
             count_zeros => primitive!(1, std::byte::prim::count_zeros),
             leading_zeros => primitive!(1, std::byte::prim::leading_zeros),
@@ -484,12 +519,12 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
                 "std.int.prim.from_str_radix",
                 |src, radix| std::int::prim::from_str_radix(src, radix).map_err(|_| ())
             ),
-            shl => primitive!(2, <i64 as ::std::ops::Shl<i64>>::shl),
-            arithmetic_shr => primitive!(2, <i64 as ::std::ops::Shr<i64>>::shr),
-            logical_shr => primitive!(2, <u64 as ::std::ops::Shr<u64>>::shr),
-            bitxor => primitive!(2, <i64 as ::std::ops::BitXor<i64>>::bitxor),
-            bitand => primitive!(2, <i64 as ::std::ops::BitAnd<i64>>::bitand),
-            bitor => primitive!(2, <i64 as ::std::ops::BitOr<i64>>::bitor),
+            shl => primitive!(2, std::int::shl),
+            arithmetic_shr => primitive!(2, std::int::arithmetic_shr),
+            logical_shr => primitive!(2, std::int::logical_shr),
+            bitxor => primitive!(2, std::int::bitxor),
+            bitand => primitive!(2, std::int::bitand),
+            bitor => primitive!(2, std::int::bitor),
             count_ones => primitive!(1, std::int::prim::count_ones),
             count_zeros => primitive!(1, std::int::prim::count_zeros),
             leading_zeros => primitive!(1, std::int::prim::leading_zeros),
