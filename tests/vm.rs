@@ -14,7 +14,7 @@ use gluon::{
     vm::{
         api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},
         channel::Sender,
-        thread::{RootedThread, Thread, ThreadInternal},
+        thread::{Thread, ThreadInternal},
     },
     Error, ThreadExt,
 };
@@ -888,14 +888,11 @@ async fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 }
 
 #[test]
-#[ignore] // FIXME
 fn deep_clone_partial_application() {
     use gluon::base::symbol::Symbol;
 
     let _ = ::env_logger::try_init();
-    let vm = RootedThread::new();
-
-    assert_eq!(vm.allocated_memory(), 0);
+    let vm = gluon::VmBuilder::new().build();
 
     let child = vm.new_thread().unwrap();
 
