@@ -8,6 +8,23 @@ use difference::assert_diff;
 
 use gluon::{RootedThread, ThreadExt, VmBuilder};
 
+macro_rules! test_format {
+    ($name: ident, $initial: expr) => {
+        test_format! { $name, $initial, $initial }
+    };
+    ($name: ident, $initial: expr, $formatted: expr) => {
+        #[test]
+        fn $name() {
+            let initial = $initial;
+            let expr = $formatted;
+
+            let once = format_expr(initial).unwrap();
+            assert_diff!(&once, expr, "\n", 0);
+            assert_diff!(&format_expr(&once).unwrap(), expr, "\n", 0);
+        }
+    };
+}
+
 fn new_vm() -> RootedThread {
     VmBuilder::new()
         .import_paths(Some(vec![".".into(), "..".into()]))
@@ -780,4 +797,35 @@ type OpenVariant r a = .. r
 1
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+test_format! {
+    issue_793_1,
+r#"
+let gectvbzppia : alrkvbjaklbvapouhvgtbvvnaipryrbipajlkm
+        vhieurabrlvikbnvliaejnbae
+        vhieurabrlvikbnvliaejnbaeoribfhknjeanhbtbaejnbaetiekjnajkrhblbrfvbrkkajbevels
+        vhieurabrlvikbnvliaejnbaeoribfhknjeanhbtbaejnb
+        vhieurabrlvikbnvliaejn
+    =
+    x
+()
+"#
+}
+
+test_format! {
+    issue_793_2,
+r#"
+let assert_success : [Show e] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+    = run_error >> flat_map assert_ok
+()
+"#,
+r#"
+let assert_success : [Show e]
+        -> Eff [| error : Error e, writer : Test | r |] a
+        -> Eff [| writer : Test | r |] ()
+    =
+    run_error >> flat_map assert_ok
+()
+"#
 }
