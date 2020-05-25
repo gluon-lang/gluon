@@ -390,12 +390,8 @@ impl<I> Import<I> {
 /// Adds an extern module to `thread`, letting it be loaded with `import! name` from gluon code.
 ///
 /// ```
-/// extern crate gluon;
-/// #[macro_use]
-/// extern crate gluon_vm;
-///
 /// use gluon::vm::{self, ExternModule};
-/// use gluon::{Thread, ThreadExt};
+/// use gluon::{primitive, record, Thread, ThreadExt};
 /// use gluon::import::add_extern_module;
 ///
 /// fn yell(s: &str) -> String {
@@ -412,21 +408,17 @@ impl<I> Import<I> {
 ///     )
 /// }
 ///
-/// fn main_() -> gluon::Result<()> {
-///     let thread = gluon::new_vm();
+/// #[tokio::main]
+/// async fn main() -> gluon::Result<()> {
+///     let thread = gluon::new_vm_async().await;
 ///     add_extern_module(&thread, "my_module", my_module);
 ///     let script = r#"
 ///         let module = import! "my_module"
 ///         module.yell module.message
 ///     "#;
-///     let (result, _) = thread.run_expr::<String>("example", script)?;
+///     let (result, _) = thread.run_expr_async::<String>("example", script).await?;
 ///     assert_eq!(result, "HELLO WORLD!");
 ///     Ok(())
-/// }
-/// fn main() {
-///     if let Err(err) = main_() {
-///         panic!("{}", err)
-///     }
 /// }
 /// ```
 pub fn add_extern_module<F>(thread: &Thread, name: &str, loader: F)
@@ -506,9 +498,9 @@ where
         id: TypeId,
     ) -> Option<Box<dyn Any>> {
         if id == TypeId::of::<Box<dyn VmEnv>>() {
-            Some(Box::new(
-                Box::new(self.snapshot(thread.root_thread())) as Box<dyn VmEnv>
-            ))
+            Some(Box::new(Box::new(crate::query::snapshot_env(
+                self.snapshot(thread.root_thread()),
+            )) as Box<dyn VmEnv>))
         } else if id == TypeId::of::<Arc<dyn ImportApi>>() {
             Some(Box::new(
                 arc_self.clone().downcast_arc::<Self>().ok().unwrap() as Arc<dyn ImportApi>,

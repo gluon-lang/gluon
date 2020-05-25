@@ -7,7 +7,7 @@ use crate::base::{
     resolve,
     scoped_map::ScopedMap,
     source::Source,
-    symbol::{Symbol, SymbolModule, SymbolRef},
+    symbol::{Symbol, SymbolData, SymbolModule, SymbolRef},
     types::{Alias, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
 };
 
@@ -848,7 +848,15 @@ impl<'a> Compiler<'a> {
                                     function.emit(FloatEQ);
                                 }
                                 Literal::String(ref s) => {
-                                    self.load_identifier(&Symbol::from("@string_eq"), function)?;
+                                    let prim_symbol = self.symbols.symbol(SymbolData {
+                                        global: true,
+                                        name: "std.prim",
+                                        location: None,
+                                    });
+                                    self.load_identifier(&prim_symbol, function)?;
+                                    let prim_type = self.globals.find_type(&prim_symbol).unwrap();
+                                    let string_eq_symbol = self.symbols.simple_symbol("string_eq");
+                                    function.emit_field(self, &prim_type, &string_eq_symbol)?;
                                     let lhs_i = function.stack_size() - 2;
                                     function.emit(Push(lhs_i));
                                     function.emit_string(self.intern(&s)?);

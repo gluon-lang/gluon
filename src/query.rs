@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::hash_map,
+    ops::DerefMut,
     result::Result as StdResult,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -10,7 +11,7 @@ use salsa::Database;
 use {
     base::{
         ast::{self, OwnedExpr, TypedIdent},
-        fnv::FnvMap,
+        fnv::{FnvMap, FnvSet},
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
         pos::BytePos,
@@ -24,6 +25,7 @@ use {
         core::{self, interpreter, optimize::OptimizeEnv, CoreExpr},
         gc::{GcPtr, Trace},
         internal::ClosureData,
+        internal::Value,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
@@ -77,6 +79,7 @@ pub(crate) struct State {
     pub(crate) code_map: codespan::CodeMap,
     pub(crate) inline_modules: FnvMap<String, Arc<Cow<'static, str>>>,
     pub(crate) index_map: FnvMap<String, BytePos>,
+    extern_globals: FnvSet<String>,
 }
 
 impl State {
@@ -284,6 +287,27 @@ impl CompilerDatabase {
         self.state().add_filemap(file, source)
     }
 
+    pub fn set_global(&mut self, name: &str, typ: ArcType, metadata: Arc<Metadata>, value: &Value) {
+        let thread = self.thread().root_thread();
+        let mut gc = thread.global_env().gc.lock().unwrap();
+        let mut cloner = vm::internal::Cloner::new(&thread, &mut gc);
+        let mut value: RootedValue<RootedThread> =
+            thread.root_value(cloner.deep_clone(&value).unwrap());
+
+        let id = Symbol::from(format!("@{}", name));
+        unsafe { value.vm_mut().unroot() };
+        self.state().extern_globals.insert(name.into());
+        self.set_extern_global(
+            name.into(),
+            UnrootedGlobal {
+                id,
+                typ,
+                metadata,
+                value: UnrootedValue(value),
+            },
+        )
+    }
+
     pub(crate) fn collect_garbage(&mut self) {
         let strategy = salsa::SweepStrategy::default()
             .discard_values()
@@ -314,9 +338,16 @@ pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn extern_loader(&self, module: String) -> PtrEq<ExternLoader>;
 
+    #[doc(hidden)]
+    #[salsa::input]
+    fn extern_global(&self, name: String) -> UnrootedGlobal;
+
     #[salsa::cycle(recover_cycle)]
     #[salsa::dependencies] // FIXME
     async fn extern_module(&self, module: String) -> Result<PtrEq<(Symbol, ExternModule)>>;
+
+    #[salsa::transparent]
+    fn get_extern_global(&self, name: &str) -> Option<DatabaseGlobal>;
 
     #[salsa::dependencies]
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
@@ -397,6 +428,22 @@ fn recover_cycle<T>(
     .into())
 }
 
+fn get_extern_global(
+    db: &mut (impl Compilation + salsa::Database),
+    name: &str,
+) -> Option<DatabaseGlobal> {
+    if db.compiler().state().extern_globals.contains(name) {
+        unsafe {
+            Some(root_global_with(
+                db.extern_global(name.into()),
+                db.thread().root_thread(),
+            ))
+        }
+    } else {
+        None
+    }
+}
+
 fn module_text(
     db: &mut (impl Compilation + salsa::Database),
     module: String,
@@ -463,14 +510,14 @@ async fn core_expr(
         .map_err(|(_, err)| err)?;
     let settings = db.compiler_settings();
 
-    let env = db.compiler();
-    Ok(core::with_translator(&*env, |translator| {
+    let env = env(db.compiler());
+    Ok(core::with_translator(&env, |translator| {
         let expr = translator.translate_expr(value.expr.expr());
 
         debug!("Translation returned: {}", expr);
 
         let core_expr = if settings.optimize {
-            core::optimize::optimize(&translator.allocator, env, expr)
+            core::optimize::optimize(&translator.allocator, &env, expr)
         } else {
             interpreter::Global {
                 value: core::freeze_expr(&translator.allocator, expr),
@@ -503,10 +550,11 @@ async fn compiled_module(
         &mut compiler.symbols,
     );
 
-    let env = db.compiler();
+    let thread = db.thread().root_thread();
+    let env = env(db.compiler());
     let mut compiler = vm::compiler::Compiler::new(
-        &*env,
-        env.thread().global_env(),
+        &env,
+        thread.global_env(),
         symbols,
         &source,
         module.clone(),
@@ -516,10 +564,9 @@ async fn compiled_module(
     let mut compiled_module = compiler.compile_expr(core_expr.value.expr())?;
     let module_id = Symbol::from(format!("@{}", name));
     compiled_module.function.id = module_id.clone();
-    let closure = env
-        .thread()
+    let closure = thread
         .global_env()
-        .new_global_thunk(&env.thread(), compiled_module)?;
+        .new_global_thunk(&thread, compiled_module)?;
 
     Ok(closure)
 }
@@ -634,7 +681,23 @@ async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal
         .map(|global| unsafe { root_global_with(global, db.thread().root_thread()) })
 }
 
-impl CompilerEnv for CompilerDatabase {
+use std::cell::RefCell;
+pub struct Env<T>(RefCell<T>);
+
+pub(crate) fn env(env: &mut CompilerDatabase) -> Env<&'_ mut CompilerDatabase> {
+    Env(RefCell::new(env))
+}
+pub(crate) fn snapshot_env<T>(env: T) -> Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
+    Env(RefCell::new(env))
+}
+
+impl<T> CompilerEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         if id.is_global() {
             self.get_global(id.definition_name())
@@ -642,21 +705,31 @@ impl CompilerEnv for CompilerDatabase {
         } else {
             let name = id.definition_name();
 
-            let globals = self.thread().global_env().get_globals();
-            globals
-                .globals
-                .get(name)
+            self.0
+                .borrow_mut()
+                .get_extern_global(name)
                 .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
         }
     }
 }
 
-impl KindEnv for CompilerDatabase {
+impl<T> KindEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         if id.is_global() {
             TypeEnv::find_type_info(self, id).map(|t| {
-                t.kind(&self.thread().global_env().type_cache().kind_cache)
-                    .into_owned()
+                t.kind(
+                    &self
+                        .0
+                        .borrow_mut()
+                        .thread()
+                        .global_env()
+                        .type_cache()
+                        .kind_cache,
+                )
+                .into_owned()
             })
         } else {
             None
@@ -664,7 +737,10 @@ impl KindEnv for CompilerDatabase {
     }
 }
 
-impl TypeEnv for CompilerDatabase {
+impl<T> TypeEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     type Type = ArcType;
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
@@ -673,14 +749,17 @@ impl TypeEnv for CompilerDatabase {
         } else {
             let name = id.definition_name();
 
-            let globals = self.thread().global_env().get_globals();
-            globals.globals.get(name).map(|global| global.typ.clone())
+            self.0
+                .borrow_mut()
+                .get_extern_global(name)
+                .map(|global| global.typ.clone())
         }
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
         if id.is_global() {
-            let globals = self.thread().global_env().get_globals();
+            let env = self.0.borrow();
+            let globals = env.thread().global_env().get_globals();
             globals.type_infos.find_type_info(id)
         } else {
             None
@@ -688,18 +767,28 @@ impl TypeEnv for CompilerDatabase {
     }
 }
 
-impl PrimitiveEnv for CompilerDatabase {
+impl<T> PrimitiveEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn get_bool(&self) -> ArcType {
-        self.find_type_info("std.types.Bool")
+        self.0
+            .borrow_mut()
+            .find_type_info("std.types.Bool")
             .expect("std.types.Bool")
             .into_type()
     }
 }
 
-impl MetadataEnv for CompilerDatabase {
+impl<T> MetadataEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         if id.is_global() {
-            self.peek_typechecked_module(id.definition_name())
+            self.0
+                .borrow_mut()
+                .peek_typechecked_module(id.definition_name())
                 .map(|v| v.metadata.clone())
         } else {
             None
@@ -707,94 +796,43 @@ impl MetadataEnv for CompilerDatabase {
     }
 }
 
-impl OptimizeEnv for CompilerDatabase {
+impl<T> OptimizeEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
         if id.is_global() {
-            self.peek_core_expr(id.definition_name().into())
+            self.0
+                .borrow_mut()
+                .peek_core_expr(id.definition_name().into())
         } else {
             None
         }
     }
 }
 
-unsafe impl Trace for CompilerDatabase {
+unsafe impl<T> Trace for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     impl_trace! { self, _gc, () }
 }
 
-impl VmEnv for CompilerDatabase {
+impl<T> VmEnv for Env<T>
+where
+    T: DerefMut<Target = CompilerDatabase>,
+{
     fn get_global(&self, name: &str) -> Option<vm::vm::Global<RootedValue<RootedThread>>> {
         let module = Name::new(name.trim_start_matches('@'));
 
-        let globals = self.thread().global_env().get_globals();
-        globals
-            .globals
-            .get(name)
-            .map(|global| DatabaseGlobal {
-                id: global.id.clone(),
-                typ: global.typ.clone(),
-                metadata: global.metadata.clone(),
-                value: self.thread().root_value(global.value.get_variants()),
-            })
-            .or_else(|| self.peek_global(module.as_str().into()))
-    }
-}
-
-impl CompilerEnv for DatabaseSnapshot {
-    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
-        CompilerEnv::find_var(&**self, id)
-    }
-}
-
-impl KindEnv for DatabaseSnapshot {
-    fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
-        KindEnv::find_kind(&**self, id)
-    }
-}
-
-impl TypeEnv for DatabaseSnapshot {
-    type Type = ArcType;
-
-    fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
-        TypeEnv::find_type(&**self, id)
-    }
-
-    fn find_type_info(&self, id: &SymbolRef) -> Option<Alias<Symbol, ArcType>> {
-        TypeEnv::find_type_info(&**self, id)
-    }
-}
-
-impl PrimitiveEnv for DatabaseSnapshot {
-    fn get_bool(&self) -> ArcType {
-        (&**self).get_bool()
-    }
-}
-
-impl MetadataEnv for DatabaseSnapshot {
-    fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
-        MetadataEnv::get_metadata(&**self, id)
-    }
-}
-
-impl OptimizeEnv for DatabaseSnapshot {
-    fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
-        (&**self).find_expr(id)
-    }
-}
-
-unsafe impl Trace for DatabaseSnapshot {
-    fn trace(&self, gc: &mut vm::gc::Gc) {
-        (**self).trace(gc)
-    }
-}
-
-impl VmEnv for DatabaseSnapshot {
-    fn get_global(&self, name: &str) -> Option<vm::vm::Global<RootedValue<RootedThread>>> {
-        VmEnv::get_global(&**self, name)
+        let mut env = self.0.borrow_mut();
+        env.get_extern_global(name)
+            .or_else(|| env.peek_global(module.as_str().into()))
     }
 }
 
 impl CompilerDatabase {
-    pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
+    pub fn find_type_info(&mut self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
         let (_, typ) = self.get_binding(name.module().as_str())?;
         let maybe_type_info = {
@@ -808,7 +846,10 @@ impl CompilerDatabase {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    fn get_scoped_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, DatabaseGlobal)> {
+    fn get_scoped_global<'s, 'n>(
+        &'s mut self,
+        name: &'n str,
+    ) -> Option<(&'n Name, DatabaseGlobal)> {
         let mut module = Name::new(name.trim_start_matches('@'));
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
@@ -816,20 +857,12 @@ impl CompilerDatabase {
         // Test: "x.y"
         // Test: "x"
         // Test: -> Error
-        let globals = self.thread().global_env().get_globals();
         let global = loop {
             if module.as_str() == "" {
                 return None;
             }
-            if let Some(g) = globals
-                .globals
-                .get(name)
-                .map(|global| DatabaseGlobal {
-                    id: global.id.clone(),
-                    typ: global.typ.clone(),
-                    metadata: global.metadata.clone(),
-                    value: self.thread().root_value(global.value.get_variants()),
-                })
+            if let Some(g) = self
+                .get_extern_global(name)
                 .or_else(|| self.peek_global(module.as_str().into()))
             {
                 break g;
@@ -841,7 +874,7 @@ impl CompilerDatabase {
         Some((remaining_fields, global))
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
+    pub fn get_binding(&mut self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
         use crate::base::resolve;
 
         let (remaining_fields, global) = self
@@ -869,7 +902,7 @@ impl CompilerDatabase {
                 ))
                 .into());
             }
-            typ = resolve::remove_aliases(self, &mut NullInterner, typ);
+            typ = resolve::remove_aliases(&env(self), &mut NullInterner, typ);
             let next_type = {
                 typ.row_iter()
                     .enumerate()
@@ -889,12 +922,12 @@ impl CompilerDatabase {
         Ok((self.thread().root_value(value), typ))
     }
 
-    pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
+    pub fn get_metadata(&mut self, name_str: &str) -> Result<Arc<Metadata>> {
         self.get_metadata_(name_str)
             .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
     }
 
-    fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
+    fn get_metadata_(&mut self, name_str: &str) -> Option<Arc<Metadata>> {
         let (remaining, global) = self.get_scoped_global(name_str)?;
 
         let mut metadata = &global.metadata;
@@ -902,5 +935,9 @@ impl CompilerDatabase {
             metadata = metadata.module.get(field_name)?
         }
         Some(metadata.clone())
+    }
+
+    pub fn as_env(&mut self) -> Env<&mut Self> {
+        env(self)
     }
 }

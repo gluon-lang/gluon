@@ -14,7 +14,7 @@ use gluon::{
     vm::{
         api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},
         channel::Sender,
-        thread::{Thread, ThreadInternal},
+        thread::Thread,
     },
     Error, ThreadExt,
 };
@@ -889,8 +889,6 @@ async fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 
 #[test]
 fn deep_clone_partial_application() {
-    use gluon::base::symbol::Symbol;
-
     let _ = ::env_logger::try_init();
     let vm = gluon::VmBuilder::new().build();
 
@@ -911,13 +909,12 @@ fn deep_clone_partial_application() {
     let global_memory_without_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
     let memory_for_closures = child.allocated_memory();
 
-    vm.set_global(
-        Symbol::from("@test"),
+    vm.get_database_mut().set_global(
+        "test",
         Type::hole(),
         Default::default(),
-        result.unwrap().0.get_value(),
-    )
-    .unwrap();
+        &result.unwrap().0.into_inner(),
+    );
 
     let global_memory_with_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
 

@@ -793,16 +793,6 @@ pub fn load_string_buf(vm: &Thread) -> Result<ExternModule> {
 
 #[allow(non_camel_case_types, deprecated)]
 pub fn load<'vm>(vm: &'vm Thread) -> Result<ExternModule> {
-    vm.define_global(
-        "error",
-        primitive::<fn(StdString) -> Pushed<A>>("@error", std::prim::error),
-    )?;
-
-    vm.define_global(
-        "string_eq",
-        primitive!(2, "@string_eq", <str as PartialEq>::eq),
-    )?;
-
     ExternModule::new(
         vm,
         record! {

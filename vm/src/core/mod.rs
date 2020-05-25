@@ -746,6 +746,7 @@ pub struct Translator<'a, 'e> {
     env: &'e dyn PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
     error_symbol: TypedIdent<Symbol>,
+    std_prim_symbol: Symbol,
     dummy_record_symbol: TypedIdent<Symbol>,
 }
 
@@ -760,8 +761,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                 name: Symbol::from(""),
                 typ: hole.clone(),
             },
+            std_prim_symbol: Symbol::from("@std.prim"),
             error_symbol: TypedIdent {
-                name: Symbol::from("@error"),
+                name: Symbol::from("error"),
                 typ: hole.clone(),
             },
             dummy_record_symbol: TypedIdent {
@@ -1397,11 +1399,29 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn error_expr(&'a self, msg: &str) -> Expr<'a> {
         let arena = &self.allocator.arena;
-        let error = arena.alloc(Expr::Ident(self.error_symbol.clone(), Span::default()));
+        let std_prim_type = self
+            .env
+            .find_type(&self.std_prim_symbol)
+            .unwrap_or_else(|| self.error_symbol.typ.clone());
+        let std_prim = arena.alloc(Expr::Ident(
+            TypedIdent {
+                name: self.std_prim_symbol.clone(),
+                typ: std_prim_type.clone(),
+            },
+            Span::default(),
+        ));
         let args = arena.alloc_fixed(
             Some(Expr::Const(Literal::String(msg.into()), Span::default())).into_iter(),
         );
-        Expr::Call(error, args)
+        Expr::Call(
+            arena.alloc(self.project_expr(
+                Span::default(),
+                std_prim,
+                &self.error_symbol.name,
+                &self.error_symbol.typ,
+            )),
+            args,
+        )
     }
 }
 

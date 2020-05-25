@@ -51,7 +51,10 @@ pub mod lift_io;
 pub mod query;
 pub mod std_lib;
 
-pub use crate::vm::thread::{RootedThread, Thread};
+pub use crate::vm::{
+    field_decl, primitive, record, record_p, record_type,
+    thread::{RootedThread, Thread},
+};
 
 use either::Either;
 
@@ -761,9 +764,7 @@ fn skip_implicit_prelude<'a, 'ast>(
 ) -> &'a SpannedExpr<'ast, Symbol> {
     loop {
         match l.value {
-            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                l = e;
-            }
+            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => l = e,
             _ => break l,
         }
     }
@@ -844,6 +845,9 @@ let { ? } = import! std.string
 let { ? } = import! std.array
 
 let { error } = import! std.prim
+
+let __error = error
+let __string_eq: String -> String -> Bool = (==)
 
 in ()
 "#;
