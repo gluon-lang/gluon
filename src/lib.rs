@@ -652,6 +652,8 @@ pub trait ThreadExt: Send + Sync {
     /// ```
     /// # use gluon::{new_vm, ThreadExt};
     /// # fn main() {
+    /// # // Workaround stack overflow on appveyor
+    /// # std::thread::Builder::new().stack_size(2_000_000).spawn(move || {
     /// let vm = new_vm();
     /// let (result, _) = vm
     ///     .run_expr::<String>(
@@ -660,6 +662,7 @@ pub trait ThreadExt: Send + Sync {
     ///     )
     ///     .unwrap();
     /// assert_eq!(result, "Hello world");
+    /// }).unwrap().join().unwrap()
     /// # }
     /// ```
     ///
