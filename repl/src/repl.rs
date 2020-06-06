@@ -20,13 +20,14 @@ use crate::vm::{
         IO,
     },
     internal::ValuePrinter,
-    thread::{ActiveThread, RootedValue, Thread, ThreadInternal},
+    thread::{ActiveThread, RootedValue, Thread},
     {self, Error as VMError, Result as VMResult},
 };
 
 use gluon::{
     compiler_pipeline::{Executable, ExecuteValue},
     import::add_extern_module,
+    query::CompilerDatabase,
     Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
@@ -436,6 +437,9 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
     let ExecuteValue { value, typ, .. } = (&mut eval_expr)
         .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
         .await?;
+
+    drop(db);
+
     if is_let_binding {
         let mut expr = eval_expr.expr();
         let mut last_bind = None;
@@ -448,7 +452,13 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
                 _ => break,
             }
         }
-        set_globals(&vm, &last_bind.unwrap().name, &typ, &value.as_ref())?;
+        set_globals(
+            &vm,
+            &mut vm.get_database_mut(),
+            &last_bind.unwrap().name,
+            &typ,
+            &value.as_ref(),
+        )?;
     }
     let vm = value.vm();
     let env = vm.get_env();
@@ -464,18 +474,19 @@ async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
 
 fn set_globals(
     vm: &Thread,
+    db: &mut CompilerDatabase,
     pattern: &SpannedPattern<Symbol>,
     typ: &ArcType,
     value: &RootedValue<&Thread>,
 ) -> GluonResult<()> {
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(
-                Symbol::from(format!("@{}", id.name.declared_name())),
+            db.set_global(
+                id.name.declared_name(),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),
-            )?;
+            );
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
@@ -483,14 +494,14 @@ fn set_globals(
                 .iter()
                 .zip(crate::vm::dynamic::field_iter(&value, typ, vm));
             for (elem_pattern, (elem_value, elem_type)) in iter {
-                set_globals(vm, elem_pattern, &elem_type, &elem_value)?;
+                set_globals(vm, db, elem_pattern, &elem_type, &elem_value)?;
             }
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
             let resolved_type = {
                 let mut type_cache = vm.global_env().type_cache();
-                let env = vm.get_env();
+                let env = db.as_env();
                 resolve::remove_aliases_cow(&env, &mut type_cache, typ)
             };
 
@@ -517,26 +528,26 @@ fn set_globals(
                     .clone();
                 match pattern_value {
                     Some(ref sub_pattern) => {
-                        set_globals(vm, sub_pattern, &field_type, &field_value)?
+                        set_globals(vm, db, sub_pattern, &field_type, &field_value)?
                     }
-                    None => vm.set_global(
-                        Symbol::from(format!("@{}", name.value.declared_name())),
+                    None => db.set_global(
+                        name.value.declared_name(),
                         field_type.to_owned(),
                         Default::default(),
                         field_value.get_value(),
-                    )?,
+                    ),
                 }
             }
             Ok(())
         }
         Pattern::As(ref id, ref pattern) => {
-            vm.set_global(
-                Symbol::from(format!("@{}", id.value.declared_name())),
+            db.set_global(
+                id.value.declared_name(),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),
-            )?;
-            set_globals(vm, pattern, typ, value)
+            );
+            set_globals(vm, db, pattern, typ, value)
         }
         Pattern::Constructor(..) | Pattern::Literal(_) | Pattern::Error => {
             Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())

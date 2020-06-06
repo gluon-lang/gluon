@@ -549,7 +549,7 @@ impl DocCollector<'_> {
         );
 
         let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
-        let (meta, _) = metadata(&thread.get_database(), &expr.expr());
+        let (meta, _) = metadata(&thread.get_database().as_env(), &expr.expr());
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 

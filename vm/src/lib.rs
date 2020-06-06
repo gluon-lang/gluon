@@ -214,11 +214,20 @@ impl<'a> fmt::Display for Panic<'a> {
     }
 }
 
+impl fmt::Debug for ExternLoader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ExternLoader")
+            .field("dependencies", &self.dependencies)
+            .finish()
+    }
+}
+
 pub struct ExternLoader {
-    pub load_fn: Box<dyn FnMut(&Thread) -> Result<ExternModule> + Send + Sync>,
+    pub load_fn: Box<dyn Fn(&Thread) -> Result<ExternModule> + Send + Sync>,
     pub dependencies: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct ExternModule {
     pub metadata: Metadata,
     pub value: RootedValue<RootedThread>,

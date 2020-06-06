@@ -15,12 +15,11 @@ use std::{
 
 #[cfg(feature = "serde")]
 use either::Either;
-use futures::prelude::*;
 use salsa::ParallelDatabase;
 
 use crate::{
     base::{
-        ast::{self, RootExpr, OwnedExpr, SpannedExpr, Typed},
+        ast::{self, OwnedExpr, RootExpr, SpannedExpr, Typed},
         error::{Errors, InFile},
         fnv::FnvMap,
         metadata::Metadata,
@@ -29,14 +28,14 @@ use crate::{
         types::{ArcType, NullInterner, Type, TypeCache},
     },
     check::{metadata, rename},
-    query::{Compilation, CompilerDatabase},
+    query::{env, Compilation, CompilerDatabase},
     vm::{
         compiler::CompiledModule,
         core::{self, interpreter, CoreExpr},
         macros::MacroExpander,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
     },
-    Error, ModuleCompiler, Result,
+    Error, ModuleCompiler, Result, ThreadExt,
 };
 
 pub type BoxFuture<'vm, T, E> =
@@ -49,7 +48,7 @@ fn call<T, U>(v: T, f: impl FnOnce(T) -> U) -> U {
 }
 
 macro_rules! join_result {
-    ($result: expr, $f: expr, $join: expr $(,)?) => {{
+    ($result: expr, |$f_arg: pat| $f_body: expr, $join: expr $(,)?) => {{
         let mut first_error = None;
         let mut x = match $result {
             Ok(x) => x,
@@ -59,8 +58,9 @@ macro_rules! join_result {
             }
             Err((None, err)) => return Err((None, err)),
         };
-        let result = call(&mut x, $f)
-            .await
+
+        let $f_arg = &mut x;
+        let result = $f_body
             .map(|_| ())
             .map_err(|(value, err)| (value.map(|_| ()), err));
         if let Err((value, err)) = result {
@@ -159,12 +159,10 @@ impl<'s> MacroExpandable for &'s str {
             parse_expr(compiler, thread.global_env().type_cache(), file, self)
                 .map_err(|(x, err)| (x, err.into())),
             |expr| {
-                async move {
-                    expr.expand_macro(compiler, thread, file, expr_str)
-                        .map_ok(|_| ())
-                        .map_err(|(opt, err)| (opt.map(|_| ()), err))
-                        .await
-                }
+                expr.expand_macro(compiler, thread, file, expr_str)
+                    .await
+                    .map(|_| ())
+                    .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
             |expr| MacroValue { expr },
         )
@@ -290,7 +288,8 @@ where
                     expr: expr.borrow_mut(),
                 }
                 .rename(compiler, thread, file, expr_str)
-                .map_ok(|_| ())
+                .await
+                .map(|_| ())
                 .map_err(|(opt, err)| (opt.map(|_| ()), err))
             },
             |MacroValue { expr }| Renamed { expr },
@@ -395,8 +394,8 @@ where
         _file: &str,
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
-        let env = &*compiler.database;
-        let (metadata, metadata_map) = metadata::metadata(env, self.expr.borrow_mut().expr_mut());
+        let env = env(compiler.database);
+        let (metadata, metadata_map) = metadata::metadata(&env, self.expr.borrow_mut().expr_mut());
         Ok(WithMetadata {
             expr: self.expr,
             metadata,
@@ -606,12 +605,12 @@ fn typecheck_expr(
     metadata_map: &mut FnvMap<Symbol, Arc<Metadata>>,
 ) -> Result<ArcType> {
     use crate::check::typecheck::Typecheck;
-    let env = &*compiler.database;
+    let env = env(compiler.database);
     let (arena, expr) = expr.arena_expr();
     let mut tc = Typecheck::new(
         file.into(),
         &mut compiler.symbols,
-        &*env,
+        &env,
         &thread.global_env().type_cache(),
         metadata_map,
         arena.borrow(),
@@ -659,7 +658,7 @@ where
                         typ: expr
                             .borrow_mut()
                             .expr()
-                            .try_type_of(&*compiler.database)
+                            .try_type_of(&env(compiler.database))
                             .unwrap_or_else(|_| thread.global_env().type_cache().error()),
                         expr,
                         metadata_map,
@@ -672,8 +671,8 @@ where
 
         // Some metadata requires typechecking so recompute it if full metadata is required
         let (metadata, metadata_map) = if compiler.compiler_settings().full_metadata {
-            let env = &*compiler.database;
-            metadata::metadata(&*env, expr.borrow_mut().expr_mut())
+            let env = env(compiler.database);
+            metadata::metadata(&env, expr.borrow_mut().expr_mut())
         } else {
             (metadata, metadata_map)
         };
@@ -825,22 +824,23 @@ where
         let core_expr;
 
         let mut module = {
-            let env = &*compiler.database;
+            core_expr = {
+                let env = env(compiler.database);
+                core::with_translator(&env, |translator| {
+                    let expr = translator.translate_expr(self.expr.borrow().expr());
 
-            core_expr = core::with_translator(&*env, |translator| {
-                let expr = translator.translate_expr(self.expr.borrow().expr());
+                    debug!("Translation returned: {}", expr);
 
-                debug!("Translation returned: {}", expr);
-
-                if settings.optimize {
-                    core::optimize::optimize(&translator.allocator, env, expr)
-                } else {
-                    interpreter::Global {
-                        value: core::freeze_expr(&translator.allocator, expr),
-                        info: Default::default(),
+                    if settings.optimize {
+                        core::optimize::optimize(&translator.allocator, &env, expr)
+                    } else {
+                        interpreter::Global {
+                            value: core::freeze_expr(&translator.allocator, expr),
+                            info: Default::default(),
+                        }
                     }
-                }
-            });
+                })
+            };
 
             debug!("Optimization returned: {}", core_expr);
 
@@ -855,8 +855,9 @@ where
                 &mut compiler.symbols,
             );
 
+            let env = env(compiler.database);
             let mut compiler = Compiler::new(
-                &*env,
+                &env,
                 thread.global_env(),
                 symbols,
                 &source,
@@ -999,23 +1000,19 @@ where
         let closure = vm.global_env().new_global_thunk(&vm, module)?;
 
         let vm1 = vm.clone();
-        vm1.call_thunk_top(&closure)
-            .map_ok(move |value| ExecuteValue {
-                id: module_id,
-                expr,
-                typ,
-                value,
-                metadata,
-            })
-            .map_err(Error::from)
-            .and_then(move |v| async move {
-                if run_io {
-                    crate::compiler_pipeline::run_io(vm, v).await
-                } else {
-                    Ok(v)
-                }
-            })
-            .await
+        let value = vm1.call_thunk_top(&closure).await.map_err(Error::from)?;
+        let v = ExecuteValue {
+            id: module_id,
+            expr,
+            typ,
+            value,
+            metadata,
+        };
+        if run_io {
+            crate::compiler_pipeline::run_io(vm, v).await
+        } else {
+            Ok(v)
+        }
     }
 
     async fn load_script<T>(
@@ -1106,7 +1103,8 @@ where
         let metadata = module.metadata;
         let closure = vm.global_env().new_global_thunk(&vm, module.module)?;
         vm.call_thunk_top(&closure)
-            .map_ok(move |value| ExecuteValue {
+            .await
+            .map(move |value| ExecuteValue {
                 id: module_id,
                 expr: (),
                 typ: typ,
@@ -1114,12 +1112,11 @@ where
                 value,
             })
             .map_err(Error::from)
-            .await
     }
 
     async fn load_script<T>(
         self,
-        compiler: &mut ModuleCompiler<'_>,
+        _compiler: &mut ModuleCompiler<'_>,
         vm: T,
         name: &str,
         _expr_str: &str,
@@ -1129,9 +1126,7 @@ where
         T: Send + Sync + VmRoot<'vm>,
         'vm: 'async_trait,
     {
-        use crate::vm::internal::Global;
-        use crate::vm::serialization::DeSeed;
-        use base::symbol::SymbolData;
+        use crate::vm::{internal::Global, serialization::DeSeed};
 
         let Global {
             metadata,
@@ -1141,12 +1136,8 @@ where
         } = DeSeed::new(&vm, &mut vm.current_context())
             .deserialize(self.0)
             .map_err(|err| err.to_string())?;
-        let id = compiler.symbols.symbol(SymbolData {
-            global: true,
-            location: None,
-            name: name,
-        });
-        vm.set_global(id, typ, metadata.clone(), &value)?;
+        vm.get_database_mut()
+            .set_global(name, typ, metadata.clone(), &value);
         info!("Loaded module `{}`", name);
         Ok(())
     }
@@ -1213,7 +1204,8 @@ where
 
         let vm1 = vm.clone();
         vm1.execute_io_top(value.get_variant())
-            .map_ok(move |value| {
+            .await
+            .map(move |value| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&vm.get_env(), &mut NullInterner, &typ);
                 let actual = match **actual {
@@ -1229,7 +1221,6 @@ where
                 }
             })
             .map_err(Error::from)
-            .await
     } else {
         Ok(v)
     }

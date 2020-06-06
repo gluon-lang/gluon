@@ -1417,6 +1417,7 @@ dependencies = [
  "serde_state",
  "slab",
  "smallvec 0.6.13",
+ "tokio 0.2.20",
  "typed-arena 1.7.0",
 ]
 

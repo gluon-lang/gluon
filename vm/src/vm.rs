@@ -26,13 +26,13 @@ use crate::{
     api::{OpaqueValue, ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
     core::{interpreter, optimize::OptimizeEnv, CoreExpr},
-    gc::{CloneUnrooted, Gc, GcPtr, GcRef, Generation, Move, Trace},
+    gc::{Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
     thread::ThreadInternal,
     types::*,
-    value::{BytecodeFunction, ClosureData, ClosureDataDef, Value},
+    value::{BytecodeFunction, ClosureData, ClosureDataDef},
     Error, Result, Variants,
 };
 
@@ -249,10 +249,6 @@ pub struct GlobalVmState {
 
 unsafe impl Trace for GlobalVmState {
     unsafe fn root(&mut self) {
-        for g in self.env.get_mut().globals.values_mut() {
-            g.root();
-        }
-
         self.macros.root();
 
         // Also need to check the interned string table
@@ -260,10 +256,6 @@ unsafe impl Trace for GlobalVmState {
         self.generation_0_threads.get_mut().unwrap().root();
     }
     unsafe fn unroot(&mut self) {
-        for g in self.env.get_mut().globals.values_mut() {
-            g.unroot();
-        }
-
         self.macros.unroot();
 
         // Also need to check the interned string table
@@ -272,10 +264,6 @@ unsafe impl Trace for GlobalVmState {
     }
 
     fn trace(&self, gc: &mut Gc) {
-        for g in self.env.read().globals.values() {
-            g.trace(gc);
-        }
-
         self.macros.trace(gc);
 
         // Also need to check the interned string table
@@ -300,12 +288,6 @@ unsafe impl Trace for GlobalVmState {
 pub struct Globals {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub globals: FnvMap<StdString, Global<Value>>,
-}
-
-unsafe impl Trace for Globals {
-    impl_trace_fields! { self, gc; globals }
 }
 
 pub trait VmEnv:
@@ -322,7 +304,7 @@ pub struct VmEnvInstance<'a> {
 }
 
 unsafe impl Trace for VmEnvInstance<'_> {
-    impl_trace_fields! { self, gc; vm_envs, globals }
+    impl_trace_fields! { self, gc; vm_envs }
 }
 
 impl<'a> OptimizeEnv for VmEnvInstance<'a> {
@@ -337,12 +319,6 @@ impl<'a> CompilerEnv for VmEnvInstance<'a> {
             .iter()
             .filter_map(|env| env.find_var(id))
             .next()
-            .or_else(|| {
-                self.globals
-                    .globals
-                    .get(id.definition_name())
-                    .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
-            })
             .or_else(|| self.globals.type_infos.find_var(id))
     }
 }
@@ -365,12 +341,6 @@ impl<'a> TypeEnv for VmEnvInstance<'a> {
             .iter()
             .filter_map(|env| env.find_type(id))
             .next()
-            .or_else(|| {
-                self.globals
-                    .globals
-                    .get(id.definition_name())
-                    .map(|g| g.typ.clone())
-            })
             .or_else(|| {
                 self.globals
                     .type_infos
@@ -641,44 +611,6 @@ impl GlobalVmState {
     pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
         let id = TypeId::of::<T>();
         self.typeids.read().unwrap().get(&id).cloned()
-    }
-
-    /// Checks if a global exists called `name`
-    pub fn global_exists(&self, name: &str) -> bool {
-        self.env.read_recursive().globals.get(name).is_some()
-    }
-
-    pub(crate) fn set_global(
-        &self,
-        id: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()> {
-        assert!(value.generation().is_root());
-        assert!(id.is_global(), "Symbol is not global");
-        let mut env = self.env.write();
-        let globals = &mut env.globals;
-        let global = Global {
-            id: id.clone(),
-            typ,
-            metadata,
-            // SAFETY The global table are scanned
-            value: unsafe { value.clone_unrooted() },
-        };
-        globals.insert(StdString::from(id.definition_name()), global);
-        Ok(())
-    }
-
-    // Currently necessary for the language server
-    #[doc(hidden)]
-    pub fn set_dummy_global(&self, id: &str, typ: ArcType, metadata: Metadata) -> Result<()> {
-        self.set_global(
-            Symbol::from(format!("@{}", id)),
-            typ,
-            Arc::new(metadata),
-            &Value::int(0),
-        )
     }
 
     pub fn get_generic(&self, name: &str) -> ArcType {

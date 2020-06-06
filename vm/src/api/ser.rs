@@ -24,18 +24,18 @@ use crate::{
 ## Struct
 
 ```
-#[macro_use]
-extern crate serde_derive;
+use serde::Serialize;
 
-extern crate gluon;
-#[macro_use]
-extern crate gluon_vm;
+use gluon_vm::{field_decl, record_type};
 
-use gluon::{Thread, ThreadExt, new_vm};
-use gluon::base::types::ArcType;
-use gluon::vm::api::{FunctionRef, VmType};
-use gluon::vm::api::ser::Ser;
-# fn main() {
+use gluon::{
+    Thread, ThreadExt, new_vm_async,
+    base::types::ArcType,
+    vm::api::{ser::Ser, FunctionRef, VmType},
+};
+
+# #[tokio::main]
+# async fn main() {
 
 #[derive(Serialize)]
 struct Vec2 {
@@ -60,18 +60,20 @@ impl VmType for Vec2 {
 #     ::std::env::set_var("GLUON_PATH", "..");
 # }
 
-let thread = new_vm();
+let thread = new_vm_async().await;
 
 let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = thread
-    .run_expr("", r#"let f v: _ -> Int = v.x + v.y in f"#)
+    .run_expr_async("", r#"let f v: _ -> Int = v.x + v.y in f"#)
+    .await
     .unwrap_or_else(|err| panic!("{}", err));
 let vec = Vec2 {
     x: 3,
     y: 10
 };
-let result = f.call(Ser(vec)).unwrap_or_else(|err| panic!("{}", err));
+let result = f.call_async(Ser(vec)).await.unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(result, 13);
 # }
+
 ```
 
 ## Enum

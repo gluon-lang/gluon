@@ -28,7 +28,6 @@ use futures::{
 use async_trait::async_trait;
 
 use crate::base::{
-    metadata::Metadata,
     pos::Line,
     symbol::Symbol,
     types::{self, Alias, ArcType},
@@ -322,6 +321,16 @@ where
             .position(|p| p.obj_eq(&self.value))
             .unwrap_or_else(|| ice!("Rooted value has already been dropped"));
         rooted_values.swap_remove(i);
+    }
+
+    pub fn into_owned(self) -> RootedValue<RootedThread> {
+        let value = RootedValue {
+            vm: self.vm.root_thread(),
+            rooted: self.rooted,
+            value: unsafe { self.value.clone_unrooted() },
+        };
+        mem::forget(self);
+        value
     }
 }
 
@@ -794,22 +803,6 @@ impl Thread {
         }
     }
 
-    pub(crate) fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-    where
-        T: Pushable<'vm> + VmType,
-    {
-        // Value gets rooted by set_global
-        unsafe {
-            let value = value.marshal_unrooted(self)?;
-            self.set_global(
-                Symbol::from(format!("@{}", name)),
-                T::make_forall_type(self),
-                Default::default(),
-                &value,
-            )
-        }
-    }
-
     pub fn spawner(&self) -> Option<&(dyn futures::task::Spawn + Send + Sync)> {
         self.global_env().spawner()
     }
@@ -822,21 +815,23 @@ impl Thread {
     /// to an `add` function in rust
     ///
     /// ```rust
-    /// # use gluon::{new_vm, Thread, ThreadExt};
+    /// # use gluon::{new_vm_async, Thread, ThreadExt};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
-    /// # fn main() {
+    /// # #[tokio::main]
+    /// # async fn main() {
     ///
     /// # if ::std::env::var("GLUON_PATH").is_err() {
     /// #     ::std::env::set_var("GLUON_PATH", "..");
     /// # }
     ///
-    /// let vm = new_vm();
+    /// let vm = new_vm_async().await;
     ///
-    /// vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
+    /// vm.run_expr_async::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
+    ///     .await
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
-    /// let result = add.call(1, 2);
+    /// let result = add.call_async(1, 2).await;
     /// assert_eq!(result, Ok(3));
     /// # }
     /// ```
@@ -1131,15 +1126,6 @@ where
 
     fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
 
-    fn set_global(
-        &self,
-        name: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()>;
-
-    /// `owner` is theread that owns `value` which is not necessarily the same as `self`
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>>;
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
@@ -1270,20 +1256,6 @@ impl ThreadInternal for Thread {
         }
         context = ready!(context.execute(cx))?.expect("Resume called on the top frame");
         Ok(context).into()
-    }
-
-    fn set_global(
-        &self,
-        name: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()> {
-        let mut gc = self.global_env().gc.lock().unwrap();
-        let mut cloner = crate::value::Cloner::new(self, &mut gc);
-        let value = cloner.deep_clone(&value)?;
-        self.global_env()
-            .set_global(name, typ, metadata, value.get_value())
     }
 
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>> {

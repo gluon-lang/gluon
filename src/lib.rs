@@ -51,9 +51,10 @@ pub mod lift_io;
 pub mod query;
 pub mod std_lib;
 
-pub use crate::vm::thread::{RootedThread, Thread};
-
-use futures::prelude::*;
+pub use crate::vm::{
+    field_decl, primitive, record, record_p, record_type,
+    thread::{RootedThread, Thread},
+};
 
 use either::Either;
 
@@ -245,9 +246,9 @@ impl From<Errors<Error>> for Error {
 impl Error {
     pub fn emit_string(&self) -> ::std::io::Result<String> {
         let mut output = Vec::new();
-        self.emit(
-            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-        )?;
+        self.emit(&mut ::codespan_reporting::termcolor::NoColor::new(
+            &mut output,
+        ))?;
         Ok(String::from_utf8(output).unwrap())
     }
 
@@ -587,8 +588,8 @@ pub trait ThreadExt: Send + Sync {
             ..
         } = db
             .typechecked_module(module_name, None)
-            .map_err(|(_, err)| err)
-            .await?;
+            .await
+            .map_err(|(_, err)| err)?;
 
         if db.compiler_settings().full_metadata {
             Ok((expr, typ, metadata))
@@ -651,6 +652,8 @@ pub trait ThreadExt: Send + Sync {
     /// ```
     /// # use gluon::{new_vm, ThreadExt};
     /// # fn main() {
+    /// # // Workaround stack overflow on appveyor
+    /// # std::thread::Builder::new().stack_size(2_000_000).spawn(move || {
     /// let vm = new_vm();
     /// let (result, _) = vm
     ///     .run_expr::<String>(
@@ -659,6 +662,7 @@ pub trait ThreadExt: Send + Sync {
     ///     )
     ///     .unwrap();
     /// assert_eq!(result, "Hello world");
+    /// }).unwrap().join().unwrap()
     /// # }
     /// ```
     ///
@@ -700,7 +704,7 @@ pub trait ThreadExt: Send + Sync {
         let vm = self.thread();
         let expected = T::make_type(&vm);
 
-        expr_str
+        let execute_value = expr_str
             .run_expr(
                 &mut ModuleCompiler::new(&mut vm.get_database()),
                 vm,
@@ -708,13 +712,11 @@ pub trait ThreadExt: Send + Sync {
                 expr_str,
                 Some(&expected),
             )
-            .and_then(move |execute_value| async move {
-                Ok((
-                    T::from_value(vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
-            .await
+            .await?;
+        Ok((
+            T::from_value(vm, execute_value.value.get_variant()),
+            execute_value.typ,
+        ))
     }
 
     fn format_expr(&self, formatter: &mut Formatter, file: &str, input: &str) -> Result<String> {
@@ -765,9 +767,7 @@ fn skip_implicit_prelude<'a, 'ast>(
 ) -> &'a SpannedExpr<'ast, Symbol> {
     loop {
         match l.value {
-            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                l = e;
-            }
+            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => l = e,
             _ => break l,
         }
     }
@@ -848,6 +848,9 @@ let { ? } = import! std.string
 let { ? } = import! std.array
 
 let { error } = import! std.prim
+
+let __error = error
+let __string_eq: String -> String -> Bool = (==)
 
 in ()
 "#;
