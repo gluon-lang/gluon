@@ -25,5 +25,5 @@ do
         exit 1
     fi
     echo "Waiting for ${PROJECT} to publish"
-    sleep 15
+    sleep 25
 done
