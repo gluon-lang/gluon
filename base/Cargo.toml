@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.14.1" # GLUON
+version = "0.15.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -33,7 +33,7 @@ either = "1"
 vec_map = "0.8"
 typed-arena = "1"
 
-gluon_codegen = { version = "0.14.1", path = "../codegen" } # GLUON
+gluon_codegen = { version = "0.15.0", path = "../codegen" } # GLUON
 
 serde = { version = "1.0.0", features = ["rc"], optional = true }
 serde_state = { version = "0.4.0", features = ["rc"], optional = true }

@@ -1,3 +1,24 @@
+<a name="v0.15.0"></a>
+## v0.15.0 (2020-06-06)
+
+
+#### Bug Fixes
+
+*   Allow bitoperations to be deserialized ([ed36ed9c](https://github.com/gluon-lang/gluon/commit/ed36ed9ccc5e423fd872994ffb52edda97c8965d))
+
+#### Performance
+
+*   Strategically inline comment productions ([78e733e7](https://github.com/gluon-lang/gluon/commit/78e733e701abe71ee10048b3de3b550bed927f43))
+*   Shrink the metadata stored in the AST ([842c1080](https://github.com/gluon-lang/gluon/commit/842c1080bb73a7509384064e07a671b2c0f11fb6))
+*   Use T::Generics in AliasData ([4cb575fa](https://github.com/gluon-lang/gluon/commit/4cb575fac5356bbc9a018eb6779c209a3473d3b6))
+*   Shrink the symbol type in the parser ([a8fc8f39](https://github.com/gluon-lang/gluon/commit/a8fc8f39556a2997e359288ec37dfd9bd0932d7d))
+
+#### Features
+
+*   Accept multiple lines on incomplete repl input ([47318399](https://github.com/gluon-lang/gluon/commit/473183995ad793e48eef7d5b3b56c5cf22c325f5), closes [#830](https://github.com/gluon-lang/gluon/issues/830))
+
+
+
 <a name="v0.14.1"></a>
 ### v0.14.1 (2020-04-15)
 
