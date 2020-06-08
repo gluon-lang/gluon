@@ -234,7 +234,7 @@ pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
     pub importer: I,
 
-    compiler: Mutex<CompilerDatabase>,
+    pub compiler: Mutex<CompilerDatabase>,
 }
 
 #[derive(Debug)]
