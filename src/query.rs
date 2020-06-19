@@ -29,7 +29,7 @@ use {
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
-        ExternLoader, ExternModule,
+        ExternLoader,
     },
 };
 
@@ -203,8 +203,11 @@ impl crate::query::CompilationBase for CompilerDatabase {
         state.add_filemap(&module, &contents[..]);
     }
 
-    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
-        self.query(TypecheckedModuleQuery)
+    fn peek_typechecked_source_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
+        self.query(TypecheckedSourceModuleQuery)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
@@ -327,7 +330,7 @@ impl CompilerDatabase {
             .sweep_all_revisions();
 
         self.query(ModuleTextQuery).sweep(strategy);
-        self.query(TypecheckedModuleQuery).sweep(strategy);
+        self.query(TypecheckedSourceModuleQuery).sweep(strategy);
         self.query(CoreExprQuery).sweep(strategy);
         self.query(CompiledModuleQuery).sweep(strategy);
     }
@@ -338,7 +341,10 @@ pub trait CompilationBase: Send {
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
 
-    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
+    fn peek_typechecked_source_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
     fn peek_module_type(&self, key: &str) -> Option<ArcType>;
     fn peek_module_metadata(&self, key: &str) -> Option<Arc<Metadata>>;
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
@@ -357,9 +363,9 @@ pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn extern_global(&self, name: String) -> UnrootedGlobal;
 
+    #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
-    #[salsa::dependencies] // FIXME
-    async fn extern_module(&self, module: String) -> Result<PtrEq<(Symbol, ExternModule)>>;
+    async fn extern_module(&self, module: String) -> Result<UnrootedGlobal>;
 
     #[salsa::transparent]
     fn get_extern_global(&self, name: &str) -> Option<DatabaseGlobal>;
@@ -368,7 +374,7 @@ pub trait Compilation: CompilationBase {
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
-    async fn typechecked_module(
+    async fn typechecked_source_module(
         &self,
         module: String,
         expected_type: Option<ArcType>,
@@ -496,7 +502,7 @@ fn module_text(
     Ok(contents)
 }
 
-async fn typechecked_module(
+async fn typechecked_source_module(
     db: &mut (impl Compilation + salsa::Database),
     module: String,
     expected_type: Option<ArcType>,
@@ -530,10 +536,10 @@ async fn module_type(
     expected_type: Option<ArcType>,
 ) -> StdResult<ArcType, Error> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
-        let (_id, module) = &*db.extern_module(name).await?;
-        return Ok(module.typ.clone());
+        let global = db.extern_module(name).await?;
+        return Ok(global.typ.clone());
     }
-    db.typechecked_module(name, expected_type)
+    db.typechecked_source_module(name, expected_type)
         .await
         .map(|module| module.typ)
         .map_err(|(_, err)| err)
@@ -545,10 +551,10 @@ async fn module_metadata(
     expected_type: Option<ArcType>,
 ) -> StdResult<Arc<Metadata>, Error> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
-        let (_id, module) = &*db.extern_module(name.clone()).await?;
-        return Ok(Arc::new(module.metadata.clone()));
+        let global = db.extern_module(name).await?;
+        return Ok(global.metadata.clone());
     }
-    db.typechecked_module(name, expected_type)
+    db.typechecked_source_module(name, expected_type)
         .await
         .map(|module| module.metadata)
         .map_err(|(_, err)| err)
@@ -562,11 +568,11 @@ async fn core_expr(
     db.salsa_runtime_mut().report_untracked_read();
 
     let value = db
-        .typechecked_module(module.clone(), expected_type.clone())
+        .typechecked_source_module(module.clone(), expected_type.clone())
         .await
         .map_err(|(_, err)| err)?;
 
-    // Ensure the type is stored in the database so we can collect typechecked_module later
+    // Ensure the type is stored in the database so we can collect typechecked_source_module later
     db.module_type(module.clone(), expected_type.clone())
         .await?;
     db.module_metadata(module.clone(), expected_type).await?;
@@ -660,23 +666,21 @@ async fn import(
 
 async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
-        let (id, module) = &*db.extern_module(name).await?;
-        let mut value = module.value.clone();
-        unsafe { value.vm_mut().unroot() }; // FIXME
-        return Ok(UnrootedGlobal {
-            id: id.clone(),
-            typ: module.typ.clone(),
-            metadata: Arc::new(module.metadata.clone()),
-            value: UnrootedValue(value),
-        });
+        let global = db.extern_module(name.clone()).await?;
+
+        // Ensure the type is stored in the database so we can collect typechecked_source_module later
+        db.module_type(name.clone(), None).await?;
+        db.module_metadata(name, None).await?;
+
+        return Ok(global);
     }
 
     let TypecheckValue { metadata, typ, .. } = db
-        .typechecked_module(name.clone(), None)
+        .typechecked_source_module(name.clone(), None)
         .await
         .map_err(|(_, err)| err)?;
 
-    // Ensure the type is stored in the database so we can collect typechecked_module later
+    // Ensure the type is stored in the database so we can collect typechecked_source_module later
     db.module_type(name.clone(), None).await?;
     db.module_metadata(name.clone(), None).await?;
 
@@ -725,11 +729,8 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
     })
 }
 
-async fn extern_module(
-    db: &mut dyn Compilation,
-    name: String,
-) -> Result<PtrEq<(Symbol, ExternModule)>> {
-    let symbol = Symbol::from(format!("@{}", name));
+async fn extern_module(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
+    let id = Symbol::from(format!("@{}", name));
     let loader = db.extern_loader(name);
 
     for dep in &loader.dependencies {
@@ -737,10 +738,17 @@ async fn extern_module(
     }
 
     let vm = db.thread();
-    Ok(PtrEq(Arc::new((
-        symbol, // TODO
-        (loader.load_fn)(vm)?,
-    ))))
+
+    let module = (loader.load_fn)(vm)?;
+    let mut value = module.value.clone();
+    unsafe { value.vm_mut().unroot() }; // FIXME
+
+    Ok(UnrootedGlobal {
+        id,
+        typ: module.typ.clone(),
+        metadata: Arc::new(module.metadata),
+        value: UnrootedValue(value),
+    })
 }
 
 async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal> {
@@ -864,8 +872,7 @@ where
         if id.is_global() {
             self.0
                 .borrow_mut()
-                .peek_typechecked_module(id.definition_name())
-                .map(|v| v.metadata.clone())
+                .peek_module_metadata(id.definition_name())
         } else {
             None
         }
