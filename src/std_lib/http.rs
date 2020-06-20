@@ -90,7 +90,10 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
             Collect::from_value(vm, value)
                 // TODO Error somehow on invalid headers
                 .filter_map(|(name, value): (&str, &[u8])| {
-                    match (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_bytes(value)) {
+                    match (
+                        HeaderName::from_bytes(name.as_bytes()),
+                        HeaderValue::from_bytes(value),
+                    ) {
                         (Ok(name), Ok(value)) => Some((name, value)),
                         _ => None,
                     }

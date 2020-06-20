@@ -1287,11 +1287,43 @@ impl_ast_arena! {
     Metadata => metadata,
 }
 
+#[doc(hidden)]
+#[derive(Default)]
+pub struct InvariantLifetime<'a>(std::marker::PhantomData<fn(&'a ()) -> &'a ()>);
+
+// Copied from the compact_arena crate
+#[macro_export]
+macro_rules! mk_ast_arena {
+    ($name: ident) => {
+        let tag = $crate::ast::InvariantLifetime::default();
+        let $name = unsafe { std::sync::Arc::new($crate::ast::Arena::new(&tag)) };
+        let _guard;
+        // this doesn't make it to MIR, but ensures that borrowck will not
+        // unify the lifetimes of two macro calls by binding the lifetime to
+        // drop scope
+        if false {
+            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
+            impl<'tag> ::core::ops::Drop for Guard<'tag> {
+                fn drop(&mut self) {}
+            }
+            _guard = Guard(&tag);
+        }
+    };
+}
+
 pub struct RootExpr<Id: 'static> {
     // Only used to keep `expr` alive
     #[allow(dead_code)]
     arena: Arc<Arena<'static, Id>>,
     expr: *mut SpannedExpr<'static, Id>,
+}
+
+impl<Id: 'static> Default for RootExpr<Id> {
+    fn default() -> Self {
+        mk_ast_arena!(arena);
+        let expr = arena.alloc(SpannedExpr::default());
+        RootExpr::new(arena.clone(), expr)
+    }
 }
 
 impl<Id: Eq> Eq for RootExpr<Id> {}
@@ -1393,6 +1425,12 @@ pub struct OwnedExpr<Id: 'static> {
     expr: *mut SpannedExpr<'static, Id>,
 }
 
+impl<Id: 'static> Default for OwnedExpr<Id> {
+    fn default() -> Self {
+        RootExpr::default().try_into_send().ok().unwrap_or_default()
+    }
+}
+
 impl<Id: Eq> Eq for OwnedExpr<Id> {}
 impl<Id: PartialEq> PartialEq for OwnedExpr<Id> {
     fn eq(&self, other: &Self) -> bool {
@@ -1447,30 +1485,6 @@ impl<Id> OwnedExpr<Id> {
             )
         }
     }
-}
-
-#[doc(hidden)]
-#[derive(Default)]
-pub struct InvariantLifetime<'a>(std::marker::PhantomData<fn(&'a ()) -> &'a ()>);
-
-// Copied from the compact_arena crate
-#[macro_export]
-macro_rules! mk_ast_arena {
-    ($name: ident) => {
-        let tag = $crate::ast::InvariantLifetime::default();
-        let $name = unsafe { std::sync::Arc::new($crate::ast::Arena::new(&tag)) };
-        let _guard;
-        // this doesn't make it to MIR, but ensures that borrowck will not
-        // unify the lifetimes of two macro calls by binding the lifetime to
-        // drop scope
-        if false {
-            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
-            impl<'tag> ::core::ops::Drop for Guard<'tag> {
-                fn drop(&mut self) {}
-            }
-            _guard = Guard(&tag);
-        }
-    };
 }
 
 pub trait AstClone<'ast, Id> {

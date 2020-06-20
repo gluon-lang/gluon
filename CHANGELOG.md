@@ -1,3 +1,18 @@
+<a name="v0.15.1"></a>
+### v0.15.1 (2020-06-20)
+
+
+#### Bug Fixes
+
+*   Allow find_type etc to work without calling global ([6e469b9a](https://github.com/gluon-lang/gluon/commit/6e469b9a311d1bdb7b5e4fc62688fc7d4d08ceea))
+
+#### Features
+
+*   Make the query code compatible with the language server ([14e8f1de](https://github.com/gluon-lang/gluon/commit/14e8f1ded3f4e02d6b8ab9c50dbd29b35b534996))
+*   Add Default for Root/OwnedExpr ([fedb7322](https://github.com/gluon-lang/gluon/commit/fedb732270eb24e544b047e19e5a7533028a2f5b))
+
+
+
 <a name="v0.15.0"></a>
 ## v0.15.0 (2020-06-06)
 

@@ -29,7 +29,7 @@ use {
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
-        ExternLoader, ExternModule,
+        ExternLoader,
     },
 };
 
@@ -203,11 +203,27 @@ impl crate::query::CompilationBase for CompilerDatabase {
         state.add_filemap(&module, &contents[..]);
     }
 
-    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
-        self.query(TypecheckedModuleQuery)
+    fn peek_typechecked_source_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
+        self.query(TypecheckedSourceModuleQuery)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
+
+    fn peek_module_type(&self, key: &str) -> Option<ArcType> {
+        self.query(ModuleTypeQuery)
+            .peek(&(key.into(), None))
+            .and_then(|r| r.ok())
+    }
+
+    fn peek_module_metadata(&self, key: &str) -> Option<Arc<Metadata>> {
+        self.query(ModuleMetadataQuery)
+            .peek(&(key.into(), None))
+            .and_then(|r| r.ok())
+    }
+
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>> {
         self.query(CoreExprQuery)
             .peek(&(key.into(), None))
@@ -314,7 +330,7 @@ impl CompilerDatabase {
             .sweep_all_revisions();
 
         self.query(ModuleTextQuery).sweep(strategy);
-        self.query(TypecheckedModuleQuery).sweep(strategy);
+        self.query(TypecheckedSourceModuleQuery).sweep(strategy);
         self.query(CoreExprQuery).sweep(strategy);
         self.query(CompiledModuleQuery).sweep(strategy);
     }
@@ -325,7 +341,12 @@ pub trait CompilationBase: Send {
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
 
-    fn peek_typechecked_module(&self, key: &str) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
+    fn peek_typechecked_source_module(
+        &self,
+        key: &str,
+    ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>;
+    fn peek_module_type(&self, key: &str) -> Option<ArcType>;
+    fn peek_module_metadata(&self, key: &str) -> Option<Arc<Metadata>>;
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>>;
     fn peek_global(&self, key: &str) -> Option<DatabaseGlobal>;
 }
@@ -342,9 +363,9 @@ pub trait Compilation: CompilationBase {
     #[salsa::input]
     fn extern_global(&self, name: String) -> UnrootedGlobal;
 
+    #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
-    #[salsa::dependencies] // FIXME
-    async fn extern_module(&self, module: String) -> Result<PtrEq<(Symbol, ExternModule)>>;
+    async fn extern_module(&self, module: String) -> Result<UnrootedGlobal>;
 
     #[salsa::transparent]
     fn get_extern_global(&self, name: &str) -> Option<DatabaseGlobal>;
@@ -353,7 +374,7 @@ pub trait Compilation: CompilationBase {
     fn module_text(&self, module: String) -> StdResult<Arc<Cow<'static, str>>, Error>;
 
     #[salsa::cycle(recover_cycle_typecheck)]
-    async fn typechecked_module(
+    async fn typechecked_source_module(
         &self,
         module: String,
         expected_type: Option<ArcType>,
@@ -361,6 +382,18 @@ pub trait Compilation: CompilationBase {
         TypecheckValue<Arc<OwnedExpr<Symbol>>>,
         (Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>, Error),
     >;
+
+    async fn module_type(
+        &self,
+        module: String,
+        expected_type: Option<ArcType>,
+    ) -> StdResult<ArcType, Error>;
+
+    async fn module_metadata(
+        &self,
+        module: String,
+        expected_type: Option<ArcType>,
+    ) -> StdResult<Arc<Metadata>, Error>;
 
     #[salsa::cycle(recover_cycle_expected_type)]
     async fn core_expr(
@@ -469,7 +502,7 @@ fn module_text(
     Ok(contents)
 }
 
-async fn typechecked_module(
+async fn typechecked_source_module(
     db: &mut (impl Compilation + salsa::Database),
     module: String,
     expected_type: Option<ArcType>,
@@ -497,6 +530,36 @@ async fn typechecked_module(
     Ok(value.map(Arc::new))
 }
 
+async fn module_type(
+    db: &mut (impl Compilation + salsa::Database),
+    name: String,
+    expected_type: Option<ArcType>,
+) -> StdResult<ArcType, Error> {
+    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+        let global = db.extern_module(name).await?;
+        return Ok(global.typ.clone());
+    }
+    db.typechecked_source_module(name, expected_type)
+        .await
+        .map(|module| module.typ)
+        .map_err(|(_, err)| err)
+}
+
+async fn module_metadata(
+    db: &mut (impl Compilation + salsa::Database),
+    name: String,
+    expected_type: Option<ArcType>,
+) -> StdResult<Arc<Metadata>, Error> {
+    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+        let global = db.extern_module(name).await?;
+        return Ok(global.metadata.clone());
+    }
+    db.typechecked_source_module(name, expected_type)
+        .await
+        .map(|module| module.metadata)
+        .map_err(|(_, err)| err)
+}
+
 async fn core_expr(
     db: &mut (impl Compilation + salsa::Database),
     module: String,
@@ -505,9 +568,15 @@ async fn core_expr(
     db.salsa_runtime_mut().report_untracked_read();
 
     let value = db
-        .typechecked_module(module.clone(), expected_type)
+        .typechecked_source_module(module.clone(), expected_type.clone())
         .await
         .map_err(|(_, err)| err)?;
+
+    // Ensure the type is stored in the database so we can collect typechecked_source_module later
+    db.module_type(module.clone(), expected_type.clone())
+        .await?;
+    db.module_metadata(module.clone(), expected_type).await?;
+
     let settings = db.compiler_settings();
 
     let env = env(db.compiler());
@@ -597,21 +666,24 @@ async fn import(
 
 async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
-        let (id, module) = &*db.extern_module(name).await?;
-        let mut value = module.value.clone();
-        unsafe { value.vm_mut().unroot() }; // FIXME
-        return Ok(UnrootedGlobal {
-            id: id.clone(),
-            typ: module.typ.clone(),
-            metadata: Arc::new(module.metadata.clone()),
-            value: UnrootedValue(value),
-        });
+        let global = db.extern_module(name.clone()).await?;
+
+        // Ensure the type is stored in the database so we can collect typechecked_source_module later
+        db.module_type(name.clone(), None).await?;
+        db.module_metadata(name, None).await?;
+
+        return Ok(global);
     }
 
     let TypecheckValue { metadata, typ, .. } = db
-        .typechecked_module(name.clone(), None)
+        .typechecked_source_module(name.clone(), None)
         .await
         .map_err(|(_, err)| err)?;
+
+    // Ensure the type is stored in the database so we can collect typechecked_source_module later
+    db.module_type(name.clone(), None).await?;
+    db.module_metadata(name.clone(), None).await?;
+
     let closure = db.compiled_module(name.clone(), None).await?;
 
     let module_id = closure.function.name.clone();
@@ -657,11 +729,8 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
     })
 }
 
-async fn extern_module(
-    db: &mut dyn Compilation,
-    name: String,
-) -> Result<PtrEq<(Symbol, ExternModule)>> {
-    let symbol = Symbol::from(format!("@{}", name));
+async fn extern_module(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
+    let id = Symbol::from(format!("@{}", name));
     let loader = db.extern_loader(name);
 
     for dep in &loader.dependencies {
@@ -669,10 +738,17 @@ async fn extern_module(
     }
 
     let vm = db.thread();
-    Ok(PtrEq(Arc::new((
-        symbol, // TODO
-        (loader.load_fn)(vm)?,
-    ))))
+
+    let module = (loader.load_fn)(vm)?;
+    let mut value = module.value.clone();
+    unsafe { value.vm_mut().unroot() }; // FIXME
+
+    Ok(UnrootedGlobal {
+        id,
+        typ: module.typ.clone(),
+        metadata: Arc::new(module.metadata),
+        value: UnrootedValue(value),
+    })
 }
 
 async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal> {
@@ -745,7 +821,15 @@ where
 
     fn find_type(&self, id: &SymbolRef) -> Option<ArcType> {
         if id.is_global() {
-            self.get_global(id.definition_name()).map(|g| g.typ.clone())
+            self.0
+                .borrow_mut()
+                .get_binding_inner(id.definition_name(), |self_, module| {
+                    self_
+                        .get_extern_global(module.as_str())
+                        .map(|global| global.typ)
+                        .or_else(|| self_.peek_module_type(module.as_str().into()))
+                })
+                .ok()
         } else {
             let name = id.definition_name();
 
@@ -788,8 +872,7 @@ where
         if id.is_global() {
             self.0
                 .borrow_mut()
-                .peek_typechecked_module(id.definition_name())
-                .map(|v| v.metadata.clone())
+                .peek_module_metadata(id.definition_name())
         } else {
             None
         }
@@ -831,10 +914,81 @@ where
     }
 }
 
+fn get_scoped_global<'n, T>(
+    name: &'n str,
+    mut lookup: impl FnMut(&Name) -> Option<T>,
+) -> Option<(&'n Name, T)> {
+    let mut module = Name::new(name.trim_start_matches('@'));
+    // Try to find a global by successively reducing the module path
+    // Input: "x.y.z.w"
+    // Test: "x.y.z"
+    // Test: "x.y"
+    // Test: "x"
+    // Test: -> Error
+    let global = loop {
+        if module.as_str() == "" {
+            return None;
+        }
+        if let Some(g) = lookup(module) {
+            break g;
+        }
+        module = module.module();
+    };
+    let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
+    let remaining_fields = Name::new(&name[remaining_offset..]);
+    Some((remaining_fields, global))
+}
+
+use crate::base::resolve;
+trait Extract: Sized {
+    // type Output;
+    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self>;
+    fn typ(&self) -> &ArcType;
+    // fn output(&self) -> Self::Output;
+}
+
+impl Extract for ArcType {
+    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
+        let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, self);
+        typ.row_iter()
+            .find(|field| field.name.as_ref() == field_name)
+            .map(|field| field.typ.clone())
+    }
+    fn typ(&self) -> &ArcType {
+        self
+    }
+}
+impl Extract for (RootedValue<RootedThread>, ArcType) {
+    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
+        let (value, typ) = self;
+        let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, typ);
+        typ.row_iter()
+            .enumerate()
+            .find(|&(_, field)| field.name.as_ref() == field_name)
+            .map(|(index, field)| match value.get_variants().as_ref() {
+                ValueRef::Data(data) => (
+                    db.thread().root_value(data.get_variant(index).unwrap()),
+                    field.typ.clone(),
+                ),
+                _ => ice!("Unexpected value {:?}", value),
+            })
+    }
+    fn typ(&self) -> &ArcType {
+        &self.1
+    }
+}
+
 impl CompilerDatabase {
     pub fn find_type_info(&mut self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
-        let (_, typ) = self.get_binding(name.module().as_str())?;
+
+        let typ = self.get_binding_inner(name.module().as_str(), |self_, module| {
+            self_
+                .get_extern_global(module.as_str())
+                .map(|global| global.typ)
+                .or_else(|| self_.peek_module_type(module.as_str().into()))
+        })?;
+
         let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
@@ -846,48 +1000,30 @@ impl CompilerDatabase {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    fn get_scoped_global<'s, 'n>(
-        &'s mut self,
-        name: &'n str,
-    ) -> Option<(&'n Name, DatabaseGlobal)> {
-        let mut module = Name::new(name.trim_start_matches('@'));
-        // Try to find a global by successively reducing the module path
-        // Input: "x.y.z.w"
-        // Test: "x.y.z"
-        // Test: "x.y"
-        // Test: "x"
-        // Test: -> Error
-        let global = loop {
-            if module.as_str() == "" {
-                return None;
-            }
-            if let Some(g) = self
-                .get_extern_global(name)
-                .or_else(|| self.peek_global(module.as_str().into()))
-            {
-                break g;
-            }
-            module = module.module();
-        };
-        let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
-        let remaining_fields = Name::new(&name[remaining_offset..]);
-        Some((remaining_fields, global))
+    pub fn get_binding(&mut self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
+        self.get_binding_inner(name, |self_, module| {
+            self_
+                .get_extern_global(module.as_str())
+                .or_else(|| self_.peek_global(module.as_str().into()))
+                .map(|global| (global.value, global.typ))
+        })
     }
 
-    pub fn get_binding(&mut self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
-        use crate::base::resolve;
-
-        let (remaining_fields, global) = self
-            .get_scoped_global(name)
+    fn get_binding_inner<T>(
+        &mut self,
+        name: &str,
+        mut lookup: impl FnMut(&mut Self, &Name) -> Option<T>,
+    ) -> Result<T>
+    where
+        T: Extract,
+    {
+        let (remaining_fields, mut value) = get_scoped_global(name, |n| lookup(self, n))
             .ok_or_else(|| vm::Error::UndefinedBinding(name.into()))?;
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((global.value, global.typ.clone()));
+            return Ok(value);
         }
-
-        let mut typ = global.typ;
-        let mut value = global.value.get_variant();
 
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
@@ -902,24 +1038,13 @@ impl CompilerDatabase {
                 ))
                 .into());
             }
-            typ = resolve::remove_aliases(&env(self), &mut NullInterner, typ);
-            let next_type = {
-                typ.row_iter()
-                    .enumerate()
-                    .find(|&(_, field)| field.name.as_ref() == field_name)
-                    .map(|(index, field)| match value.as_ref() {
-                        ValueRef::Data(data) => {
-                            value = data.get_variant(index).unwrap();
-                            &field.typ
-                        }
-                        _ => ice!("Unexpected value {:?}", value),
-                    })
-                    .cloned()
-            };
-            typ =
-                next_type.ok_or_else(move || vm::Error::UndefinedField(typ, field_name.into()))?;
+
+            value = value.extract(self, field_name).ok_or_else(move || {
+                vm::Error::UndefinedField(value.typ().clone(), field_name.into())
+            })?;
         }
-        Ok((self.thread().root_value(value), typ))
+
+        Ok(value)
     }
 
     pub fn get_metadata(&mut self, name_str: &str) -> Result<Arc<Metadata>> {
@@ -928,9 +1053,14 @@ impl CompilerDatabase {
     }
 
     fn get_metadata_(&mut self, name_str: &str) -> Option<Arc<Metadata>> {
-        let (remaining, global) = self.get_scoped_global(name_str)?;
+        let (remaining, metadata) = get_scoped_global(name_str, |module| {
+            self.get_extern_global(module.as_str())
+                .map(|global| global.metadata)
+                .or_else(|| self.peek_module_metadata(module.as_str().into()))
+        })?;
 
-        let mut metadata = &global.metadata;
+        let mut metadata = &metadata;
+
         for field_name in remaining.components() {
             metadata = metadata.module.get(field_name)?
         }
