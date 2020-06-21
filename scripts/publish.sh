@@ -3,7 +3,20 @@
 VERSION=$(echo $1 | sed 's/v//')
 shift
 
+function retry {
+    for i in {0..10}; do
+        $@
+        if [ $? -eq 0 ]; then
+            exit 0
+        fi
+        sleep 3
+    done
+    exit 1
+}
+
+
 declare -a PROJECTS=(
+    gluon_codegen
     gluon_base
     gluon_parser
     gluon_check
@@ -20,9 +33,7 @@ for PROJECT in "${PROJECTS[@]}"
 do
     PROJECT_PATH=$(echo "$PROJECT" | sed 's/gluon_//' | sed 's/gluon/./')
 
-    if ! (cd "${PROJECT_PATH}" && cargo publish "$@"); then
+    if ! (cd "${PROJECT_PATH}" && retry cargo publish "$@"); then
         exit 1
     fi
-    echo "Waiting for ${PROJECT} to publish"
-    sleep 25
 done
