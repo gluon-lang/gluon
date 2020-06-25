@@ -31,7 +31,7 @@ use gluon::{
     Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
-use codespan_reporting::termcolor;
+use codespan_reporting::term::termcolor;
 
 use crate::Color;
 

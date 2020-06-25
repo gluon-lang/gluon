@@ -19,8 +19,8 @@ travis-ci = { repository = "gluon-lang/gluon" }
 [dependencies]
 async-trait = "0.1"
 bitflags = "1.0.0"
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 collect-mac = "0.1.0"
 downcast-rs = "1"
 difference = { version = "2", optional = true }

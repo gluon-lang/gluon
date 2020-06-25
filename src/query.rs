@@ -15,6 +15,7 @@ use {
         kind::{ArcKind, KindEnv},
         metadata::{Metadata, MetadataEnv},
         pos::BytePos,
+        source::{CodeMap, FileMap, Source},
         symbol::{Name, Symbol, SymbolModule, SymbolRef},
         types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
@@ -76,14 +77,14 @@ pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 
 #[derive(Default)]
 pub(crate) struct State {
-    pub(crate) code_map: codespan::CodeMap,
+    pub(crate) code_map: CodeMap,
     pub(crate) inline_modules: FnvMap<String, Arc<Cow<'static, str>>>,
     pub(crate) index_map: FnvMap<String, BytePos>,
     extern_globals: FnvSet<String>,
 }
 
 impl State {
-    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
+    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<FileMap>>
     where
         S: Into<String>,
     {
@@ -100,7 +101,7 @@ impl State {
     }
 
     #[doc(hidden)]
-    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
+    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<FileMap>
     where
         S: AsRef<str> + Into<String>,
     {
@@ -108,32 +109,25 @@ impl State {
             Some(ref file_map) if file_map.src() == source.as_ref() => return file_map.clone(),
             _ => (),
         }
-        let file_map = self.code_map.add_filemap(
-            codespan::FileName::virtual_(file.to_string()),
-            source.into(),
-        );
+        let file_map = self.code_map.add_filemap(file.to_string(), source.into());
         self.index_map.insert(file.into(), file_map.span().start());
         file_map
     }
 
-    pub(crate) fn get_or_insert_filemap<S>(
-        &mut self,
-        file: &str,
-        source: S,
-    ) -> Arc<codespan::FileMap>
+    pub(crate) fn get_or_insert_filemap<S>(&mut self, file: &str, source: S) -> Arc<FileMap>
     where
         S: AsRef<str> + Into<String>,
     {
-        if let Some(i) = self.index_map.get(file) {
-            return self.code_map.find_file(*i).unwrap().clone();
+        if let Some(m) = self.get_filemap(file) {
+            return m;
         }
         self.add_filemap(file, source)
     }
 
-    pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
+    pub fn get_filemap(&self, file: &str) -> Option<Arc<FileMap>> {
         self.index_map
             .get(file)
-            .and_then(move |i| self.code_map.find_file(*i))
+            .and_then(move |i| self.code_map.get(*i))
             .cloned()
     }
 }
@@ -273,22 +267,22 @@ impl CompilerDatabase {
         self.state.lock().unwrap()
     }
 
-    pub fn code_map(&self) -> codespan::CodeMap {
+    pub fn code_map(&self) -> CodeMap {
         self.state().code_map.clone()
     }
 
-    pub fn update_filemap<S>(&self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
+    pub fn update_filemap<S>(&self, file: &str, source: S) -> Option<Arc<FileMap>>
     where
         S: Into<String>,
     {
         self.state().update_filemap(file, source)
     }
 
-    pub fn get_filemap(&self, file: &str) -> Option<Arc<codespan::FileMap>> {
+    pub fn get_filemap(&self, file: &str) -> Option<Arc<FileMap>> {
         self.state().get_filemap(file)
     }
 
-    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
+    pub(crate) fn get_or_insert_filemap<S>(&self, file: &str, source: S) -> Arc<FileMap>
     where
         S: AsRef<str> + Into<String>,
     {
@@ -296,7 +290,7 @@ impl CompilerDatabase {
     }
 
     #[doc(hidden)]
-    pub fn add_filemap<S>(&self, file: &str, source: S) -> Arc<codespan::FileMap>
+    pub fn add_filemap<S>(&self, file: &str, source: S) -> Arc<FileMap>
     where
         S: AsRef<str> + Into<String>,
     {

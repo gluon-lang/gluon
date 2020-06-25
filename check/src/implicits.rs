@@ -4,7 +4,7 @@ use {itertools::Itertools, smallvec::SmallVec};
 
 use rpds;
 
-use codespan_reporting::{Diagnostic, Label};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent},
@@ -14,6 +14,7 @@ use crate::base::{
     pos::{self, BytePos, Span, Spanned},
     resolve,
     scoped_map::{self, ScopedMap},
+    source::FileId,
     symbol::Symbol,
     types::{
         self, ArgType, BuiltinType, Flags, Generic, SymbolKey, Type, TypeContext, TypeExt, TypePtr,
@@ -258,15 +259,18 @@ impl<I: fmt::Display + Clone> fmt::Display for Error<I> {
 }
 
 impl<I: fmt::Display + Clone> AsDiagnostic for Error<I> {
-    fn as_diagnostic(&self) -> Diagnostic {
-        let diagnostic = Diagnostic::new_error(self.to_string());
-        self.reason.iter().fold(diagnostic, |diagnostic, reason| {
-            diagnostic.with_label(
-                Label::new_secondary(Span::new(BytePos::none(), BytePos::none())).with_message(
-                    format!("Required because of an implicit parameter of `{}`", reason),
-                ),
-            )
-        })
+    fn as_diagnostic(&self, _map: &base::source::CodeMap) -> Diagnostic<FileId> {
+        let mut diagnostic = Diagnostic::error().with_message(self.to_string());
+
+        diagnostic.labels.extend(self.reason.iter().map(|reason| {
+            Label::secondary(FileId::default(), Default::default()..Default::default())
+                .with_message(format!(
+                    "Required because of an implicit parameter of `{}`",
+                    reason
+                ))
+        }));
+
+        diagnostic
     }
 }
 

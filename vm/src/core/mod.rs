@@ -2274,8 +2274,11 @@ pub mod tests {
 
     use std::collections::HashMap;
 
+    use codespan_reporting::files::Files;
+
     use crate::base::{
         ast,
+        source::Source,
         symbol::{Symbol, SymbolModule, Symbols},
         types::TypeCache,
     };
@@ -2445,20 +2448,20 @@ pub mod tests {
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &allocator, expected_str)
             .unwrap_or_else(|err| {
-                let filemap = codespan::FileMap::new("test".into(), expected_str);
+                let filemap = crate::base::source::FileMap::new("test".into(), expected_str.into());
                 panic!(
                     "{}",
                     err.map_location(|i| {
-                        let (line, column) = filemap
-                            .location(codespan::ByteIndex::from(i as u32))
-                            .unwrap();
-                        let line_span = filemap.line_span(line).unwrap();
+                        let location =
+                            Source::location(&filemap, codespan::ByteIndex::from(i as u32))
+                                .unwrap();
+                        let line_span = filemap.line_range((), location.line.to_usize()).unwrap();
                         format!(
                             "line {}, column {}\n{}{}^",
-                            line.number(),
-                            column.number(),
-                            filemap.src_slice(line_span).unwrap(),
-                            " ".repeat(column.0 as usize)
+                            location.line.number(),
+                            location.column.number(),
+                            &filemap.source()[line_span],
+                            " ".repeat(location.column.0 as usize),
                         )
                     })
                 )

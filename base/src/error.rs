@@ -11,9 +11,12 @@ use std::slice;
 use std::str;
 use std::vec;
 
-use codespan_reporting::{Diagnostic, Label};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
-use crate::pos::{BytePos, Span, Spanned};
+use crate::{
+    pos::{BytePos, Spanned},
+    source::FileId,
+};
 
 /// An error type which can represent multiple errors.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -155,7 +158,7 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
 /// Error type which contains information of which file and where in the file the error occurred
 #[derive(Clone, Debug)]
 pub struct InFile<E> {
-    source: ::codespan::CodeMap,
+    source: crate::source::CodeMap,
     error: Errors<Spanned<E, BytePos>>,
 }
 
@@ -186,7 +189,7 @@ where
 impl<E: fmt::Display> InFile<E> {
     /// Creates a new `InFile` error which states that the error occurred in `file` using the file
     /// contents in `source` to provide a context to the span.
-    pub fn new(source: ::codespan::CodeMap, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
+    pub fn new(source: crate::source::CodeMap, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
         let err = InFile { source, error };
         // Verify that the source name can be accessed
         debug_assert!({
@@ -196,9 +199,9 @@ impl<E: fmt::Display> InFile<E> {
         err
     }
 
-    pub fn source_name(&self) -> &::codespan::FileName {
+    pub fn source_name(&self) -> &str {
         self.source
-            .find_file(self.error[0].span.start())
+            .get(self.error[0].span.start())
             .unwrap_or_else(|| {
                 panic!(
                     "Source file does not exist in associated code map. Error: {}",
@@ -221,27 +224,34 @@ impl<E: fmt::Display> InFile<E> {
         E: AsDiagnostic,
     {
         let mut output = Vec::new();
-        self.emit(
-            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-        )?;
+        self.emit(&mut ::codespan_reporting::term::termcolor::NoColor::new(
+            &mut output,
+        ))?;
         Ok(String::from_utf8(output).unwrap())
     }
 
-    pub fn emit<W>(&self, writer: &mut W) -> io::Result<()>
+    pub fn emit(
+        &self,
+        writer: &mut dyn ::codespan_reporting::term::termcolor::WriteColor,
+    ) -> io::Result<()>
     where
-        W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
         E: AsDiagnostic,
     {
         let iter = self
             .error
             .iter()
-            .map(AsDiagnostic::as_diagnostic)
+            .map(|error| error.as_diagnostic(&self.source))
             .enumerate();
         for (i, diagnostic) in iter {
             if i != 0 {
                 writeln!(writer)?;
             }
-            ::codespan_reporting::emit(&mut *writer, &self.source, &diagnostic)?;
+            ::codespan_reporting::term::emit(
+                &mut *writer,
+                &Default::default(),
+                &self.source,
+                &diagnostic,
+            )?;
         }
         Ok(())
     }
@@ -251,10 +261,9 @@ impl<E: fmt::Display + AsDiagnostic> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut buffer = Vec::new();
         {
-            let mut writer = ::codespan_reporting::termcolor::NoColor::new(&mut buffer);
+            let mut writer = ::codespan_reporting::term::termcolor::NoColor::new(&mut buffer);
 
-            self.emit(&mut writer)
-                .map_err(|_| fmt::Error)?;
+            self.emit(&mut writer).map_err(|_| fmt::Error)?;
         }
 
         write!(f, "{}", str::from_utf8(&buffer).unwrap())
@@ -295,16 +304,32 @@ impl<E, H> From<E> for Help<E, H> {
 }
 
 pub trait AsDiagnostic {
-    fn as_diagnostic(&self) -> Diagnostic;
+    fn as_diagnostic(&self, map: &crate::source::CodeMap) -> Diagnostic<FileId>;
 }
 
 impl<E> AsDiagnostic for Spanned<E, BytePos>
 where
     E: AsDiagnostic,
 {
-    fn as_diagnostic(&self) -> Diagnostic {
-        let mut diagnostic = self.value.as_diagnostic();
-        diagnostic.labels.insert(0, Label::new_primary(self.span));
+    fn as_diagnostic(&self, map: &crate::source::CodeMap) -> Diagnostic<FileId> {
+        let mut diagnostic = self.value.as_diagnostic(map);
+        for label in &mut diagnostic.labels {
+            if label.file_id == FileId::default() {
+                label.file_id = self.span.start();
+            }
+            if label.range == (0..0) {
+                if let Some(range) = self.span.to_range(map) {
+                    label.range = range;
+                }
+            }
+        }
+        if diagnostic.labels.is_empty() {
+            if let Some(range) = self.span.to_range(map) {
+                diagnostic
+                    .labels
+                    .push(Label::primary(self.span.start(), range));
+            }
+        }
         diagnostic
     }
 }
@@ -314,12 +339,19 @@ where
     E: AsDiagnostic,
     H: fmt::Display,
 {
-    fn as_diagnostic(&self) -> Diagnostic {
-        let mut diagnostic = self.error.as_diagnostic();
+    fn as_diagnostic(&self, map: &crate::source::CodeMap) -> Diagnostic<FileId> {
+        let mut diagnostic = self.error.as_diagnostic(map);
         if let Some(ref help) = self.help {
             diagnostic.labels.push(
-                Label::new_secondary(Span::new(BytePos::none(), BytePos::none()))
-                    .with_message(help.to_string()),
+                Label::secondary(
+                    diagnostic
+                        .labels
+                        .last()
+                        .map(|label| label.file_id)
+                        .unwrap_or_default(),
+                    0..0,
+                )
+                .with_message(help.to_string()),
             );
         }
         diagnostic
@@ -327,7 +359,7 @@ where
 }
 
 impl AsDiagnostic for Box<dyn ::std::error::Error + Send + Sync> {
-    fn as_diagnostic(&self) -> Diagnostic {
-        Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(&self, _map: &crate::source::CodeMap) -> Diagnostic<FileId> {
+        Diagnostic::error().with_message(self.to_string())
     }
 }

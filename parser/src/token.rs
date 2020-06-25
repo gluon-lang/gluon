@@ -854,12 +854,12 @@ mod test {
     }
 
     fn test(input: &str, expected: Vec<(&str, BorrowedToken<'_>)>) {
-        use crate::base::source::Source;
+        use base::source::Source;
 
         let mut tokenizer = tokenizer(input);
         let mut count = 0;
         let length = expected.len();
-        let source = ::codespan::FileMap::new("test".into(), input.to_string());
+        let source = <base::source::FileMap as Source>::new(input);
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
             count += 1;
             println!("{:?}", token);

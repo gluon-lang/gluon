@@ -35,6 +35,7 @@ use crate::base::{
     metadata::{BaseMetadata, Metadata},
     mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
+    source,
     symbol::Symbol,
     types::{Alias, ArcType, Field, Generic, TypeCache},
 };
@@ -180,8 +181,11 @@ quick_error! {
 }
 
 impl AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(
+        &self,
+        _map: &base::source::CodeMap,
+    ) -> codespan_reporting::diagnostic::Diagnostic<source::FileId> {
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(self.to_string())
     }
 }
 
@@ -378,12 +382,12 @@ impl ParserSource for str {
     }
 }
 
-impl ParserSource for codespan::FileMap {
+impl ParserSource for source::FileMap {
     fn src(&self) -> &str {
-        codespan::FileMap::src(self)
+        source::FileMap::source(self)
     }
     fn start_index(&self) -> BytePos {
-        codespan::FileMap::span(self).start()
+        source::Source::span(self).start()
     }
 }
 

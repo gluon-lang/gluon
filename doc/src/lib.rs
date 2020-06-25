@@ -162,7 +162,7 @@ pub fn record(
             .and_then(|completion_symbol| {
                 source.line_number_at_byte(completion_symbol.span.start())
             })
-            .map(|l| l.number().0)
+            .map(|l| l.number().to_usize() as u32)
     };
 
     Record {

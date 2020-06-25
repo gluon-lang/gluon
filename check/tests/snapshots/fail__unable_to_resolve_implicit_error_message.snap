@@ -1,0 +1,14 @@
+---
+source: check/tests/fail.rs
+expression: "&*format!(\"{}\", result . unwrap_err()).replace(\"\\t\", \"        \")"
+---
+error: Implicit parameter with type `test.Eq Int` could not be resolved.
+   ┌─ test:11:3
+   │
+11 │ f (Test (Test 1))
+   │   ---------------
+   │   │
+   │   Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
+   │   Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
+
+

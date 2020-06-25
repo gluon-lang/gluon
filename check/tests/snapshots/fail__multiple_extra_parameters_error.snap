@@ -1,0 +1,17 @@
+---
+source: check/tests/fail.rs
+expression: "&*format!(\"{}\", result . unwrap_err()).replace(\"\\t\", \"        \")"
+---
+error: Expected the following types to be equal
+Expected: Int -> Float -> a
+Found: String
+1 errors were found during unification:
+Types do not match:
+    Expected: Int -> Float -> a
+    Found: String
+  ┌─ test:3:7
+  │
+3 │ id "" 1 1.0
+  │       ----- Attempted to call function with 3 arguments but its type only has 1
+
+

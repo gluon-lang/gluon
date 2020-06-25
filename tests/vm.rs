@@ -9,7 +9,7 @@ mod support;
 use crate::support::*;
 
 use gluon::{
-    base::{pos::BytePos, types::Type},
+    base::{pos::BytePos, source::Source, types::Type},
     vm,
     vm::{
         api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},

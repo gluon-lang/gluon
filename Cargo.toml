@@ -40,8 +40,8 @@ collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.8"
 futures = { version = "0.3.1", features = ["thread-pool"] }
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 pin-project = "0.4"
 salsa = { version = "0.14.0", package = "gluon-salsa" }
 
@@ -80,6 +80,7 @@ collect-mac = "0.1.0"
 env_logger = "0.7"
 failure = "0.1"
 failure_derive = "0.1"
+insta = "0.16"
 pretty_assertions = "0.6"
 structopt = "0.3"
 tempfile = "3.0.4"

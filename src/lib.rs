@@ -69,6 +69,7 @@ use crate::base::{
     filename_to_module,
     metadata::Metadata,
     pos::{BytePos, Span, Spanned},
+    source::FileId,
     symbol::{Symbol, Symbols},
     types::{ArcType, TypeCache},
 };
@@ -192,8 +193,11 @@ impl std::hash::Hash for IoError {
 }
 
 impl base::error::AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(
+        &self,
+        _map: &base::source::CodeMap,
+    ) -> codespan_reporting::diagnostic::Diagnostic<FileId> {
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(self.to_string())
     }
 }
 
@@ -246,24 +250,24 @@ impl From<Errors<Error>> for Error {
 impl Error {
     pub fn emit_string(&self) -> ::std::io::Result<String> {
         let mut output = Vec::new();
-        self.emit(&mut ::codespan_reporting::termcolor::NoColor::new(
+        self.emit(&mut codespan_reporting::term::termcolor::NoColor::new(
             &mut output,
         ))?;
         Ok(String::from_utf8(output).unwrap())
     }
 
-    pub fn emit<W>(&self, writer: &mut W) -> ::std::io::Result<()>
-    where
-        W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
-    {
-        match *self {
-            Error::Parse(ref err) => err.emit(writer),
-            Error::Typecheck(ref err) => err.emit(writer),
-            Error::IO(ref err) => write!(writer, "{}", err),
-            Error::VM(ref err) => write!(writer, "{}", err),
-            Error::Macro(ref err) => err.emit(writer),
-            Error::Other(ref err) => write!(writer, "{}", err),
-            Error::Multiple(ref errors) => {
+    pub fn emit(
+        &self,
+        writer: &mut dyn codespan_reporting::term::termcolor::WriteColor,
+    ) -> ::std::io::Result<()> {
+        match self {
+            Error::Parse(err) => err.emit(writer),
+            Error::Typecheck(err) => err.emit(writer),
+            Error::IO(err) => write!(writer, "{}", err),
+            Error::VM(err) => write!(writer, "{}", err),
+            Error::Macro(err) => err.emit(writer),
+            Error::Other(err) => write!(writer, "{}", err),
+            Error::Multiple(errors) => {
                 for err in errors {
                     err.emit(writer)?;
                 }
@@ -738,7 +742,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         input: &str,
     ) -> Result<String> {
-        fn has_format_disabling_errors(file: &codespan::FileName, err: &Error) -> bool {
+        fn has_format_disabling_errors(file: &str, err: &Error) -> bool {
             match *err {
                 Error::Multiple(ref errors) => errors
                     .iter()
@@ -756,7 +760,7 @@ pub trait ThreadExt: Send + Sync {
         let expr = match input.reparse_infix(compiler, thread, file, input).await {
             Ok(expr) => expr.expr,
             Err((Some(expr), err)) => {
-                if has_format_disabling_errors(&codespan::FileName::from(file.to_string()), &err) {
+                if has_format_disabling_errors(file, &err) {
                     return Err(err);
                 }
                 expr.expr

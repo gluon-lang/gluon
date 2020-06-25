@@ -6,7 +6,7 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use self::{
-    base::{
+    base::{source,
         ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
@@ -185,7 +185,7 @@ pub(crate) fn in_file_error<E>(text: &str, errors: Errors<Spanned<E, BytePos>>) 
 where
     E: fmt::Display,
 {
-    let mut source = codespan::CodeMap::new();
+    let mut source = source::CodeMap::new();
     source.add_filemap("test".into(), text.into());
     InFile::new(source, errors)
 }
@@ -206,7 +206,7 @@ pub fn typecheck_expr_expected(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
-    let source = codespan::FileMap::new("test".into(), text.to_string());
+    let source = source::FileMap::new("test".into(), text.to_string());
     let result = {
         let (arena, expr) = expr.arena_expr();
         let arena = arena.borrow();
@@ -256,7 +256,7 @@ pub fn typecheck_partial_expr(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
-    let source = codespan::FileMap::new("test".into(), text.to_string());
+    let source = source::FileMap::new("test".into(), text.to_string());
 
     let result = {
         let (arena, expr) = expr.arena_expr();

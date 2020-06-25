@@ -1,6 +1,6 @@
 use std::fmt;
 
-use codespan_reporting::Diagnostic;
+use codespan_reporting::diagnostic::Diagnostic;
 
 use pretty::Arena;
 
@@ -8,6 +8,7 @@ use base::{
     ast,
     error::AsDiagnostic,
     pos::{self, BytePos, Spanned},
+    source::FileId,
     types::{ArcType, Filter, ToDoc, TypeExt, TypeFormatter},
 };
 
@@ -230,11 +231,11 @@ where
         + pos::HasSpan
         + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
 {
-    fn as_diagnostic(&self) -> Diagnostic {
+    fn as_diagnostic(&self, map: &base::source::CodeMap) -> Diagnostic<FileId> {
         use self::TypeError::*;
         match *self {
-            UnableToResolveImplicit(ref err) => err.as_diagnostic(),
-            _ => Diagnostic::new_error(self.to_string()),
+            UnableToResolveImplicit(ref err) => err.as_diagnostic(map),
+            _ => Diagnostic::error().with_message(self.to_string()),
         }
     }
 }

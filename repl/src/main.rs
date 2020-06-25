@@ -19,18 +19,20 @@ use std::{
     sync::Arc,
 };
 
+use codespan_reporting::term::termcolor;
 use quick_error::quick_error;
-use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
 use gluon::{base, parser, vm};
 
-use crate::base::filename_to_module;
+use crate::base::{
+    filename_to_module,
+    source::{self, Source},
+};
 
 use gluon::{
-    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread,
-    ThreadExt,
+    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread, ThreadExt,
 };
 
 mod repl;
@@ -66,7 +68,7 @@ pub enum Color {
 
 impl Into<termcolor::ColorChoice> for Color {
     fn into(self) -> termcolor::ColorChoice {
-        use crate::termcolor::ColorChoice::*;
+        use termcolor::ColorChoice::*;
         match self {
             Color::Auto => Auto,
             Color::Always => Always,
@@ -173,7 +175,7 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-async fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
+async fn format(file: &str, file_map: Arc<source::FileMap>, opt: &Opt) -> Result<String> {
     let thread = new_vm_async().await;
     thread.get_database_mut().use_standard_lib(!opt.no_std);
 
@@ -197,7 +199,7 @@ async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     }
 
     let module_name = filename_to_module(&name.display().to_string());
-    let mut code_map = codespan::CodeMap::new();
+    let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
     let formatted = format(&module_name, file_map.clone(), opt).await?;
 
@@ -221,7 +223,7 @@ async fn fmt_stdio(opt: &Opt) -> Result<()> {
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
 
-    let mut code_map = codespan::CodeMap::new();
+    let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap("STDIN".into(), buffer);
 
     let formatted = format("STDIN", file_map, opt).await?;
@@ -299,7 +301,9 @@ async fn main() {
     let result = run(&opt, opt.color, &vm).await;
     if let Err(err) = result {
         match err {
-            Error::Gluon(gluon::Error::VM(VMError::Message(_))) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
+            Error::Gluon(gluon::Error::VM(VMError::Message(_))) => {
+                eprintln!("{}\n{}", err, vm.context().stacktrace(0))
+            }
             Error::Gluon(err) => {
                 let mut stderr = termcolor::StandardStream::stderr(color.into());
                 if let Err(err) = err.emit(&mut stderr) {

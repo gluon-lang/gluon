@@ -1,7 +1,5 @@
 #[macro_use]
 extern crate pretty_assertions;
-#[macro_use]
-extern crate difference;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -389,23 +387,7 @@ fn no_inference_variable_in_error() {
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(
-        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"error: Expected the following types to be equal
-Expected: Int -> a
-Found: ()
-1 errors were found during unification:
-Types do not match:
-    Expected: Int -> a
-    Found: ()
-- <test>:2:4
-  |
-2 | () 1
-  |    ^
-  |
-- Attempted to call a non-function value
-"#
-    );
+    insta::assert_snapshot!(&*format!("{}", result.unwrap_err()).replace("\t", "        "));
 }
 
 #[test]
@@ -419,22 +401,7 @@ eq (A 0) (B 0.0)
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(
-        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"error: Expected the following types to be equal
-Expected: test.A
-Found: test.B
-1 errors were found during unification:
-Row labels do not match.
-    Expected: A
-    Found: B
-- <test>:5:11
-  |
-5 | eq (A 0) (B 0.0)
-  |           ^^^^^
-  |
-"#
-    );
+    insta::assert_snapshot!(&*format!("{}", result.unwrap_err()).replace("\t", "        "));
 }
 
 #[test]
@@ -448,20 +415,7 @@ f { } { x = 1 }
 
     let result = support::typecheck(text);
 
-    assert_eq!(
-        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"error: Expected the following types to be equal
-Expected: ()
-Found: { x : Int }
-1 errors were found during unification:
-The type `()` lacks the following fields: x
-- <test>:4:7
-  |
-4 | f { } { x = 1 }
-  |       ^^^^^^^^^
-  |
-"#
-    );
+    insta::assert_snapshot!(&*format!("{}", result.unwrap_err()).replace("\t", "        "));
 }
 
 #[test]
@@ -482,20 +436,7 @@ f (Test (Test 1))
 
     let result = support::typecheck(text);
 
-    assert_diff!(
-        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"error: Implicit parameter with type `test.Eq Int` could not be resolved.
-- <test>:11:3
-   |
-11 | f (Test (Test 1))
-   |   ^^^^^^^^^^^^^^^
-   |
-- Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
-- Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
-"#,
-        "\n",
-        0
-    );
+    insta::assert_snapshot!(&*format!("{}", result.unwrap_err()).replace("\t", "        "));
 }
 
 #[test]
@@ -699,23 +640,7 @@ id "" 1 1.0
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(
-        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"error: Expected the following types to be equal
-Expected: Int -> Float -> a
-Found: String
-1 errors were found during unification:
-Types do not match:
-    Expected: Int -> Float -> a
-    Found: String
-- <test>:3:7
-  |
-3 | id "" 1 1.0
-  |       ^^^^^
-  |
-- Attempted to call function with 3 arguments but its type only has 1
-"#
-    );
+    insta::assert_snapshot!(&*format!("{}", result.unwrap_err()).replace("\t", "        "));
 }
 
 #[test]

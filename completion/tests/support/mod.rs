@@ -8,6 +8,7 @@ use crate::base::{
     kind::{ArcKind, Kind, KindEnv},
     metadata::{Metadata, MetadataEnv},
     pos::{BytePos, Spanned},
+    source::{self, Source},
     symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
     types::{
         self, Alias, ArcType, Generic, KindedIdent, PrimitiveEnv, Type, TypeCache, TypeEnv,
@@ -30,7 +31,7 @@ mod check_support;
 pub use self::check_support::*;
 
 pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
-    codespan::FileMap::new("test".into(), src.to_string())
+    source::FileMap::new("test".into(), src.to_string())
         .byte_index((row as u32).into(), (column as u32).into())
         .expect("Position is not in source")
 }
@@ -39,14 +40,12 @@ pub(crate) fn in_file_error<E>(text: &str, errors: Errors<Spanned<E, BytePos>>) 
 where
     E: fmt::Display,
 {
-    let mut source = codespan::CodeMap::new();
+    let mut source = source::CodeMap::new();
     source.add_filemap("test".into(), text.into());
     InFile::new(source, errors)
 }
 
-pub fn parse_new(
-    s: &str,
-) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
+pub fn parse_new(s: &str) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
