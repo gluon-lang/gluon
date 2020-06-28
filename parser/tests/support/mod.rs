@@ -1,15 +1,13 @@
 #![allow(unused)]
 
-pub extern crate codespan;
-
 use std::marker::PhantomData;
 
 use crate::base::{
     ast::{
         self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
         Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
-        MutVisitor, Pattern, RootExpr, SpannedAlias, SpannedAstType, SpannedExpr,
-        SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        MutVisitor, Pattern, RootExpr, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
+        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
     },
     error::Errors,
     kind::Kind,
@@ -107,9 +105,7 @@ pub fn parse_string<'env, 'input>(
     }
 }
 
-pub fn parse(
-    input: &str,
-) -> Result<RootExpr<String>, (Option<RootExpr<String>>, ParseErrors)> {
+pub fn parse(input: &str) -> Result<RootExpr<String>, (Option<RootExpr<String>>, ParseErrors)> {
     let mut symbols = MockEnv::new();
 
     let mut expr = parse_string(&mut symbols, input)?;
@@ -179,11 +175,8 @@ macro_rules! parse_new {
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
         parse(&input).unwrap_or_else(|(_, err)| {
-            let mut source = crate::support::codespan::CodeMap::new();
-            source.add_filemap(
-                crate::support::codespan::FileName::virtual_("test"),
-                input.clone(),
-            );
+            let mut source = base::source::CodeMap::new();
+            source.add_filemap("test".into(), input.clone());
             panic!("{}", crate::base::error::InFile::new(source, err))
         })
     }};

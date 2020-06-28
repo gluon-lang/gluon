@@ -1,0 +1,15 @@
+---
+source: check/tests/fail.rs
+expression: "&*format!(\"{}\", result . unwrap_err()).replace(\"\\t\", \"        \")"
+---
+error: Expected the following types to be equal
+Expected: ()
+Found: { x : Int }
+1 errors were found during unification:
+The type `()` lacks the following fields: x
+  ┌─ test:4:7
+  │
+4 │ f { } { x = 1 }
+  │       ^^^^^^^^^
+
+

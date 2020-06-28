@@ -25,6 +25,7 @@ use {
 use crate::base::{
     ast::{self, expr_to_path, Expr, Literal, SpannedExpr},
     filename_to_module, pos,
+    source::FileId,
     symbol::Symbol,
     types::ArcType,
 };
@@ -68,8 +69,11 @@ quick_error! {
 }
 
 impl base::error::AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(
+        &self,
+        _map: &base::source::CodeMap,
+    ) -> codespan_reporting::diagnostic::Diagnostic<FileId> {
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(self.to_string())
     }
 }
 

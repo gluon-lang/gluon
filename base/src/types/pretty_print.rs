@@ -250,7 +250,7 @@ impl<'a, I, A> Printer<'a, I, A> {
     }
 
     pub fn comments_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
-        if pos == BytePos::none() {
+        if pos == BytePos::default() {
             return self.arena.nil();
         }
         let (comments_after, mut doc, comments_before) = self.make_comments_doc(
@@ -277,7 +277,7 @@ impl<'a, I, A> Printer<'a, I, A> {
     }
 
     pub fn comments_count(&self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a, A>, A>, usize) {
-        if span.start() == BytePos::none() || span.end() == BytePos::none() {
+        if span.start() == BytePos::default() || span.end() == BytePos::default() {
             return (self.arena.nil(), 0);
         }
 

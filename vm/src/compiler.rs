@@ -6,7 +6,7 @@ use crate::base::{
     pos::Line,
     resolve,
     scoped_map::ScopedMap,
-    source::Source,
+    source::{FileMap, Source},
     symbol::{Symbol, SymbolData, SymbolModule, SymbolRef},
     types::{Alias, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
 };
@@ -280,7 +280,7 @@ impl FunctionEnv {
             stack_size: 0,
             function: CompiledFunction::new(args, id, typ, source_name),
             current_line: Line::from(0),
-            emit_debug_info: emit_debug_info,
+            emit_debug_info,
         }
     }
 
@@ -449,7 +449,7 @@ pub struct Compiler<'a> {
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
-    source: &'a ::codespan::FileMap,
+    source: &'a FileMap,
     source_name: String,
     emit_debug_info: bool,
     empty_symbol: Symbol,
@@ -485,7 +485,7 @@ impl<'a> Compiler<'a> {
         globals: &'a (dyn CompilerEnv<Type = ArcType> + 'a),
         vm: &'a GlobalVmState,
         mut symbols: SymbolModule<'a>,
-        source: &'a ::codespan::FileMap,
+        source: &'a FileMap,
         source_name: String,
         emit_debug_info: bool,
     ) -> Compiler<'a> {
@@ -497,7 +497,7 @@ impl<'a> Compiler<'a> {
             stack_types: ScopedMap::new(),
             source: source,
             source_name: source_name,
-            emit_debug_info: emit_debug_info,
+            emit_debug_info,
             hole: Type::hole(),
         }
     }
@@ -1182,7 +1182,7 @@ mod tests {
 
         let globals = TypeInfos::new();
         let vm_state = GlobalVmState::new();
-        let source = ::codespan::FileMap::new("".to_string().into(), "".to_string());
+        let source = FileMap::new("".to_string().into(), "".to_string());
         let mut compiler = Compiler::new(
             &globals,
             &vm_state,

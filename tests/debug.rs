@@ -456,6 +456,7 @@ fn implicit_prelude_variable_names() {
         let functions = functions.clone();
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
+            eprintln!("1123");
             let stack_info = debug_context.stack_info(0).unwrap();
             functions.lock().unwrap().extend(
                 stack_info

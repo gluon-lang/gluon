@@ -1,0 +1,11 @@
+---
+source: tests/ui.rs
+expression: result.unwrap_err().emit_string().unwrap()
+---
+error: Could not find module 'undefined'. Searched `.`.
+  ┌─ test:1:1
+  │
+1 │ import! undefined
+  │ ^^^^^^^^^^^^^^^^^
+
+

@@ -8,7 +8,7 @@ use std::{
 };
 
 use {
-    codespan_reporting::Diagnostic,
+    codespan_reporting::diagnostic::Diagnostic,
     downcast_rs::{impl_downcast, Downcast},
     futures::{prelude::*, task::Spawn},
 };
@@ -21,6 +21,7 @@ use crate::base::{
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
+    source::FileId,
     symbol::{Symbol, Symbols},
 };
 
@@ -142,8 +143,8 @@ impl StdError for Error {
 }
 
 impl AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> Diagnostic {
-        self.0.as_diagnostic()
+    fn as_diagnostic(&self, map: &base::source::CodeMap) -> Diagnostic<FileId> {
+        self.0.as_diagnostic(map)
     }
 }
 
@@ -201,8 +202,8 @@ impl Error {
         }
 
         impl AsDiagnostic for StringError {
-            fn as_diagnostic(&self) -> Diagnostic {
-                Diagnostic::new_error(self.to_string())
+            fn as_diagnostic(&self, _map: &base::source::CodeMap) -> Diagnostic<FileId> {
+                Diagnostic::error().with_message(self.to_string())
             }
         }
 

@@ -1,0 +1,17 @@
+---
+source: check/tests/fail.rs
+expression: "&*format!(\"{}\", result . unwrap_err()).replace(\"\\t\", \"        \")"
+---
+error: Expected the following types to be equal
+Expected: test.A
+Found: test.B
+1 errors were found during unification:
+Row labels do not match.
+    Expected: A
+    Found: B
+  ┌─ test:5:11
+  │
+5 │ eq (A 0) (B 0.0)
+  │           ^^^^^
+
+

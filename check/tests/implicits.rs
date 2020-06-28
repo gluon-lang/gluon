@@ -6,19 +6,19 @@ extern crate gluon_check as check;
 extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
-use crate::base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
-use crate::base::symbol::Symbol;
-use crate::base::types::Type;
+use crate::base::{
+    ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor},
+    source,
+    symbol::Symbol,
+    types::Type,
+};
 
 use crate::check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
 use crate::support::MockEnv;
 
 fn pretty_expr(text: &str, expr: &SpannedExpr<Symbol>) -> String {
-    format::pretty_expr(
-        &codespan::FileMap::new("test".into(), text.to_string()),
-        expr,
-    )
+    format::pretty_expr(&source::FileMap::new("test".into(), text.to_string()), expr)
 }
 
 #[macro_use]

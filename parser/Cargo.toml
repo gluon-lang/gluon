@@ -19,15 +19,15 @@ travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 collect-mac = "0.1.0"
-itertools = "0.8"
+itertools = "0.9"
 quick-error = "1.0.0"
 lalrpop-util = "0.19"
 log = "0.4"
 pretty = "0.9"
 gluon_base = { path = "../base", version = "0.15.1" } # GLUON
 ordered-float = "1"
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 
 [dev-dependencies]
 criterion = "0.3"

@@ -71,6 +71,7 @@ mod value;
 
 use std::{self as real_std, fmt, marker::PhantomData};
 
+use crate::base::{metadata::Metadata, source::FileId, symbol::Symbol, types::ArcType};
 use crate::{
     api::{ValueRef, VmType},
     gc::CloneUnrooted,
@@ -79,7 +80,8 @@ use crate::{
     types::{VmIndex, VmInt},
     value::{Value, ValueRepr},
 };
-use crate::{base::metadata::Metadata, base::symbol::Symbol, base::types::ArcType};
+
+use codespan_reporting::diagnostic::Diagnostic;
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
@@ -193,8 +195,8 @@ quick_error! {
 }
 
 impl base::error::AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(&self, _map: &base::source::CodeMap) -> Diagnostic<FileId> {
+        Diagnostic::error().with_message(self.to_string())
     }
 }
 

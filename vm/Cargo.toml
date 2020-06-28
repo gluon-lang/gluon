@@ -19,15 +19,15 @@ travis-ci = { repository = "gluon-lang/gluon" }
 [dependencies]
 async-trait = "0.1"
 bitflags = "1.0.0"
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 collect-mac = "0.1.0"
 downcast-rs = "1"
 difference = { version = "2", optional = true }
 crossbeam-utils = "0.6"
 frunk_core = "0.3"
 futures = { version = "0.3.1", features = ["compat", "async-await"] }
-itertools = "0.8"
+itertools = "0.9"
 lalrpop-util = { version = "0.19", optional = true }
 log = "0.4"
 ordered-float = "1"

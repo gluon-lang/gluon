@@ -1,0 +1,17 @@
+---
+source: check/tests/fail.rs
+expression: "&*format!(\"{}\", result . unwrap_err()).replace(\"\\t\", \"        \")"
+---
+error: Expected the following types to be equal
+Expected: Int -> a
+Found: ()
+1 errors were found during unification:
+Types do not match:
+    Expected: Int -> a
+    Found: ()
+  ┌─ test:2:4
+  │
+2 │ () 1
+  │    - Attempted to call a non-function value
+
+
