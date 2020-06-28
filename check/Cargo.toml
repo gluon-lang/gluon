@@ -19,7 +19,7 @@ travis-ci = { repository = "gluon-lang/gluon" }
 collect-mac = "0.1.0"
 ena = "0.13"
 log = "0.4"
-itertools = "0.8"
+itertools = "0.9"
 pretty = "0.10"
 smallvec = "0.6"
 rpds = "0.7"

@@ -208,16 +208,14 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
 
         let mut source = String::new();
         loop {
-            let content = match parser.next() {
-                Some(pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(code))) => code,
+            match parser.next() {
+                Some(pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(_))) => (),
                 None => break,
                 _ => continue,
-            };
-            source.push_str(&content);
+            }
             loop {
                 match parser.next() {
-                    Some(pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(content))) => {
-                        source.push_str(&content);
+                    Some(pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(_))) => {
                         break;
                     }
                     Some(pulldown_cmark::Event::Text(content)) => {
