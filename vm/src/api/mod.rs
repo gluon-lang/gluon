@@ -1687,7 +1687,13 @@ macro_rules! define_tuple {
                     $id.push(context)?;
                 )+
                 let len = count!($($id),+);
-                context.context().push_new_data(0, len)?;
+                let thread = context.thread();
+                #[allow(unused_assignments)]
+                let field_names = {
+                    let mut i = 0;
+                    [$(thread.global_env().intern(&format!("_{}", { let _ = $id; let x = i; i += 1; x }))?),*]
+                };
+                context.context().push_new_record(len, &field_names)?;
                 Ok(())
             }
         }
