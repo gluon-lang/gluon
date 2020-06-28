@@ -340,6 +340,18 @@ fn use_type_from_type_field() {
 }
 
 #[test]
+fn use_rust_created_tuple_as_polymorphic() {
+    let _ = ::env_logger::try_init();
+    let test = r"\x -> x._0";
+    let mut vm = make_vm();
+    load_script(&mut vm, "test", test).unwrap_or_else(|err| panic!("{}", err));
+
+    let mut f: FunctionRef<fn((i32, String)) -> VmInt> = vm.get_global("test").unwrap();
+    let result = f.call((1, "".to_string())).unwrap();
+    assert_eq!(result, 1);
+}
+
+#[test]
 fn use_rust_created_record_as_polymorphic() {
     let _ = ::env_logger::try_init();
     let test = r"\x -> x.x";
