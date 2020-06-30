@@ -17,6 +17,9 @@ use std::{
 use either::Either;
 use salsa::ParallelDatabase;
 
+#[cfg(feature = "serde")]
+use crate::ThreadExt;
+
 use crate::{
     base::{
         ast::{self, OwnedExpr, RootExpr, SpannedExpr, Typed},
@@ -35,7 +38,7 @@ use crate::{
         macros::MacroExpander,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
     },
-    Error, ModuleCompiler, Result, ThreadExt,
+    Error, ModuleCompiler, Result,
 };
 
 pub type BoxFuture<'vm, T, E> =

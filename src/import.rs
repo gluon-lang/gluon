@@ -16,7 +16,6 @@ use {
     futures::{
         future::{self},
         prelude::*,
-        task::SpawnExt,
     },
     itertools::Itertools,
     salsa::{debug::DebugQueryTable, Database},
@@ -573,7 +572,10 @@ where
 
         let span = args[0].span;
 
+        #[cfg(feature = "tokio")]
         if let Some(spawn) = macros.spawn {
+            use futures::task::SpawnExt;
+
             let (tx, rx) = tokio::sync::oneshot::channel();
             spawn
                 .spawn(Box::pin(async move {
@@ -585,7 +587,7 @@ where
                     let _ = tx.send(result);
                 }))
                 .unwrap();
-            Box::pin(async move {
+            return Box::pin(async move {
                 Ok(From::from(move || {
                     rx.map(move |r| {
                         r.unwrap_or_else(|err| Err(MacroError::new(Error::String(err.to_string()))))
@@ -593,20 +595,20 @@ where
                     })
                     .boxed()
                 }))
-            })
-        } else {
-            Box::pin(async move {
-                Ok(From::from(move || {
-                    async move {
-                        db.import(modulename)
-                            .await
-                            .map_err(|err| MacroError::message(err.to_string()))
-                            .map(move |id| pos::spanned(span, Expr::Ident(id)))
-                    }
-                    .boxed()
-                }))
-            })
+            });
         }
+
+        Box::pin(async move {
+            Ok(From::from(move || {
+                async move {
+                    db.import(modulename)
+                        .await
+                        .map_err(|err| MacroError::message(err.to_string()))
+                        .map(move |id| pos::spanned(span, Expr::Ident(id)))
+                }
+                .boxed()
+            }))
+        })
     }
 }
 

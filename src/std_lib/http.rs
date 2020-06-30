@@ -18,7 +18,7 @@ use {
         StatusCode,
     },
     hyper::{body::Bytes, Server},
-    pin_project::pin_project,
+    pin_project_lite::pin_project,
 };
 
 use crate::base::types::{ArcType, Type};
@@ -360,8 +360,9 @@ async fn listen_(
             })
         });
 
-        #[pin_project]
-        struct Acceptor<S>(#[pin] S);
+        pin_project! {
+            struct Acceptor<S>(#[pin] S);
+        }
         impl<S, T, E> hyper::server::accept::Accept for Acceptor<S>
         where
             S: Stream<Item = Result<T, E>>,

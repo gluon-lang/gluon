@@ -39,17 +39,17 @@ quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.9"
-futures = { version = "0.3.1", features = ["thread-pool"] }
+futures = { version = "0.3.1", default-features = false }
 codespan = "0.9"
 codespan-reporting = "0.9"
-pin-project = "0.4"
+pin-project-lite = { version = "0.1", optional = true }
 salsa = { version = "0.14.0", package = "gluon-salsa" }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4", optional = true }
 serde_derive_state = { version = "0.4.7", optional = true }
 
-tokio = { version = "0.2", features = ["stream", "sync", "rt-core"] }
+tokio = { version = "0.2", features = ["stream", "sync", "rt-core"], optional = true }
 
 # Binding crates
 regex = { version = "1", optional = true }
@@ -100,10 +100,11 @@ gluon_completion = { path = "completion", version = "0.15.1" } # GLUON
 gluon_codegen = { path = "codegen", version = "0.15.1" } # GLUON
 
 [features]
-default = ["regex", "random"]
+default = ["async", "regex", "random"]
+async = ["tokio"]
 random = ["rand", "rand_xorshift"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-tls"]
+web = ["async", "hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-tls", "pin-project-lite"]
 
 docs_rs = ["serialization"]
 

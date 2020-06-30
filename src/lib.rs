@@ -888,18 +888,25 @@ impl VmBuilder {
     }
 
     pub async fn build_async(self) -> RootedThread {
-        struct TokioSpawn;
-        impl futures::task::Spawn for TokioSpawn {
-            fn spawn_obj(
-                &self,
-                future: futures::task::FutureObj<'static, ()>,
-            ) -> StdResult<(), futures::task::SpawnError> {
-                tokio::spawn(future);
-                Ok(())
+        #[allow(unused_mut, unused_assignments)]
+        let mut spawner = None;
+
+        #[cfg(feature = "tokio")]
+        {
+            struct TokioSpawn;
+            impl futures::task::Spawn for TokioSpawn {
+                fn spawn_obj(
+                    &self,
+                    future: futures::task::FutureObj<'static, ()>,
+                ) -> StdResult<(), futures::task::SpawnError> {
+                    tokio::spawn(future);
+                    Ok(())
+                }
             }
+            spawner = Some(Box::new(TokioSpawn) as Box<dyn futures::task::Spawn + Send + Sync>);
         }
 
-        self.build_inner(Some(Box::new(TokioSpawn))).await
+        self.build_inner(spawner).await
     }
 
     async fn build_inner(

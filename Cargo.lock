@@ -1061,7 +1061,6 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
- "num_cpus",
 ]
 
 [[package]]
@@ -1203,7 +1202,7 @@ dependencies = [
  "little-skeptic",
  "log 0.4.8",
  "native-tls",
- "pin-project",
+ "pin-project-lite",
  "pretty_assertions",
  "pulldown-cmark 0.7.1",
  "quick-error",
