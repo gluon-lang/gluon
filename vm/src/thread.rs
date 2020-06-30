@@ -2333,10 +2333,11 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     let data_tag = match self.stack.top().get_repr() {
                         Data(data) => data.tag(),
                         ValueRepr::Tag(tag) => *tag,
-                        _ => {
-                            return Err(Error::Message(
-                                "Op TestTag called on non data type".to_string(),
-                            ))
+                        data => {
+                            return Err(Error::Message(format!(
+                                "Op TestTag called on non data type: {:?}",
+                                data
+                            )))
                             .into();
                         }
                     };
@@ -2859,12 +2860,11 @@ pub struct ActiveThread<'vm> {
 }
 
 impl<'vm> ActiveThread<'vm> {
-    pub fn drop(&mut self) {
+    pub fn release_for<R>(&mut self, f: impl FnOnce() -> R) -> R {
         self.context = None;
-    }
-
-    pub fn restore(&mut self) {
+        let r = f();
         *self = self.thread.current_context();
+        r
     }
 
     pub fn thread(&self) -> &'vm Thread {

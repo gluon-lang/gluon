@@ -512,8 +512,9 @@ where
         lock: Lock,
         _: VmIndex,
     ) -> Poll<Result<()>> {
+        let result = self.push(context);
         context.stack().release_lock(lock);
-        Poll::Ready(self.push(context))
+        Poll::Ready(result)
     }
 }
 
@@ -1316,13 +1317,14 @@ where
     type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
     let mut map: Map<V> = thread.get_global("std.map.empty")?;
     let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
-        thread.get_global("std.json.de.insert_string")?;
+        thread.get_global("std.map.insert_string")?;
 
-    context.drop();
-    for (key, value) in map_iter {
-        map = insert.call(key.borrow().to_string(), value, map)?;
-    }
-    context.restore();
+    map = context.release_for(|| {
+        for (key, value) in map_iter {
+            map = insert.call(key.borrow().to_string(), value, map)?;
+        }
+        Ok::<_, Error>(map)
+    })?;
 
     map.push(context)
 }

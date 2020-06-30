@@ -124,6 +124,11 @@ let keys : [Ord k] -> Map k a -> List k = foldr_with_key (\k _ acc -> Cons k acc
 /// Returns a list of all values in the map.
 let values : [Ord k] -> Map k a -> List a = foldr Cons Nil
 
+
+
+#[doc(hidden)]
+let insert_string : String -> a -> Map String a -> Map String a = insert
+
 {
     Map,
 
@@ -146,4 +151,6 @@ let values : [Ord k] -> Map k a -> List a = foldr Cons Nil
     to_list,
     keys,
     values,
+
+    insert_string,
 }

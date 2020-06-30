@@ -6,13 +6,13 @@ extern crate gluon_vm;
 #[macro_use]
 extern crate gluon_codegen;
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use futures::prelude::*;
 
 use gluon::{
     base::types::{Alias, ArcType, Type},
-    import::{add_extern_module, Import},
+    import::{add_extern_module, add_extern_module_with_deps, Import},
     query::Compilation,
     vm::{
         api::{
@@ -366,6 +366,41 @@ fn use_rust_created_record_as_polymorphic() {
     let mut f: FunctionRef<fn(Test) -> VmInt> = vm.get_global("test").unwrap();
     let result = f.call(record_no_decl! { x => 1 }).unwrap();
     assert_eq!(result, 1);
+}
+
+#[test]
+fn return_btreemap() {
+    let _ = ::env_logger::try_init();
+
+    let vm = make_vm();
+
+    add_extern_module_with_deps(
+        &vm,
+        "test",
+        |vm| {
+            ExternModule::new(
+                vm,
+                primitive!(1, "test", |()| {
+                    vec![("a".to_string(), 1), ("b".to_string(), 2)]
+                        .into_iter()
+                        .collect::<BTreeMap<_, _>>()
+                }),
+            )
+        },
+        vec!["std.map".into(), "std.json.de".into()],
+    );
+
+    vm.run_expr::<()>("", "let _ = import! test in ()")
+        .unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) = vm
+        .run_expr::<BTreeMap<_, _>>("", "(import! test) ()")
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(
+        result,
+        vec![("a".to_string(), 1), ("b".to_string(), 2)]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>()
+    );
 }
 
 #[test]
