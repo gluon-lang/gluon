@@ -6,10 +6,10 @@ use std::{
 
 use {
     collect_mac::collect,
-    failure_derive::Fail,
     futures::{join, prelude::*, stream, task::SpawnExt},
     serde_derive::Deserialize,
     structopt::StructOpt,
+    thiserror::Error,
 };
 
 use gluon::{
@@ -24,18 +24,18 @@ use gluon::{
     RootedThread, Thread, ThreadExt,
 };
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 enum Error {
-    #[fail(display = "{}", _0)]
-    Error(failure::Error),
+    #[error("{0}")]
+    Error(anyhow::Error),
 
-    #[fail(display = "{}", _0)]
+    #[error("{0}")]
     Io(io::Error),
 
-    #[fail(display = "{}", _0)]
+    #[error("{0}")]
     Gluon(gluon::Error),
 
-    #[fail(display = "{}", _0)]
+    #[error("{0}")]
     Message(String),
 }
 
@@ -51,8 +51,8 @@ impl<'a> From<&'a str> for Error {
     }
 }
 
-impl From<failure::Error> for Error {
-    fn from(d: failure::Error) -> Error {
+impl From<anyhow::Error> for Error {
+    fn from(d: anyhow::Error) -> Error {
         Error::Error(d)
     }
 }

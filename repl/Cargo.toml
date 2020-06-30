@@ -28,7 +28,7 @@ gluon_format = { version = "0.15.1", path = "../format" } # GLUON
 gluon_doc = { version = "0.15.1", path = "../doc" } # GLUON
 
 app_dirs = "1.0.0"
-failure = "0.1"
+anyhow = "1"
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-threaded", "rt-core", "macros", "signal"] }
 clap = "2.22.0"

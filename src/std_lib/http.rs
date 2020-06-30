@@ -343,7 +343,7 @@ async fn listen_(
 
         let identity = native_tls::Identity::from_pkcs12(&identity, "")
             .map_err(|err| vm::Error::Message(err.to_string()))?;
-        let acceptor = tokio_tls::TlsAcceptor::from(
+        let acceptor = tokio_native_tls::TlsAcceptor::from(
             native_tls::TlsAcceptor::new(identity)
                 .map_err(|err| vm::Error::Message(err.to_string()))?,
         );
@@ -361,7 +361,10 @@ async fn listen_(
         });
 
         pin_project! {
-            struct Acceptor<S>(#[pin] S);
+            struct Acceptor<S> {
+                #[pin]
+                incoming: S,
+            }
         }
         impl<S, T, E> hyper::server::accept::Accept for Acceptor<S>
         where
@@ -373,11 +376,11 @@ async fn listen_(
                 self: Pin<&mut Self>,
                 cx: &mut task::Context<'_>,
             ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-                self.project().0.poll_next(cx)
+                self.project().incoming.poll_next(cx)
             }
         }
 
-        return hyper::server::Builder::new(Acceptor(incoming), http)
+        return hyper::server::Builder::new(Acceptor { incoming }, http)
             .serve(hyper::service::make_service_fn(move |_| {
                 future::ready(Ok::<_, hyper::Error>(Listen {
                     handle: handle.clone(),

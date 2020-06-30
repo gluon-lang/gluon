@@ -42,7 +42,7 @@ quick_error! {
 #[derive(Debug)]
 #[allow(deprecated)]
 enum Error {
-    Failure(err: failure::Error) {
+    Failure(err: anyhow::Error) {
         display("{}", err)
         from()
     }

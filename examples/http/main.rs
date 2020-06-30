@@ -28,7 +28,7 @@ async fn main() {
     }
 }
 
-async fn start(thread: &Thread, port: u16) -> Result<(), failure::Error> {
+async fn start(thread: &Thread, port: u16) -> Result<(), anyhow::Error> {
     let thread = thread.root_thread();
     // Last we run our `http_server.glu` module which returns a function which starts listening
     // on the port we passed from the command line
@@ -50,7 +50,7 @@ mod tests {
     use hyper::Client;
     use tokio::runtime::Runtime;
 
-    async fn wait_for_server(port: u16) -> Result<(), failure::Error> {
+    async fn wait_for_server(port: u16) -> Result<(), anyhow::Error> {
         let mut err = None;
         for _ in 0..40 {
             match Client::new()
@@ -60,16 +60,14 @@ mod tests {
                 Ok(response) => {
                     return response
                         .into_body()
-                        .try_fold(Vec::new(), |mut acc, buf| {
-                            async move {
-                                acc.extend_from_slice(&buf);
-                                Ok(acc)
-                            }
+                        .try_fold(Vec::new(), |mut acc, buf| async move {
+                            acc.extend_from_slice(&buf);
+                            Ok(acc)
                         })
                         .map_ok(|body| {
                             assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
                         })
-                        .err_into::<failure::Error>()
+                        .err_into::<anyhow::Error>()
                         .await;
                 }
                 Err(e) => err = Some(e),
@@ -120,23 +118,21 @@ mod tests {
 
                 Client::new()
                     .request(request)
-                    .err_into::<failure::Error>()
+                    .err_into::<anyhow::Error>()
                     .and_then(|response| {
                         response
                             .into_body()
-                            .try_fold(Vec::new(), |mut acc, buf| {
-                                async move {
-                                    acc.extend_from_slice(&buf);
-                                    Ok(acc)
-                                }
+                            .try_fold(Vec::new(), |mut acc, buf| async move {
+                                acc.extend_from_slice(&buf);
+                                Ok(acc)
                             })
                             .map_ok(|body| {
                                 assert_eq!(str::from_utf8(&body).unwrap(), "test");
                             })
-                            .err_into::<failure::Error>()
+                            .err_into::<anyhow::Error>()
                     })
                     .await
             })
-            .unwrap_or_else(|err: failure::Error| panic!("{}", err));
+            .unwrap_or_else(|err: anyhow::Error| panic!("{}", err));
     }
 }
