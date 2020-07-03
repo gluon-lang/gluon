@@ -17,7 +17,7 @@ use std::{
 };
 
 use {
-    failure::ResultExt,
+    anyhow::{anyhow, Context as _},
     handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError},
     itertools::Itertools,
     pretty::{Arena, DocAllocator},
@@ -39,7 +39,7 @@ use gluon::{
     Thread, ThreadExt,
 };
 
-pub type Error = failure::Error;
+pub type Error = anyhow::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Serialize, PartialEq, Debug, Default)]
@@ -482,7 +482,7 @@ where
     trace!("DOC: {:?}", module);
 
     reg.render_to_write(MODULE_TEMPLATE, &module, out)
-        .with_context(|err| format!("Unable to render {}: {}", module.name, err))?;
+        .with_context(|| format!("Unable to render {}", module.name))?;
     Ok(())
 }
 
@@ -532,9 +532,8 @@ impl DocCollector<'_> {
 
         debug!("Indexing module: {}", path.display());
 
-        let mut input = File::open(&*path).with_context(|err| {
-            format!("Unable to open gluon file `{}`: {}", path.display(), err)
-        })?;
+        let mut input = File::open(&*path)
+            .with_context(|| format!("Unable to open gluon file `{}`", path.display()))?;
 
         content.clear();
         input.read_to_string(content)?;
@@ -545,7 +544,7 @@ impl DocCollector<'_> {
         let name = filename_to_module(
             module_path
                 .to_str()
-                .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
+                .ok_or_else(|| anyhow!("Non-UTF-8 filename"))?,
         );
 
         let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
@@ -652,13 +651,8 @@ pub fn generate(options: &Options, thread: &Thread) -> Result<()> {
         .try_for_each(|(modules, module)| -> Result<()> {
             let module_path = PathBuf::from(module.name.replace(".", "/"));
             let out_path = out_path.join(&module_path).with_extension("html");
-            let mut doc_file = File::create(&*out_path).with_context(|err| {
-                format!(
-                    "Unable to open output file `{}`: {}",
-                    out_path.display(),
-                    err
-                )
-            })?;
+            let mut doc_file = File::create(&*out_path)
+                .with_context(|| format!("Unable to open output file `{}`", out_path.display()))?;
 
             generate_module(
                 &reg,

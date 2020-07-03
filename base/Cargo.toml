@@ -24,7 +24,7 @@ fnv = "1.0.3"
 pretty = "0.10"
 smallvec = "0.6"
 collect-mac = "0.1.0"
-anymap = "0.12.0"
+anymap = { version = "0.12.0", optional = true }
 itertools = "0.9"
 ordered-float = "1"
 codespan = "0.9"
@@ -48,5 +48,5 @@ env_logger = "0.7"
 pretty_assertions = "0.6"
 
 [features]
-serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state"]
+serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "anymap"]
 nightly = ["compiletest_rs"]
