@@ -1,9 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
@@ -179,12 +173,12 @@ rec
 type Arr r a b = a -> Eff r b
 
 type Eff r a =
-    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+    | Impure : forall x . r x -> Arr r x a -> Eff r a
 in
 
 let any x = any x
 
-type State s r a = | Get : State s r s .. r 
+type State s r a = | Get : State s r s .. r
 
 let extract_state x : forall s . [| state : State s | r |] a -> State s r a = convert_variant! x
 
@@ -210,7 +204,7 @@ rec
 type Arr r a b = a -> Eff r b
 
 type Eff r a =
-    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+    | Impure : forall x . r x -> Arr r x a -> Eff r a
 in
 
 let any x = any x
@@ -226,7 +220,7 @@ let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| 
     let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
         match ve with
         | Impure e f ->
-            match extract_state e with 
+            match extract_state e with
             | Get ->
                 loop state (f state)
             | Put state ->
@@ -248,7 +242,7 @@ rec
 type Arr r a b = a -> Eff r b
 
 type Eff r a =
-    | Impure : forall x . r x -> Arr r x a -> Eff r a 
+    | Impure : forall x . r x -> Arr r x a -> Eff r a
 in
 
 type STRef s a = { __ref : a }
@@ -263,7 +257,7 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
     let loop ve : forall s . Eff [| st : State s | r |] a -> _ =
         match ve with
         | Impure e f ->
-            match extract_state e with 
+            match extract_state e with
             | New a ->
                 let r : STRef _ _ = { __ref = a }
                 loop (f r)

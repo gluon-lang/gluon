@@ -2,17 +2,13 @@ extern crate gluon_completion as completion;
 
 use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sync::Mutex};
 
-use futures::{
-    future::{self, Either},
-    sync::mpsc,
-    {Future, Sink, Stream},
-};
+use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
-    ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent},
+    ast::{self, AstClone, Expr, Pattern, RootExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
-    pos, resolve,
+    mk_ast_arena, pos, resolve,
     symbol::{Symbol, SymbolModule},
     types::{ArcType, TypeExt},
     DebugLevel,
@@ -24,38 +20,35 @@ use crate::vm::{
         IO,
     },
     internal::ValuePrinter,
-    thread::{ActiveThread, RootedValue, Thread, ThreadInternal},
+    thread::{ActiveThread, RootedValue, Thread},
     {self, Error as VMError, Result as VMResult},
 };
 
 use gluon::{
     compiler_pipeline::{Executable, ExecuteValue},
     import::add_extern_module,
+    query::CompilerDatabase,
     Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
-use codespan_reporting::termcolor;
+use codespan_reporting::term::termcolor;
 
 use crate::Color;
 
-macro_rules! try_future {
-    ($e:expr, $f:expr) => {
-        match $e {
-            Ok(ok) => ok,
-            Err(err) => return $f(::futures::future::err(err.into())),
-        }
-    };
-}
-
-fn type_of_expr(args: WithVM<&str>) -> IO<Result<String, String>> {
+fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> {
     let WithVM { vm, value: args } = args;
-    IO::Value(match vm.typecheck_str("<repl>", &args, None) {
-        Ok((expr, _)) => {
-            let env = vm.get_env();
-            Ok(format!("{}", expr.env_type_of(&env)))
-        }
-        Err(msg) => Err(format!("{}", msg)),
-    })
+    let args = args.to_string();
+    let vm = vm.new_thread().unwrap(); // TODO Run on the same thread once that works
+
+    async move {
+        IO::Value(match vm.typecheck_str_async("<repl>", &args, None).await {
+            Ok((expr, _)) => {
+                let env = vm.get_env();
+                Ok(format!("{}", expr.env_type_of(&env)))
+            }
+            Err(msg) => Err(format!("{}", msg)),
+        })
+    }
 }
 
 fn find_kind(args: WithVM<&str>) -> IO<Result<String, String>> {
@@ -81,7 +74,7 @@ fn find_info(args: WithVM<&str>) -> IO<Result<String, String>> {
     match env.find_type_info(args) {
         Ok(alias) => {
             // Found a type alias
-            let mut fmt = || -> Result<(), ::std::fmt::Error> {
+            let mut fmt = || -> Result<(), std::fmt::Error> {
                 write!(&mut buffer, "type {}", args)?;
                 for g in alias.params() {
                     write!(&mut buffer, " {}", g.id)?;
@@ -128,8 +121,8 @@ fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
     use gluon::compiler_pipeline::*;
 
-    let db = thread.get_database();
-    let mut module_compiler = thread.module_compiler(&db);
+    let mut db = thread.get_database();
+    let mut module_compiler = thread.module_compiler(&mut db);
 
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
@@ -152,7 +145,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     let suggestions = completion::suggest(
         &thread.get_env(),
         file_map.span(),
-        &expr,
+        &expr.expr(),
         file_map.span().start() + pos::ByteOffset::from(pos as i64),
     );
     Ok(suggestions
@@ -171,6 +164,36 @@ struct Completer {
 }
 
 impl rustyline::Helper for Completer {}
+
+impl rustyline::validate::Validator for Completer {
+    fn validate(
+        &self,
+        ctx: &mut rustyline::validate::ValidationContext,
+    ) -> rustyline::Result<rustyline::validate::ValidationResult> {
+        let line = ctx.input();
+
+        let is_incomplete = |err: &gluon::parser::ParseErrors| {
+            use gluon::parser::Token;
+
+            err.iter().any(|err| match &err.value {
+                gluon::parser::Error::UnexpectedToken(Token::CloseBlock, _) => true,
+                _ => false,
+            })
+        };
+
+        let mut db = self.thread.get_database();
+        let mut module_compiler = self.thread.module_compiler(&mut db);
+        mk_ast_arena!(arena);
+        let filemap = self.thread.get_database().add_filemap("line", line);
+        let mut module = SymbolModule::new("line".into(), module_compiler.mut_symbols());
+        match parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap) {
+            Err((_, err)) if is_incomplete(&err) => {
+                Ok(rustyline::validate::ValidationResult::Incomplete)
+            }
+            Ok(_) | Err(_) => Ok(rustyline::validate::ValidationResult::Valid(None)),
+        }
+    }
+}
 
 impl rustyline::hint::Hinter for Completer {
     fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
@@ -238,8 +261,8 @@ impl rustyline::completion::Completer for Completer {
 
 macro_rules! impl_userdata {
     ($name:ident) => {
-        impl ::std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(f, concat!(stringify!($name), "(..)"))
             }
         }
@@ -254,13 +277,6 @@ struct Editor {
 }
 
 impl_userdata! { Editor }
-
-#[derive(Userdata, Trace, VmType)]
-#[gluon(vm_type = "CpuPool")]
-#[gluon_trace(skip)]
-struct CpuPool(futures_cpupool::CpuPool);
-
-impl_userdata! { CpuPool }
 
 #[derive(Serialize, Deserialize)]
 pub enum ReadlineError {
@@ -288,13 +304,13 @@ define_vmtype! { ReadlineError }
 
 impl<'vm> Pushable<'vm> for ReadlineError {
     fn push(self, context: &mut ActiveThread<'vm>) -> VMResult<()> {
-        ::gluon::vm::api::ser::Ser(self).push(context)
+        gluon::vm::api::ser::Ser(self).push(context)
     }
 }
 
 fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     Ok(::app_dirs::app_root(
-        ::app_dirs::AppDataType::UserData,
+        app_dirs::AppDataType::UserData,
         &crate::APP_INFO,
     )?)
 }
@@ -335,113 +351,142 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
     IO::Value(Ok(input))
 }
 
-fn new_cpu_pool(size: usize) -> IO<CpuPool> {
-    IO::Value(CpuPool(futures_cpupool::CpuPool::new(size)))
-}
-
 fn eval_line(
     De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
-) -> impl Future<Item = IO<()>, Error = vm::Error> {
-    let vm = vm.root_thread();
-    eval_line_(vm.root_thread(), line).then(move |result| {
-        Ok(match result {
-            Ok(x) => IO::Value(x),
-            Err(err) => {
-                let mut stderr = termcolor::StandardStream::stderr(color.into());
-                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
-                    eprintln!("{}", err);
+) -> impl Future<Output = IO<()>> {
+    let vm = vm.new_thread().unwrap(); // TODO Reuse the current thread
+    let line = line.to_string();
+    async move {
+        eval_line_(vm.root_thread(), &line)
+            .map(move |result| match result {
+                Ok(x) => IO::Value(x),
+                Err(err) => {
+                    let mut stderr = termcolor::StandardStream::stderr(color.into());
+                    if let Err(err) = err.emit(&mut stderr) {
+                        eprintln!("{}", err);
+                    }
+                    IO::Value(())
                 }
-                IO::Value(())
-            }
-        })
-    })
+            })
+            .await
+    }
 }
 
-fn eval_line_(vm: RootedThread, line: &str) -> impl Future<Item = (), Error = GluonError> {
-    let db = vm.get_database();
-    let mut module_compiler = vm.module_compiler(&db);
-    let repl_line = {
-        let result = {
-            let filemap = vm.get_database().add_filemap("line", line);
-            let mut module = SymbolModule::new("line".into(), module_compiler.mut_symbols());
-            parse_partial_repl_line(&mut module, &*filemap)
-        };
-        match result {
-            Ok(x) => x,
-            Err((_, err)) => {
-                let code_map = vm.get_database().code_map();
-                return Either::A(future::err(InFile::new(code_map, err).into()));
-            }
-        }
-    };
-    let future = match repl_line {
-        None => return Either::A(future::ok(())),
-        Some(ReplLine::Expr(expr)) => {
-            Either::A(expr.run_expr(&mut module_compiler, vm.clone(), "line", line, None))
-        }
-        Some(ReplLine::Let(mut let_binding)) => {
-            let unpack_pattern = let_binding.name.clone();
-            // We can't compile function bindings by only looking at `let_binding.expr`
-            // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
-            // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
-            let id = match unpack_pattern.value {
-                Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
-                _ => {
-                    let id = Symbol::from("repl_temp");
-                    let_binding.name = pos::spanned(
-                        let_binding.name.span,
-                        Pattern::As(
-                            pos::spanned(let_binding.name.span, id.clone()),
-                            Box::new(let_binding.name),
-                        ),
-                    );
-                    TypedIdent::new(id)
+async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
+    let mut db = vm.get_database();
+    let mut module_compiler = vm.module_compiler(&mut db);
+    let mut is_let_binding = false;
+    let mut eval_expr = {
+        let eval_expr = {
+            mk_ast_arena!(arena);
+            let repl_line = {
+                let result = {
+                    let filemap = vm.get_database().add_filemap("line", line);
+                    let mut module =
+                        SymbolModule::new("line".into(), module_compiler.mut_symbols());
+                    parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap)
+                };
+                match result {
+                    Ok(x) => x,
+                    Err((_, err)) => {
+                        let code_map = vm.get_database().code_map();
+                        return Err(InFile::new(code_map, err).into());
+                    }
                 }
             };
-            let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-            let expr = Expr::let_binding(let_binding, id);
-            let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
-            Either::B(
-                eval_expr
-                    .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
-                    .and_then(move |value| {
-                        // Hack to get around borrow-checker. Method-chaining didn't work,
-                        // even with #[feature(nll)]. Seems like a bug
-                        let temp =
-                            set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
-                        temp.and(Ok(value))
-                    }),
-            )
-        }
+            match repl_line {
+                None => return Ok(()),
+                Some(ReplLine::Expr(expr)) => RootExpr::new(arena.clone(), arena.alloc(expr)),
+                Some(ReplLine::Let(let_binding)) => {
+                    is_let_binding = true;
+                    // We can't compile function bindings by only looking at `let_binding.expr`
+                    // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
+                    // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
+                    let id = match let_binding.name.value {
+                        Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
+                        _ => {
+                            let id = Symbol::from("repl_temp");
+                            let_binding.name = pos::spanned(
+                                let_binding.name.span,
+                                Pattern::As(
+                                    pos::spanned(let_binding.name.span, id.clone()),
+                                    arena.alloc(let_binding.name.ast_clone(arena.borrow())),
+                                ),
+                            );
+                            TypedIdent {
+                                name: id,
+                                typ: let_binding.resolved_type.clone(),
+                            }
+                        }
+                    };
+                    let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
+                    let expr =
+                        Expr::LetBindings(ast::ValueBindings::Plain(let_binding), arena.alloc(id));
+                    let eval_expr = RootExpr::new(
+                        arena.clone(),
+                        arena.alloc(pos::spanned2(0.into(), 0.into(), expr)),
+                    );
+                    eval_expr
+                }
+            }
+        };
+        eval_expr.try_into_send().unwrap()
     };
-    Either::B(future.map(move |ExecuteValue { value, typ, .. }| {
-        let vm = value.vm();
-        let env = vm.get_env();
-        let debug_level = vm.global_env().get_debug_level();
-        println!(
-            "{}",
-            ValuePrinter::new(&env, &typ, value.get_variant(), &debug_level)
-                .width(80)
-                .max_level(5)
-        );
-    }))
+
+    let ExecuteValue { value, typ, .. } = (&mut eval_expr)
+        .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
+        .await?;
+
+    drop(db);
+
+    if is_let_binding {
+        let mut expr = eval_expr.expr();
+        let mut last_bind = None;
+        loop {
+            match &expr.value {
+                Expr::LetBindings(binds, body) => {
+                    last_bind = Some(&binds[0]);
+                    expr = body;
+                }
+                _ => break,
+            }
+        }
+        set_globals(
+            &vm,
+            &mut vm.get_database_mut(),
+            &last_bind.unwrap().name,
+            &typ,
+            &value.as_ref(),
+        )?;
+    }
+    let vm = value.vm();
+    let env = vm.get_env();
+    let debug_level = vm.global_env().get_debug_level();
+    println!(
+        "{}",
+        ValuePrinter::new(&env, &typ, value.get_variant(), &debug_level)
+            .width(80)
+            .max_level(5)
+    );
+    Ok(())
 }
 
 fn set_globals(
     vm: &Thread,
+    db: &mut CompilerDatabase,
     pattern: &SpannedPattern<Symbol>,
     typ: &ArcType,
     value: &RootedValue<&Thread>,
 ) -> GluonResult<()> {
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(
-                Symbol::from(format!("@{}", id.name.declared_name())),
+            db.set_global(
+                id.name.declared_name(),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),
-            )?;
+            );
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
@@ -449,19 +494,19 @@ fn set_globals(
                 .iter()
                 .zip(crate::vm::dynamic::field_iter(&value, typ, vm));
             for (elem_pattern, (elem_value, elem_type)) in iter {
-                set_globals(vm, elem_pattern, &elem_type, &elem_value)?;
+                set_globals(vm, db, elem_pattern, &elem_type, &elem_value)?;
             }
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
             let resolved_type = {
                 let mut type_cache = vm.global_env().type_cache();
-                let env = vm.get_env();
+                let env = db.as_env();
                 resolve::remove_aliases_cow(&env, &mut type_cache, typ)
             };
 
-            for pattern_field in fields.iter() {
-                let field_name: &Symbol = &pattern_field.name.value;
+            for (name, pattern_value) in ast::pattern_values(fields) {
+                let field_name: &Symbol = &name.value;
                 // if the record didn't have a field with this name,
                 // there should have already been a type error. So we can just panic here
                 let field_value: RootedValue<&Thread> = value
@@ -481,28 +526,28 @@ fn set_globals(
                     })
                     .typ
                     .clone();
-                match pattern_field.value {
+                match pattern_value {
                     Some(ref sub_pattern) => {
-                        set_globals(vm, sub_pattern, &field_type, &field_value)?
+                        set_globals(vm, db, sub_pattern, &field_type, &field_value)?
                     }
-                    None => vm.set_global(
-                        Symbol::from(format!("@{}", pattern_field.name.value.declared_name())),
+                    None => db.set_global(
+                        name.value.declared_name(),
                         field_type.to_owned(),
                         Default::default(),
                         field_value.get_value(),
-                    )?,
+                    ),
                 }
             }
             Ok(())
         }
         Pattern::As(ref id, ref pattern) => {
-            vm.set_global(
-                Symbol::from(format!("@{}", id.value.declared_name())),
+            db.set_global(
+                id.value.declared_name(),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),
-            )?;
-            set_globals(vm, pattern, typ, value)
+            );
+            set_globals(vm, db, pattern, typ, value)
         }
         Pattern::Constructor(..) | Pattern::Literal(_) | Pattern::Error => {
             Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())
@@ -511,45 +556,38 @@ fn set_globals(
 }
 
 fn finish_or_interrupt(
-    cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = VMError> {
-    let (sender, receiver) = mpsc::channel(1);
+) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> {
+    let (sender, receiver) = oneshot::channel();
 
-    ::tokio::spawn(
-        ::tokio_signal::ctrl_c()
-            .map(|x| {
-                info!("Installed Ctrl-C handler");
-                x
-            })
-            .flatten_stream()
-            .map_err(|err| {
-                panic!("Error installing signal handler: {}", err);
-            })
-            .forward(sender.sink_map_err(|_| ()))
-            .map(|_| ()),
-    );
+    tokio::spawn(async move {
+        info!("Installed Ctrl-C handler");
+        tokio::signal::ctrl_c()
+            .await
+            .unwrap_or_else(|err| panic!("Error installing signal handler: {}", err));
+        let _ = sender.send(());
+    });
 
     let mut action = OwnedFunction::<fn() -> IO<OpaqueValue<RootedThread, A>>>::from_value(
         &thread,
         action.get_variant(),
     );
-    let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
+    let action_future = tokio::spawn(async move {
+        action
+            .call_async()
+            .await
+            .unwrap_or_else(|err| IO::Exception(err.to_string()))
+    })
+    .map(|r| r.unwrap());
 
-    let ctrl_c_future = receiver
-        .into_future()
-        .map(move |(next, _)| {
-            next.unwrap();
-            thread.interrupt();
-            IO::Exception("Interrupted".to_string())
-        })
-        .map_err(|_| panic!("Error in Ctrl-C handling"));
+    let ctrl_c_future = receiver.map(move |next| {
+        next.unwrap();
+        thread.interrupt();
+        IO::Exception("Interrupted".to_string())
+    });
 
-    ctrl_c_future
-        .select(action_future)
-        .map(|(value, _)| value)
-        .map_err(|(err, _)| err)
+    future::select(ctrl_c_future, action_future).map(|either| either.factor_first().0)
 }
 
 fn save_history(editor: &Editor) -> IO<()> {
@@ -573,13 +611,11 @@ fn save_history(editor: &Editor) -> IO<()> {
 
 fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
-    vm.register_type::<CpuPool>("CpuPool", &[])?;
 
     vm::ExternModule::new(
         vm,
         record!(
             type Editor => Editor,
-            type CpuPool => CpuPool,
             new_editor => primitive!(1, new_editor),
             readline => primitive!(2, readline),
             save_history => primitive!(1, save_history)
@@ -599,21 +635,21 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
         record!(
             type Color => Color,
             type Settings => Settings<'static>,
-            type_of_expr => primitive!(1, type_of_expr),
+            type_of_expr => primitive!(1, async fn type_of_expr),
             find_info => primitive!(1, find_info),
             find_kind => primitive!(1, find_kind),
             parse_color => primitive!(1, "parse_color", |s: &str| s.parse::<Color>()),
             switch_debug_level => primitive!(1, switch_debug_level),
             eval_line => primitive!(2, async fn eval_line),
-            finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
-            new_cpu_pool => primitive!(1, new_cpu_pool)
+            finish_or_interrupt => primitive!(2, async fn finish_or_interrupt),
         ),
     )
 }
 
-fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
-    let rustyline_types_source = ::gluon::vm::api::typ::make_source::<ReadlineError>(vm)?;
-    vm.load_script("rustyline_types", &rustyline_types_source)?;
+async fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
+    let rustyline_types_source = gluon::vm::api::typ::make_source::<ReadlineError>(vm)?;
+    vm.load_script_async("rustyline_types", &rustyline_types_source)
+        .await?;
 
     add_extern_module(vm, "repl.prim", load_repl);
     add_extern_module(vm, "rustyline", load_rustyline);
@@ -621,35 +657,31 @@ fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
     const REPL_SOURCE: &'static str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));
 
-    vm.load_script("repl", REPL_SOURCE)?;
+    vm.load_script_async("repl", REPL_SOURCE).await?;
     Ok(())
 }
 
 #[allow(dead_code)]
-pub fn run(
+pub async fn run(
     color: Color,
     prompt: &str,
     debug_level: DebugLevel,
     use_std_lib: bool,
-) -> impl Future<Item = (), Error = gluon::Error> {
-    let vm = ::gluon::VmBuilder::new().build();
+) -> gluon::Result<()> {
+    let vm = gluon::VmBuilder::new().build_async().await;
     vm.global_env().set_debug_level(debug_level);
     vm.get_database_mut()
         .use_standard_lib(use_std_lib)
         .run_io(true);
 
-    try_future!(
-        compile_repl(&vm).map_err(|err| err.emit_string(&vm.get_database().code_map()).unwrap()),
-        Either::A
-    );
+    compile_repl(&vm).await?;
 
-    let mut repl: OwnedFunction<fn(_) -> _> = try_future!(vm.get_global("repl"), Either::A);
+    let mut repl: OwnedFunction<fn(_) -> _> = vm.get_global("repl")?;
     debug!("Starting repl");
-    Either::B(
-        repl.call_async(Settings { color, prompt })
-            .map(|_: IO<()>| ())
-            .map_err(|err| err.into()),
-    )
+    repl.call_async(Settings { color, prompt })
+        .await
+        .map(|_: IO<()>| ())
+        .map_err(|err| err.into())
 }
 
 #[cfg(test)]
@@ -660,11 +692,11 @@ mod tests {
     use gluon::import::Import;
     use gluon::{self, RootedThread};
 
-    fn new_vm() -> RootedThread {
-        if ::std::env::var("GLUON_PATH").is_err() {
-            ::std::env::set_var("GLUON_PATH", "..");
+    async fn new_vm() -> RootedThread {
+        if std::env::var("GLUON_PATH").is_err() {
+            std::env::set_var("GLUON_PATH", "..");
         }
-        let vm = gluon::new_vm();
+        let vm = gluon::new_vm_async().await;
         let import = vm.get_macros().get("import");
         import
             .as_ref()
@@ -674,24 +706,28 @@ mod tests {
         vm
     }
 
-    #[test]
-    fn compile_repl_test() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn compile_repl_test() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
         let repl: Result<FunctionRef<fn(Settings<'static>) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
-    #[test]
-    fn record_patterns() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn record_patterns() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
 
         // pattern with field names out of order
         eval_line_(vm.clone(), r#"let {y, x} = {x = "x", y = "y"}"#)
-            .wait()
+            .await
             .expect("Error evaluating let binding");
         let x: String = vm.get_global("x").expect("Error getting x");
         assert_eq!(x, "x");
@@ -700,59 +736,70 @@ mod tests {
 
         // pattern with field names out of order and different field types
         eval_line_(vm.clone(), r#"let {y} = {x = "x", y = ()}"#)
-            .wait()
+            .await
             .expect("Error evaluating let binding 2");
         let () = vm.get_global("y").expect("Error getting y");
     }
 
     type QueryFn = fn(&'static str) -> IO<Result<String, String>>;
 
-    #[test]
-    fn type_of_expr() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn type_of_expr() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
         let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl.prim.type_of_expr").unwrap();
-        assert_eq!(type_of.call("123"), Ok(IO::Value(Ok("Int".into()))));
+        assert_eq!(
+            type_of.call_async("123").await,
+            Ok(IO::Value(Ok("Int".into())))
+        );
     }
 
-    #[test]
-    fn find_kind() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn find_kind() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_kind").unwrap();
         assert_eq!(
-            find_kind.call("std.prelude.Semigroup"),
+            find_kind.call_async("std.prelude.Semigroup").await,
             Ok(IO::Value(Ok("Type -> Type".into())))
         );
     }
 
-    #[test]
-    fn find_info() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn find_info() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
         let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_info").unwrap();
-        match find_info.call("std.prelude.Semigroup") {
+        match find_info.call_async("std.prelude.Semigroup").await {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("std.prelude.empty") {
+        match find_info.call_async("std.prelude.empty").await {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("std.float.prim") {
+        match find_info.call_async("std.float.prim").await {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
     }
 
-    #[test]
-    fn complete_repl_empty() {
-        let _ = ::env_logger::try_init();
-        let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+    #[tokio::test]
+    async fn complete_repl_empty() {
+        let _ = env_logger::try_init();
+        let vm = new_vm().await;
+        compile_repl(&vm)
+            .await
+            .unwrap_or_else(|err| panic!("{}", err));
         complete(&vm, "<repl>", "", 0).unwrap_or_else(|err| panic!("{}", err));
     }
 }

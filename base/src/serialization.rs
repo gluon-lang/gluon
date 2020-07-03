@@ -13,7 +13,7 @@ use crate::serde::ser::{SerializeState, Serializer};
 
 use crate::kind::ArcKind;
 use crate::symbol::Symbol;
-use crate::types::{AliasData, ArcType, Type, TypeExt};
+use crate::types::{AliasData, ArcType, Generic, Type, TypeExt, TypePtr};
 
 #[derive(Default)]
 pub struct SeSeed {
@@ -79,11 +79,16 @@ pub fn deserialize_group<'de, Id, T, D>(
 ) -> Result<Arc<[AliasData<Id, T>]>, D::Error>
 where
     D: crate::serde::Deserializer<'de>,
-    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+    T: TypePtr<Id = Id>
+        + Clone
+        + From<Type<Id, T>>
+        + ::std::any::Any
+        + DeserializeState<'de, Seed<Id, T>>,
     Id: DeserializeState<'de, Seed<Id, T>>
         + Clone
         + ::std::any::Any
         + DeserializeState<'de, Seed<Id, T>>,
+    T::Generics: Default + Extend<Generic<Id>> + Clone,
 {
     let seed = SharedSeed::new(seed);
     DeserializeSeed::deserialize(seed, deserializer).map(|vec: Vec<_>| Arc::from(vec))

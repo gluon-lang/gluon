@@ -8,7 +8,7 @@ use gluon::{
     Thread, ThreadExt,
 };
 
-use tokio::runtime::current_thread::Runtime;
+use tokio::runtime::Runtime;
 
 #[macro_use]
 mod support;
@@ -227,7 +227,7 @@ fn spawn_on_do_action_twice() {
         let { wrap } = import! std.applicative
         let { join } = import! std.monad
 
-        let counter = ref 0 
+        let counter = ref 0
 
         do child = thread.new_thread ()
         let action = thread.spawn_on child (\_ ->
@@ -257,7 +257,7 @@ fn spawn_on_force_action_twice() {
         let thread = import! std.thread
         let { wrap } = import! std.applicative
 
-        let counter = ref 0 
+        let counter = ref 0
 
         do child = thread.new_thread ()
         do action = thread.spawn_on child (\_ ->

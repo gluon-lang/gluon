@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.12.0" # GLUON
+version = "0.15.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -21,24 +21,32 @@ hashbrown = "0.6"
 log = "0.4"
 quick-error = "1.0.0"
 fnv = "1.0.3"
-pretty = "0.5"
+pretty = "0.10"
 smallvec = "0.6"
 collect-mac = "0.1.0"
 anymap = "0.12.0"
-itertools = "0.8"
+itertools = "0.9"
 ordered-float = "1"
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 either = "1"
 vec_map = "0.8"
+typed-arena = "1"
+
+gluon_codegen = { version = "0.15.1", path = "../codegen" } # GLUON
 
 serde = { version = "1.0.0", features = ["rc"], optional = true }
 serde_state = { version = "0.4.0", features = ["rc"], optional = true }
 serde_derive = { version = "1.0.0", optional = true }
 serde_derive_state = { version = "0.4.0", optional = true }
 
+# Crates used in testing
+compiletest_rs = { version = "0.5", optional = true }
+
 [dev-dependencies]
+env_logger = "0.7"
 pretty_assertions = "0.6"
 
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state"]
+nightly = ["compiletest_rs"]

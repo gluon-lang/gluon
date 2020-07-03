@@ -2,7 +2,7 @@ use std::{
     any::{Any, TypeId},
     result::Result as StdResult,
     string::String as StdString,
-    sync::{self, Arc, Mutex, RwLock, RwLockReadGuard},
+    sync::{atomic::AtomicUsize, Arc, Mutex, RwLock},
     usize,
 };
 
@@ -26,13 +26,13 @@ use crate::{
     api::{OpaqueValue, ValueRef, IO},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
     core::{interpreter, optimize::OptimizeEnv, CoreExpr},
-    gc::{CloneUnrooted, Gc, GcPtr, GcRef, Generation, Move, Trace},
+    gc::{Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
     macros::MacroEnv,
     thread::ThreadInternal,
     types::*,
-    value::{BytecodeFunction, ClosureData, ClosureDataDef, Value},
+    value::{BytecodeFunction, ClosureData, ClosureDataDef},
     Error, Result, Variants,
 };
 
@@ -41,12 +41,12 @@ pub use crate::{
     value::Userdata,
 };
 
-pub(crate) type ThreadSlab = slab::Slab<(GcPtr<Thread>, usize)>;
+pub(crate) type ThreadSlab = slab::Slab<GcPtr<Thread>>;
 
 unsafe impl Trace for ThreadSlab {
     impl_trace! { self, gc,
-        for x in self {
-            mark(&x, gc);
+        for (_, x) in self {
+            mark(x, gc);
         }
     }
 }
@@ -184,9 +184,7 @@ unsafe impl<V> Trace for Global<V>
 where
     V: Trace,
 {
-    impl_trace! { self, gc,
-        mark(&self.value, gc)
-    }
+    impl_trace_fields! { self, gc; value }
 }
 
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
@@ -202,8 +200,11 @@ where
     serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct GlobalVmState {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    env: RwLock<Globals>,
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "crate::serialization::rw_lock")
+    )]
+    env: parking_lot::RwLock<Globals>,
     #[cfg_attr(
         feature = "serde_derive",
         serde(state_with = "crate::serialization::borrow")
@@ -234,20 +235,41 @@ pub struct GlobalVmState {
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     debug_level: RwLock<DebugLevel>,
+
+    /// Tracks how many `RootedThread`s exist that refer to this global state.
+    /// Only when all `RootedThread`s are dropped are we sure that we can drop any thread without
+    /// resorting to garbage collection
+    // The references gets added automatically when recreating the threads
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    pub(crate) thread_reference_count: AtomicUsize,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
 }
 
 unsafe impl Trace for GlobalVmState {
-    impl_trace! { self, gc, {
-        for g in self.env.read().unwrap().globals.values() {
-            mark(g, gc);
-        }
-
-        mark(&self.macros, gc);
+    unsafe fn root(&mut self) {
+        self.macros.root();
 
         // Also need to check the interned string table
-        mark(&*self.interner.read().unwrap(), gc);
-        mark(&*self.generation_0_threads.read().unwrap(), gc);
-    } }
+        self.interner.get_mut().unwrap().root();
+        self.generation_0_threads.get_mut().unwrap().root();
+    }
+    unsafe fn unroot(&mut self) {
+        self.macros.unroot();
+
+        // Also need to check the interned string table
+        self.interner.get_mut().unwrap().unroot();
+        self.generation_0_threads.get_mut().unwrap().unroot();
+    }
+
+    fn trace(&self, gc: &mut Gc) {
+        self.macros.trace(gc);
+
+        // Also need to check the interned string table
+        self.interner.read().unwrap().trace(gc);
+        self.generation_0_threads.read().unwrap().trace(gc);
+    }
 }
 
 #[derive(Debug, Default)]
@@ -266,14 +288,6 @@ unsafe impl Trace for GlobalVmState {
 pub struct Globals {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub globals: FnvMap<StdString, Global<Value>>,
-}
-
-unsafe impl Trace for Globals {
-    impl_trace! { self, gc, {
-        mark(&self.globals, gc);
-    } }
 }
 
 pub trait VmEnv:
@@ -285,15 +299,12 @@ pub trait VmEnv:
 pub struct VmEnvInstance<'a> {
     // FIXME Use the database stored here for lookups
     vm_envs: Vec<Box<dyn VmEnv>>,
-    globals: RwLockReadGuard<'a, Globals>,
+    globals: parking_lot::RwLockReadGuard<'a, Globals>,
     thread: &'a Thread,
 }
 
 unsafe impl Trace for VmEnvInstance<'_> {
-    impl_trace! { self, gc, {
-        mark(&self.vm_envs, gc);
-        mark(&*self.globals, gc);
-    } }
+    impl_trace_fields! { self, gc; vm_envs }
 }
 
 impl<'a> OptimizeEnv for VmEnvInstance<'a> {
@@ -308,12 +319,6 @@ impl<'a> CompilerEnv for VmEnvInstance<'a> {
             .iter()
             .filter_map(|env| env.find_var(id))
             .next()
-            .or_else(|| {
-                self.globals
-                    .globals
-                    .get(id.definition_name())
-                    .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
-            })
             .or_else(|| self.globals.type_infos.find_var(id))
     }
 }
@@ -336,12 +341,6 @@ impl<'a> TypeEnv for VmEnvInstance<'a> {
             .iter()
             .filter_map(|env| env.find_type(id))
             .next()
-            .or_else(|| {
-                self.globals
-                    .globals
-                    .get(id.definition_name())
-                    .map(|g| g.typ.clone())
-            })
             .or_else(|| {
                 self.globals
                     .type_infos
@@ -384,9 +383,6 @@ impl<'a> MetadataEnv for VmEnvInstance<'a> {
 
 impl<'a> VmEnv for VmEnvInstance<'a> {
     fn get_global(&self, name: &str) -> Option<RootedGlobal> {
-        if name.contains("+") {
-            123.to_string();
-        }
         self.vm_envs
             .iter()
             .filter_map(|env| env.get_global(name))
@@ -511,11 +507,18 @@ impl<'a> VmEnvInstance<'a> {
 }
 
 #[derive(Default)]
-pub struct GlobalVmStateBuilder {}
+pub struct GlobalVmStateBuilder {
+    spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
+}
 
 impl GlobalVmStateBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn spawner(mut self, spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>) -> Self {
+        self.spawner = spawner;
+        self
     }
 
     pub fn build(self) -> GlobalVmState {
@@ -529,6 +532,8 @@ impl GlobalVmStateBuilder {
             type_cache: TypeCache::default(),
             generation_0_threads: Default::default(),
             debug_level: RwLock::new(DebugLevel::default()),
+            thread_reference_count: Default::default(),
+            spawner: self.spawner,
         };
         vm.add_types().unwrap();
         vm
@@ -553,7 +558,7 @@ impl GlobalVmState {
         }
         fn add_type(self_: &mut GlobalVmState, name: &str, typ: ArcType, id: TypeId) {
             let ids = self_.typeids.get_mut().unwrap();
-            let env = self_.env.get_mut().unwrap();
+            let env = self_.env.get_mut();
             ids.insert(id, typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(
@@ -594,9 +599,9 @@ impl GlobalVmState {
         thread: &Thread,
         f: CompiledModule,
     ) -> Result<OpaqueValue<RootedThread, GcPtr<ClosureData>>> {
+        let mut gc = self.gc.lock().unwrap();
         let env = self.get_env(thread);
         let mut interner = self.interner.write().unwrap();
-        let mut gc = self.gc.lock().unwrap();
         let byte_code = new_bytecode(&env, &mut interner, &mut gc, self, f)?;
         Ok(OpaqueValue::from_value(
             thread.root_value(Variants::from(byte_code)),
@@ -606,44 +611,6 @@ impl GlobalVmState {
     pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
         let id = TypeId::of::<T>();
         self.typeids.read().unwrap().get(&id).cloned()
-    }
-
-    /// Checks if a global exists called `name`
-    pub fn global_exists(&self, name: &str) -> bool {
-        self.env.read().unwrap().globals.get(name).is_some()
-    }
-
-    pub(crate) fn set_global(
-        &self,
-        id: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()> {
-        assert!(value.generation().is_root());
-        assert!(id.is_global(), "Symbol is not global");
-        let mut env = self.env.write().unwrap();
-        let globals = &mut env.globals;
-        let global = Global {
-            id: id.clone(),
-            typ,
-            metadata,
-            // SAFETY The global table are scanned
-            value: unsafe { value.clone_unrooted() },
-        };
-        globals.insert(StdString::from(id.definition_name()), global);
-        Ok(())
-    }
-
-    // Currently necessary for the language server
-    #[doc(hidden)]
-    pub fn set_dummy_global(&self, id: &str, typ: ArcType, metadata: Metadata) -> Result<()> {
-        self.set_global(
-            Symbol::from(format!("@{}", id)),
-            typ,
-            Arc::new(metadata),
-            &Value::int(0),
-        )
     }
 
     pub fn get_generic(&self, name: &str) -> ArcType {
@@ -681,25 +648,21 @@ impl GlobalVmState {
         alias: Alias<Symbol, ArcType>,
         id: TypeId,
     ) -> Result<ArcType> {
-        let mut env = self.env.write().unwrap();
+        let mut env = self.env.write();
         let type_infos = &mut env.type_infos;
-        if type_infos.id_to_type.contains_key(name.definition_name()) {
-            Err(Error::TypeAlreadyExists(name.definition_name().into()))
-        } else {
-            self.typeids
-                .write()
-                .unwrap()
-                .insert(id, alias.clone().into_type());
-            let t = alias.clone().into_type();
-            type_infos
-                .id_to_type
-                .insert(name.definition_name().into(), alias);
-            Ok(t)
-        }
+        self.typeids
+            .write()
+            .unwrap()
+            .insert(id, alias.clone().into_type());
+        let t = alias.clone().into_type();
+        type_infos
+            .id_to_type
+            .insert(name.definition_name().into(), alias);
+        Ok(t)
     }
 
     pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
-        let mut env = self.env.write().unwrap();
+        let mut env = self.env.write();
         let type_infos = &mut env.type_infos;
         let t = alias.clone().into_type();
         type_infos
@@ -713,8 +676,8 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
+        let mut interner = self.interner.write().unwrap();
         interner.intern(&mut *gc, s)
     }
 
@@ -723,7 +686,7 @@ impl GlobalVmState {
         let capabilities = self.macros.get_capabilities::<Box<dyn VmEnv>>(thread);
         VmEnvInstance {
             vm_envs: capabilities,
-            globals: self.env.read().unwrap(),
+            globals: self.env.read_recursive(),
             thread,
         }
     }
@@ -739,14 +702,14 @@ impl GlobalVmState {
     pub fn get_lookup_env<'t>(&'t self, thread: &'t Thread) -> VmEnvInstance<'t> {
         VmEnvInstance {
             vm_envs: Vec::new(),
-            globals: self.env.read().unwrap(),
+            globals: self.env.read_recursive(),
             thread,
         }
     }
 
     #[doc(hidden)]
-    pub fn get_globals(&self) -> sync::RwLockReadGuard<Globals> {
-        self.env.read().unwrap()
+    pub fn get_globals(&self) -> parking_lot::RwLockReadGuard<Globals> {
+        self.env.read_recursive()
     }
 
     pub fn get_debug_level(&self) -> DebugLevel {
@@ -755,5 +718,9 @@ impl GlobalVmState {
 
     pub fn set_debug_level(&self, debug_level: DebugLevel) {
         *self.debug_level.write().unwrap() = debug_level;
+    }
+
+    pub fn spawner(&self) -> Option<&(dyn futures::task::Spawn + Send + Sync)> {
+        self.spawner.as_ref().map(|s| &**s)
     }
 }

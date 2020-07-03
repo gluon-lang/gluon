@@ -21,7 +21,8 @@ type State s r a =
 let extract_state x : forall s . [| st : State s | r |] a -> State s r a = convert_variant! x
 
 #[inline(never)]
-let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a = Impure (convert_effect! st f) Pure
+let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a =
+    Impure (convert_effect! st f) Pure
 
 /// Creates a new mutable reference that contains `a`.
 let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
@@ -29,10 +30,11 @@ let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_st
 let make_call = Call
 
 /// Reads the values stored in the reference.
-let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)
+let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |] a = send_state (Read ref)
 
 /// Writes a new value into the reference.
-let write_ref a ref : forall s . a -> STRef s a -> Eff [| st : State s | r |] () = send_state (Write a ref)
+let write_ref a ref : forall s . a -> STRef s a -> Eff [| st : State s | r |] () =
+    send_state (Write a ref)
 
 /// Eliminates the `State` effect
 let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a =
@@ -40,7 +42,7 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
         match ve with
         | Pure value -> wrap value
         | Impure e f ->
-            match extract_state e with 
+            match extract_state e with
             | New a ->
                 loop (f { __ref = ref a })
             | Read r ->
@@ -58,7 +60,7 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
 
 {
     State,
-    
+
     send_state,
 
     new_ref,

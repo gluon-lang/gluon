@@ -5,6 +5,7 @@ let { Applicative, (*>), ? } = import! std.applicative
 let int = import! std.int
 let float = import! std.float
 let byte @ { ? } = import! std.byte
+let { empty } = import! std.monoid
 
 let { ? } = import! std.effect
 
@@ -27,6 +28,14 @@ let int_tests =
         test "from_float" <| \_ -> assert_eq (int.from_float 2.0) 2,
         test "from_float_truncate" <| \_ -> assert_eq (int.from_float 2.7) 2,
         test "from_byte" <| \_ -> assert_eq (int.from_byte 2b) 2,
+        group "monoid" [
+            test "additive" <| \_ ->
+                let { ? } = int.additive
+                assert_eq 0 empty,
+            test "multiplicative" <| \_ ->
+                let { ? } = int.multiplicative
+                assert_eq 1 empty,
+        ]
     ]
 
 let float_tests =

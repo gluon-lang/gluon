@@ -786,8 +786,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         }
                         let mut result = Ok(());
                         let new_closures = merge_collect(
+                            &mut (),
                             closures,
-                            |closure| {
+                            |_, closure| {
                                 let new_body = match self.compile_lambda(
                                     &closure.name,
                                     &closure.args,
@@ -1482,6 +1483,7 @@ pub(crate) mod tests {
     use crate::base::{
         error::Errors,
         pos::{self, BytePos, Spanned},
+        source,
         symbol::Symbols,
     };
 
@@ -1524,7 +1526,7 @@ pub(crate) mod tests {
         let actual_expr = ExprParser::new()
             .parse(symbols, &allocator, expr_str)
             .unwrap_or_else(|err| {
-                let mut source = codespan::CodeMap::new();
+                let mut source = source::CodeMap::new();
                 source.add_filemap("test".into(), expr_str.into());
 
                 let mut errors = Errors::new();
@@ -1763,14 +1765,14 @@ pub(crate) mod tests {
         let _ = ::env_logger::try_init();
 
         let expr = r#"
-            let match_pattern = m state 
+            let match_pattern = m state
             in
             match match_pattern with
             | { value } -> value
             end
         "#;
         let expected = r#"
-            let match_pattern = m state 
+            let match_pattern = m state
             in
             match match_pattern with
             | { value } -> value

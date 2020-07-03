@@ -1,8 +1,5 @@
 #[macro_use]
-extern crate quick_error;
-#[macro_use]
 extern crate collect_mac;
-extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 
@@ -79,7 +76,7 @@ test 1
     let (expr, result) = support::typecheck_expr(text);
 
     assert!(result.is_ok());
-    let (bind, call) = match expr.value {
+    let (bind, call) = match expr.expr().value {
         Expr::LetBindings(_, ref body) => match body.value {
             Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
             _ => panic!(),
@@ -109,7 +106,7 @@ let a = { id = \x -> x, z = 1 #Int== 2.0 }
 a.id
 "#;
     let (expr, _result) = support::typecheck_expr(text);
-    let t = match expr.value {
+    let t = match expr.expr().value {
         Expr::LetBindings(_, ref body) => match body.value {
             Expr::Projection(_, _, ref typ) => typ,
             _ => panic!(),
@@ -549,10 +546,10 @@ let traversable : Traversable Option = {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     struct Visitor;
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'a, '_> for Visitor {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<'_, Symbol>) {
             match expr.value {
                 Expr::Ident(ref id) if id.name.declared_name() == "Some" => {
                     assert_eq!(id.typ.to_string(), "b -> test.Option b");
@@ -561,7 +558,7 @@ let traversable : Traversable Option = {
             }
         }
     }
-    base::ast::Visitor::visit_expr(&mut Visitor, &expr)
+    base::ast::Visitor::visit_expr(&mut Visitor, &expr.expr())
 }
 
 #[test]
@@ -1050,7 +1047,7 @@ some_int // Undefined behaviour
 "#;
     let (expr, result) = support::typecheck_expr(text);
 
-    support::print_ident_types(&expr);
+    support::print_ident_types(&expr.expr());
     assert!(result.is_err(), "{}", result.unwrap());
 }
 
@@ -1080,7 +1077,7 @@ type Option a = | None | Some a
 
 type Deserializer i a = i -> Option { value : a, input : i }
 
-/// Deserializer which extracts the data from the `Value` type 
+/// Deserializer which extracts the data from the `Value` type
 type ValueDeserializer a = Deserializer String a
 
 let any x = any x
@@ -1239,7 +1236,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a . | Ok\n.. a".to_string())
+        Ok("forall a .\n    | Ok\n    .. a".to_string())
     );
 }
 

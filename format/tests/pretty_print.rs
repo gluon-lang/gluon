@@ -1,17 +1,29 @@
-#[macro_use(assert_diff)]
-extern crate difference;
 #[macro_use]
 extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_format as format;
 
-use std::env;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
+use difference::assert_diff;
 
 use gluon::{RootedThread, ThreadExt, VmBuilder};
+
+macro_rules! test_format {
+    ($name: ident, $initial: expr) => {
+        test_format! { $name, $initial, $initial }
+    };
+    ($name: ident, $initial: expr, $formatted: expr) => {
+        #[test]
+        fn $name() {
+            let initial = $initial;
+            let expr = $formatted;
+
+            let once = format_expr(initial).unwrap();
+            assert_diff!(&once, expr, "\n", 0);
+            assert_diff!(&format_expr(&once).unwrap(), expr, "\n", 0);
+        }
+    };
+}
 
 fn new_vm() -> RootedThread {
     VmBuilder::new()
@@ -21,136 +33,14 @@ fn new_vm() -> RootedThread {
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let thread = new_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
     thread.format_expr(&mut format::Formatter::default(), "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     let thread = new_vm();
+    thread.get_database_mut().set_implicit_prelude(false);
     thread.format_expr(&mut format::Formatter { expanded: true }, "test", expr)
-}
-
-fn test_format(filename: &str) {
-    let _ = env_logger::try_init();
-
-    let mut contents = String::new();
-    File::open(Path::new("../").join(filename))
-        .or_else(|_| File::open(filename))
-        .unwrap()
-        .read_to_string(&mut contents)
-        .unwrap();
-
-    let name = base::filename_to_module(filename);
-
-    let thread = new_vm();
-    let out_str = thread
-        .format_expr(&mut format::Formatter::default(), &name, &contents)
-        .unwrap_or_else(|err| panic!("{}", err));
-
-    if contents != out_str {
-        let args: Vec<_> = env::args().collect();
-        let out_path = Path::new(&args[0][..])
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("folder")
-            .join(Path::new(filename).file_name().unwrap());
-        File::create(out_path)
-            .unwrap()
-            .write_all(out_str.as_bytes())
-            .unwrap();
-
-        assert_diff!(&contents, &out_str, " ", 0);
-    }
-}
-
-#[test]
-fn bool() {
-    test_format("std/bool.glu");
-}
-
-#[test]
-fn char() {
-    test_format("std/char.glu");
-}
-
-#[test]
-fn function() {
-    test_format("std/function.glu");
-}
-
-#[test]
-fn map() {
-    test_format("std/map.glu");
-}
-
-#[test]
-fn option() {
-    test_format("std/option.glu");
-}
-
-#[test]
-fn prelude() {
-    test_format("std/prelude.glu");
-}
-
-#[test]
-fn result() {
-    test_format("std/result.glu");
-}
-
-#[test]
-fn state() {
-    test_format("std/state.glu");
-}
-
-#[test]
-fn stream() {
-    test_format("std/stream.glu");
-}
-
-#[test]
-fn string() {
-    test_format("std/string.glu");
-}
-
-#[ignore]
-#[test]
-fn test() {
-    test_format("std/test.glu");
-}
-
-#[test]
-fn types() {
-    test_format("std/types.glu");
-}
-
-#[test]
-fn unit() {
-    test_format("std/unit.glu");
-}
-
-#[test]
-fn writer() {
-    test_format("std/writer.glu");
-}
-
-#[test]
-fn parser() {
-    test_format("std/parser.glu");
-}
-
-#[test]
-fn random() {
-    test_format("std/random.glu");
-}
-
-#[test]
-fn repl() {
-    test_format("repl/src/repl.glu");
-}
-
-#[test]
-fn json() {
-    test_format("std/json/de.glu");
 }
 
 #[test]
@@ -186,6 +76,22 @@ r##"abc
 }
 
 #[test]
+fn long_tuple() {
+    let expr = r#"
+(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+"#;
+    assert_eq!(
+        &format_expr(expr).unwrap(),
+        r#"
+(
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,
+)
+"#
+    );
+}
+
+#[test]
 fn implicit_arg() {
     let expr = r#"
 f ?32 ""
@@ -204,7 +110,7 @@ type Test = Int
 1
 // test4
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -217,7 +123,7 @@ fn preserve_whitespace_in_record() {
     bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2,
 }
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -272,18 +178,25 @@ let {
     test
 123
 "#;
-    assert_eq!(&format_expr(expr).unwrap(), expr);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
 fn preserve_comments_in_function_types() {
     let expr = r#"#!/bin/gluon
-let x : /* first */ Int /* Int */ ->
+let x :
+    /* first */
+    Int
+        /* Int */
+        ->
         // Float
-        Float /* last */ = ()
+        Float
+    /* last */
+    =
+    ()
 x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -294,7 +207,18 @@ let x : Test /* first */ Int
         Float /* last */ = ()
 x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    let expected = r#"#!/bin/gluon
+let x : Test
+        /* first */
+        Int
+        // middle
+        Float
+    /* last */
+    =
+    ()
+x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expected, "\n", 0);
 }
 
 #[test]
@@ -310,7 +234,7 @@ type Test = {
 }
 x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -322,7 +246,7 @@ fn doc_comment_in_record_expr() {
     field1 = 1,
 }
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -332,7 +256,7 @@ fn preserve_comments_in_empty_record() {
 // 123
 }
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -346,7 +270,15 @@ fn preserve_comments_in_record_base() {
 /* x */
 }
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn starting_comment() {
+    let expr = r#"// 123
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -356,7 +288,12 @@ let semigroup =
     { append }
 ()
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    let format = r#"
+let semigroup =
+    { append }
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), format, "\n", 0);
 }
 
 #[test]
@@ -366,31 +303,61 @@ do /* x1 */ x /* x2 */ = Some 1
 // test
 test abc 1232 ""
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
-fn if_else_multiple() {
+fn hang_lambda_arg() {
+    let expr = r#"
+function
+    (\arg ->
+        let x = 1
+        x)
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn hang_record() {
+    let expr = r#"
+let x = {
+    // abc
+    field = 1,
+}
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn if_else_basic() {
+    let expr = r#"
+if x then y
+else 0
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn if_else_multiple_basic() {
     let expr = r#"
 if x then y
 else if z then w
 else 0
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
 fn if_else_multiple_let_multiline_1() {
     let expr = r#"
-if x then
-    f 123 483
-else if z then
-    "12312"
+if x then f 123 483
+else if z then "12312"
 else
     do x = 1
     x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -406,7 +373,7 @@ else
     let x = 1
     x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -416,13 +383,13 @@ let traverse_with_key f m x : [Ord k]
         -> Applicative t
         -> (k -> a -> t b)
         -> Map k a
-        -> ()
+        -> LOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOONG
         -> ()
     =
     ()
 ()
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -438,7 +405,18 @@ test 123
 abc ""
 // test2
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn comments_between_lambda_and_let() {
+    let expr = r#"
+\x ->
+    // abc
+    let y = x
+    y
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -453,7 +431,7 @@ type Handler a =
     -> IO Response
 ()
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -467,7 +445,7 @@ type TestCase a =
     assert_diff!(
         &format_expr(expr).unwrap_or_else(|err| panic!("{}", err)),
         expr,
-        " ",
+        "\n",
         0
     );
 }
@@ -480,7 +458,7 @@ let x = "abc
     "
 x
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -491,7 +469,7 @@ type Test =
     | Test
 Test
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -502,7 +480,7 @@ type Test a =
     | Test a
 Test 1
 "#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
 }
 
 #[test]
@@ -651,9 +629,8 @@ rec let deserialize_Record : Deserialize Record =
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { (<|>) } = import! std.alternative
-    let deserializer : ValueDeserializer Record
-        = map (\x y -> { x, y }) (field "x" deserializer)
-            <*> field "y" deserializer
+    let deserializer : ValueDeserializer Record =
+        map (\x y -> { x, y }) (field "x" deserializer) <*> field "y" deserializer
     { deserializer = deserializer }
 ()
 "#;
@@ -713,4 +690,142 @@ rec let serialize_Variant : Serialize Variant =
 ()
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn let_lambda() {
+    let expr = r#"
+let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA = \state ->
+    let PATTERN_BINDING = BBBBBBB
+    CCCCC
+
+{ }
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn let_tuple() {
+    let expr = r#"
+let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA = (BBBBBBBBBBBBBBBBBBBBB, CCCCCCCCCCCCCCCCCCC)
+
+1
+"#;
+    let expected = r#"
+let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA = (
+    BBBBBBBBBBBBBBBBBBBBB,
+    CCCCCCCCCCCCCCCCCCC,
+)
+
+1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn let_app() {
+    let expr = r#"
+let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA = BBBBBBBBBBBBBBBBBBBBB CCCCCCCCCCCCCCCCCCC
+
+1
+"#;
+    let expected = r#"
+let flat_map_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA =
+    BBBBBBBBBBBBBBBBBBBBB CCCCCCCCCCCCCCCCCCC
+
+1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn function_type_dont_split_app() {
+    let expr = r#"
+let run_interruptible_io :
+    IO String
+        -> LOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOONG
+    =
+    ()
+
+{ }
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn inside_parens_idempotent() {
+    let expr = r#"
+let rest x =
+    (
+        do f = op
+        rest)
+        <|> wrap
+
+{ }
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn comment_in_lambda() {
+    let expr = r#"
+(\settings ->
+    // Comment
+    { })
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn long_type() {
+    let expr = r#"
+let assert_throws : forall e .
+        [Show a] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+    =
+    run_error >> flat_map assert_err
+
+1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+#[test]
+fn open_variant() {
+    let expr = r#"
+type OpenVariant r a = .. r
+
+1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
+}
+
+test_format! {
+    issue_793_1,
+r#"
+let gectvbzppia : alrkvbjaklbvapouhvgtbvvnaipryrbipajlkm
+        vhieurabrlvikbnvliaejnbae
+        vhieurabrlvikbnvliaejnbaeoribfhknjeanhbtbaejnbaetiekjnajkrhblbrfvbrkkajbevels
+        vhieurabrlvikbnvliaejnbaeoribfhknjeanhbtbaejnb
+        vhieurabrlvikbnvliaejn
+    =
+    x
+()
+"#
+}
+
+test_format! {
+    issue_793_2,
+r#"
+let assert_success : [Show e] -> Eff [| error : Error e, writer : Test | r |] a -> Eff [| writer : Test | r |] ()
+    = run_error >> flat_map assert_ok
+()
+"#,
+r#"
+let assert_success : [Show e]
+        -> Eff [| error : Error e, writer : Test | r |] a
+        -> Eff [| writer : Test | r |] ()
+    =
+    run_error >> flat_map assert_ok
+()
+"#
 }

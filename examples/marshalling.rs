@@ -65,9 +65,7 @@ enum Either<L, R> {
     Right(R),
 }
 
-fn marshal_enum() -> Result<()> {
-    let thread = new_vm();
-
+fn marshal_enum(thread: &Thread) -> Result<()> {
     let enum_source = api::typ::make_source::<Enum>(&thread)?;
     thread.load_script("examples.enum", &enum_source)?;
 
@@ -106,12 +104,10 @@ fn marshal_enum() -> Result<()> {
     Ok(())
 }
 
-fn marshal_map<I>(iterable: I) -> Result<()>
+fn marshal_map<I>(thread: &Thread, iterable: I) -> Result<()>
 where
     I: IntoIterator<Item = (String, String)>,
 {
-    let thread = new_vm();
-
     // Load std.map so that we can retrieve the `Map` type through the `VmType` trait
     thread.run_expr::<()>("example", "let _ = import! std.map in ()")?;
 
@@ -164,8 +160,7 @@ fn flip<'a>(
     }
 }
 
-fn marshal_generic() -> Result<()> {
-    let thread = new_vm();
+fn marshal_generic(thread: &Thread) -> Result<()> {
     thread.get_database_mut().run_io(true);
 
     // define the gluon type that maps to the rust Either
@@ -184,11 +179,11 @@ fn marshal_generic() -> Result<()> {
     }
 
     thread.load_script("examples.either", src)?;
-    import::add_extern_module(&thread, "examples.prim", load_mod);
+    import::add_extern_module(&thread, "examples.either.prim", load_mod);
 
     let script = r#"
         let { Either } = import! examples.either
-        let { flip } = import! examples.prim
+        let { flip } = import! examples.either.prim
         let { (<>) } = import! std.semigroup
         let io @ { flat_map } = import! std.io
 
@@ -197,7 +192,7 @@ fn marshal_generic() -> Result<()> {
         let either: forall r . Either String r = Left "hello rust!"
 
         // we can pass the generic Either to the Rust function without an issue
-        seq 
+        seq
             match flip either with
             | Left _ -> error "unreachable!"
             | Right val -> io.println ("Right is: " <> val)
@@ -245,7 +240,7 @@ where
 
         // apply all generic parameters to the type
         let mut vec = AppVec::new();
-        vec.push(T::make_type(thread));
+        AppVec::push(&mut vec, T::make_type(thread));
         Type::app(ty, vec)
     }
 }
@@ -289,9 +284,7 @@ where
     }
 }
 
-fn marshal_wrapper() -> Result<()> {
-    let thread = new_vm();
-
+fn marshal_wrapper(thread: &Thread) -> Result<()> {
     let src = r#"
         type User a = { name: String, age: Int, data: a }
         { User }
@@ -309,11 +302,11 @@ fn marshal_wrapper() -> Result<()> {
     }
 
     thread.load_script("examples.wrapper", src)?;
-    import::add_extern_module(&thread, "examples.prim", load_mod);
+    import::add_extern_module(&thread, "examples.wrapper.prim", load_mod);
 
     let script = r#"
         let { User } = import! examples.wrapper
-        let { roundtrip } = import! examples.prim
+        let { roundtrip } = import! examples.wrapper.prim
         let { assert } = import! std.test
 
         let actual = { name = "Bob", age = 11, data = True }
@@ -342,6 +335,7 @@ fn load_mod(thread: &gluon::Thread) -> vm::Result<ExternModule> {
     thread.register_type::<WindowHandle>("WindowHandle", &[])?;
 
     let module = record! {
+        type WindowHandle => WindowHandle,
         create_hwnd => primitive!(2, create_hwnd),
         id => primitive!(1, id),
         metadata => primitive!(1, metadata),
@@ -366,9 +360,7 @@ fn metadata(hwnd: &WindowHandle) -> String {
     String::from(&*hwnd.metadata)
 }
 
-fn marshal_userdata() -> Result<()> {
-    let thread = new_vm();
-
+fn marshal_userdata(thread: &Thread) -> Result<()> {
     gluon::import::add_extern_module(&thread, "hwnd", load_mod);
 
     // Load the extern module so that the next run_expr call can access the registered type
@@ -376,8 +368,8 @@ fn marshal_userdata() -> Result<()> {
 
     let script = r#"
         let { assert } = import! std.test
-        let { create_hwnd, id, metadata } = import! hwnd
-        let hwnd = create_hwnd 0 "Window1"
+        let { WindowHandle, create_hwnd, id, metadata } = import! hwnd
+        let hwnd : WindowHandle = create_hwnd 0 "Window1"
         assert (id hwnd == 0)
         assert (metadata hwnd == "Window1")
         hwnd
@@ -406,56 +398,101 @@ enum List<T> {
     Cons(T, Box<List<T>>),
 }
 
-fn marshal_recursive() -> Result<()> {
-    let vm = new_vm();
-
+fn marshal_recursive(thread: &Thread) -> Result<()> {
     // Load std.list before we try to use it in `VmType for List`
-    vm.run_expr::<OpaqueValue<RootedThread, Hole>>("example", "import! std.list")?;
+    thread.run_expr::<OpaqueValue<RootedThread, Hole>>("example", "import! std.list")?;
 
     let source = r#"
         let list = import! std.list
         list.of [1, 2]
         "#;
-    let (list, _) = vm.run_expr::<List<i32>>("example", source)?;
+    let (list, _) = thread.run_expr::<List<i32>>("example", source)?;
 
     assert_eq!(list, List::Cons(1, List::Cons(2, List::Nil.into()).into()));
     println!("The list {:?}", list);
     Ok(())
 }
 
+fn marshal_json(thread: &Thread) -> Result<()> {
+    let source = r#"
+        let { Eff, ? } = import! std.effect
+        let io @ { ? } = import! std.effect.io
+        let { Lift, run_lift } = import! std.effect.lift
+        let { Error, run_error, ok_or_throw } = import! std.effect.error
+        let { (<|) } = import! std.function
+
+        let { Value } = import! std.json
+        let de @ { Deserialize, ? } = import! std.json.de
+
+        #[derive(Deserialize, Show)]
+        type Nested = {
+            float: Float,
+        }
+
+        #[derive(Deserialize)]
+        type MyValue = {
+            bool: Bool,
+            string: String,
+            nested: Nested,
+            array: Array Int,
+        }
+        let consumer value : Value -> Eff [| error : Error String, lift: Lift IO |] () =
+            do my_value = ok_or_throw <| de.run value
+            seq io.println ("bool = " ++ show my_value.bool)
+            seq io.println ("string = " ++ show my_value.string)
+            seq io.println ("nested = " ++ show my_value.nested)
+            io.println ("array = " ++ show my_value.array)
+
+        \value -> run_lift <| run_error <| consumer value
+        "#;
+
+    thread.run_expr::<OpaqueValue<RootedThread, Hole>>("example", "import! std.json")?;
+
+    let (mut consumer, _) = thread.run_expr::<FunctionRef<
+        fn(serde_json::Value) -> IO<std::result::Result<(), String>>,
+    >>("example", source)?;
+    consumer
+        .call(serde_json::json! {{
+            "bool": true,
+            "string": "hello",
+            "nested": {
+                "float": 3.14,
+            },
+            "array": [1, 2, 3]
+        }})?
+        .into_result()??;
+
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
-
-    if let Err(err) = marshal_enum() {
-        eprintln!("{}", err)
+    if let Err(err) = main_() {
+        eprintln!("{}", err);
+        ::std::process::exit(1);
     }
+}
+
+fn main_() -> Result<()> {
+    let thread = new_vm();
+
+    marshal_enum(&thread)?;
 
     let mut map = HashMap::new();
     map.insert("key".to_string(), "value".to_string());
     map.insert("key2".to_string(), "value2".to_string());
 
-    if let Err(err) = marshal_map(map) {
-        eprintln!("{}", err);
-        ::std::process::exit(1);
-    }
+    marshal_map(&thread, map)?;
 
-    if let Err(err) = marshal_generic() {
-        eprintln!("{}", err);
-        ::std::process::exit(1);
-    }
+    marshal_generic(&thread)?;
 
-    if let Err(err) = marshal_wrapper() {
-        eprintln!("{}", err);
-        ::std::process::exit(1);
-    }
+    marshal_wrapper(&thread)?;
 
-    if let Err(err) = marshal_userdata() {
-        eprintln!("{}", err);
-        ::std::process::exit(1);
-    }
+    marshal_userdata(&thread)?;
 
-    if let Err(err) = marshal_recursive() {
-        eprintln!("{}", err);
-        ::std::process::exit(1);
-    }
+    marshal_recursive(&thread)?;
+
+    marshal_json(&thread)?;
+
+    Ok(())
 }

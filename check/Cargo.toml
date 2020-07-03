@@ -1,6 +1,6 @@
 [package]
 name = "gluon_check"
-version = "0.12.0" # GLUON
+version = "0.15.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -19,24 +19,25 @@ travis-ci = { repository = "gluon-lang/gluon" }
 collect-mac = "0.1.0"
 ena = "0.13"
 log = "0.4"
-itertools = "0.8"
-pretty = "0.5"
+itertools = "0.9"
+pretty = "0.10"
 smallvec = "0.6"
-rpds = "0.6"
+rpds = "0.7"
 quick-error = "1"
 
-codespan = "0.3"
-codespan-reporting = "0.3"
+codespan = "0.9"
+codespan-reporting = "0.9"
 
 strsim = "0.9.0"
 
-gluon_base = { path = "../base", version = "0.12.0" } # GLUON
-gluon_codegen = { path = "../codegen", version = "0.12.0" } # GLUON
+gluon_base = { path = "../base", version = "0.15.1" } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.15.1" } # GLUON
 
 [dev-dependencies]
-env_logger = "0.6"
+env_logger = "0.7"
+insta = "0.16"
 
-gluon_parser = { path = "../parser", version = "0.12.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.15.1" } # GLUON
 gluon_format = { path = "../format", version = ">=0.9" }
 
 collect-mac = "0.1.0"

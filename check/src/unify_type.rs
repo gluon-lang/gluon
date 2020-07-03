@@ -10,7 +10,7 @@ use crate::base::{
     symbol::{Symbol, SymbolRef},
     types::{
         self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeContext,
-        TypeEnv, TypeExt, TypeFormatter, TypeVariable,
+        TypeEnv, TypeExt, TypeFormatter, TypePtr, TypeVariable,
     },
 };
 
@@ -587,11 +587,11 @@ where
         | (&Type::ExtendRow { .. }, &Type::EmptyRow)
         | (&Type::EmptyRow, &Type::ExtendRow { .. }) => unify_rows(unifier, expected, actual),
 
-        (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
+        (&Type::Ident(ref id), &Type::Alias(ref alias)) if id.name == alias.name => {
             Ok(Some(actual.clone()))
         }
 
-        (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
+        (&Type::Alias(ref alias), &Type::Ident(ref id)) if id.name == alias.name => Ok(None),
 
         (&Type::Forall(ref params, _), &Type::Forall(_, _)) => {
             let mut named_variables = FnvMap::default();

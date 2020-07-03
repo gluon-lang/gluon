@@ -13,7 +13,8 @@ type State s r a =
 
 let extract_state x : forall s . [| state : State s | r |] a -> State s r a = convert_variant! x
 
-let send_state f : State s r a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
+let send_state f : State s r a -> Eff [| state : State s | r |] a =
+    Impure (convert_effect! state f) Pure
 
 /// Retreive the current value.
 let get : forall s . Eff [| state : State s | r |] s =
@@ -33,12 +34,19 @@ let modify f : (s -> s) -> Eff [| state : State s | r |] () =
     put (f s)
 
 /// Eliminate the `State` effect and return the state and the computed value
-let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
-    let loop state ve : s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a } =
+let run_state s eff : forall s .
+        s
+            -> Eff [| state : State s | r |] a
+            -> Eff [| | r |] { state : s, value : a }
+    =
+    let loop state ve : s
+            -> Eff [| state : State s | r |] a
+            -> Eff [| | r |] { state : s, value : a }
+        =
         match ve with
         | Pure value -> wrap { state, value }
         | Impure e f ->
-            match extract_state e with 
+            match extract_state e with
             | Get ->
                 loop state (f state)
             | Put state ->

@@ -9,7 +9,8 @@ let { Monad } = import! std.monad
 let { Applicative } = import! std.applicative
 
 let semigroup s : Semigroup b -> Semigroup (a -> b) = {
-    append = \f g x -> s.append (f x) (g x) }
+    append = \f g x -> s.append (f x) (g x),
+}
 
 let monoid m : Monoid b -> Monoid (a -> b) = {
     semigroup = semigroup m.semigroup,

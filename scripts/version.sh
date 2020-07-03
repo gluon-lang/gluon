@@ -1,10 +1,10 @@
-#!/bin/sh
+#!/bin/bash
 # Modified from https://github.com/nikomatsakis/lalrpop/blob/master/version.sh
 #
 # A script to bump the version number on all Cargo.toml files etc in
 # an atomic fashion.
 
-set -ex
+set -e
 
 if [ "$1" == "" ]; then
     echo "Usage: version.sh <new-version-number>"
@@ -13,8 +13,8 @@ fi
 
 VERSION=$(
     ls **/Cargo.toml | \
-        xargs grep "# GLUON$" | \
-        perl -p -e 's/.*version = "([0-9.]+)"[^#]+# GLUON$/$1/' |
+        xargs grep "# GLUON" | \
+        perl -p -e 's/.*version = "([0-9.]+)"[^#]+# GLUON/$1/' |
         sort |
         uniq)
 

@@ -5,12 +5,12 @@ extern crate pretty;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::{cell::RefCell, ops::Deref, rc::Rc};
+use std::{cell::RefCell, iter::FromIterator, ops::Deref, rc::Rc};
 
 use pretty::{Arena, DocAllocator};
 
 use base::{
-    ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent},
+    ast::{self, Expr, Literal, SpannedExpr, Typed, TypedIdent},
     kind::{ArcKind, Kind, KindEnv},
     pos::{self, BytePos, Span, Spanned},
     resolve,
@@ -21,13 +21,14 @@ use base::{
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
     I: Deref<Target = str>,
-    T: From<Type<I, T>>,
+    T: TypeExt<Id = I> + From<Type<I, T>>,
+    T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(s.len() != 0);
     match s.parse() {
         Ok(b) => Type::Builtin(b),
         Err(()) if s.starts_with(char::is_lowercase) => Type::Generic(Generic::new(s, Kind::typ())),
-        Err(()) => Type::App(Type::ident(s), args.into_iter().collect()),
+        Err(()) => Type::App(Type::ident(KindedIdent::new(s)), args.into_iter().collect()),
     }
 }
 
@@ -261,8 +262,11 @@ fn show_record_multi_line_nested() {
 #[test]
 fn show_variant() {
     let typ: ArcType<&str> = Type::variant(vec![
-        Field::new("A", Type::function(vec![Type::int()], Type::ident("A"))),
-        Field::new("B", Type::ident("A")),
+        Field::new(
+            "A",
+            Type::function(vec![Type::int()], Type::opaque()),
+        ),
+        Field::new("B", Type::opaque()),
     ]);
     assert_eq_display!(format!("{}", typ), "| A Int\n| B");
 }
@@ -278,7 +282,7 @@ fn show_kind() {
 #[test]
 fn show_polymorphic_record() {
     let fields = vec![Field::new("x", Type::string())];
-    let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident("r"));
+    let typ: ArcType<&str> = Type::poly_record(vec![], fields, Type::ident(KindedIdent::new("r")));
     assert_eq_display!(format!("{}", typ), "{ x : String | r }");
 }
 
@@ -289,10 +293,11 @@ fn show_polymorphic_record_associated_type() {
         Alias::new(
             "Test",
             vec![Generic::new("a", Kind::typ())],
-            Type::ident("a"),
+            Type::ident(KindedIdent::new("a")),
         ),
     )];
-    let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
+    let typ: ArcType<&str> =
+        Type::poly_record(type_fields, vec![], Type::ident(KindedIdent::new("r")));
     assert_eq_display!(format!("{}", typ), "{ Test a = a | r }");
 }
 
@@ -318,7 +323,7 @@ fn break_record() {
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&printer, &typ))
-        .append(arena.newline());
+        .append(arena.hardline());
     assert_eq_display!(
         format!("{}", typ.1.pretty(80)),
         r#"aaaaaaaaabbbbbbbbbbcccccccccc {
@@ -356,7 +361,7 @@ impl TypeEnv for MockEnv {
     }
 }
 
-pub type SpExpr = SpannedExpr<Symbol>;
+pub type SpExpr<'ast> = SpannedExpr<'ast, Symbol>;
 
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
     thread_local!(static INTERNER: Rc<RefCell<Symbols>>
@@ -373,22 +378,28 @@ pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
     pos::spanned(Span::default(), value)
 }
 
-pub fn int(i: i64) -> SpExpr {
+pub fn int<'ast>(i: i64) -> SpExpr<'ast> {
     no_loc(Expr::Literal(Literal::Int(i)))
 }
 
-pub fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
+pub fn binop<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
+    l: SpExpr<'ast>,
+    s: &str,
+    r: SpExpr<'ast>,
+) -> SpExpr<'ast> {
     no_loc(Expr::Infix {
-        lhs: Box::new(l),
+        lhs: arena.alloc(l),
         op: no_loc(TypedIdent::new(intern(s))),
-        rhs: Box::new(r),
-        implicit_args: Vec::new(),
+        rhs: arena.alloc(r),
+        implicit_args: &mut [],
     })
 }
 
 #[test]
 fn take_implicits_into_account_on_infix_type() {
-    let mut expr = binop(int(1), "+", int(2));
+    base::mk_ast_arena!(arena);
+    let mut expr = binop(arena.borrow(), int(1), "+", int(2));
     if let Expr::Infix { ref mut op, .. } = expr.value {
         op.value.typ = Type::function_implicit(
             vec![Type::int()],

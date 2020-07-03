@@ -1,7 +1,7 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url = "https://docs.rs/gluon_parser/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.15.1")] // # GLUON
 
 extern crate codespan;
 extern crate codespan_reporting;
@@ -21,30 +21,39 @@ extern crate quick_error;
 #[macro_use]
 extern crate pretty_assertions;
 
-use std::{fmt, hash::Hash, sync::Arc};
+use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
+
+use itertools::Either;
 
 use crate::base::{
-    ast::{AstType, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding},
+    ast::{
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr, SpannedPattern,
+        TypedIdent, ValueBinding,
+    },
     error::{AsDiagnostic, Errors},
     fnv::FnvMap,
-    metadata::Metadata,
+    metadata::{BaseMetadata, Metadata},
+    mk_ast_arena,
     pos::{self, ByteOffset, BytePos, Span, Spanned},
+    source,
     symbol::Symbol,
-    types::{ArcType, TypeCache},
+    types::{Alias, ArcType, Field, Generic, TypeCache},
 };
 
 use crate::{
     infix::{Fixity, OpMeta, OpTable, Reparser},
     layout::Layout,
-    token::{Token, Tokenizer},
+    token::{BorrowedToken, Tokenizer},
 };
 
 pub use crate::{
     infix::Error as InfixError, layout::Error as LayoutError, token::Error as TokenizeError,
+    token::Token,
 };
 
 lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[allow(unused_parens)]
     grammar
 );
 
@@ -61,24 +70,26 @@ fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIden
 }
 
 type LalrpopError<'input> =
-    lalrpop_util::ParseError<BytePos, Token<'input>, Spanned<Error, BytePos>>;
+    lalrpop_util::ParseError<BytePos, BorrowedToken<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
-fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
+fn shrink_hidden_spans<Id: std::fmt::Debug>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
         Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
-        | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
         | Expr::Do(Do { body: ref last, .. }) => {
             expr.span = Span::new(expr.span.start(), last.span.end())
         }
+        Expr::LetBindings(_, ref last) => expr.span = Span::new(expr.span.start(), last.span.end()),
         Expr::Lambda(ref lambda) => {
             expr.span = Span::new(expr.span.start(), lambda.body.span.end())
         }
-        Expr::Block(ref mut exprs) => match exprs.len() {
-            0 => (),
-            1 => return exprs.pop().unwrap(),
+        Expr::Block(ref mut exprs) => match exprs {
+            [] => (),
+            [e] => {
+                return std::mem::take(e);
+            }
             _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
         Expr::Match(_, ref alts) => {
@@ -139,38 +150,30 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Token(err: TokenizeError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         Layout(err: LayoutError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         InvalidToken {
-            description("invalid token")
             display("Invalid token")
         }
-        UnexpectedToken(token: String, expected: Vec<String>) {
-            description("unexpected token")
+        UnexpectedToken(token: Token<String>, expected: Vec<String>) {
             display("Unexpected token: {}{}", token, Expected(&expected))
         }
         UnexpectedEof(expected: Vec<String>) {
-            description("unexpected end of file")
             display("Unexpected end of file{}", Expected(&expected))
         }
-        ExtraToken(token: String) {
-            description("extra token")
+        ExtraToken(token: Token<String>) {
             display("Extra token: {}", token)
         }
         Infix(err: InfixError) {
-            description(err.description())
             display("{}", err)
             from()
         }
         Message(msg: String) {
-            description(msg)
             display("{}", msg)
             from()
         }
@@ -178,8 +181,11 @@ quick_error! {
 }
 
 impl AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(
+        &self,
+        _map: &base::source::CodeMap,
+    ) -> codespan_reporting::diagnostic::Diagnostic<source::FileId> {
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(self.to_string())
     }
 }
 
@@ -207,7 +213,7 @@ impl Error {
                 pos::spanned2(
                     lpos,
                     rpos,
-                    Error::UnexpectedToken(token.to_string(), expected),
+                    Error::UnexpectedToken(token.map(|s| s.into()), expected),
                 )
             }
             UnrecognizedEOF {
@@ -227,30 +233,121 @@ impl Error {
             }
             ExtraToken {
                 token: (lpos, token, rpos),
-            } => pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string())),
+            } => pos::spanned2(lpos, rpos, Error::ExtraToken(token.map(|s| s.into()))),
             User { error } => error,
         }
     }
 }
 
-pub enum FieldPattern<Id> {
-    Type(Spanned<Id, BytePos>, Option<Id>),
-    Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
+#[derive(Debug)]
+pub enum FieldExpr<'ast, Id> {
+    Type(
+        BaseMetadata<'ast>,
+        Spanned<Id, BytePos>,
+        Option<ArcType<Id>>,
+    ),
+    Value(
+        BaseMetadata<'ast>,
+        Spanned<Id, BytePos>,
+        Option<SpannedExpr<'ast, Id>>,
+    ),
 }
 
-pub enum FieldExpr<Id> {
-    Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
-    Value(Metadata, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
-}
-
-pub enum Variant<Id> {
-    Gadt(Id, AstType<Id>),
-    Simple(Id, Vec<AstType<Id>>),
+pub enum Variant<'ast, Id> {
+    Gadt(Id, AstType<'ast, Id>),
+    Simple(Id, Vec<AstType<'ast, Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
 type MutIdentEnv<'env, Id> = &'env mut dyn IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
+type Slice<T> = [T];
+
+trait TempVec<'ast, Id>: Sized {
+    fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Self>;
+}
+
+macro_rules! impl_temp_vec {
+    ($( $ty: ty => $field: ident),* $(,)?) => {
+        #[doc(hidden)]
+        pub struct TempVecs<'ast, Id> {
+        $(
+            $field: Vec<$ty>,
+        )*
+        }
+
+        #[doc(hidden)]
+        #[derive(Debug)]
+        pub struct TempVecStart<T>(usize, PhantomData<T>);
+
+        impl<'ast, Id> TempVecs<'ast, Id> {
+            fn new() -> Self {
+                TempVecs {
+                    $(
+                        $field: Vec::new(),
+                    )*
+                }
+            }
+
+            fn start<T>(&mut self) -> TempVecStart<T>
+            where
+                T: TempVec<'ast, Id>,
+            {
+                TempVecStart(T::select(self).len(), PhantomData)
+            }
+
+            fn select<T>(&mut self) -> &mut Vec<T>
+            where
+                T: TempVec<'ast, Id>,
+            {
+                T::select(self)
+            }
+
+            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl Iterator<Item = T> + 'a
+            where
+                T: TempVec<'ast, Id> + 'a,
+            {
+                T::select(self).drain(start.0..)
+            }
+
+            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl Iterator<Item = T> + 'a
+            where
+                T: TempVec<'ast, Id> + 'a,
+            {
+                let vec = T::select(self);
+                let start = vec.len() - n;
+                vec.drain(start..)
+            }
+        }
+
+        $(
+            impl<'ast, Id> TempVec<'ast, Id> for $ty {
+                fn select<'a>(vecs: &'a mut TempVecs<'ast, Id>) -> &'a mut Vec<Self> {
+                    &mut vecs.$field
+                }
+            }
+        )*
+    };
+}
+impl_temp_vec! {
+    SpannedExpr<'ast, Id> => exprs,
+    SpannedPattern<'ast, Id> => patterns,
+    ast::PatternField<'ast, Id> => pattern_field,
+    ast::ExprField<'ast, Id, ArcType<Id>> => expr_field_types,
+    ast::ExprField<'ast, Id, SpannedExpr<'ast, Id>> => expr_field_exprs,
+    ast::TypeBinding<'ast, Id> => type_bindings,
+    ValueBinding<'ast, Id> => value_bindings,
+    ast::Do<'ast, Id> => do_exprs,
+    ast::Alternative<'ast, Id> => alts,
+    ast::Argument<ast::SpannedIdent<Id>> => args,
+    FieldExpr<'ast, Id> => field_expr,
+    ast::InnerAstType<'ast, Id> => types,
+    AstType<'ast, Id> => type_ptrs,
+    Generic<Id> => generics,
+    Field<Id, AstType<'ast, Id>> => type_fields,
+    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,
+}
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
@@ -285,30 +382,59 @@ impl ParserSource for str {
     }
 }
 
-impl ParserSource for codespan::FileMap {
+impl ParserSource for source::FileMap {
     fn src(&self) -> &str {
-        codespan::FileMap::src(self)
+        source::FileMap::source(self)
     }
     fn start_index(&self) -> BytePos {
-        codespan::FileMap::span(self).start()
+        source::Source::span(self).start()
     }
 }
 
-pub fn parse_partial_expr<Id, S>(
+pub fn parse_partial_root_expr<Id, S>(
     symbols: &mut dyn IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &S,
-) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
+) -> Result<RootExpr<Id>, (Option<RootExpr<Id>>, ParseErrors)>
 where
-    Id: Clone + AsRef<str>,
+    Id: Clone + AsRef<str> + std::fmt::Debug,
+    S: ?Sized + ParserSource,
+{
+    mk_ast_arena!(arena);
+
+    parse_partial_expr((*arena).borrow(), symbols, type_cache, input)
+        .map_err(|(expr, err)| {
+            (
+                expr.map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr))),
+                err,
+            )
+        })
+        .map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr)))
+}
+
+pub fn parse_partial_expr<'ast, Id, S>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
+    symbols: &mut dyn IdentEnv<Ident = Id>,
+    type_cache: &TypeCache<Id, ArcType<Id>>,
+    input: &S,
+) -> Result<SpannedExpr<'ast, Id>, (Option<SpannedExpr<'ast, Id>>, ParseErrors)>
+where
+    Id: Clone + AsRef<str> + std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
     let layout = Layout::new(Tokenizer::new(input));
 
     let mut parse_errors = Errors::new();
 
-    let result =
-        grammar::TopExprParser::new().parse(&input, type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::TopExprParser::new().parse(
+        &input,
+        type_cache,
+        arena,
+        symbols,
+        &mut parse_errors,
+        &mut TempVecs::new(),
+        layout,
+    );
 
     match result {
         Ok(expr) => {
@@ -325,24 +451,26 @@ where
     }
 }
 
-pub fn parse_expr(
+pub fn parse_expr<'ast>(
+    arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut dyn IdentEnv<Ident = Symbol>,
     type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
-) -> Result<SpannedExpr<Symbol>, ParseErrors> {
-    parse_partial_expr(symbols, type_cache, input).map_err(|t| t.1)
+) -> Result<SpannedExpr<'ast, Symbol>, ParseErrors> {
+    parse_partial_expr(arena, symbols, type_cache, input).map_err(|t| t.1)
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ReplLine<Id> {
-    Expr(SpannedExpr<Id>),
-    Let(ValueBinding<Id>),
+pub enum ReplLine<'ast, Id> {
+    Expr(SpannedExpr<'ast, Id>),
+    Let(&'ast mut ValueBinding<'ast, Id>),
 }
 
-pub fn parse_partial_repl_line<Id, S>(
+pub fn parse_partial_repl_line<'ast, Id, S>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     symbols: &mut dyn IdentEnv<Ident = Id>,
     input: &S,
-) -> Result<Option<ReplLine<Id>>, (Option<ReplLine<Id>>, ParseErrors)>
+) -> Result<Option<ReplLine<'ast, Id>>, (Option<ReplLine<'ast, Id>>, ParseErrors)>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
@@ -356,8 +484,10 @@ where
     let result = grammar::ReplLineParser::new().parse(
         &input,
         &type_cache,
+        arena,
         symbols,
         &mut parse_errors,
+        &mut TempVecs::new(),
         layout,
     );
 
@@ -377,10 +507,11 @@ where
     }
 }
 
-pub fn reparse_infix<Id>(
+pub fn reparse_infix<'ast, Id>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
     metadata: &FnvMap<Id, Arc<Metadata>>,
     symbols: &dyn IdentEnv<Ident = Id>,
-    expr: &mut SpannedExpr<Id>,
+    expr: &mut SpannedExpr<'ast, Id>,
 ) -> Result<(), ParseErrors>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
@@ -453,9 +584,9 @@ where
             }
         }
     }
-    impl<'a, 'b, Id> Visitor<'a> for CheckInfix<'b, Id>
+    impl<'a, 'b, 'ast, Id> Visitor<'a, 'ast> for CheckInfix<'b, Id>
     where
-        Id: Clone + Eq + Hash + AsRef<str> + 'a,
+        Id: Clone + Eq + Hash + AsRef<str> + 'a + 'ast,
     {
         type Ident = Id;
 
@@ -465,8 +596,17 @@ where
                     self.insert_infix(&id.name, pattern.span);
                 }
                 Pattern::Record { ref fields, .. } => {
-                    for field in fields.iter().filter(|field| field.value.is_none()) {
-                        self.insert_infix(&field.name.value, field.name.span);
+                    for name in fields.iter().filter_map(|field| match field {
+                        PatternField::Value { name, value } => {
+                            if value.is_none() {
+                                Some(name)
+                            } else {
+                                None
+                            }
+                        }
+                        PatternField::Type { .. } => None,
+                    }) {
+                        self.insert_infix(&name.value, name.span);
                     }
                 }
                 _ => (),
@@ -483,7 +623,7 @@ where
     }
     .visit_expr(expr);
 
-    let mut reparser = Reparser::new(op_table, symbols);
+    let mut reparser = Reparser::new(arena, op_table, symbols);
     match reparser.reparse(expr) {
         Err(reparse_errors) => {
             errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::from)));

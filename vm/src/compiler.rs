@@ -6,8 +6,8 @@ use crate::base::{
     pos::Line,
     resolve,
     scoped_map::ScopedMap,
-    source::Source,
-    symbol::{Symbol, SymbolModule, SymbolRef},
+    source::{FileMap, Source},
+    symbol::{Symbol, SymbolData, SymbolModule, SymbolRef},
     types::{Alias, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
 };
 
@@ -280,7 +280,7 @@ impl FunctionEnv {
             stack_size: 0,
             function: CompiledFunction::new(args, id, typ, source_name),
             current_line: Line::from(0),
-            emit_debug_info: emit_debug_info,
+            emit_debug_info,
         }
     }
 
@@ -449,10 +449,11 @@ pub struct Compiler<'a> {
     vm: &'a GlobalVmState,
     symbols: SymbolModule<'a>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
-    source: &'a ::codespan::FileMap,
+    source: &'a FileMap,
     source_name: String,
     emit_debug_info: bool,
     empty_symbol: Symbol,
+    hole: ArcType,
 }
 
 impl<'a> KindEnv for Compiler<'a> {
@@ -484,7 +485,7 @@ impl<'a> Compiler<'a> {
         globals: &'a (dyn CompilerEnv<Type = ArcType> + 'a),
         vm: &'a GlobalVmState,
         mut symbols: SymbolModule<'a>,
-        source: &'a ::codespan::FileMap,
+        source: &'a FileMap,
         source_name: String,
         emit_debug_info: bool,
     ) -> Compiler<'a> {
@@ -496,7 +497,8 @@ impl<'a> Compiler<'a> {
             stack_types: ScopedMap::new(),
             source: source,
             source_name: source_name,
-            emit_debug_info: emit_debug_info,
+            emit_debug_info,
+            hole: Type::hole(),
         }
     }
 
@@ -551,8 +553,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
-        let x = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
-        match **x.remove_forall() {
+        let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ);
+        self.find_resolved_tag(&typ, constructor)
+    }
+
+    fn find_resolved_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
+        match **typ {
             Type::Variant(ref row) => {
                 let mut iter = row.row_iter();
                 match iter.position(|field| field.name.name_eq(constructor)) {
@@ -783,22 +789,21 @@ impl<'a> Compiler<'a> {
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
+                let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ.remove_forall());
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag =
-                                self.find_tag(typ.remove_forall(), &id.name)
-                                    .unwrap_or_else(|| {
-                                        ice!(
-                                            "ICE: Could not find tag for {}::{} when matching on \
-                                             expression:\n{}",
-                                            typ,
-                                            self.symbols.string(&id.name),
-                                            expr
-                                        )
-                                    });
+                            let tag = self.find_resolved_tag(&typ, &id.name).unwrap_or_else(|| {
+                                ice!(
+                                    "ICE: Could not find tag for {}::{} when matching on \
+                                     expression:\n{}",
+                                    typ,
+                                    self.symbols.string(&id.name),
+                                    expr
+                                )
+                            });
 
                             match tag {
                                 FieldAccess::Index(tag) => function.emit(TestTag(tag)),
@@ -843,7 +848,15 @@ impl<'a> Compiler<'a> {
                                     function.emit(FloatEQ);
                                 }
                                 Literal::String(ref s) => {
-                                    self.load_identifier(&Symbol::from("@string_eq"), function)?;
+                                    let prim_symbol = self.symbols.symbol(SymbolData {
+                                        global: true,
+                                        name: "std.prim",
+                                        location: None,
+                                    });
+                                    self.load_identifier(&prim_symbol, function)?;
+                                    let prim_type = self.globals.find_type(&prim_symbol).unwrap();
+                                    let string_eq_symbol = self.symbols.simple_symbol("string_eq");
+                                    function.emit_field(self, &prim_type, &string_eq_symbol)?;
                                     let lhs_i = function.stack_size() - 2;
                                     function.emit(Push(lhs_i));
                                     function.emit_string(self.intern(&s)?);
@@ -1044,7 +1057,11 @@ impl<'a> Compiler<'a> {
 
                             // Add a dummy variable for the record itself so the correct number
                             // of slots are removed when exiting
-                            function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
+                            function.new_stack_var(
+                                self,
+                                self.empty_symbol.clone(),
+                                self.hole.clone(),
+                            );
 
                             let record_index = function.stack_size() - 1;
                             for pattern_field in fields {
@@ -1072,7 +1089,7 @@ impl<'a> Compiler<'a> {
                                             bind.as_ref().unwrap_or(&name.name).clone(),
                                             field.typ.clone(),
                                         ),
-                                        None => (self.empty_symbol.clone(), Type::hole()),
+                                        None => (self.empty_symbol.clone(), self.hole.clone()),
                                     };
                                 function.push_stack_var(self, name, typ);
                             }
@@ -1110,7 +1127,10 @@ impl<'a> Compiler<'a> {
         let current_line = self.source.line_number_at_byte(body.span().end());
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
-            match self.find(var, function).expect("free_vars: find") {
+            match self
+                .find(var, function)
+                .unwrap_or_else(|| panic!("free_vars: find {}", var))
+            {
                 Stack(index) => {
                     debug!("Load stack {}", var);
                     function.emit(Push(index))
@@ -1162,7 +1182,7 @@ mod tests {
 
         let globals = TypeInfos::new();
         let vm_state = GlobalVmState::new();
-        let source = ::codespan::FileMap::new("".to_string().into(), "".to_string());
+        let source = FileMap::new("".to_string().into(), "".to_string());
         let mut compiler = Compiler::new(
             &globals,
             &vm_state,

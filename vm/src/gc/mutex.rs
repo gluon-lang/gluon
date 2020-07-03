@@ -110,7 +110,11 @@ where
         self.mutex.get_mut()
     }
 
-    fn new_guard<'a>(&'a self, rooted: bool, value: sync::MutexGuard<'a, T>) -> MutexGuard<'a, T> {
+    fn new_guard<'a>(
+        &'a self,
+        rooted: bool,
+        mut value: sync::MutexGuard<'a, T>,
+    ) -> MutexGuard<'a, T> {
         if !rooted {
             unsafe {
                 value.root();
@@ -127,22 +131,22 @@ unsafe impl<T> Trace for Mutex<T>
 where
     T: Trace,
 {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         let mut rooted = self.rooted.lock().unwrap();
         assert!(!*rooted, "Mutex can't be rooted twice!");
         *rooted = true;
         match self.mutex.try_lock() {
-            Ok(lock) => lock.root(),
+            Ok(mut lock) => lock.root(),
             Err(TryLockError::WouldBlock) => (), // The value will be rooted when the lock is released
             Err(TryLockError::Poisoned(err)) => err.into_inner().root(),
         }
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         let mut rooted = self.rooted.lock().unwrap();
         assert!(*rooted, "Mutex can't be unrooted twice!");
         *rooted = false;
         match self.mutex.try_lock() {
-            Ok(lock) => lock.unroot(),
+            Ok(mut lock) => lock.unroot(),
             Err(TryLockError::WouldBlock) => (), // The value will be unrooted when the lock is released
             Err(TryLockError::Poisoned(err)) => err.into_inner().unroot(),
         }
@@ -205,11 +209,11 @@ mod tests {
     struct Rooted<'a>(&'a Cell<bool>);
 
     unsafe impl<'a> Trace for Rooted<'a> {
-        unsafe fn root(&self) {
+        unsafe fn root(&mut self) {
             assert!(!self.0.get());
             self.0.set(true);
         }
-        unsafe fn unroot(&self) {
+        unsafe fn unroot(&mut self) {
             assert!(self.0.get());
             self.0.set(false);
         }
@@ -232,7 +236,7 @@ mod tests {
     #[test]
     fn unrooted() {
         let rooted = Cell::new(true);
-        let mutex = Mutex::new(Rooted(&rooted));
+        let mut mutex = Mutex::new(Rooted(&rooted));
         // Emulate this `Mutex` being unrooted (stored in another root)
         unsafe {
             mutex.unroot();
@@ -244,28 +248,5 @@ mod tests {
             assert!(rooted.get());
         }
         assert!(!rooted.get());
-    }
-
-    #[test]
-    fn unroot_during_lock() {
-        let rooted = Cell::new(true);
-        let mutex = Mutex::new(Rooted(&rooted));
-
-        assert!(rooted.get());
-        {
-            let _lock = mutex.lock().unwrap();
-            assert!(rooted.get());
-
-            // Emulate this `Mutex` being unrooted (stored in another root)
-            unsafe {
-                mutex.unroot();
-            }
-            assert!(!*mutex.rooted.lock().unwrap());
-            assert!(
-                rooted.get(),
-                "We should not be able to unroot the inner value since it is locked"
-            );
-        }
-        assert!(!rooted.get(), "Must be unrooted after the lock releases");
     }
 }

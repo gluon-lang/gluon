@@ -21,13 +21,14 @@ use crate::base::{
 use crate::{
     forget_lifetime,
     gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
+    stack::Lock,
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
     Error, Result, Variants,
 };
-use futures::{Async, Future};
+use futures::{task::Poll, Future};
 
 pub use self::{
     function::*,
@@ -252,6 +253,7 @@ impl<'a> Data<'a> {
 }
 
 /// Marker type representing a hole
+#[derive(Clone)]
 pub struct Hole(());
 
 impl VmType for Hole {
@@ -267,6 +269,12 @@ impl VmType for Hole {
 pub enum IO<T> {
     Value(T),
     Exception(String),
+}
+
+impl<T> IO<T> {
+    pub fn into_result(self) -> StdResult<T, String> {
+        self.into()
+    }
 }
 
 impl<T> Into<StdResult<T, String>> for IO<T> {
@@ -290,7 +298,8 @@ where
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Trace, PartialEq)]
+#[gluon(gluon_vm)]
 pub(crate) struct Unrooted<T: ?Sized>(Value, PhantomData<T>);
 
 impl<T: ?Sized> From<Value> for Unrooted<T> {
@@ -320,12 +329,6 @@ impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(self.0);
         Ok(())
-    }
-}
-
-unsafe impl<T> Trace for Unrooted<T> {
-    impl_trace! { self, gc,
-        mark(&self.0, gc)
     }
 }
 
@@ -418,7 +421,7 @@ fn insert_forall_walker_fields(
 ) -> Option<ArcType> {
     match &**typ {
         Type::ExtendRow { fields, rest } => {
-            let new_fields = types::walk_move_types(fields, |field| {
+            let new_fields = types::walk_move_types(&mut (), fields, |_, field| {
                 insert_forall(variables, &field.typ).map(|typ| Field {
                     name: field.name.clone(),
                     typ,
@@ -468,24 +471,33 @@ pub trait AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact.
     ///
-    /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
+    /// If the value must be computed asynchronously `Poll::Pending` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex)
-        -> Result<Async<()>>;
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        frame_index: VmIndex,
+    ) -> Poll<Result<()>>;
 
-    fn async_status_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex) -> Status
+    fn async_status_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        frame_index: VmIndex,
+    ) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(context, frame_index) {
-            Ok(Async::Ready(())) => Status::Ok,
-            Ok(Async::NotReady) => Status::Yield,
-            Err(err) => {
+        match self.async_push(context, lock, frame_index) {
+            Poll::Ready(Ok(())) => Status::Ok,
+            Poll::Ready(Err(err)) => {
                 let mut context = context.context();
                 let msg = context.gc.alloc_ignore_limit(format!("{}", err).as_str());
                 context.stack.push(Variants::from(msg));
                 Status::Error
             }
+            Poll::Pending => Status::Yield,
         }
     }
 }
@@ -494,8 +506,15 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, _: VmIndex) -> Result<Async<()>> {
-        self.push(context).map(Async::Ready)
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        lock: Lock,
+        _: VmIndex,
+    ) -> Poll<Result<()>> {
+        let result = self.push(context);
+        context.stack().release_lock(lock);
+        Poll::Ready(result)
     }
 }
 
@@ -1266,19 +1285,7 @@ where
     V::Type: Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let thread = context.thread();
-        type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
-        let mut map: Map<V> = thread.get_global("std.map.empty")?;
-        let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
-            thread.get_global("std.json.de.insert_string")?;
-
-        context.drop();
-        for (key, value) in self {
-            map = insert.call(key.borrow().to_string(), value, map)?;
-        }
-        context.restore();
-
-        map.push(context)
+        to_gluon_map(self, context)
     }
 }
 
@@ -1290,35 +1297,59 @@ where
     impl_getable_simple!();
 
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        fn build_map<'vm2, 'value2, K2, V2>(
-            map: &mut BTreeMap<K2, V2>,
-            vm: &'vm2 Thread,
-            value: Variants<'value2>,
-        ) where
-            K2: Getable<'vm2, 'value2> + Ord,
-            V2: Getable<'vm2, 'value2>,
-        {
-            match value.as_ref() {
-                ValueRef::Data(data) => {
-                    if data.tag() == 1 {
-                        let key = K2::from_value(vm, data.get_variant(0).expect("key"));
-                        let value = V2::from_value(vm, data.get_variant(1).expect("value"));
-                        map.insert(key, value);
+        let mut map = BTreeMap::new();
+        from_gluon_map(&mut map, vm, value);
+        map
+    }
+}
 
-                        let left = data.get_variant(2).expect("left");
-                        build_map(map, vm, left);
+fn to_gluon_map<'vm, K, V>(
+    map_iter: impl IntoIterator<Item = (K, V)>,
+    context: &mut ActiveThread<'vm>,
+) -> Result<()>
+where
+    K: Borrow<str> + VmType,
+    K::Type: Sized,
+    V: for<'vm2> Pushable<'vm2> + VmType,
+    V::Type: Sized,
+{
+    let thread = context.thread();
+    type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
+    let mut map: Map<V> = thread.get_global("std.map.empty")?;
+    let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
+        thread.get_global("std.map.insert_string")?;
 
-                        let right = data.get_variant(3).expect("right");
-                        build_map(map, vm, right);
-                    }
-                }
-                _ => ice!("ValueRef is not a Map"),
+    map = context.release_for(|| {
+        for (key, value) in map_iter {
+            map = insert.call(key.borrow().to_string(), value, map)?;
+        }
+        Ok::<_, Error>(map)
+    })?;
+
+    map.push(context)
+}
+
+fn from_gluon_map<'vm2, 'value2, M, K2, V2>(map: &mut M, vm: &'vm2 Thread, value: Variants<'value2>)
+where
+    M: Extend<(K2, V2)>,
+    K2: Getable<'vm2, 'value2> + Ord,
+    V2: Getable<'vm2, 'value2>,
+{
+    match value.as_ref() {
+        ValueRef::Data(data) => {
+            if data.tag() == 1 {
+                let key = K2::from_value(vm, data.get_variant(0).expect("key"));
+                let value = V2::from_value(vm, data.get_variant(1).expect("value"));
+                map.extend(Some((key, value)));
+
+                let left = data.get_variant(2).expect("left");
+                from_gluon_map(map, vm, left);
+
+                let right = data.get_variant(3).expect("right");
+                from_gluon_map(map, vm, right);
             }
         }
-
-        let mut map = BTreeMap::new();
-        build_map(&mut map, vm, value);
-        map
+        _ => ice!("ValueRef is not a Map"),
     }
 }
 
@@ -1421,11 +1452,10 @@ impl<'vm, 'value, T: Getable<'vm, 'value>, E: Getable<'vm, 'value>> Getable<'vm,
 pub struct FutureResult<F>(pub F);
 
 impl<F> FutureResult<F> {
-    #[inline]
     pub fn new<'vm>(f: F) -> Self
     where
-        F: Future<Error = Error> + Send + 'static,
-        F::Item: Pushable<'vm>,
+        F: Future + Send + 'vm,
+        F::Output: Pushable<'vm>,
     {
         FutureResult(f)
     }
@@ -1434,35 +1464,37 @@ impl<F> FutureResult<F> {
 impl<F> VmType for FutureResult<F>
 where
     F: Future,
-    F::Item: VmType,
+    F::Output: VmType,
 {
-    type Type = <F::Item as VmType>::Type;
+    type Type = <F::Output as VmType>::Type;
     fn make_type(vm: &Thread) -> ArcType {
-        <F::Item>::make_type(vm)
+        <F::Output>::make_type(vm)
     }
     fn extra_args() -> VmIndex {
-        <F::Item>::extra_args()
+        <F::Output>::extra_args()
     }
 }
 
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
 where
-    F: Future<Error = Error> + Send + 'static,
-    F::Item: Pushable<'vm>,
+    F: Future + Send + 'vm,
+    F::Output: Pushable<'vm>,
 {
     fn async_push(
         self,
         context: &mut ActiveThread<'vm>,
+        lock: Lock,
         frame_index: VmIndex,
-    ) -> Result<Async<()>> {
+    ) -> Poll<Result<()>> {
         unsafe {
-            context.return_future(self.0, frame_index);
+            context.return_future(self.0, lock, frame_index);
         }
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 }
 
-pub enum RuntimeResult<T, E> {
+#[derive(Clone)]
+pub enum RuntimeResult<T, E = String> {
     Return(T),
     Panic(E),
 }
@@ -1657,7 +1689,13 @@ macro_rules! define_tuple {
                     $id.push(context)?;
                 )+
                 let len = count!($($id),+);
-                context.context().push_new_data(0, len)?;
+                let thread = context.thread();
+                #[allow(unused_assignments)]
+                let field_names = {
+                    let mut i = 0;
+                    [$(thread.global_env().intern(&format!("_{}", { let _ = $id; let x = i; i += 1; x }))?),*]
+                };
+                context.context().push_new_record(len, &field_names)?;
                 Ok(())
             }
         }

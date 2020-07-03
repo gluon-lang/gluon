@@ -74,22 +74,27 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    merge_collect(types, |(l, r)| f(l, r), |(l, _)| l.clone())
+    merge_collect(&mut (), types, |_, (l, r)| f(l, r), |(l, _)| l.clone())
 }
 
-pub struct MergeIter<I, F, G, T> {
+pub struct MergeIter<'s, I, F, G, T, S>
+where
+    S: ?Sized,
+{
     types: I,
     clone_types_iter: I,
     action: F,
     converter: G,
     clone_types: usize,
     next: Option<T>,
+    pub state: &'s mut S,
 }
 
-impl<I, F, G, U> Iterator for MergeIter<I, F, G, U>
+impl<'s, I, F, G, U, S> Iterator for MergeIter<'s, I, F, G, U, S>
 where
+    S: ?Sized,
     I: Iterator,
-    F: FnMut(I::Item) -> Option<U>,
+    F: FnMut(&mut S, I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
 {
     type Item = U;
@@ -102,11 +107,13 @@ where
             Some(typ)
         } else {
             let action = &mut self.action;
+            let state = &mut self.state;
+
             if let Some((i, typ)) = self
                 .types
                 .by_ref()
                 .enumerate()
-                .find_map(|(i, typ)| action(typ).map(|typ| (i, typ)))
+                .find_map(|(i, typ)| action(state, typ).map(|typ| (i, typ)))
             {
                 self.clone_types = i;
                 self.next = Some(typ);
@@ -123,10 +130,11 @@ where
     }
 }
 
-impl<I, F, G, U> ExactSizeIterator for MergeIter<I, F, G, U>
+impl<I, F, G, U, S> ExactSizeIterator for MergeIter<'_, I, F, G, U, S>
 where
+    S: ?Sized,
     I: ExactSizeIterator,
-    F: FnMut(I::Item) -> Option<U>,
+    F: FnMut(&mut S, I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
 {
     fn len(&self) -> usize {
@@ -134,26 +142,34 @@ where
     }
 }
 
-pub fn merge_collect<I, F, G, U, R>(types: I, action: F, converter: G) -> Option<R>
+pub fn merge_collect<I, F, G, U, S, R>(
+    state: &mut S,
+    types: I,
+    action: F,
+    converter: G,
+) -> Option<R>
 where
+    S: ?Sized,
     I: IntoIterator,
     I::IntoIter: FusedIterator + Clone,
-    F: FnMut(I::Item) -> Option<U>,
+    F: FnMut(&mut S, I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
     R: std::iter::FromIterator<U>,
 {
-    merge_iter(types, action, converter).map(|iter| iter.collect())
+    merge_iter(state, types, action, converter).map(|iter| iter.collect())
 }
 
-pub fn merge_iter<I, F, G, U>(
+pub fn merge_iter<I, F, G, U, S>(
+    state: &mut S,
     types: I,
     mut action: F,
     converter: G,
-) -> Option<MergeIter<I::IntoIter, F, G, U>>
+) -> Option<MergeIter<'_, I::IntoIter, F, G, U, S>>
 where
+    S: ?Sized,
     I: IntoIterator,
     I::IntoIter: FusedIterator + Clone,
-    F: FnMut(I::Item) -> Option<U>,
+    F: FnMut(&mut S, I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
 {
     let mut types = types.into_iter();
@@ -161,7 +177,7 @@ where
     if let Some((i, typ)) = types
         .by_ref()
         .enumerate()
-        .find_map(|(i, typ)| action(typ).map(|typ| (i, typ)))
+        .find_map(|(i, typ)| action(state, typ).map(|typ| (i, typ)))
     {
         Some(MergeIter {
             clone_types_iter,
@@ -170,6 +186,7 @@ where
             converter,
             clone_types: i,
             next: Some(typ),
+            state,
         })
     } else {
         None

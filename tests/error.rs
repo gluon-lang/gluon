@@ -73,12 +73,12 @@ fn undefined_infix() {
 
     vm.get_database_mut().implicit_prelude(false);
 
-    let result = expr.reparse_infix(
-        &mut vm.module_compiler(&vm.get_database()),
+    let result = futures::executor::block_on(expr.reparse_infix(
+        &mut vm.module_compiler(&mut vm.get_database()),
         &vm,
         "test",
         expr,
-    );
+    ));
     match result {
         Err((_, Error::Parse(err))) => {
             let error = parser::Error::Infix(InfixError::UndefinedFixity("+".to_string()));

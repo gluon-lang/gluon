@@ -13,7 +13,7 @@ type WrStateOut s m a = m { value : a, state : s }
 type StateT s m a = s -> m { value : a, state : s }
 
 let map_sout f st : (a -> b) -> StateOut s a -> StateOut s b =
-    {value = f st.value, state = st.state}
+    { value = f st.value, state = st.state }
 
 let functor : [Functor m] -> Functor (StateT s m) =
     let stmap f sr : (a -> b) -> StateT s m a -> StateT s m b =
@@ -24,9 +24,10 @@ let functor : [Functor m] -> Functor (StateT s m) =
 // the typechecker can't find map and Functor m without help
 let applicative ?mo : [Monad m] -> Applicative (StateT s m) =
     let apply srf sr : StateT s m (a -> b) -> StateT s m a -> StateT s m b = \state ->
-        srf state >>= \fout ->
-            let {value = f, state = state'} = fout
-            mo.applicative.functor.map (map_sout f) (sr state')
+        srf state
+            >>= \fout ->
+                let { value = f, state = state' } = fout
+                mo.applicative.functor.map (map_sout f) (sr state')
 
     let stwrap value : a -> StateT s m a = \state ->
         wrap { value, state }
@@ -35,15 +36,16 @@ let applicative ?mo : [Monad m] -> Applicative (StateT s m) =
 
 let monad : [Monad m] -> Monad (StateT s m) =
     let flat_map f sr : (a -> StateT s m b) -> StateT s m a -> StateT s m b = \state ->
-        sr state >>= \sout ->
-            let {value, state = state'} = sout
-            f value state'
+        sr state
+            >>= \sout ->
+                let { value, state = state' } = sout
+                f value state'
 
     { applicative, flat_map }
 
 let transformer : Transformer (StateT s) =
     let wrap_monad ma : [Monad m] -> m a -> StateT s m a = \state ->
-        ma >>= \value -> wrap {value, state}
+        ma >>= \value -> wrap { value, state }
 
     { /* monad, */ wrap_monad }
 
@@ -89,5 +91,5 @@ let exec_state_t f state : [Functor m] -> StateT s m a -> s -> m s =
     modify,
     run_state_t,
     eval_state_t,
-    exec_state_t
+    exec_state_t,
 }

@@ -3,29 +3,79 @@ use std::{
     any::{Any, TypeId},
     error::Error as StdError,
     fmt, mem,
+    pin::Pin,
     sync::{Arc, RwLock},
 };
 
 use {
-    codespan_reporting::Diagnostic,
+    codespan_reporting::diagnostic::Diagnostic,
     downcast_rs::{impl_downcast, Downcast},
-    futures::Future,
+    futures::{prelude::*, task::Spawn},
 };
 
+use gluon_codegen::Trace;
+
 use crate::base::{
-    ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
+    ast::{self, Expr, MutVisitor, SpannedExpr},
     error::{AsDiagnostic, Errors as BaseErrors},
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
+    source::FileId,
     symbol::{Symbol, Symbols},
 };
 
-use crate::{gc::Trace, thread::Thread};
+use crate::{
+    gc::Trace,
+    thread::{RootedThread, Thread},
+};
 
 pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
-pub type MacroFuture = Box<dyn Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>;
+
+pub type MacroResult<'ast> = Result<SpannedExpr<'ast, Symbol>, Error>;
+
+pub enum LazyMacroResult<'ast> {
+    Done(SpannedExpr<'ast, Symbol>),
+    Lazy(
+        Box<
+            dyn for<'a> FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>>
+                + Send
+                + 'ast,
+        >,
+    ),
+}
+
+impl<'ast> LazyMacroResult<'ast> {
+    async fn compute(self) -> MacroResult<'ast> {
+        match self {
+            Self::Done(r) => Ok(r),
+            Self::Lazy(f) => f().await,
+        }
+    }
+}
+
+impl<'ast> From<SpannedExpr<'ast, Symbol>> for LazyMacroResult<'ast> {
+    fn from(r: SpannedExpr<'ast, Symbol>) -> Self {
+        Self::Done(r)
+    }
+}
+
+impl<'ast, F> From<F> for LazyMacroResult<'ast>
+where
+    for<'a> F:
+        FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>> + Send + 'ast,
+{
+    fn from(r: F) -> Self {
+        Self::Lazy(Box::new(r))
+    }
+}
+
+pub type MacroFuture<'r, 'ast> =
+    Pin<Box<dyn Future<Output = Result<LazyMacroResult<'ast>, Error>> + Send + 'r>>;
+
+pub trait Captures<'a> {}
+impl<T> Captures<'_> for T {}
 
 pub trait DowncastArc: Downcast {
     fn into_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
@@ -83,6 +133,7 @@ where
 pub struct Error(Box<dyn MacroError>);
 
 impl StdError for Error {
+    #[allow(deprecated)]
     fn description(&self) -> &str {
         self.0.description()
     }
@@ -92,8 +143,8 @@ impl StdError for Error {
 }
 
 impl AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> Diagnostic {
-        self.0.as_diagnostic()
+    fn as_diagnostic(&self, map: &base::source::CodeMap) -> Diagnostic<FileId> {
+        self.0.as_diagnostic(map)
     }
 }
 
@@ -151,8 +202,8 @@ impl Error {
         }
 
         impl AsDiagnostic for StringError {
-            fn as_diagnostic(&self) -> Diagnostic {
-                Diagnostic::new_error(self.to_string())
+            fn as_diagnostic(&self, _map: &base::source::CodeMap) -> Diagnostic<FileId> {
+                Diagnostic::error().with_message(self.to_string())
             }
         }
 
@@ -194,7 +245,12 @@ pub trait Macro: Trace + DowncastArc + Send + Sync {
         None
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture;
+    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+        &self,
+        env: &'b mut MacroExpander<'a>,
+        arena: &'b mut ast::OwnedArena<'ast, Symbol>,
+        args: &'b mut [SpannedExpr<'ast, Symbol>],
+    ) -> MacroFuture<'r, 'ast>;
 }
 
 impl_downcast!(Macro);
@@ -213,6 +269,7 @@ impl dyn Macro {
     }
 }
 
+#[async_trait::async_trait]
 impl<M> Macro for Box<M>
 where
     M: Macro + ?Sized,
@@ -226,11 +283,17 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
-        (**self).expand(env, args)
+    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+        &self,
+        env: &'b mut MacroExpander<'a>,
+        arena: &'b mut ast::OwnedArena<'ast, Symbol>,
+        args: &'b mut [SpannedExpr<'ast, Symbol>],
+    ) -> MacroFuture<'r, 'ast> {
+        (**self).expand(env, arena, args)
     }
 }
 
+#[async_trait::async_trait]
 impl<M> Macro for Arc<M>
 where
     M: Macro + ?Sized,
@@ -244,20 +307,26 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand(&self, env: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
-        (**self).expand(env, args)
+    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+        &self,
+        env: &'b mut MacroExpander<'a>,
+        arena: &'b mut ast::OwnedArena<'ast, Symbol>,
+        args: &'b mut [SpannedExpr<'ast, Symbol>],
+    ) -> MacroFuture<'r, 'ast> {
+        (**self).expand(env, arena, args)
     }
+}
+
+pub trait MacroUserdata: Send + Sync {
+    fn fork(&self, thread: RootedThread) -> Box<dyn Any>;
 }
 
 /// Type containing macros bound to symbols which can be applied on an AST expression to transform
 /// it.
-#[derive(Default)]
+#[derive(Trace, Default)]
+#[gluon(gluon_vm)]
 pub struct MacroEnv {
     macros: RwLock<FnvMap<String, Arc<dyn Macro>>>,
-}
-
-unsafe impl Trace for MacroEnv {
-    impl_trace! { self, gc, mark(&*self.macros.read().unwrap(), gc) }
 }
 
 impl MacroEnv {
@@ -307,35 +376,53 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(
+    pub async fn run<'ast>(
         &self,
         vm: &Thread,
-        user_data: &dyn Any,
+        userdata: &(dyn MacroUserdata + '_),
+        spawn: Option<&(dyn Spawn + Send + Sync + '_)>,
         symbols: &mut Symbols,
-        expr: &mut SpannedExpr<Symbol>,
+        arena: ast::OwnedArena<'ast, Symbol>,
+        expr: &'ast mut SpannedExpr<'ast, Symbol>,
     ) -> Result<(), Errors> {
-        let mut expander = MacroExpander::new(vm, user_data);
-        expander.run(symbols, expr);
+        let mut expander = MacroExpander::new(vm, userdata, spawn);
+        expander.run(symbols, arena, expr).await;
         expander.finish()
     }
 }
 
 pub struct MacroExpander<'a> {
-    pub state: FnvMap<String, Box<dyn Any>>,
+    pub state: FnvMap<String, Box<dyn Any + Send>>,
     pub vm: &'a Thread,
     pub errors: Errors,
-    pub user_data: &'a dyn Any,
+    pub userdata: &'a (dyn MacroUserdata + 'a),
+    pub spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
     macros: &'a MacroEnv,
 }
 
 impl<'a> MacroExpander<'a> {
-    pub fn new(vm: &'a Thread, user_data: &'a dyn Any) -> MacroExpander<'a> {
+    pub fn new(
+        vm: &'a Thread,
+        userdata: &'a (dyn MacroUserdata + 'a),
+        spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
+    ) -> Self {
         MacroExpander {
-            vm: vm,
-
+            vm,
             state: FnvMap::default(),
             macros: vm.get_macros(),
-            user_data,
+            userdata,
+            spawn,
+            errors: Errors::new(),
+        }
+    }
+
+    pub fn fork(&self) -> MacroExpander<'a> {
+        MacroExpander {
+            vm: self.vm,
+            state: FnvMap::default(),
+            macros: self.macros,
+            userdata: self.userdata,
+            spawn: self.spawn,
             errors: Errors::new(),
         }
     }
@@ -348,68 +435,103 @@ impl<'a> MacroExpander<'a> {
         }
     }
 
-    pub fn run(&mut self, symbols: &mut Symbols, expr: &mut SpannedExpr<Symbol>) {
-        {
-            let mut visitor = MacroVisitor {
-                expander: self,
-                symbols,
-                exprs: Vec::new(),
+    pub async fn run<'ast>(
+        &mut self,
+        symbols: &mut Symbols,
+        mut arena: ast::OwnedArena<'ast, Symbol>,
+        expr: &'ast mut SpannedExpr<'ast, Symbol>,
+    ) {
+        self.run_once(symbols, &mut arena, expr).await; // FIXME
+    }
+
+    pub async fn run_once<'ast>(
+        &mut self,
+        symbols: &mut Symbols,
+        arena: &mut ast::OwnedArena<'ast, Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
+    ) {
+        let mut visitor = MacroVisitor {
+            expander: self,
+            symbols,
+            arena,
+            exprs: Vec::new(),
+        };
+        visitor.visit_expr(expr);
+        let MacroVisitor { exprs, .. } = visitor;
+        self.expand(arena, exprs).await
+    }
+
+    async fn expand<'ast>(
+        &mut self,
+        arena: &mut ast::OwnedArena<'ast, Symbol>,
+        mut exprs: Vec<(&'_ mut SpannedExpr<'ast, Symbol>, Arc<dyn Macro>)>,
+    ) {
+        let mut futures = Vec::with_capacity(exprs.len());
+        for (expr, mac) in exprs.drain(..) {
+            let result = match &mut expr.value {
+                Expr::App { args, .. } => mac.expand(self, arena, args).await,
+                _ => unreachable!("{:?}", expr),
             };
-            let visitor = &mut visitor;
-            visitor.visit_expr(expr);
-
-            while !visitor.exprs.is_empty() {
-                for (expr, future) in mem::replace(&mut visitor.exprs, Vec::new()) {
-                    match future.wait() {
-                        Ok(mut replacement) => {
-                            replacement.span = expr.span;
-                            replace_expr(expr, replacement);
-                            visitor.visit_expr(expr);
-                        }
-                        Err(err) => {
-                            let expr_span = expr.span;
-                            replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
-
-                            visitor.expander.errors.push(pos::spanned(expr.span, err));
-                        }
-                    }
+            match result {
+                Ok(result) => futures.push(result.compute().map(move |result| (expr, result))),
+                Err(err) => {
+                    self.errors.push(pos::spanned(expr.span, err));
+                    replace_expr(arena, expr, Expr::Error(None));
                 }
             }
         }
-        if self.errors.has_errors() {
-            info!("Macro errors: {}", self.errors);
+
+        let mut stream = futures
+            .into_iter()
+            .collect::<futures::stream::FuturesUnordered<_>>();
+        while let Some((expr, result)) = stream.next().await {
+            let expr = { expr };
+            let new_expr = match result {
+                Ok(replacement) => replacement.value,
+                Err(err) => {
+                    self.errors.push(pos::spanned(expr.span, err));
+                    Expr::Error(None)
+                }
+            };
+
+            replace_expr(arena, expr, new_expr);
         }
     }
 }
 
-fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
+fn replace_expr<'ast>(
+    arena: &ast::OwnedArena<'ast, Symbol>,
+    expr: &mut SpannedExpr<'ast, Symbol>,
+    new: Expr<'ast, Symbol>,
+) {
     let expr_span = expr.span;
     let original = mem::replace(expr, pos::spanned(expr_span, Expr::Error(None)));
     *expr = pos::spanned(
         expr.span,
         Expr::MacroExpansion {
-            original: Box::new(original),
-            replacement: Box::new(new),
+            original: arena.alloc(original),
+            replacement: arena.alloc(pos::spanned(expr_span, new)),
         },
     );
 }
 
-struct MacroVisitor<'a: 'b, 'b, 'c> {
+struct MacroVisitor<'a: 'b, 'b, 'c, 'd, 'e, 'ast> {
     expander: &'b mut MacroExpander<'a>,
     symbols: &'c mut Symbols,
-    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroFuture)>,
+    arena: &'d mut ast::OwnedArena<'ast, Symbol>,
+    exprs: Vec<(&'e mut SpannedExpr<'ast, Symbol>, Arc<dyn Macro>)>,
 }
 
-impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_, 'e, 'ast> {
     type Ident = Symbol;
 
-    fn visit_expr(&mut self, expr: &'c mut SpannedExpr<Symbol>) {
-        let replacement = match expr.value {
+    fn visit_expr(&mut self, expr: &'e mut SpannedExpr<'ast, Symbol>) {
+        let replacement = match &mut expr.value {
             Expr::App {
-                ref mut implicit_args,
-                func: ref mut id,
-                ref mut args,
-            } => match id.value {
+                implicit_args,
+                func,
+                args: _,
+            } => match &func.value {
                 Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
@@ -421,38 +543,42 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                     let name = id.name.as_ref();
                     match self.expander.macros.get(&name[..name.len() - 1]) {
                         // FIXME Avoid cloning args
-                        Some(m) => Some(m.expand(self.expander, args.clone())),
+                        Some(m) => Some(m.clone()),
                         None => None,
                     }
                 }
                 _ => None,
             },
-            Expr::TypeBindings(ref binds, ref mut body) => {
-                let generated_bindings = binds
-                    .iter()
-                    .flat_map(|bind| {
-                        if let Some(derive) = bind
-                            .metadata
-                            .attributes
-                            .iter()
-                            .find(|attr| attr.name == "derive")
-                        {
-                            match crate::derive::generate(self.symbols, derive, bind) {
-                                Ok(x) => x,
-                                Err(err) => {
-                                    self.expander.errors.push(pos::spanned(bind.name.span, err));
-                                    Vec::new()
+            Expr::TypeBindings(binds, body) => {
+                let Self {
+                    arena,
+                    symbols,
+                    expander,
+                    ..
+                } = self;
+                let mut generated_bindings = Vec::new();
+                for bind in &**binds {
+                    generated_bindings.extend(
+                        bind.metadata
+                            .attributes()
+                            .filter(|attr| attr.name == "derive")
+                            .map(|derive| {
+                                match crate::derive::generate(arena.borrow(), symbols, derive, bind)
+                                {
+                                    Ok(x) => x,
+                                    Err(err) => {
+                                        expander.errors.push(pos::spanned(bind.name.span, err));
+                                        Vec::new()
+                                    }
                                 }
-                            }
-                        } else {
-                            Vec::new()
-                        }
-                    })
-                    .collect::<Vec<_>>();
+                            })
+                            .flatten(),
+                    );
+                }
                 if !generated_bindings.is_empty() {
-                    let next_expr = mem::replace(body, Default::default());
+                    let next_expr = mem::take(*body);
                     body.value =
-                        Expr::LetBindings(ValueBindings::Recursive(generated_bindings), next_expr);
+                        Expr::rec_let_bindings(self.arena.borrow(), generated_bindings, next_expr);
                 }
                 None
             }

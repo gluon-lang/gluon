@@ -1,8 +1,10 @@
-//! Infix expressions in gluon are initially parsed as if they were all left-
+//! Ineix expressions in gluon are initially parsed as if they were all left-
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use crate::base::ast::{walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent};
+use crate::base::ast::{
+    self, walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent,
+};
 use crate::base::error::Errors;
 use crate::base::fnv::FnvMap;
 use crate::base::pos::{self, BytePos, Spanned};
@@ -200,18 +202,24 @@ where
     }
 }
 
-pub struct Reparser<'s, Id: 's> {
+pub struct Reparser<'s, 'ast, Id: 's> {
+    arena: ast::ArenaRef<'s, 'ast, Id>,
     operators: OpTable<Id>,
     symbols: &'s dyn IdentEnv<Ident = Id>,
     errors: Errors<Spanned<Error, BytePos>>,
     _marker: PhantomData<Id>,
 }
 
-impl<'s, Id> Reparser<'s, Id> {
-    pub fn new(operators: OpTable<Id>, symbols: &'s dyn IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
+impl<'s, 'ast, Id> Reparser<'s, 'ast, Id> {
+    pub fn new(
+        arena: ast::ArenaRef<'s, 'ast, Id>,
+        operators: OpTable<Id>,
+        symbols: &'s dyn IdentEnv<Ident = Id>,
+    ) -> Self {
         Reparser {
-            operators: operators,
-            symbols: symbols,
+            arena,
+            operators,
+            symbols,
             errors: Errors::new(),
             _marker: PhantomData,
         }
@@ -219,10 +227,10 @@ impl<'s, Id> Reparser<'s, Id> {
 
     pub fn reparse(
         &mut self,
-        expr: &mut SpannedExpr<Id>,
+        expr: &mut SpannedExpr<'ast, Id>,
     ) -> Result<(), Errors<Spanned<Error, BytePos>>>
     where
-        Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+        Id: Eq + Hash + AsRef<str> + Clone + ::std::fmt::Debug,
     {
         self.visit_expr(expr);
         if self.errors.has_errors() {
@@ -233,19 +241,19 @@ impl<'s, Id> Reparser<'s, Id> {
     }
 }
 
-impl<'a, 's, Id> MutVisitor<'a> for Reparser<'s, Id>
+impl<'a, 's, 'ast, Id> MutVisitor<'a, 'ast> for Reparser<'s, 'ast, Id>
 where
-    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug + 'a,
+    Id: Eq + Hash + AsRef<str> + Clone + ::std::fmt::Debug + 'a + 'ast,
 {
     type Ident = Id;
 
-    fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+    fn visit_expr(&mut self, e: &'a mut SpannedExpr<'ast, Self::Ident>) {
         if let Expr::Infix { .. } = e.value {
-            let dummy = pos::spanned(e.span, Expr::Error(None));
-            let expr = mem::replace(e, dummy);
-            match reparse(expr, self.symbols, &self.operators) {
+            let dummy = self.arena.alloc(pos::spanned(e.span, Expr::Error(None))); // FIXME
+            mem::swap(e, dummy);
+            match reparse(self.arena, dummy, self.symbols, &self.operators) {
                 Ok(expr) => {
-                    *e = expr;
+                    mem::swap(e, expr);
                 }
                 Err((err, reconstructed_expr)) => {
                     info!("Infix error: {}", err);
@@ -307,28 +315,30 @@ impl StdError for Error {
 /// Inspired by [`Language.Haskell.Infix`].
 ///
 /// [`Language.Haskell.Infix`]: https://hackage.haskell.org/package/infix-0.1.1/docs/src/Language-Haskell-Infix.html
-pub fn reparse<Id>(
-    expr: SpannedExpr<Id>,
+pub fn reparse<'ast, Id>(
+    arena: ast::ArenaRef<'_, 'ast, Id>,
+    expr: &'ast mut SpannedExpr<'ast, Id>,
     symbols: &dyn IdentEnv<Ident = Id>,
     operators: &OpTable<Id>,
-) -> Result<SpannedExpr<Id>, (Spanned<Error, BytePos>, Option<Expr<Id>>)>
+) -> Result<&'ast mut SpannedExpr<'ast, Id>, (Spanned<Error, BytePos>, Option<Expr<'ast, Id>>)>
 where
-    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+    Id: Eq + Hash + AsRef<str> + Clone + ::std::fmt::Debug,
 {
     use self::Error::*;
 
-    let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
-        let span = pos::span(lhs.span.start(), rhs.span.end());
-        Box::new(pos::spanned(
-            span,
-            Expr::Infix {
-                lhs,
-                op,
-                rhs,
-                implicit_args: Vec::new(),
-            },
-        ))
-    };
+    let make_op =
+        |lhs: &'ast mut SpannedExpr<'ast, Id>, op, rhs: &'ast mut SpannedExpr<'ast, Id>| {
+            let span = pos::span(lhs.span.start(), rhs.span.end());
+            arena.alloc(pos::spanned(
+                span,
+                Expr::Infix {
+                    lhs,
+                    op,
+                    rhs,
+                    implicit_args: &mut [],
+                },
+            ))
+        };
 
     let mut infixes = Infixes::new(expr);
     let mut arg_stack = Vec::new();
@@ -364,7 +374,12 @@ where
 
                                     arg_stack.push(make_op(lhs, op, rhs));
                                 }
-                                return Err((err, arg_stack.pop().map(|original| original.value)));
+                                return Err((
+                                    err,
+                                    arg_stack.pop().map(|original| {
+                                        mem::replace(&mut original.value, Expr::Error(None))
+                                    }),
+                                ));
                             }
                         }
                     };
@@ -430,12 +445,12 @@ where
 
     assert_eq!(arg_stack.len(), 1);
 
-    Ok(*arg_stack.pop().unwrap())
+    Ok(arg_stack.pop().unwrap())
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum InfixToken<Id> {
-    Arg(Box<SpannedExpr<Id>>),
+#[derive(Debug, PartialEq)]
+enum InfixToken<'ast, Id> {
+    Arg(&'ast mut SpannedExpr<'ast, Id>),
     // TODO: Make this spanned to allow for accurate error reporting
     Op(SpannedIdent<Id>),
 }
@@ -464,71 +479,79 @@ enum InfixToken<Id> {
 /// Op:   -
 /// Arg:  8
 /// ```
-struct Infixes<Id> {
+struct Infixes<'ast, Id>
+where
+    Id: 'ast,
+{
     /// The next part of the expression that we need to flatten
-    remaining_expr: Option<Box<SpannedExpr<Id>>>,
+    remaining_expr: Option<&'ast mut SpannedExpr<'ast, Id>>,
     /// Cached operator from a previous iteration
     next_op: Option<SpannedIdent<Id>>,
 }
 
-impl<Id> Infixes<Id> {
-    fn new(expr: SpannedExpr<Id>) -> Infixes<Id> {
+impl<'ast, Id> Infixes<'ast, Id> {
+    fn new(expr: &'ast mut SpannedExpr<'ast, Id>) -> Infixes<'ast, Id> {
         Infixes {
-            remaining_expr: Some(Box::new(expr)),
+            remaining_expr: Some(expr),
             next_op: None,
         }
     }
 }
 
-impl<Id> Iterator for Infixes<Id> {
-    type Item = InfixToken<Id>;
+impl<'ast, Id> Iterator for Infixes<'ast, Id>
+where
+    Id: 'ast + Clone,
+{
+    type Item = InfixToken<'ast, Id>;
 
-    fn next(&mut self) -> Option<InfixToken<Id>> {
+    fn next(&mut self) -> Option<InfixToken<'ast, Id>> {
         if let Some(op) = self.next_op.take() {
             return Some(InfixToken::Op(op));
         }
 
-        self.remaining_expr.take().map(|expr| {
-            let expr = *expr; // Workaround for http://stackoverflow.com/questions/28466809/
-            match expr.value {
-                Expr::Infix {
-                    lhs,
-                    op,
-                    rhs,
-                    implicit_args,
-                } => {
-                    assert!(
-                        implicit_args.is_empty(),
-                        "Implicit args on infix operators is not implemented"
-                    );
-                    self.remaining_expr = Some(rhs);
-                    self.next_op = Some(op);
-                    InfixToken::Arg(lhs)
-                }
-                _ => InfixToken::Arg(Box::new(expr)), // FIXME: remove reallocation?
+        self.remaining_expr.take().map(|expr| match expr.value {
+            Expr::Infix {
+                ref mut lhs,
+                ref op,
+                ref mut rhs,
+                ref implicit_args,
+            } => {
+                assert!(
+                    implicit_args.is_empty(),
+                    "Implicit args on infix operators is not implemented"
+                );
+                self.remaining_expr = Some(rhs);
+                self.next_op = Some(op.clone()); // TODO Avoid clone ?
+                InfixToken::Arg(lhs)
             }
+            _ => InfixToken::Arg(expr),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::base::ast::{DisplayEnv, Expr, IdentEnv, Literal, SpannedExpr, TypedIdent};
-    use crate::base::pos::{self, BytePos, Spanned};
     use std::marker::PhantomData;
+
+    use crate::base::{
+        ast::{DisplayEnv, Expr, IdentEnv, Literal, SpannedExpr, TypedIdent},
+        mk_ast_arena,
+        pos::{self, BytePos, Spanned},
+    };
 
     use super::Error::*;
     use super::*;
 
-    fn reparse<Id>(
-        expr: SpannedExpr<Id>,
+    fn reparse<'ast, Id>(
+        arena: ast::ArenaRef<'_, 'ast, Id>,
+        expr: &'ast mut SpannedExpr<'ast, Id>,
         symbols: &dyn IdentEnv<Ident = Id>,
         operators: &OpTable<Id>,
-    ) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
+    ) -> Result<&'ast mut SpannedExpr<'ast, Id>, Spanned<Error, BytePos>>
     where
-        Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+        Id: Eq + Hash + AsRef<str> + Clone + ::std::fmt::Debug,
     {
-        super::reparse(expr, symbols, operators).map_err(|t| t.0)
+        super::reparse(arena, expr, symbols, operators).map_err(|t| t.0)
     }
 
     pub struct MockEnv<T>(PhantomData<T>);
@@ -564,42 +587,60 @@ mod tests {
         TypedIdent::new(name.to_string())
     }
 
-    fn op(
-        lhs: Box<SpannedExpr<String>>,
+    fn op<'ast>(
+        arena: ast::ArenaRef<'_, 'ast, String>,
+        lhs: &'ast mut SpannedExpr<'ast, String>,
         op_str: &str,
-        rhs: Box<SpannedExpr<String>>,
-    ) -> Box<SpannedExpr<String>> {
-        Box::new(no_loc(Expr::Infix {
+        rhs: &'ast mut SpannedExpr<'ast, String>,
+    ) -> &'ast mut SpannedExpr<'ast, String> {
+        arena.alloc(no_loc(Expr::Infix {
             lhs,
             op: no_loc(ident(op_str)),
             rhs,
-            implicit_args: Vec::new(),
+            implicit_args: Default::default(),
         }))
     }
 
-    fn int(value: i64) -> Box<SpannedExpr<String>> {
-        Box::new(no_loc(Expr::Literal(Literal::Int(value))))
+    fn int<'ast>(
+        arena: ast::ArenaRef<'_, 'ast, String>,
+        value: i64,
+    ) -> &'ast mut SpannedExpr<'ast, String> {
+        arena.alloc(no_loc(Expr::Literal(Literal::Int(value))))
     }
 
     #[test]
     fn infixes() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let expr = op(
-            int(1),
+            arena,
+            int(arena, 1),
             "+",
-            op(int(2), "^", op(int(4), "*", op(int(6), "-", int(8)))),
+            op(
+                arena,
+                int(arena, 2),
+                "^",
+                op(
+                    arena,
+                    int(arena, 4),
+                    "*",
+                    op(arena, int(arena, 6), "-", int(arena, 8)),
+                ),
+            ),
         );
 
-        let result: Vec<_> = Infixes::new(*expr).collect();
+        let result: Vec<_> = Infixes::new(expr).collect();
         let expected = vec![
-            InfixToken::Arg(int(1)),
+            InfixToken::Arg(int(arena, 1)),
             InfixToken::Op(no_loc(ident("+"))),
-            InfixToken::Arg(int(2)),
+            InfixToken::Arg(int(arena, 2)),
             InfixToken::Op(no_loc(ident("^"))),
-            InfixToken::Arg(int(4)),
+            InfixToken::Arg(int(arena, 4)),
             InfixToken::Op(no_loc(ident("*"))),
-            InfixToken::Arg(int(6)),
+            InfixToken::Arg(int(arena, 6)),
             InfixToken::Op(no_loc(ident("-"))),
-            InfixToken::Arg(int(8)),
+            InfixToken::Arg(int(arena, 8)),
         ];
 
         assert_eq!(result, expected);
@@ -607,17 +648,23 @@ mod tests {
 
     #[test]
     fn reparse_single() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![]);
 
-        let expr = *op(int(1), "+", int(2));
-        let expected = Ok(expr.clone());
+        let expr = || op(arena, int(arena, 1), "+", int(arena, 2));
+        let expected = Ok(expr());
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr(), &env, &ops), expected);
     }
 
     #[test]
     fn reparse_less_precedence() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("*".to_string(), OpMeta::new(7, Fixity::Left)),
@@ -625,14 +672,24 @@ mod tests {
         ]);
 
         // 1 + (2 * 8)
-        let expr = *op(int(1), "+", op(int(2), "*", int(8)));
-        let expected = Ok(expr.clone());
+        let expr = || {
+            op(
+                arena,
+                int(arena, 1),
+                "+",
+                op(arena, int(arena, 2), "*", int(arena, 8)),
+            )
+        };
+        let expected = Ok(expr());
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr(), &env, &ops), expected);
     }
 
     #[test]
     fn reparse_greater_precedence() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("*".to_string(), OpMeta::new(7, Fixity::Left)),
@@ -640,15 +697,28 @@ mod tests {
         ]);
 
         // 1 * (2 + 8)
-        let expr = *op(int(1), "*", op(int(2), "+", int(8)));
+        let expr = op(
+            arena,
+            int(arena, 1),
+            "*",
+            op(arena, int(arena, 2), "+", int(arena, 8)),
+        );
         // (1 * 2) + 8
-        let expected = Ok(*op(op(int(1), "*", int(2)), "+", int(8)));
+        let expected = Ok(op(
+            arena,
+            op(arena, int(arena, 1), "*", int(arena, 2)),
+            "+",
+            int(arena, 8),
+        ));
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr, &env, &ops), expected);
     }
 
     #[test]
     fn reparse_equal_precedence_left_fixity() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("-".to_string(), OpMeta::new(6, Fixity::Left)),
@@ -656,15 +726,28 @@ mod tests {
         ]);
 
         // 1 + (2 - 8)
-        let expr = *op(int(1), "+", op(int(2), "-", int(8)));
+        let expr = op(
+            arena,
+            int(arena, 1),
+            "+",
+            op(arena, int(arena, 2), "-", int(arena, 8)),
+        );
         // (1 + 2) - 8
-        let expected = Ok(*op(op(int(1), "+", int(2)), "-", int(8)));
+        let expected = Ok(op(
+            arena,
+            op(arena, int(arena, 1), "+", int(arena, 2)),
+            "-",
+            int(arena, 8),
+        ));
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr, &env, &ops), expected);
     }
 
     #[test]
     fn reparse_equal_precedence_right_fixity() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("-".to_string(), OpMeta::new(6, Fixity::Right)),
@@ -672,14 +755,24 @@ mod tests {
         ]);
 
         // 1 + (2 - 8)
-        let expr = *op(int(1), "+", op(int(2), "-", int(8)));
-        let expected = Ok(expr.clone());
+        let expr = || {
+            op(
+                arena,
+                int(arena, 1),
+                "+",
+                op(arena, int(arena, 2), "-", int(arena, 8)),
+            )
+        };
+        let expected = Ok(expr());
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr(), &env, &ops), expected);
     }
 
     #[test]
     fn reparse_mixed_precedences_mixed_fixities() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("*".to_string(), OpMeta::new(7, Fixity::Left)),
@@ -688,15 +781,38 @@ mod tests {
         ]);
 
         //  1  + (2  * (6   -  8))
-        let expr = *op(int(1), "+", op(int(2), "*", op(int(6), "-", int(8))));
+        let expr = op(
+            arena,
+            int(arena, 1),
+            "+",
+            op(
+                arena,
+                int(arena, 2),
+                "*",
+                op(arena, int(arena, 6), "-", int(arena, 8)),
+            ),
+        );
         // (1  + (2  *  6)) -  8
-        let expected = Ok(*op(op(int(1), "+", op(int(2), "*", int(6))), "-", int(8)));
+        let expected = Ok(op(
+            arena,
+            op(
+                arena,
+                int(arena, 1),
+                "+",
+                op(arena, int(arena, 2), "*", int(arena, 6)),
+            ),
+            "-",
+            int(arena, 8),
+        ));
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr, &env, &ops), expected);
     }
 
     #[test]
     fn reparse_equal_precedence_conflicting_fixities() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
@@ -704,18 +820,26 @@ mod tests {
         ]);
 
         // 1 |> (2 <| 8)
-        let expr = *op(int(1), "|>", op(int(2), "<|", int(8)));
+        let expr = op(
+            arena,
+            int(arena, 1),
+            "|>",
+            op(arena, int(arena, 2), "<|", int(arena, 8)),
+        );
         let error = ConflictingFixities(
             ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
             ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
         );
         let expected = Err(no_loc(error));
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr, &env, &ops), expected);
     }
 
     #[test]
     fn reparse_equal_precedence_conflicting_fixities_nested() {
+        mk_ast_arena!(arena);
+        let arena = arena.borrow();
+
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
             ("+".to_string(), OpMeta::new(6, Fixity::Left)),
@@ -724,13 +848,23 @@ mod tests {
         ]);
 
         // 1 + (1 |> (2 <| 8))
-        let expr = *op(int(1), "+", op(int(1), "|>", op(int(2), "<|", int(8))));
+        let expr = op(
+            arena,
+            int(arena, 1),
+            "+",
+            op(
+                arena,
+                int(arena, 1),
+                "|>",
+                op(arena, int(arena, 2), "<|", int(arena, 8)),
+            ),
+        );
         let error = ConflictingFixities(
             ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
             ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
         );
         let expected = Err(no_loc(error));
 
-        assert_eq!(reparse(expr, &env, &ops), expected);
+        assert_eq!(reparse(arena, expr, &env, &ops), expected);
     }
 }

@@ -1,4 +1,4 @@
-use std::fs;
+use std::{cell::RefCell, fs};
 
 use criterion::{criterion_group, criterion_main, Bencher, Criterion};
 
@@ -7,56 +7,55 @@ use gluon::{base, compiler_pipeline::*, new_vm, ThreadExt};
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
     let text = fs::read_to_string("std/prelude.glu").unwrap();
-    let MacroValue { expr } = text
-        .expand_macro(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            "std.prelude",
-            &text,
-        )
-        .unwrap_or_else(|(_, err)| panic!("{}", err));
-    b.iter(|| {
-        let result = MacroValue { expr: expr.clone() }.typecheck(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            "std.prelude",
-            &text,
-        );
-        if let Err((_, err)) = &result {
-            println!("{}", err);
-            assert!(false);
-        }
-        result
-    })
-}
-
-fn clone_prelude(b: &mut Bencher) {
-    let vm = new_vm();
-    let TypecheckValue { expr, .. } = {
-        let text = fs::read_to_string("std/prelude.glu").unwrap();
-        text.typecheck(
-            &mut vm.module_compiler(&vm.get_database()),
-            &vm,
-            "std.prelude",
-            &text,
-        )
-        .unwrap_or_else(|(_, err)| panic!("{}", err))
-    };
-    b.iter(|| expr.clone())
+    b.iter_with_setup(
+        || {
+            let MacroValue { expr } = futures::executor::block_on(text.expand_macro(
+                &mut vm.module_compiler(&mut vm.get_database()),
+                &vm,
+                "std.prelude",
+                &text,
+            ))
+            .unwrap_or_else(|(_, err)| panic!("{}", err));
+            expr
+        },
+        |expr| {
+            let result = futures::executor::block_on(MacroValue { expr }.typecheck(
+                &mut vm.module_compiler(&mut vm.get_database()),
+                &vm,
+                "std.prelude",
+                &text,
+            ));
+            if let Err((_, err)) = &result {
+                println!("{}", err);
+                assert!(false);
+            }
+            result
+        },
+    )
 }
 
 fn typecheck_24(b: &mut Bencher) {
     let vm = new_vm();
     let text = fs::read_to_string("examples/24.glu").unwrap();
-    let db = vm.get_database();
-    let mut compiler = vm.module_compiler(&db);
-    let MacroValue { expr } = text
-        .expand_macro(&mut compiler, &vm, "examples.24", &text)
-        .unwrap_or_else(|(_, err)| panic!("{}", err));
+    let mut db = vm.get_database();
+    let compiler = RefCell::new(vm.module_compiler(&mut db));
     b.iter_with_setup(
-        || MacroValue { expr: expr.clone() },
+        || {
+            futures::executor::block_on(text.expand_macro(
+                &mut compiler.borrow_mut(),
+                &vm,
+                "examples.24",
+                &text,
+            ))
+            .unwrap_or_else(|(_, err)| panic!("{}", err))
+        },
         |input| {
-            let result = input.typecheck(&mut compiler, &vm, "examples.24", &text);
+            let result = futures::executor::block_on(input.typecheck(
+                &mut compiler.borrow_mut(),
+                &vm,
+                "examples.24",
+                &text,
+            ));
             if let Err((_, err)) = &result {
                 println!("{}", err);
                 assert!(false);
@@ -70,24 +69,25 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
     let vm = new_vm();
     let text = fs::read_to_string(file).unwrap();
     let module_name = base::filename_to_module(file);
-    let db = vm.get_database();
-    let mut compiler = vm.module_compiler(&db);
-    let reparsed = text
-        .reparse_infix(&mut compiler, &vm, &module_name, &text)
-        .unwrap_or_else(|(_, err)| panic!("{}", err));
-    let InfixReparsed {
-        metadata,
-        metadata_map,
-        expr,
-    } = &reparsed;
+    let mut db = vm.get_database();
+    let compiler = RefCell::new(vm.module_compiler(&mut db));
     b.iter_with_setup(
-        || InfixReparsed {
-            metadata: metadata.clone(),
-            metadata_map: metadata_map.clone(),
-            expr: expr.clone(),
+        || {
+            futures::executor::block_on(text.reparse_infix(
+                &mut compiler.borrow_mut(),
+                &vm,
+                &module_name,
+                &text,
+            ))
+            .unwrap_or_else(|(_, err)| panic!("{}", err))
         },
         |input| {
-            let result = input.typecheck(&mut compiler, &vm, &module_name, &text);
+            let result = futures::executor::block_on(input.typecheck(
+                &mut compiler.borrow_mut(),
+                &vm,
+                &module_name,
+                &text,
+            ));
             if let Err((_, err)) = &result {
                 println!("{}", err);
                 assert!(false);
@@ -95,12 +95,6 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
             result
         },
     )
-}
-
-fn clone_benchmark(c: &mut Criterion) {
-    let _ = env_logger::try_init();
-
-    c.bench_function("clone prelude", clone_prelude);
 }
 
 fn typecheck_benchmark(c: &mut Criterion) {
@@ -125,6 +119,6 @@ fn typecheck_benchmark(c: &mut Criterion) {
 criterion_group!(
     name = check;
     config = Criterion::default().sample_size(20).configure_from_args();
-    targets = typecheck_benchmark, clone_benchmark
+    targets = typecheck_benchmark
 );
 criterion_main!(check);

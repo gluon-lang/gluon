@@ -28,9 +28,8 @@ type Read a = {
     /// Reaching end of file means that this reader will most likely not produce
     /// more bytes. It _may_ produce more in the future.
     read : a -> Int -> IO (Option (Array Byte)),
-
-    /// Read all bytes until end of file is encountered. 
-    read_to_end : a -> IO (Array Byte),
+    /// Read all bytes until end of file is encountered.
+    read_to_end : a -> IO (Array Byte)
 }
 
 let read ?read : [Read a] -> a -> Int -> IO (Option (Array Byte)) = read.read
@@ -41,33 +40,31 @@ let read_to_end ?read : [Read a] -> a -> IO (Array Byte) = read.read_to_end
 /// if the read bytes are not valid UTF-8.
 let read_to_string reader : [Read a] -> a -> IO (Option String) =
     do bytes = read_to_end reader
-    
+
     match string.from_utf8 bytes with
     | Ok str -> wrap (Some str)
     | Err _ -> wrap None
 
 /// Constructs a `read_to_end` function from a `read` function. If it is more efficient,
 /// implementors of `Read` should provide their own, specialized version.
-let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte) =
+let default_read_to_end read : forall a .
+        (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte)
+    =
     let read_to_end_rec buf reader =
         do result = read reader default_buf_len
 
         match result with
         | Some new_buf -> read_to_end_rec (array.append buf new_buf) reader
         | None -> wrap buf
-    
+
     read_to_end_rec []
 
 /// Wraps a reader to provide buffering. Buffering is more efficient when
 /// performing many small reads, because it avoids many costly reads from
 /// the underlying reader.
 ///
-/// If you are reading all data at once, buffering is not necessary. 
-type Buffered r = {
-    reader : r,
-    buf : Reference (Array Byte),
-    capacity : Int,
-}
+/// If you are reading all data at once, buffering is not necessary.
+type Buffered r = { reader : r, buf : Reference (Array Byte), capacity : Int }
 
 /// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
 /// buffer capacity.
@@ -88,7 +85,7 @@ let read_buffered : [Read r] -> Read (Buffered r) =
     let read_from_buf buf_reader num_bytes =
         let buf = load buf_reader.buf
         let num_bytes = min (array.len buf) num_bytes
-    
+
         let read_buf = array.slice buf 0 num_bytes
         let rest_buf = array.slice buf num_bytes (array.len buf)
 
@@ -98,12 +95,9 @@ let read_buffered : [Read r] -> Read (Buffered r) =
     let buffered_read buf_reader num_bytes =
         let buf = load buf_reader.buf
 
-        if num_bytes <= 0 then
-            wrap (Some [])
-        else if not (array.is_empty buf) then
-            wrap (read_from_buf buf_reader num_bytes)
-        else if num_bytes >= buf_reader.capacity then
-            read buf_reader.reader num_bytes
+        if num_bytes <= 0 then wrap (Some [])
+        else if not (array.is_empty buf) then wrap (read_from_buf buf_reader num_bytes)
+        else if num_bytes >= buf_reader.capacity then read buf_reader.reader num_bytes
         else
             do new_buf = read buf_reader.reader buf_reader.capacity
 
@@ -127,10 +121,9 @@ let read_buffered : [Read r] -> Read (Buffered r) =
 
 let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
     {
-        dispose = (\buf_reader -> 
+        dispose = (\buf_reader ->
             let _ = buf_reader.buf <- []
-            dispose buf_reader.reader
-        ),
+            dispose buf_reader.reader),
         is_disposed = \buf_reader -> is_disposed buf_reader.reader,
     }
 

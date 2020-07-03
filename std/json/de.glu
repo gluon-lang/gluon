@@ -29,18 +29,22 @@ let error_msg = id
 let deserializer : Deserializer i a -> Deserializer i a = id
 
 let functor : Functor (Deserializer i) = {
-    map = \f m -> deserializer (\input ->
-            do a = deserializer m input
-            Ok { value = f a.value, input = a.input })
+    map = \f m ->
+        deserializer
+            (\input ->
+                do a = deserializer m input
+                Ok { value = f a.value, input = a.input }),
 }
 
 let applicative : Applicative (Deserializer i) = {
     functor,
 
-    apply = \f m -> deserializer (\input ->
-            do g = deserializer f input
-            do a = deserializer m g.input
-            Ok { value = g.value a.value, input = a.input }),
+    apply = \f m ->
+        deserializer
+            (\input ->
+                do g = deserializer f input
+                do a = deserializer m g.input
+                Ok { value = g.value a.value, input = a.input }),
 
     wrap = \value -> deserializer (\input -> Ok { value, input }),
 }
@@ -50,19 +54,22 @@ let alternative : Alternative (Deserializer i) = {
 
     empty = deserializer (\stream -> Err (error_msg "empty")),
 
-    or = \l r -> deserializer (\stream ->
-            match deserializer l stream with
-            | Ok a -> Ok a
-            | Err _ -> deserializer r stream),
+    or = \l r ->
+        deserializer
+            (\stream ->
+                match deserializer l stream with
+                | Ok a -> Ok a
+                | Err _ -> deserializer r stream),
 }
 
 let monad : Monad (Deserializer i) = {
     applicative,
 
     flat_map = \f m ->
-        deserializer (\input ->
-            do a = deserializer m input
-            deserializer (f a.value) a.input),
+        deserializer
+            (\input ->
+                do a = deserializer m input
+                deserializer (f a.value) a.input),
 }
 
 /// Deserializes a `Bool`
@@ -148,9 +155,12 @@ let string : ValueDeserializer String = \input ->
 let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
     match input with
     | Array xs ->
-        do value = for xs (\v ->
-                do state = a v
-                Ok state.value)
+        do value =
+            for
+                xs
+                (\v ->
+                    do state = a v
+                    Ok state.value)
         Ok { value, input }
     | _ -> Err (error_msg "Expected array")
 
@@ -222,8 +232,7 @@ let map a : ValueDeserializer a -> ValueDeserializer (Map String a) = \input ->
     | _ -> Err (error_msg "Expected map")
 
 /// Deserializes a `Value`
-let value : ValueDeserializer Value = \input ->
-    Ok { value = input, input }
+let value : ValueDeserializer Value = \input -> Ok { value = input, input }
 
 #[implicit]
 type Deserialize a = { deserializer : ValueDeserializer a }
@@ -244,8 +253,7 @@ let run ?de value : [Deserialize a] -> Value -> Result Error a =
     do state = de.deserializer value
     Ok state.value
 
-#[doc(hidden)]
-let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
+let bool_deserializer : Deserialize Bool = { deserializer = bool }
 
 let int_deserializer : Deserialize Int = { deserializer = int }
 
@@ -297,6 +305,7 @@ let map_deserializer : [Deserialize a] -> Deserialize (Map String a) =
 
     deserializer,
 
+    bool_deserializer,
     int_deserializer,
     string_deserializer,
     float_deserializer,
@@ -305,6 +314,4 @@ let map_deserializer : [Deserialize a] -> Deserialize (Map String a) =
     list_deserializer,
     array_deserializer,
     map_deserializer,
-
-    insert_string,
 }

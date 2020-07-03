@@ -1,13 +1,10 @@
 //! REPL for the gluon programming language
-#![doc(html_root_url = "https://docs.rs/gluon_repl/0.4.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_repl/0.13.1")] // # GLUON
 
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-#[allow(unused_imports)]
-#[macro_use]
-extern crate structopt_derive;
 
 #[macro_use]
 extern crate gluon_vm;
@@ -22,22 +19,39 @@ use std::{
     sync::Arc,
 };
 
-use codespan_reporting::termcolor;
+use codespan_reporting::term::termcolor;
+use quick_error::quick_error;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
-use futures::future;
-use tokio::runtime::Runtime;
-
 use gluon::{base, parser, vm};
 
-use crate::base::filename_to_module;
+use crate::base::{
+    filename_to_module,
+    source::{self, Source},
+};
 
 use gluon::{
-    new_vm, vm::thread::ThreadInternal, vm::Error as VMError, Error, Result, Thread, ThreadExt,
+    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread, ThreadExt,
 };
 
 mod repl;
+
+quick_error! {
+/// Error type wrapping all possible errors that can be generated from gluon
+#[derive(Debug)]
+#[allow(deprecated)]
+enum Error {
+    Failure(err: failure::Error) {
+        display("{}", err)
+        from()
+    }
+    Gluon(err: gluon::Error) {
+        display("{}", err)
+        from()
+    }
+}
+}
 
 const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
     name: "gluon-repl",
@@ -54,7 +68,7 @@ pub enum Color {
 
 impl Into<termcolor::ColorChoice> for Color {
     fn into(self) -> termcolor::ColorChoice {
-        use crate::termcolor::ColorChoice::*;
+        use termcolor::ColorChoice::*;
         match self {
             Color::Auto => Auto,
             Color::Always => Always,
@@ -102,7 +116,7 @@ pub enum SubOpt {
 const LONG_VERSION: &str = concat!(clap::crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 
 #[derive(StructOpt)]
-#[structopt(about = "executes gluon programs", raw(long_version = "LONG_VERSION"))]
+#[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
 pub struct Opt {
     #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
     interactive: bool,
@@ -142,13 +156,13 @@ pub struct Opt {
     subcommand_opt: Option<SubOpt>,
 }
 
-fn run_files<I>(vm: &Thread, files: I) -> Result<()>
+async fn run_files<I>(vm: &Thread, files: I) -> Result<()>
 where
     I: IntoIterator,
     I::Item: AsRef<str>,
 {
     for file in files {
-        vm.load_file(file.as_ref())?;
+        vm.load_file_async(file.as_ref()).await?;
     }
     Ok(())
 }
@@ -161,18 +175,20 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(file: &str, file_map: Arc<codespan::FileMap>, opt: &Opt) -> Result<String> {
-    let thread = new_vm();
+async fn format(file: &str, file_map: Arc<source::FileMap>, opt: &Opt) -> Result<String> {
+    let thread = new_vm_async().await;
     thread.get_database_mut().use_standard_lib(!opt.no_std);
 
-    Ok(thread.format_expr(
-        &mut gluon_format::Formatter::default(),
-        file,
-        file_map.src(),
-    )?)
+    Ok(thread
+        .format_expr_async(
+            &mut gluon_format::Formatter::default(),
+            file,
+            file_map.src(),
+        )
+        .await?)
 }
 
-fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
+async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     use std::fs::File;
     use std::io::Read;
 
@@ -183,9 +199,9 @@ fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     }
 
     let module_name = filename_to_module(&name.display().to_string());
-    let mut code_map = codespan::CodeMap::new();
+    let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
-    let formatted = format(&module_name, file_map.clone(), opt)?;
+    let formatted = format(&module_name, file_map.clone(), opt).await?;
 
     // Avoid touching the .glu file if it did not change
     if file_map.src() != formatted {
@@ -201,21 +217,21 @@ fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     Ok(())
 }
 
-fn fmt_stdio(opt: &Opt) -> Result<()> {
+async fn fmt_stdio(opt: &Opt) -> Result<()> {
     use std::io::{stdin, stdout, Read};
 
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
 
-    let mut code_map = codespan::CodeMap::new();
+    let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap("STDIN".into(), buffer);
 
-    let formatted = format("STDIN", file_map, opt)?;
+    let formatted = format("STDIN", file_map, opt).await?;
     stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }
 
-fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::Error> {
+async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -241,29 +257,26 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
                 gluon_files.dedup();
 
                 for file in gluon_files {
-                    fmt_file(&file, opt)?;
+                    fmt_file(&file, opt).await?;
                 }
             } else {
-                fmt_stdio(opt)?;
+                fmt_stdio(opt).await?;
             }
         }
         Some(SubOpt::Doc(ref doc_opt)) => {
             let input = &doc_opt.input;
             let output = &doc_opt.output;
-            gluon_doc::generate_for_path(&new_vm(), input, output)
-                .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
+            let thread = new_vm_async().await;
+            gluon_doc::generate_for_path(&thread, input, output)?;
         }
         None => {
             if opt.interactive {
-                let mut runtime = Runtime::new()?;
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                runtime.block_on(future::lazy(move || {
-                    repl::run(color, &prompt, debug_level, use_std_lib)
-                }))?;
+                repl::run(color, &prompt, debug_level, use_std_lib).await?;
             } else if !opt.input.is_empty() {
-                run_files(&vm, &opt.input)?;
+                run_files(&vm, &opt.input).await?;
             } else {
                 writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
                     .expect("Error writing help to stderr");
@@ -273,26 +286,34 @@ fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), gluon::E
     Ok(())
 }
 
-fn main() {
+#[tokio::main(basic_scheduler)]
+async fn main() {
     init_env_logger();
 
     let opt = Opt::from_args();
 
-    let vm = new_vm();
+    let vm = new_vm_async().await;
     vm.get_database_mut()
         .use_standard_lib(!opt.no_std)
         .run_io(true);
 
-    if let Err(err) = run(&opt, opt.color, &vm) {
+    let color = opt.color;
+    let result = run(&opt, opt.color, &vm).await;
+    if let Err(err) = result {
         match err {
-            Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
-            _ => {
-                let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
-                if let Err(err) = err.emit(&mut stderr, &vm.get_database().code_map()) {
+            Error::Gluon(gluon::Error::VM(VMError::Message(_))) => {
+                eprintln!("{}\n{}", err, vm.context().stacktrace(0))
+            }
+            Error::Gluon(err) => {
+                let mut stderr = termcolor::StandardStream::stderr(color.into());
+                if let Err(err) = err.emit(&mut stderr) {
                     eprintln!("{}", err);
                 } else {
                     eprintln!("");
                 }
+            }
+            Error::Failure(err) => {
+                eprintln!("{}", err);
             }
         }
         ::std::process::exit(1);

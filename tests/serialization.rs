@@ -1,20 +1,12 @@
 #![cfg(feature = "serialization")]
-extern crate env_logger;
-extern crate futures;
-extern crate serde_json;
 extern crate serde_state as serde;
-extern crate walkdir;
-
-extern crate gluon;
 
 use std::{fs::File, io::Read};
-
-use futures::Future;
 
 use crate::serde::ser::SerializeState;
 
 use gluon::{
-    new_vm,
+    new_vm, new_vm_async,
     vm::{
         api::{Hole, OpaqueValue, IO},
         serialization::{DeSeed, SeSeed},
@@ -119,7 +111,7 @@ fn roundtrip_std_libs() {
         // Can't check the extension since vim swap files ".glu.swp" will report ".glu" as the
         // extension
         let path_str = path.to_str().unwrap();
-        if path.to_str().unwrap().ends_with(".glu") && 
+        if path.to_str().unwrap().ends_with(".glu") &&
             path_str.starts_with("std/regex") &&
             path_str.starts_with("std/repl") &&
             path_str.starts_with("std/stream") &&
@@ -144,11 +136,11 @@ fn roundtrip_std_libs() {
     roundtrip(&thread, &value);
 }
 
-#[test]
-fn precompile() {
+#[tokio::test]
+async fn precompile() {
     use gluon::compiler_pipeline::*;
 
-    let thread = new_vm();
+    let thread = new_vm_async().await;
     let mut text = String::new();
     File::open("std/map.glu")
         .expect("Unable to open map.glu")
@@ -160,32 +152,33 @@ fn precompile() {
         let mut serializer = serde_json::Serializer::new(&mut buffer);
         thread
             .compile_to_bytecode("test", &text, &mut serializer)
+            .await
             .unwrap()
     }
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
             .run_expr(
-                &mut thread.module_compiler(&thread.get_database()),
+                &mut thread.module_compiler(&mut thread.get_database()),
                 &*thread,
                 "test",
                 "",
                 (),
             )
-            .wait()
+            .await
             .unwrap()
     };
-    let thread2 = new_vm();
+    let thread2 = new_vm_async().await;
     assert_eq!(
         serialize_value(
             text.run_expr(
-                &mut thread.module_compiler(&thread2.get_database()),
+                &mut thread.module_compiler(&mut thread2.get_database()),
                 &*thread2,
                 "test",
                 &text,
                 None
             )
-            .wait()
+            .await
             .unwrap()
             .value
             .get_variant()
@@ -215,6 +208,16 @@ fn roundtrip_lazy() {
 }
 
 #[test]
+fn roundtrip_list() {
+    let thread = new_vm();
+    let expr = r#" import! std.list "#;
+    let (value, _) = thread
+        .run_expr::<OpaqueValue<&Thread, Hole>>("test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}
+
+#[test]
 fn roundtrip_std_thread() {
     let thread = new_vm();
     let expr = r#" import! std.thread "#;
@@ -234,4 +237,48 @@ fn roundtrip_thread() {
         .run_expr::<IO<OpaqueValue<&Thread, Hole>>>("test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &Into::<Result<_, _>>::into(value).unwrap());
+}
+
+#[test]
+fn issue_805_no_deadlock_in_deserialize() {
+    fn serialize_value(value: gluon::vm::Variants) -> Box<[u8]> {
+        let mut buffer = Vec::new();
+        {
+            let mut ser = serde_json::Serializer::new(&mut buffer);
+            let ser_state = gluon::vm::serialization::SeSeed::new();
+            value.serialize_state(&mut ser, &ser_state).unwrap();
+        }
+        buffer.into_boxed_slice()
+    }
+
+    fn deserialize_value(
+        thread: &gluon::RootedThread,
+        serialized: &[u8],
+    ) -> Result<gluon::vm::thread::RootedValue<gluon::vm::thread::RootedThread>, serde_json::Error>
+    {
+        let mut de = serde_json::Deserializer::from_slice(&serialized);
+        gluon::vm::serialization::DeSeed::new(thread, &mut thread.current_context())
+            .deserialize(&mut de)
+    }
+
+    let vm = gluon::new_vm();
+    let script = r#"
+        let concat a b = a ++ b
+        concat"#;
+    vm.load_script("test", script).unwrap();
+
+    let (program, _) = vm
+        .run_expr::<gluon::vm::api::OpaqueValue<&gluon::Thread, gluon::vm::api::Hole>>(
+            "program",
+            "import! test",
+        )
+        .unwrap_or_else(|e| panic!("fail to parse program: {}", e));
+    let variant = program.get_variant();
+    let serialized_client = serialize_value(variant);
+
+    let vm2 = gluon::new_vm();
+    assert!(deserialize_value(&vm2, &serialized_client)
+        .unwrap_err()
+        .to_string()
+        .contains("is not defined"));
 }

@@ -25,9 +25,8 @@ type Write a = {
     /// is not empty and the returned value is `0`, the writer will likely not accept
     /// more data. It _may_ accept more data in the future.
     write_slice : a -> Array Byte -> Int -> Int -> IO Int,
-
     /// Flushes the buffers of the writer, ensuring that all data has been written.
-    flush : a -> IO (),
+    flush : a -> IO ()
 }
 
 let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = write.write_slice
@@ -38,25 +37,23 @@ let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
 
 /// Writes the entire contents of `buf` into `writer`. The call will fail if `writer`
 /// does not accept all of the data.
-let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =   
+let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =
     let buf_len = array.len buf
 
     let inner bytes_written =
-        if bytes_written >= buf_len then
-            wrap ()
+        if bytes_written >= buf_len then wrap ()
         else
             do written = write_slice writer buf bytes_written buf_len
 
             if written == 0 then
                 throw "cannot write the whole buffer because the writer has reached end of file"
-            else
-                inner (bytes_written + written)
-    
+            else inner (bytes_written + written)
+
     inner 0
 
 /// Writes the entire string into `writer`. The call will fail if `writer`
 /// does not accept all of the data.
-let write_string writer str : [Write a] -> a -> String -> IO () = 
+let write_string writer str : [Write a] -> a -> String -> IO () =
     write_all writer (string.as_bytes str)
 
 let flush ?write : [Write a] -> a -> IO () = write.flush
@@ -66,11 +63,7 @@ let flush ?write : [Write a] -> a -> IO () = write.flush
 /// the underlying writer.
 ///
 /// If you are writing all data at once, buffering is not necessary.
-type Buffered w = {
-    writer : w,
-    buf : Reference (Array Byte),
-    capacity : Int,
-}
+type Buffered w = { writer : w, buf : Reference (Array Byte), capacity : Int }
 
 /// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
 /// buffer capacity.
@@ -91,19 +84,16 @@ let buffered writer : [Write w] -> w -> Buffered w =
 let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
     let buf = load buf_writer.buf
 
-    if array.is_empty buf then
-        wrap ()
+    if array.is_empty buf then wrap ()
     else
         let write_buf bytes_written =
-            if bytes_written >= array.len buf then
-                wrap ()
+            if bytes_written >= array.len buf then wrap ()
             else
                 do written = write_slice buf_writer.writer buf bytes_written (array.len buf)
 
                 if written == 0 then
                     throw "cannot flush buffer because the writer has reached end of file"
-                else
-                    write_buf (bytes_written + written)
+                else write_buf (bytes_written + written)
 
         do _ = write_buf 0
         let _ = buf_writer.buf <- []
@@ -113,22 +103,21 @@ let write_buffered : [Write w] -> Write (Buffered w) =
     let buffered_write_slice buf_writer slice start end =
         let slice_len = end - start
         assert (slice_len >= 0)
-        
-        do _ = 
+
+        do _ =
             // if the new data would spill the buffer, flush it first
             if array.len (load buf_writer.buf) + slice_len >= buf_writer.capacity then
                 flush_buffer buf_writer
-            else
-                wrap ()
+            else wrap ()
 
         // if the slice is larger than the max buffer length write it directly;
         // otherwise append it to the buffer. Appending can never exceed the buffer,
         // since the slice is always < buf_len and the buffer has been flushed if
         // necessary
-        if slice_len >= buf_writer.capacity then
-            write_slice buf_writer.writer slice start end
+        if slice_len >= buf_writer.capacity then write_slice buf_writer.writer slice start end
         else
-            let _ = buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
+            let _ =
+                buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
             wrap slice_len
 
     let buffered_flush buf_writer =
@@ -142,10 +131,9 @@ let write_buffered : [Write w] -> Write (Buffered w) =
 
 let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w) =
     {
-        dispose = (\buf_writer -> 
+        dispose = (\buf_writer ->
             do _ = flush_buffer buf_writer
-            dispose buf_writer.writer
-        ),
+            dispose buf_writer.writer),
         is_disposed = \buf_writer -> is_disposed buf_writer.writer,
     }
 

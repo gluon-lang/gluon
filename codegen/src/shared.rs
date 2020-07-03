@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use syn::{GenericParam, Generics, Lifetime, LifetimeDef, TypeGenerics};
+use syn::{GenericParam, Generics, Lifetime, LifetimeDef, TypeGenerics, TypeParam};
 
 /// Maps all type parameters in `generics`. The function gets passed the ident of
 /// the respective type parameter.
@@ -44,6 +44,7 @@ where
 /// definition and can thus be freely used for the trait that is implemented.
 pub fn split_for_impl<'a>(
     generics: &'a Generics,
+    extra_params: &[&str],
     extra_lifetimes: &[&str],
 ) -> (TokenStream, TypeGenerics<'a>, TokenStream) {
     // add trailing comma or add a where if there are no predicates
@@ -57,12 +58,25 @@ pub fn split_for_impl<'a>(
     // these need the additional lifetimes
     let mut generics = generics.clone();
 
+    extra_params
+        .into_iter()
+        .map(|param| GenericParam::from(TypeParam::from(Ident::new(param, Span::call_site()))))
+        .for_each(|param| {
+            if generics.params.iter().all(|p| *p != param) {
+                generics.params.insert(0, param)
+            }
+        });
+
     extra_lifetimes
         .into_iter()
         .map(|lifetime| {
             GenericParam::from(LifetimeDef::new(Lifetime::new(lifetime, Span::call_site())))
         })
-        .for_each(|lifetime| generics.params.insert(0, lifetime));
+        .for_each(|lifetime| {
+            if generics.params.iter().all(|p| *p != lifetime) {
+                generics.params.insert(0, lifetime)
+            }
+        });
 
     let (impl_generics, ..) = generics.split_for_impl();
     (quote! { #impl_generics }, ty_generics, where_clause)

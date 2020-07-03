@@ -1,9 +1,3 @@
-#[macro_use]
-extern crate collect_mac;
-extern crate env_logger;
-#[macro_use]
-extern crate quick_error;
-
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
@@ -44,7 +38,7 @@ test_check! {
     let f x : Test a -> Int =
         match x with
         | Int x -> x
-    
+
     ()
     "#,
     "()"
@@ -59,7 +53,7 @@ test_check! {
     let f x : Test a -> a =
         match x with
         | Int x -> x
-    
+
     ()
     "#,
     "()"
@@ -76,7 +70,7 @@ test_check! {
         match x with
         | Int x -> x
         | Float x -> x
-    
+
     ()
     "#,
     "()"
@@ -93,7 +87,7 @@ test_check! {
         match x with
         | Int x -> x
         | A x -> x
-    
+
     ()
     "#,
     "()"
@@ -110,7 +104,7 @@ test_check_err! {
         match x with
         | Int x -> x
         | A -> y
-    
+
     ()
     "#,
     Unification(..)
@@ -125,7 +119,7 @@ test_check_err! {
     let f x : Test a -> a =
         match x with
         | Test x -> x
-    
+
     ()
     "#,
     Unification(..)

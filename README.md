@@ -216,7 +216,7 @@ guess_loop ()
 
 ### Try online
 
-You can try gluon in your browser at http://gluon-lang.org/try/. ([Github](https://github.com/gluon-lang/try_gluon))
+You can try gluon in your browser at https://gluon-lang.org/try/. ([Github](https://github.com/gluon-lang/try_gluon))
 
 ### Install
 
@@ -303,7 +303,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.12.0"
+gluon = "0.15.1"
 ```
 
 ### Other languages

@@ -20,7 +20,8 @@ let (>>) f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = 
 
 {
     Category,
-    id, compose,
+    id,
+    compose,
 
     (<<),
     (>>),

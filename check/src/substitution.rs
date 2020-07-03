@@ -4,7 +4,7 @@ use crate::base::{
     fixed::{FixedVec, FixedVecMap},
     kind::ArcKind,
     symbol::Symbol,
-    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, Walker},
+    types::{self, ArcType, Flags, FlagsVisitor, Skolem, Type, TypeContext, TypePtr, Walker},
 };
 use crate::typ::RcType;
 
@@ -49,7 +49,7 @@ where
 
 impl<T> TypeContext<Symbol, T> for Substitution<T>
 where
-    T: Substitutable + From<Type<Symbol, T>>,
+    T: Substitutable + TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
     for<'a> &'a T::Interner: TypeContext<Symbol, T>,
 {
     gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);
@@ -57,7 +57,7 @@ where
 
 impl<'a, T> TypeContext<Symbol, T> for &'a Substitution<T>
 where
-    T: Substitutable + From<Type<Symbol, T>>,
+    T: Substitutable + TypePtr<Id = Symbol> + From<Type<Symbol, T>>,
     &'a T::Interner: TypeContext<Symbol, T>,
 {
     gluon_base::forward_type_interner_methods!(Symbol, T, self_, &self_.interner);

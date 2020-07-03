@@ -41,8 +41,7 @@ type List a =
 let of xs : Array a -> List a =
     let len = array.len xs
     rec let of_ i ys =
-        if i == 0 then
-            ys
+        if i == 0 then ys
         else
             let x = array.index xs (i - 1)
             of_ (i - 1) (Cons x ys)
@@ -81,7 +80,6 @@ let functor : Functor List =
     { map }
 
 let applicative : Applicative List =
-
     rec let apply f xs =
         match f with
         | Cons g gs -> (functor.map g xs) <> (apply gs xs)
@@ -92,23 +90,19 @@ let applicative : Applicative List =
     { functor = functor, apply, wrap }
 
 let many ?alt x : [Alternative f] -> f a -> f (List a) =
-
     rec
     let many_v _ =
         some_v () <|> wrap Nil
     let some_v _ =
         map (\h l -> Cons h l) x <*> many_v ()
-    in
     many_v ()
 
 let some ?alt x : [Alternative f] -> f a -> f (List a) =
-
     rec
     let many_v _ =
         some_v () <|> wrap Nil
     let some_v _ =
         map (\h l -> Cons h l) x <*> many_v ()
-    in
     some_v ()
 
 let alternative : Alternative List = {
@@ -145,7 +139,7 @@ let foldable : Foldable List =
         match xs with
         | Cons y ys -> f y (foldr f x ys)
         | Nil -> x
-
+    in
     rec let foldl f x xs =
         match xs with
         | Cons y ys -> foldl f (f x y) ys
@@ -162,6 +156,7 @@ let traversable : Traversable List = {
             (app.wrap Nil),
 }
 
+rec
 /// Applies `predicate` to each element in the list and returns a new list containing only of the
 /// elements where `predicate` returns `True`
 ///
@@ -172,19 +167,21 @@ let traversable : Traversable List = {
 /// seq assert_eq (list.filter (\x -> x /= 2) (list.of [1, 2, 3])) (list.of [1, 3])
 /// assert_eq (list.filter (\x -> False) (list.of [1, 2, 3])) Nil
 /// ```
-rec let filter predicate xs : (a -> Bool) -> List a -> List a =
+let filter predicate xs : (a -> Bool) -> List a -> List a =
     match xs with
     | Nil -> Nil
     | Cons y ys ->
         let rest = filter predicate ys
-        if predicate y then Cons y rest else rest
-
+        if predicate y then Cons y rest
+        else rest
+in
 rec let scan compare xs less equal greater : (a -> Ordering)
         -> List a
         -> List a
         -> List a
         -> List a
-        -> (List a, List a, List a) =
+        -> (List a, List a, List a)
+    =
     match xs with
     | Nil -> (less, equal, greater)
     | Cons y ys ->
@@ -192,15 +189,15 @@ rec let scan compare xs less equal greater : (a -> Ordering)
         | LT -> scan compare ys (Cons y less) equal greater
         | EQ -> scan compare ys less (Cons y equal) greater
         | GT -> scan compare ys less equal (Cons y greater)
-
-/// Sorts the list using `ord`.
+in
+rec /// Sorts the list using `ord`.
 ///
 /// ```
 /// let list @ { List, ? } = import! std.list
 /// let { assert_eq, ? } = import! std.test
 /// assert_eq (list.sort (list.of [2, 1, 3])) (list.of [1, 2, 3])
 /// ```
-rec let sort xs : [Ord a] -> List a -> List a =
+let sort xs : [Ord a] -> List a -> List a =
     match xs with
     | Nil -> Nil
     | Cons pivot ys ->

@@ -76,7 +76,9 @@ pub(crate) struct ClosureDataDef<'a, I>(pub &'a GcPtr<BytecodeFunction>, pub I);
 
 unsafe impl<I> Trace for ClosureDataDef<'_, I> {
     impl_trace! { self, gc,
-        mark(&self.0, gc)
+        match self {
+            Self(x, ..) => mark(x, gc),
+        }
     }
 }
 
@@ -155,9 +157,7 @@ pub struct BytecodeFunction {
 }
 
 unsafe impl Trace for BytecodeFunction {
-    impl_trace! { self, gc,
-        mark(&self.inner_functions, gc)
-    }
+    impl_trace_fields! { self, gc; inner_functions }
 }
 
 #[derive(Debug, Trace)]
@@ -662,7 +662,7 @@ impl<'t> ValuePrinter<'t> {
     }
 }
 
-const INDENT: usize = 4;
+const INDENT: isize = 4;
 
 struct InternalPrinter<'a, 't> {
     typ: &'t ArcType,
@@ -970,7 +970,7 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
 
 unsafe impl Trace for Value {
     impl_trace! {self,  gc,
-        mark(&self.get_repr(), gc)
+        mark(&mut self.get_repr(), gc)
     }
 }
 
@@ -1244,6 +1244,26 @@ macro_rules! on_array {
     }};
 }
 
+macro_rules! on_array_mut {
+    ($array:expr, $f:expr) => {{
+        let array = $array;
+        #[allow(unused_unsafe)]
+        // SAFETY We check the `repr` before casting to the inner type
+        unsafe {
+            match array.repr() {
+                Repr::Byte => cast(array.unsafe_array_mut::<u8>(), $f),
+                Repr::Int => cast(array.unsafe_array_mut::<VmInt>(), $f),
+                Repr::Float => cast(array.unsafe_array_mut::<f64>(), $f),
+                Repr::String => cast(array.unsafe_array_mut::<GcStr>(), $f),
+                Repr::Array => cast(array.unsafe_array_mut::<GcPtr<ValueArray>>(), $f),
+                Repr::Unknown => cast(array.unsafe_array_mut::<Value>(), $f),
+                Repr::Userdata => cast(array.unsafe_array_mut::<GcPtr<Box<dyn Userdata>>>(), $f),
+                Repr::Thread => cast(array.unsafe_array_mut::<GcPtr<Thread>>(), $f),
+            }
+        }
+    }};
+}
+
 #[repr(C)]
 pub struct ValueArray {
     repr: Repr,
@@ -1288,8 +1308,14 @@ impl<'a> Iterator for Iter<'a> {
 }
 
 unsafe impl Trace for ValueArray {
-    impl_trace! { self, gc,
-        on_array!(self, |array: &Array<_>| mark(array, gc))
+    unsafe fn root(&mut self) {
+        on_array_mut!(self, |array: &mut Array<_>| array.root())
+    }
+    unsafe fn unroot(&mut self) {
+        on_array_mut!(self, |array: &mut Array<_>| array.unroot())
+    }
+    fn trace(&self, gc: &mut crate::gc::Gc) {
+        on_array!(self, |array: &Array<_>| array.trace(gc))
     }
 }
 
@@ -1397,7 +1423,7 @@ impl ValueArray {
         ::std::mem::transmute::<&Array<_>, &Array<T>>(&self.array)
     }
 
-    pub unsafe fn unsafe_array_mut<T>(&mut self) -> &mut Array<T> {
+    pub(crate) unsafe fn unsafe_array_mut<T>(&mut self) -> &mut Array<T> {
         ::std::mem::transmute::<&mut Array<_>, &mut Array<T>>(&mut self.array)
     }
 }
@@ -1711,7 +1737,7 @@ mod tests {
     use crate::base::{
         kind::{ArcKind, KindEnv},
         symbol::{Symbol, SymbolRef},
-        types::{Alias, ArcType, Field, Type, TypeEnv},
+        types::{Alias, ArcType, Field, KindedIdent, Type, TypeEnv},
     };
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
@@ -1743,13 +1769,13 @@ mod tests {
             Field {
                 name: Symbol::from("Cons"),
                 typ: Type::function(
-                    vec![Type::int(), Type::ident(list.clone())],
-                    Type::ident(list.clone()),
+                    vec![Type::int(), Type::ident(KindedIdent::new(list.clone()))],
+                    Type::ident(KindedIdent::new(list.clone())),
                 ),
             },
             Field {
                 name: Symbol::from("Nil"),
-                typ: Type::ident(list.clone()),
+                typ: Type::ident(KindedIdent::new(list.clone())),
             },
         ]);
 

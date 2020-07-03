@@ -11,7 +11,8 @@ type Reader s r a =
 
 let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s r a = convert_variant! x
 
-let send_reader f : Reader s r a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! reader f) Pure
+let send_reader f : Reader s r a -> Eff [| reader : Reader s | r |] a =
+    Impure (convert_effect! reader f) Pure
 
 /// Retrieve the value from the environment
 let ask : forall s . Eff [| reader : Reader s | r |] s =
@@ -22,14 +23,17 @@ let asks f : forall s . (s -> a) -> Eff [| reader : Reader s | r |] a =
     map f ask
 
 /// Runs a computation in a modified environment.
-let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
+let local f eff : forall s .
+        (s -> s) -> Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a
+    =
     do s = asks f
-    let s : s = s // FIXME Remove after this does not affect inference
+    let s : s = s
+    // FIXME Remove after this does not affect inference
     let loop ve : Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
         match ve with
         | Pure value -> wrap value
         | Impure e f ->
-            match extract_reader e with 
+            match extract_reader e with
             | Ask ->
                 loop (f s)
             | rest ->
@@ -42,7 +46,7 @@ let run_reader s eff : forall s . s -> Eff [| reader : Reader s | r |] a -> Eff 
         match ve with
         | Pure value -> wrap value
         | Impure e f ->
-            match extract_reader e with 
+            match extract_reader e with
             | Ask ->
                 loop reader (f reader)
             | rest ->

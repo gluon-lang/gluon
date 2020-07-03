@@ -9,7 +9,7 @@ let { Monoid } = import! std.monoid
 #[implicit]
 type Eq a = {
     /// Tests whether the values are equal.
-    (==) : a -> a -> Bool,
+    (==) : a -> a -> Bool
 }
 
 #[infix(left, 4)]
@@ -24,7 +24,7 @@ let (/=) ?eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else T
 type Ord a = {
     eq : Eq a,
     /// Compares two values and returns wheter the first is less than, equal or greater than the second.
-    compare : a -> a -> Ordering,
+    compare : a -> a -> Ordering
 }
 
 let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
@@ -62,10 +62,12 @@ let (>=) l r : [Ord a] -> a -> a -> Bool =
     | GT -> True
 
 let min l r : [Ord a] -> a -> a -> a =
-    if l <= r then l else r
+    if l <= r then l
+    else r
 
 let max l r : [Ord a] -> a -> a -> a =
-    if r >= l then r else l
+    if r >= l then r
+    else l
 
 let semigroup : Semigroup Ordering = {
     append = \x y ->
@@ -81,12 +83,19 @@ let monoid : Monoid Ordering = {
 
 {
     Eq,
-    (==), (/=),
+    (==),
+    (/=),
 
     Bool,
 
     Ord,
-    compare, (<), (<=), (>=), (>), min, max,
+    compare,
+    (<),
+    (<=),
+    (>=),
+    (>),
+    min,
+    max,
 
     Ordering,
 

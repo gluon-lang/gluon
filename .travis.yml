@@ -18,25 +18,26 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2019-10-01
-  - rust: beta
+  - rust: nightly-2020-03-12
+    #  - rust: beta
   - rust: stable
     env: ARCH=i686
 
   - rust: stable
     env:
       - DEPLOY=1
+      - PUBLISH=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly-2019-10-01
+  - rust: nightly-2020-03-12
     env: WASM=1
 
     # Only for deployment
-  - if: tag IS present
-    env:
-      - TARGET=x86_64-unknown-freebsd
-      - DEPLOY=1
-      - DISABLE_TESTS=1
+    # - if: tag IS present
+    #   env:
+    #     - TARGET=x86_64-unknown-freebsd
+    #     - DEPLOY=1
+    #     - DISABLE_TESTS=1
   - if: tag IS present
     env:
       - TARGET=x86_64-pc-windows-gnu
@@ -66,7 +67,7 @@ env:
     - CARGO_INCREMENTAL=0 # Incremental compilation is slower and bloats the travis cache
     - RUST_BACKTRACE=1
     - RUSTC_WRAPPER=sccache
-    # A clean build seems to create ~300M 
+    # A clean build seems to create ~300M
     - SCCACHE_CACHE_SIZE=500M
 script:
 - >
@@ -111,7 +112,7 @@ deploy:
     api_key:
       secure: ImhF+DkxyHyzDQ4SZZlATjgkrzr+yY1xwADxgO2B5Xi+C7AOllkPInSB/RL+C6tebQnxIEop7KU0N4svbIw6zuoDmOvkliP++U1gXDqvpggBT7AXM5ICcLKWUzTdh3XexhL5SUmtH+QvWRwFwcOoq6mic8rc6DSvTojB/NydyJCeHGvx5iSl5o/ZSqrnEjOF/yDMXADVNwQRZebzyXss+wtTfEbD7OZoJ9ihPugDES8EkmScwS/UCJfCfEqBf/AwDSaAxVpPB/2PF7J0bDIB1ORrwA4HUguJ/U5QuV4vea0hNhhIzzwfcsbPhPLARcLENZLirUk3iygbwSPCTNg+8yEz0MPJQVTj/T48cbKkn9rgZfWi3Bs9nyv22ZouKBFQooiQD6b7WhVGY8bA1Q39cTSLfrR9WrkiRS3x11QrNkwWUqvWHb+2u0KtovTnCt9Lxrx0j8WKMO5Onx6hLfGfH00puCNpV8keWqkzriSi7/ce4mBl8HTvFX22bKZ5uZAxX2mPodAtWoh8hgOGMZhjG2ODS1CEQBxWw5nCXkKQE1afaJOEjhzXmmSNzTnfWIFQGk6V9T9LF8u/PrSVmkQCgka/arlUQlKl+Fa8XUEx8DZEHptj2OdP86A2qiUOcsAmYF2z19kYziHYK3Ll1xDPoOSil6Eej5t+n/e37bmvTMY=
     file_glob: true
-    file: $CRATE_NAME-$TRAVIS_TAG-$TARGET.*
+    file: target/$CRATE_NAME-$TRAVIS_TAG-$TARGET.*
     skip_cleanup: true
     on:
       tags: true
@@ -121,7 +122,7 @@ deploy:
 after_deploy:
 - CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags || true`
 - >
-    if [[ $CURRENT_TAG != "" ]] && [[ $TRAVIS_RUST_VERSION == "stable" ]]; then
+    if [[ $CURRENT_TAG != "" ]] && [[ $TRAVIS_RUST_VERSION == "stable" ]] && [[ $PUBLISH == "1" ]]; then
         cargo login $CRATES_IO_TOKEN
-        ./scripts/publish.sh
+        ./scripts/publish.sh "${CURRENT_TAG}"
     fi

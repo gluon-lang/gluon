@@ -99,22 +99,22 @@ impl Checker {
     // A recursive bindings is only allowed if it ends in constructing a value, if it doesn't it is
     // not possible to pre-allocate storage for the value and compile the binding.
     fn check_tail(&mut self, expr: &SpannedExpr<Symbol>) {
-        match expr.value {
-            Expr::Block(ref bs) => self.check_tail(bs.last().unwrap()),
-            Expr::LetBindings(_, ref e) | Expr::TypeBindings(_, ref e) => {
+        match &expr.value {
+            Expr::Block(bs) => self.check_tail(bs.last().unwrap()),
+            Expr::LetBindings(_, e) | Expr::TypeBindings(_, e) => {
                 self.check_tail(e);
             }
-            Expr::IfElse(_, ref if_true, ref if_false) => {
+            Expr::IfElse(_, if_true, if_false) => {
                 self.check_tail(if_true);
                 self.check_tail(if_false);
             }
-            Expr::Match(_, ref alts) => {
-                for alt in alts {
+            Expr::Match(_, alts) => {
+                for alt in &**alts {
                     self.check_tail(&alt.expr);
                 }
             }
             Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda { .. } => (),
-            Expr::App { ref func, .. } => {
+            Expr::App { func, .. } => {
                 if !is_constructor_ident(func) {
                     self.errors
                         .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor))
@@ -128,7 +128,7 @@ impl Checker {
 
     fn taint_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         struct TaintPattern<'a>(&'a mut Checker);
-        impl<'a, 'b> Visitor<'a> for TaintPattern<'b> {
+        impl<'a, 'b> Visitor<'a, '_> for TaintPattern<'b> {
             type Ident = Symbol;
             fn visit_ident(&mut self, id: &TypedIdent<Symbol>) {
                 self.0
@@ -167,7 +167,7 @@ impl Checker {
     }
 }
 
-impl<'a> Visitor<'a> for Checker {
+impl<'a> Visitor<'a, '_> for Checker {
     type Ident = Symbol;
 
     fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {
@@ -276,7 +276,7 @@ impl<'a> Visitor<'a> for Checker {
                         }));
                 }
 
-                for alt in alts {
+                for alt in &**alts {
                     self.visit_expr(&alt.expr);
                 }
             }

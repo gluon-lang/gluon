@@ -1,5 +1,5 @@
 //! Crate which contain the virtual machine which executes gluon programs
-#![doc(html_root_url = "https://docs.rs/gluon_vm/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_vm/0.15.1")] // # GLUON
 #![recursion_limit = "1024"]
 
 #[macro_use]
@@ -32,19 +32,7 @@ extern crate gluon_codegen;
 #[macro_use]
 extern crate pretty_assertions;
 
-macro_rules! try_future {
-    ($e:expr) => {
-        try_future!($e, Box::new)
-    };
-    ($e:expr, $f:expr) => {
-        match $e {
-            Ok(x) => x,
-            Err(err) => return $f(::futures::future::err(err.into())),
-        }
-    };
-}
-
-pub type BoxFuture<'vm, T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'vm>;
+pub type BoxFuture<'vm, T, E> = futures::future::BoxFuture<'vm, std::result::Result<T, E>>;
 
 macro_rules! alloc {
     ($context: ident, $data: expr) => {
@@ -83,6 +71,7 @@ mod value;
 
 use std::{self as real_std, fmt, marker::PhantomData};
 
+use crate::base::{metadata::Metadata, source::FileId, symbol::Symbol, types::ArcType};
 use crate::{
     api::{ValueRef, VmType},
     gc::CloneUnrooted,
@@ -91,7 +80,8 @@ use crate::{
     types::{VmIndex, VmInt},
     value::{Value, ValueRepr},
 };
-use crate::{base::metadata::Metadata, base::symbol::Symbol, base::types::ArcType};
+
+use codespan_reporting::diagnostic::Diagnostic;
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
@@ -164,6 +154,7 @@ quick_error! {
     #[derive(Debug, Eq, PartialEq, Hash, Clone)]
     pub enum Error {
         Dead {
+            display("The gluon thread is dead")
         }
         UndefinedBinding(symbol: String) {
             display("Binding `{}` is not defined", symbol)
@@ -204,8 +195,8 @@ quick_error! {
 }
 
 impl base::error::AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(&self, _map: &base::source::CodeMap) -> Diagnostic<FileId> {
+        Diagnostic::error().with_message(self.to_string())
     }
 }
 
@@ -225,8 +216,20 @@ impl<'a> fmt::Display for Panic<'a> {
     }
 }
 
-pub type ExternLoader = Box<dyn FnMut(&Thread) -> Result<ExternModule> + Send + Sync>;
+impl fmt::Debug for ExternLoader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ExternLoader")
+            .field("dependencies", &self.dependencies)
+            .finish()
+    }
+}
 
+pub struct ExternLoader {
+    pub load_fn: Box<dyn Fn(&Thread) -> Result<ExternModule> + Send + Sync>,
+    pub dependencies: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct ExternModule {
     pub metadata: Metadata,
     pub value: RootedValue<RootedThread>,

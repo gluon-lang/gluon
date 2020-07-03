@@ -41,5 +41,5 @@ let force_t : LazyT m a -> m a = force
     functor,
     applicative,
     monad,
-    transformer
+    transformer,
 }

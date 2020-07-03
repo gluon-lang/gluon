@@ -1,9 +1,5 @@
 
 #[derive(Eq, Show)]
-type Match = {
-    start : Int,
-    end : Int,
-    text : String,
-}
+type Match = { start : Int, end : Int, text : String }
 
 { Match, eq_Match, show_Match }

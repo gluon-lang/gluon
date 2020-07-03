@@ -34,7 +34,7 @@ let multiplicative =
     { semigroup, monoid, group }
 
 let eq : Eq Float = {
-    (==) = \l r -> l #Float== r
+    (==) = \l r -> l #Float== r,
 }
 
 let ord : Ord Float = {
@@ -52,7 +52,7 @@ let num : Num Float = {
 }
 
 let show : Show Float = {
-    show = (import! std.prim).show_float
+    show = (import! std.prim).show_float,
 }
 
 {

@@ -3,12 +3,12 @@ use crate::base::{
     fnv::{FnvMap, FnvSet},
     pos::{BytePos, Span},
     symbol::Symbol,
-    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypeExt},
+    types::{self, AppVec, ArcType, BuiltinType, Flags, Generic, Type, TypeContext, TypePtr},
 };
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
 
-pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
+pub(crate) struct TypeGeneralizer<'a, 'b: 'a, 'ast> {
     level: u32,
     unbound_variables: FnvMap<u32, RcType>,
     /// We delay updating the substitution until after all recursive bindings have been typechecked
@@ -16,11 +16,11 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a> {
     delayed_generalizations: Vec<(u32, RcType)>,
     variable_generator: Option<TypeVariableGenerator>,
     top_type: RcType,
-    pub tc: &'a mut Typecheck<'b>,
+    pub tc: &'a mut Typecheck<'b, 'ast>,
     span: Span<BytePos>,
 }
 
-impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b> {
+impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b, '_> {
     fn drop(&mut self) {
         for (id, gen) in self.delayed_generalizations.drain(..) {
             self.tc.subs.replace(id, gen);
@@ -28,30 +28,30 @@ impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b> {
     }
 }
 
-impl<'a, 'b> ::std::ops::Deref for TypeGeneralizer<'a, 'b> {
-    type Target = Typecheck<'b>;
-    fn deref(&self) -> &Typecheck<'b> {
+impl<'a, 'b, 'ast> ::std::ops::Deref for TypeGeneralizer<'a, 'b, 'ast> {
+    type Target = Typecheck<'b, 'ast>;
+    fn deref(&self) -> &Typecheck<'b, 'ast> {
         self.tc
     }
 }
 
-impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b> {
-    fn deref_mut(&mut self) -> &mut Typecheck<'b> {
+impl<'a, 'b> ::std::ops::DerefMut for TypeGeneralizer<'a, 'b, '_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         self.tc
     }
 }
 
-impl<'a, 'b> TypeContext<Symbol, RcType> for TypeGeneralizer<'a, 'b> {
+impl<'a, 'b> TypeContext<Symbol, RcType> for TypeGeneralizer<'a, 'b, '_> {
     gluon_base::forward_type_interner_methods!(Symbol, RcType, self_, &self_.tc.subs);
 }
 
-impl<'a, 'b> TypeGeneralizer<'a, 'b> {
+impl<'a, 'b, 'ast> TypeGeneralizer<'a, 'b, 'ast> {
     pub(crate) fn new(
         level: u32,
-        tc: &'a mut Typecheck<'b>,
+        tc: &'a mut Typecheck<'b, 'ast>,
         typ: &RcType,
         span: Span<BytePos>,
-    ) -> TypeGeneralizer<'a, 'b> {
+    ) -> Self {
         TypeGeneralizer {
             level,
             unbound_variables: Default::default(),
@@ -373,11 +373,11 @@ fn unroll_record(
 }
 
 // Replaces all type variables with their inferred types
-pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c> {
-    pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b>,
+pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c, 'ast> {
+    pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b, 'ast>,
 }
 
-impl<'a, 'b, 'c, 'd> MutVisitor<'d> for ReplaceVisitor<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'd> MutVisitor<'d, '_> for ReplaceVisitor<'a, 'b, 'c, '_> {
     type Ident = Symbol;
 
     fn visit_expr(&mut self, e: &'d mut SpannedExpr<Self::Ident>) {

@@ -20,6 +20,7 @@ macro_rules! assert_deq {
 #[cfg(any(test, feature = "test"))]
 lalrpop_util::lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
+    #[allow(unused_parens)]
     pub grammar,
     "/core/grammar.rs"
 );
@@ -724,7 +725,10 @@ pub fn with_allocator<R>(f: impl for<'a> FnOnce(&'a Arc<Allocator<'a>>) -> R) ->
     f(&allocator)
 }
 
-pub fn translate(env: &dyn PrimitiveEnv<Type = ArcType>, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+pub fn translate(
+    env: &dyn PrimitiveEnv<Type = ArcType>,
+    expr: &SpannedExpr<'_, Symbol>,
+) -> CoreExpr {
     with_translator(env, |translator| {
         freeze_expr(&translator.allocator, translator.translate_alloc(expr))
     })
@@ -741,21 +745,35 @@ pub struct Translator<'a, 'e> {
     ident_replacements: RefCell<FnvMap<Symbol, Symbol>>,
     env: &'e dyn PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
+    error_symbol: TypedIdent<Symbol>,
+    std_prim_symbol: Symbol,
     dummy_record_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a, 'e> Translator<'a, 'e> {
     pub fn new(env: &'e dyn PrimitiveEnv<Type = ArcType>) -> Translator<'a, 'e> {
+        let hole: ArcType = Type::hole();
         Translator {
             allocator: Arc::new(Allocator::new()),
             ident_replacements: Default::default(),
             env,
-            dummy_symbol: TypedIdent::new(Symbol::from("")),
-            dummy_record_symbol: TypedIdent::new(Symbol::from("<record>")),
+            dummy_symbol: TypedIdent {
+                name: Symbol::from(""),
+                typ: hole.clone(),
+            },
+            std_prim_symbol: Symbol::from("@std.prim"),
+            error_symbol: TypedIdent {
+                name: Symbol::from("error"),
+                typ: hole.clone(),
+            },
+            dummy_record_symbol: TypedIdent {
+                name: Symbol::from("<record>"),
+                typ: hole.clone(),
+            },
         }
     }
 
-    pub fn translate_expr(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
+    pub fn translate_expr(&'a self, expr: &SpannedExpr<'_, Symbol>) -> &'a Expr<'a> {
         struct FixupMatches<'a, 'b> {
             allocator: &'a Allocator<'a>,
             ident_replacments: &'b mut FnvMap<Symbol, Symbol>,
@@ -818,11 +836,11 @@ impl<'a, 'e> Translator<'a, 'e> {
         .unwrap_or(expr)
     }
 
-    fn translate_alloc(&'a self, expr: &SpannedExpr<Symbol>) -> &'a Expr<'a> {
+    fn translate_alloc(&'a self, expr: &SpannedExpr<'_, Symbol>) -> &'a Expr<'a> {
         self.allocator.arena.alloc(self.translate(expr))
     }
 
-    fn translate(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
+    fn translate(&'a self, expr: &SpannedExpr<'_, Symbol>) -> Expr<'a> {
         let mut current = expr;
         let mut lets = Vec::new();
         while let ast::Expr::LetBindings(ref binds, ref tail) = current.value {
@@ -837,7 +855,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             })
     }
 
-    fn translate_(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
+    fn translate_<'ast>(&'a self, expr: &SpannedExpr<'ast, Symbol>) -> Expr<'a> {
         let arena = &self.allocator.arena;
         match expr.value {
             ast::Expr::App {
@@ -847,7 +865,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             } => {
                 let all_args = implicit_args
                     .iter()
-                    .chain(args)
+                    .chain(&**args)
                     .map(|arg| self.translate(arg));
                 match function.value {
                     ast::Expr::Ident(ref id) if is_constructor(&id.name) => {
@@ -856,6 +874,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     }
                     _ => {
                         let new_args = &*arena.alloc_fixed(all_args);
+                        debug_assert!(!new_args.is_empty(), "{:?}", function);
                         Expr::Call(self.translate_alloc(function), new_args)
                     }
                 }
@@ -958,7 +977,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::Literal(ref literal) => Expr::Const(Literal::from_ast(literal), expr.span),
 
             ast::Expr::Match(ref expr, ref alts) => {
-                let expr = self.translate_alloc(expr);
+                let expr = self.translate_alloc(&**expr);
                 let alts: Vec<_> = alts
                     .iter()
                     .map(|alt| Equation {
@@ -1000,7 +1019,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                             last_span = expr.span;
                             self.translate(expr)
                         }
-                        None => Expr::Ident(TypedIdent::new(field.name.value.clone()), last_span),
+                        None => Expr::Ident(
+                            TypedIdent {
+                                name: field.name.value.clone(),
+                                typ: self.dummy_symbol.typ.clone(),
+                            },
+                            last_span,
+                        ),
                     };
                     if needs_bindings {
                         let typ = expr.env_type_of(&self.env);
@@ -1195,9 +1220,9 @@ impl<'a, 'e> Translator<'a, 'e> {
         )
     }
 
-    fn translate_let(
+    fn translate_let<'ast>(
         &'a self,
-        binds: &ast::ValueBindings<Symbol>,
+        binds: &ast::ValueBindings<'ast, Symbol>,
         tail: Expr<'a>,
         span_start: BytePos,
     ) -> Expr<'a> {
@@ -1215,7 +1240,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                     expr: self.translate_alloc(&bind.expr),
                 })
-                .collect();
+                .collect::<Vec<_>>();
             Expr::Let(
                 self.allocator.let_binding_arena.alloc(LetBinding {
                     // TODO
@@ -1374,14 +1399,29 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn error_expr(&'a self, msg: &str) -> Expr<'a> {
         let arena = &self.allocator.arena;
-        let error = arena.alloc(Expr::Ident(
-            TypedIdent::new(Symbol::from("@error")),
+        let std_prim_type = self
+            .env
+            .find_type(&self.std_prim_symbol)
+            .unwrap_or_else(|| self.error_symbol.typ.clone());
+        let std_prim = arena.alloc(Expr::Ident(
+            TypedIdent {
+                name: self.std_prim_symbol.clone(),
+                typ: std_prim_type.clone(),
+            },
             Span::default(),
         ));
         let args = arena.alloc_fixed(
             Some(Expr::Const(Literal::String(msg.into()), Span::default())).into_iter(),
         );
-        Expr::Call(error, args)
+        Expr::Call(
+            arena.alloc(self.project_expr(
+                Span::default(),
+                std_prim,
+                &self.error_symbol.name,
+                &self.error_symbol.typ,
+            )),
+            args,
+        )
     }
 }
 
@@ -1425,12 +1465,12 @@ fn get_return_type(
 pub struct PatternTranslator<'a, 'e: 'a>(&'a Translator<'a, 'e>);
 
 #[derive(Clone, PartialEq, Debug)]
-struct Equation<'a, 'p> {
-    patterns: Vec<&'p SpannedPattern<Symbol>>,
+struct Equation<'a, 'p, 'ast> {
+    patterns: Vec<&'p SpannedPattern<'ast, Symbol>>,
     result: &'a Expr<'a>,
 }
 
-impl<'a, 'p> fmt::Display for Equation<'a, 'p> {
+impl<'a, 'p, 'ast> fmt::Display for Equation<'a, 'p, 'ast> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -1473,7 +1513,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
         varcon: CType,
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         match varcon {
             CType::Constructor => self.compile_constructor(default, variables, equations),
@@ -1487,7 +1527,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         &mut self,
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         let new_alt = {
             // Inspect the first pattern of each equation
@@ -1499,6 +1539,21 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             };
 
             let core_pattern = self.pattern_identifiers(first_iter());
+
+            enum RefOwned<'a, T> {
+                Ref(&'a T),
+                Owned(T),
+            }
+
+            impl<'a, T> std::ops::Deref for RefOwned<'a, T> {
+                type Target = T;
+                fn deref(&self) -> &T {
+                    match self {
+                        Self::Ref(x) => x,
+                        Self::Owned(x) => x,
+                    }
+                }
+            }
 
             // Gather the inner patterns so we can prepend them to equations
             let temp = first_iter()
@@ -1515,12 +1570,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             Pattern::Record(core_fields) => core_fields,
                             _ => unreachable!(),
                         };
-                        fields
-                            .iter()
+                        ast::pattern_values(fields)
                             .zip(core_fields)
-                            .map(|(field, core_field)| {
-                                field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
-                                    let typ = if field.name.value == core_field.0.name {
+                            .map(|((name, value), core_field)| {
+                                value.as_ref().map(RefOwned::Ref).unwrap_or_else(|| {
+                                    let typ = if name.value == core_field.0.name {
                                         core_field.0.typ.clone()
                                     } else {
                                         // If the field has been renamed we need to go the slo path
@@ -1536,15 +1590,15 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                             .as_ref()
                                             .unwrap()
                                             .row_iter()
-                                            .find(|f| f.name.name_eq(&field.name.value))
+                                            .find(|f| f.name.name_eq(&name.value))
                                             .map(|f| f.typ.clone())
                                             .unwrap_or_else(Type::hole)
                                     };
 
-                                    Cow::Owned(spanned(
+                                    RefOwned::Owned(spanned(
                                         Span::default(),
                                         ast::Pattern::Ident(TypedIdent {
-                                            name: field.name.value.clone(),
+                                            name: name.value.clone(),
                                             typ,
                                         }),
                                     ))
@@ -1553,7 +1607,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             .collect::<Vec<_>>()
                     }
                     ast::Pattern::Tuple { ref elems, .. } => {
-                        elems.iter().map(Cow::Borrowed).collect::<Vec<_>>()
+                        elems.iter().map(RefOwned::Ref).collect::<Vec<_>>()
                     }
                     _ => unreachable!(),
                 })
@@ -1598,7 +1652,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         &mut self,
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         let mut group_order = Vec::new();
         let mut groups = HashMap::new();
@@ -1630,6 +1684,18 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             let t = remove_aliases_cow(&self.0.env, &mut NullInterner, &t);
             let mut iter = t.remove_forall().row_iter();
             groups.len() == iter.by_ref().count() && **iter.current_type() == Type::EmptyRow
+        };
+
+        let default_alt = if complete {
+            None
+        } else {
+            Some(Alternative {
+                pattern: Pattern::Ident(TypedIdent {
+                    name: Symbol::from("_"),
+                    typ: self.0.dummy_symbol.typ.clone(),
+                }),
+                expr: default,
+            })
         };
 
         let new_alts = group_order
@@ -1669,14 +1735,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     expr: expr,
                 }
             })
-            .chain(if complete {
-                None
-            } else {
-                Some(Alternative {
-                    pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                    expr: default,
-                })
-            })
+            .chain(default_alt)
             .collect::<Vec<_>>();
         let expr = Expr::Match(
             variables[0],
@@ -1692,7 +1751,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         &mut self,
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         let expr = self.translate(
             default,
@@ -1730,7 +1789,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         &mut self,
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         let mut group_order = Vec::new();
         let mut groups = HashMap::new();
@@ -1755,6 +1814,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             }
         }
 
+        let default_alt = Alternative {
+            pattern: Pattern::Ident(self.0.dummy_symbol.clone()),
+            expr: default,
+        };
+
         let new_alts = group_order
             .into_iter()
             .map(|key| {
@@ -1776,10 +1840,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     expr: expr,
                 }
             })
-            .chain(Some(Alternative {
-                pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                expr: default,
-            }))
+            .chain(Some(default_alt))
             .collect::<Vec<_>>();
 
         let expr = Expr::Match(
@@ -1814,7 +1875,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     fn translate_top<'p>(
         &mut self,
         expr: &'a Expr<'a>,
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> Expr<'a> {
         let arena = &self.0.allocator.arena;
         let default = arena.alloc(self.0.error_expr("Unmatched pattern"));
@@ -1846,7 +1907,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         &mut self,
         default: &'a Expr<'a>,
         variables: &[&'a Expr<'a>],
-        equations: &[Equation<'a, 'p>],
+        equations: &[Equation<'a, 'p, '_>],
     ) -> &'a Expr<'a> {
         fn varcon(pattern: &ast::Pattern<Symbol>) -> CType {
             match *pattern {
@@ -1878,7 +1939,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             Some(_) => {
                 fn bind_variables<'b>(
                     env: &dyn PrimitiveEnv<Type = ArcType>,
-                    pat: &ast::SpannedPattern<Symbol>,
+                    pat: &ast::SpannedPattern<'_, Symbol>,
                     variable: CExpr<'b>,
                     binder: &mut Binder<'b>,
                 ) {
@@ -1951,16 +2012,17 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     // Gather all the identifiers of top level pattern of each of the `patterns` and create a core
     // pattern.
     // Nested patterns are ignored here.
-    fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> Pattern
+    fn pattern_identifiers<'b, 'p: 'b, 'ast, I>(&self, patterns: I) -> Pattern
     where
-        I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
+        I: IntoIterator<Item = &'b SpannedPattern<'ast, Symbol>>,
+        'ast: 'b,
     {
         self.pattern_identifiers_(&mut patterns.into_iter())
     }
 
-    fn pattern_identifiers_<'b, 'p: 'b>(
+    fn pattern_identifiers_<'b, 'p: 'b, 'ast>(
         &self,
-        patterns: &mut dyn Iterator<Item = &'b SpannedPattern<Symbol>>,
+        patterns: &mut dyn Iterator<Item = &'b SpannedPattern<'ast, Symbol>>,
     ) -> Pattern {
         let mut identifiers: Vec<TypedIdent<Symbol>> = Vec::new();
         let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();
@@ -1972,7 +2034,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             replacements: &mut FnvMap<Symbol, Symbol>,
             record_fields: &mut Vec<(TypedIdent<Symbol>, Option<Symbol>)>,
             field: &Symbol,
-            pattern: Option<&SpannedPattern<Symbol>>,
+            pattern: Option<&SpannedPattern<'_, Symbol>>,
         ) -> bool {
             match record_fields.iter().find(|id| id.0.name == *field).cloned() {
                 Some(earlier_var) => {
@@ -2047,25 +2109,24 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 } => {
                     let typ = remove_aliases_cow(&self.0.env, &mut NullInterner, typ);
 
-                    for (i, field) in fields.iter().enumerate() {
+                    for (i, (name, value)) in ast::pattern_values(fields).enumerate() {
                         if !add_duplicate_ident(
                             &mut replacements,
                             &mut record_fields,
-                            &field.name.value,
-                            field.value.as_ref(),
+                            &name.value,
+                            value.as_ref(),
                         ) {
-                            let x = field
-                                .value
+                            let x = value
                                 .as_ref()
                                 .map(|pattern| self.extract_ident(i, &pattern.value).name);
                             let field_type = typ
                                 .row_iter()
-                                .find(|f| f.name.name_eq(&field.name.value))
+                                .find(|f| f.name.name_eq(&name.value))
                                 .map(|f| f.typ.clone())
                                 .unwrap_or_else(|| Type::hole());
                             record_fields.push((
                                 TypedIdent {
-                                    name: field.name.value.clone(),
+                                    name: name.value.clone(),
                                     typ: field_type,
                                 },
                                 x,
@@ -2097,7 +2158,7 @@ fn get_ident(pattern: &ast::Pattern<Symbol>) -> Option<TypedIdent<Symbol>> {
     }
 }
 
-fn unwrap_as(pattern: &ast::Pattern<Symbol>) -> &ast::Pattern<Symbol> {
+fn unwrap_as<'a, 'ast>(pattern: &'a ast::Pattern<'ast, Symbol>) -> &'a ast::Pattern<'ast, Symbol> {
     match *pattern {
         ast::Pattern::As(_, ref pattern) => unwrap_as(&pattern.value),
         _ => pattern,
@@ -2213,8 +2274,11 @@ pub mod tests {
 
     use std::collections::HashMap;
 
+    use codespan_reporting::files::Files;
+
     use crate::base::{
         ast,
+        source::Source,
         symbol::{Symbol, SymbolModule, Symbols},
         types::TypeCache,
     };
@@ -2224,13 +2288,18 @@ pub mod tests {
         vm::{RootedThread, Thread},
     };
 
-    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::SpannedExpr<Symbol> {
-        self::parser::parse_expr(
-            &mut SymbolModule::new("".into(), symbols),
-            &TypeCache::new(),
-            expr_str,
-        )
-        .unwrap()
+    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::RootExpr<Symbol> {
+        base::mk_ast_arena!(arena);
+        let expr = arena.alloc(
+            self::parser::parse_expr(
+                arena.borrow(),
+                &mut SymbolModule::new("".into(), symbols),
+                &TypeCache::new(),
+                expr_str,
+            )
+            .unwrap(),
+        );
+        ast::RootExpr::new(arena.clone(), expr)
     }
 
     pub struct PatternEq<'a>(pub &'a Expr<'a>);
@@ -2365,7 +2434,7 @@ pub mod tests {
         let translator = Translator::new(&env);
 
         let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate_expr(&expr);
+        let core_expr = translator.translate_expr(&expr.expr());
         let core_expr = post(&translator.allocator, core_expr);
 
         check_expr_eq(core_expr, expected_str);
@@ -2379,20 +2448,20 @@ pub mod tests {
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &allocator, expected_str)
             .unwrap_or_else(|err| {
-                let filemap = codespan::FileMap::new("test".into(), expected_str);
+                let filemap = crate::base::source::FileMap::new("test".into(), expected_str.into());
                 panic!(
                     "{}",
                     err.map_location(|i| {
-                        let (line, column) = filemap
-                            .location(codespan::ByteIndex::from(i as u32))
-                            .unwrap();
-                        let line_span = filemap.line_span(line).unwrap();
+                        let location =
+                            Source::location(&filemap, codespan::ByteIndex::from(i as u32))
+                                .unwrap();
+                        let line_span = filemap.line_range((), location.line.to_usize()).unwrap();
                         format!(
                             "line {}, column {}\n{}{}^",
-                            line.number(),
-                            column.number(),
-                            filemap.src_slice(line_span).unwrap(),
-                            " ".repeat(column.0 as usize)
+                            location.line.number(),
+                            location.column.number(),
+                            &filemap.source()[line_span],
+                            " ".repeat(location.column.0 as usize),
                         )
                     })
                 )

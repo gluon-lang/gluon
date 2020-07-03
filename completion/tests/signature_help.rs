@@ -18,6 +18,7 @@ use crate::completion::SignatureHelp;
 fn signature_help(expr_str: &str, row: usize, column: usize) -> Option<SignatureHelp> {
     let offset = loc(expr_str, row, column);
     let (expr, _result) = support::typecheck_partial_expr(expr_str);
+    let expr = expr.expr();
     completion::signature_help(&support::MockEnv::new(), expr.span, &expr, offset)
 }
 

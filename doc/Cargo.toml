@@ -1,6 +1,6 @@
 [package]
 name = "gluon_doc"
-version = "0.12.0" # GLUON
+version = "0.15.1" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -13,26 +13,27 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 clap = "2.22.0"
-env_logger = "0.6"
-failure = { version = "0.1", features = ["backtrace"] }
+env_logger = "0.7"
+failure = "0.1"
+futures = "0.3"
 handlebars = "2"
-itertools = "0.8"
+itertools = "0.9"
 lazy_static = "1"
 log = "0.4"
 opener = "0.4"
-pretty = "0.5"
-pulldown-cmark = "0.5"
+pretty = "0.10"
+pulldown-cmark = "0.7"
 rayon = "1"
 regex = "1"
-structopt = "0.2"
+structopt = "0.3"
 walkdir = "2"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"
 serde_json = "1.0.0"
 
-gluon = { version = "0.12.0", path = ".." } # GLUON
-completion = { package = "gluon_completion", version = "0.12.0", path = "../completion" } # GLUON
+gluon = { version = "0.15.1", path = ".." } # GLUON
+completion = { package = "gluon_completion", version = "0.15.1", path = "../completion" } # GLUON
 
 
 [dev-dependencies]

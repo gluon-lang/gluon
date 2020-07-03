@@ -613,10 +613,13 @@ impl Symbols {
         name_ref.hash(&mut hasher);
         let hash = hasher.finish();
 
-        self.indexes
+        match self
+            .indexes
             .raw_entry_mut()
             .from_hash(hash, |key| *key == name_ref)
-            .or_insert_with(|| {
+        {
+            hashbrown::hash_map::RawEntryMut::Occupied(entry) => entry.get().clone(),
+            hashbrown::hash_map::RawEntryMut::Vacant(entry) => {
                 let SymbolData {
                     global,
                     location,
@@ -639,17 +642,20 @@ impl Symbols {
                     location: inner_location,
                     name,
                 }));
-                (
-                    SymbolData {
-                        global,
-                        location,
-                        name: key,
-                    },
-                    s,
-                )
-            })
-            .1
-            .clone()
+                entry
+                    .insert_hashed_nocheck(
+                        hash,
+                        SymbolData {
+                            global,
+                            location,
+                            name: key,
+                        },
+                        s,
+                    )
+                    .1
+                    .clone()
+            }
+        }
     }
 
     pub fn contains_name<N>(&mut self, name: N) -> bool

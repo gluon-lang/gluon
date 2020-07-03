@@ -3,8 +3,6 @@ extern crate clap;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
-extern crate structopt;
-#[macro_use]
 extern crate lazy_static;
 
 #[macro_use]
@@ -25,6 +23,7 @@ use {
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
     serde::Deserialize,
+    structopt::StructOpt,
 };
 
 use gluon::{
@@ -98,9 +97,11 @@ impl pretty::Render for SymbolLinkRenderer {
         self.un_escaped.push_str(s);
         Ok(s.len())
     }
+
+    fn fail_doc(&self) {}
 }
 
-impl pretty::RenderAnnotated<String> for SymbolLinkRenderer {
+impl pretty::RenderAnnotated<'_, String> for SymbolLinkRenderer {
     fn push_annotation(&mut self, annotation: &String) -> StdResult<(), Self::Error> {
         self.flush_to_escaped();
         self.escaped
@@ -125,7 +126,7 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
         .pretty(&arena);
     match **typ {
         Type::Record(_) => (),
-        Type::Variant(_) => doc = arena.newline().append(doc).nest(4),
+        Type::Variant(_) => doc = arena.hardline().append(doc).nest(4),
         _ => {
             doc = doc.nest(4);
         }
@@ -161,7 +162,7 @@ pub fn record(
             .and_then(|completion_symbol| {
                 source.line_number_at_byte(completion_symbol.span.start())
             })
-            .map(|l| l.number().0)
+            .map(|l| l.number().to_usize() as u32)
     };
 
     Record {
@@ -402,7 +403,7 @@ fn handlebars() -> Result<Handlebars> {
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
-        let relative_path = current_module.split('.').map(|_| "../").format("");
+        let relative_path = current_module.split('.').skip(1).map(|_| "../").format("");
 
         out.write(&format!(r#"
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
@@ -548,7 +549,7 @@ impl DocCollector<'_> {
         );
 
         let (expr, typ) = thread.typecheck_str(&name, &content, None)?;
-        let (meta, _) = metadata(&thread.get_database(), &expr);
+        let (meta, _) = metadata(&thread.get_database().as_env(), &expr.expr());
 
         create_dir_all(out_path.join(module_path.parent().unwrap_or(Path::new(""))))?;
 
@@ -566,7 +567,7 @@ impl DocCollector<'_> {
             .get_filemap(&name)
             .expect("SourceMap not inserted by compilation");
 
-        let symbols = completion::all_symbols(source.span(), &expr)
+        let symbols = completion::all_symbols(source.span(), &expr.expr())
             .into_iter()
             .map(|s| (s.value.name, s))
             .collect::<FnvMap<_, _>>();
@@ -707,10 +708,7 @@ impl From<&'_ Opt> for Options {
 
 const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 #[derive(StructOpt)]
-#[structopt(
-    about = "Documents gluon source code",
-    raw(long_version = "LONG_VERSION")
-)]
+#[structopt(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {
     #[structopt(long = "open")]
     #[structopt(help = "Opens the documentation after it has been generated")]

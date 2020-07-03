@@ -1,11 +1,13 @@
 use proc_macro2::{Span, TokenStream};
-use shared::{map_lifetimes, map_type_params, split_for_impl};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
     Generics, Ident, Variant,
 };
 
-use attr;
+use crate::{
+    attr,
+    shared::{map_lifetimes, map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -170,7 +172,7 @@ fn gen_impl(
     let getable_bounds = create_getable_bounds(&generics);
 
     let (impl_generics, ty_generics, where_clause) =
-        split_for_impl(&generics, &["'__vm", "'__value"]);
+        split_for_impl(&generics, &[], &["'__vm", "'__value"]);
 
     let dummy_const = Ident::new(&format!("_IMPL_GETABLE_FOR_{}", ident), Span::call_site());
 

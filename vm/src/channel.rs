@@ -10,23 +10,28 @@ use crate::real_std::{
 
 use futures::{
     future::{self, Either},
-    Future,
+    prelude::*,
+    task::Poll,
+    try_join,
 };
 
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    kind::Kind,
+    types::{ArcType, KindedIdent, Type},
+};
 
 use crate::{
     api::{
         generic::{A, B},
-        primitive, Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction,
-        Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
+        Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction, Pushable,
+        Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
     gc::{self, CloneUnrooted, GcPtr, Trace},
     stack::{ClosureState, ExternState, State},
     thread::{ActiveThread, ThreadInternal},
     types::VmInt,
     value::{Callable, Userdata, Value, ValueRepr},
-    vm::{RootedThread, Status, Thread},
+    vm::{RootedThread, Thread},
     Error, ExternModule, Result as VmResult, Variants,
 };
 
@@ -66,9 +71,7 @@ impl<T> Sender<T> {
 }
 
 unsafe impl<T> Trace for Receiver<T> {
-    impl_trace! { self, gc,
-        mark(&*self.queue.lock().unwrap(), gc)
-    }
+    impl_trace_fields! { self, gc; queue }
 }
 
 pub struct Receiver<T> {
@@ -99,13 +102,21 @@ where
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm
-            .get_env()
+        let env = vm.get_env();
+        let symbol = env
             .find_type_info("std.channel.Sender")
             .unwrap()
             .name
             .clone();
-        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
+
+        let k = vm.global_env().type_cache().kind_cache.typ();
+        Type::app(
+            Type::ident(KindedIdent {
+                name: symbol,
+                typ: Kind::function(k.clone(), k),
+            }),
+            collect![T::make_type(vm)],
+        )
     }
 }
 
@@ -121,7 +132,14 @@ where
             .unwrap()
             .name
             .clone();
-        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
+        let k = vm.global_env().type_cache().kind_cache.typ();
+        Type::app(
+            Type::ident(KindedIdent {
+                name: symbol,
+                typ: Kind::function(k.clone(), k),
+            }),
+            collect![T::make_type(vm)],
+        )
     }
 }
 
@@ -156,20 +174,35 @@ fn send(sender: &Sender<A>, value: Generic<A>) -> Result<(), ()> {
     Ok(sender.send(value.get_value()))
 }
 
-fn resume(child: RootedThread) -> RuntimeResult<Result<(), String>, String> {
-    let result = child.resume();
+async fn resume(child: RootedThread) -> RuntimeResult<Result<(), String>, String> {
+    let result = future::lazy(|cx| child.resume(cx)).await;
     match result {
-        Ok(_) => RuntimeResult::Return(Ok(())),
-        Err(Error::Dead) => RuntimeResult::Return(Err("Attempted to resume a dead thread".into())),
-        Err(err) => {
-            let fmt = format!("{}", err);
-            RuntimeResult::Panic(fmt)
-        }
+        Poll::Pending => RuntimeResult::Return(Ok(())),
+        Poll::Ready(result) => match result {
+            Ok(_) => RuntimeResult::Return(Ok(())),
+            Err(Error::Dead) => {
+                RuntimeResult::Return(Err("Attempted to resume a dead thread".into()))
+            }
+            Err(err) => {
+                let fmt = format!("{}", err);
+                RuntimeResult::Panic(fmt)
+            }
+        },
     }
 }
 
-extern "C" fn yield_(_vm: &Thread) -> Status {
-    Status::Yield
+async fn yield_(_: ()) {
+    let mut first = true;
+    future::poll_fn(|cx| {
+        if first {
+            cx.waker().wake_by_ref();
+            first = false;
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    })
+    .await
 }
 
 fn spawn<'vm>(
@@ -232,8 +265,7 @@ fn spawn_on<'vm>(
     impl<F> Userdata for SpawnFuture<F>
     where
         F: Future + Send + 'static,
-        F::Item: Send + Sync,
-        F::Error: Send + Sync,
+        F::Output: Send + Sync,
     {
     }
 
@@ -247,30 +279,32 @@ fn spawn_on<'vm>(
     impl<F> VmType for SpawnFuture<F>
     where
         F: Future,
-        F::Item: VmType,
+        F::Output: VmType,
     {
-        type Type = <F::Item as VmType>::Type;
+        type Type = <F::Output as VmType>::Type;
     }
 
     fn push_future_wrapper<G>(context: &mut ActiveThread, _: &G)
     where
-        G: Future<Item = OpaqueValue<RootedThread, IO<Pushed<A>>>, Error = Error> + Send + 'static,
+        G: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
+            + Send
+            + 'static,
     {
         extern "C" fn future_wrapper<F>(
             data: &SpawnFuture<F>,
-        ) -> impl Future<Item = OpaqueValue<RootedThread, IO<Pushed<A>>>, Error = Error>
+        ) -> impl Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
         where
-            F: Future<Item = OpaqueValue<RootedThread, IO<Pushed<A>>>, Error = Error>
+            F: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
                 + Send
                 + 'static,
         {
             let future = data.0.clone();
-            future.map(|v| (*v).clone()).map_err(|err| (*err).clone())
+            future
         }
 
         primitive!(1, "unknown", async fn future_wrapper::<G>,
             [G]
-            [G: Future<Item = OpaqueValue<RootedThread, IO<Pushed<A>>>, Error = Error>
+            [G: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
                 + Send
                 + 'static,
             ]
@@ -283,7 +317,7 @@ fn spawn_on<'vm>(
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action<A>>::from_value(&thread, action.get_variant());
 
-    let future = future::lazy(move || action.call_async(()));
+    let future = async move { action.call_async(()).map(RuntimeResult::from).await };
 
     let mut context = vm.current_context();
 
@@ -310,24 +344,22 @@ fn spawn_on<'vm>(
 fn join(
     WithVM { vm: vm_a, value: a }: WithVM<OpaqueRef<IO<A>>>,
     b: OpaqueRef<IO<B>>,
-) -> impl Future<Item = IO<(Generic<A>, Generic<B>)>, Error = Error> {
-    let vm_b = try_future!(vm_a.new_thread(), Either::B);
+) -> impl Future<Output = RuntimeResult<IO<(Generic<A>, Generic<B>)>, Error>> {
+    let vm_b = match vm_a.new_thread() {
+        Ok(vm) => vm,
+        Err(err) => return Either::Right(future::ready(RuntimeResult::Panic(err))),
+    };
 
     let mut action_a: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
         Getable::from_value(&vm_a, a.get_variant());
     let mut action_b: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, B>> =
         Getable::from_value(&vm_b, b.get_variant());
 
-    Either::A(
-        action_a
-            .call_fast_async(())
-            .join(action_b.call_fast_async(()))
-            .then(|result| {
-                trace!("join done: {:?}", result);
-                result
-            })
-            .map(IO::Value),
-    )
+    Either::Left(async move {
+        let result = try_join!(action_a.call_async(()), action_b.call_async(()));
+        trace!("join done: {:?}", result);
+        result.map(IO::Value).into()
+    })
 }
 
 fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
@@ -374,8 +406,8 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            resume => primitive!(1, std::thread::prim::resume),
-            (yield_ "yield") => primitive::<fn(())>("std.thread.prim.yield", yield_),
+            resume => primitive!(1, async fn std::thread::prim::resume),
+            (yield_ "yield") => primitive!(1, "std.thread.prim.yield", async fn std::thread::prim::yield_),
             spawn => primitive!(1, std::thread::prim::spawn),
             spawn_on => primitive!(2, std::thread::prim::spawn_on),
             new_thread => primitive!(1, std::thread::prim::new_thread),

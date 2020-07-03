@@ -2,12 +2,14 @@
 use std::{
     any::{Any, TypeId},
     cmp::Ordering,
-    fmt, mem,
+    fmt,
+    marker::Unpin,
+    mem,
     ops::{Add, Deref, DerefMut, Div, Mul, Sub},
+    pin::Pin,
     ptr,
     result::Result as StdResult,
     slice,
-    string::String as StdString,
     sync::{
         self,
         atomic::{self, AtomicBool},
@@ -16,16 +18,16 @@ use std::{
     usize,
 };
 
-use {
-    crossbeam_utils::atomic::AtomicCell,
-    futures::{
-        future::{self, Either, FutureResult},
-        try_ready, Async, Future, Poll,
-    },
+use futures::{
+    future::{self, Either, Ready},
+    ready,
+    task::{self, Poll},
+    Future,
 };
 
+use async_trait::async_trait;
+
 use crate::base::{
-    metadata::Metadata,
     pos::Line,
     symbol::Symbol,
     types::{self, Alias, ArcType},
@@ -39,7 +41,8 @@ use crate::{
     macros::MacroEnv,
     source_map::LocalIter,
     stack::{
-        ClosureState, ExternCallState, ExternState, Frame, Stack, StackFrame, StackState, State,
+        ClosureState, ExternCallState, ExternState, Frame, Lock, Stack, StackFrame, StackState,
+        State,
     },
     types::*,
     value::{
@@ -50,12 +53,12 @@ use crate::{
         VariantDef,
     },
     vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnvInstance},
-    BoxFuture, Error, Result, Variants,
+    Error, Result, Variants,
 };
 
 pub use crate::{gc::Trace, stack::PopValue};
 
-pub type FutureValue<F> = Either<FutureResult<<F as Future>::Item, <F as Future>::Error>, F>;
+pub type FutureValue<F> = Either<Ready<<F as Future>::Output>, F>;
 
 pub struct Execute<T> {
     thread: Option<T>,
@@ -71,7 +74,7 @@ where
         }
     }
 
-    pub fn root(&self) -> Execute<RootedThread> {
+    pub fn root(&mut self) -> Execute<RootedThread> {
         Execute {
             thread: self.thread.as_ref().map(|t| t.root_thread()),
         }
@@ -80,26 +83,25 @@ where
 
 impl<'vm, T> Future for Execute<T>
 where
-    T: Deref<Target = Thread>,
+    T: Deref<Target = Thread> + Unpin,
     T: VmRoot<'vm>,
 {
-    type Item = RootedValue<T>;
-    type Error = Error;
+    type Output = Result<RootedValue<T>>;
 
     // Returns `T` so that it can be reused by the caller
-    fn poll(&mut self) -> Poll<Self::Item, Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let value = {
             let thread = self
                 .thread
                 .as_ref()
                 .expect("cannot poll Execute future after it has succeded");
-            let mut context = try_ready!(thread.resume());
+            let mut context = ready!(thread.resume(cx))?;
             context.stack.pop()
         };
 
         let thread = self.thread.take().unwrap();
         // SAFETY `value` is produced (and owned) by `thread`
-        unsafe { Ok(Async::Ready(thread.root_value_with_self(&value))) }
+        unsafe { Poll::Ready(Ok(thread.root_value_with_self(&value))) }
     }
 }
 
@@ -107,17 +109,15 @@ pub struct ExecuteTop<T>(pub Execute<T>);
 
 impl<'vm, T> Future for ExecuteTop<T>
 where
-    T: Deref<Target = Thread>,
+    T: Deref<Target = Thread> + Unpin,
     T: VmRoot<'vm>,
 {
-    type Item = RootedValue<T>;
-    type Error = Error;
+    type Output = Result<RootedValue<T>>;
 
     // Returns `T` so that it can be reused by the caller
-    fn poll(&mut self) -> Poll<Self::Item, Error> {
-        match self.0.poll() {
-            Ok(Async::Ready(x)) => Ok(Async::Ready(x)),
-            Ok(Async::NotReady) => Ok(Async::NotReady),
+    fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match ready!(Pin::new(&mut self.0).poll(cx)) {
+            Ok(x) => Ok(x).into(),
             Err(mut err) => {
                 let thread = self
                     .0
@@ -130,7 +130,7 @@ where
                 if let Error::Panic(_, ref mut trace) = err {
                     *trace = Some(new_trace);
                 }
-                Err(err)
+                Err(err).into()
             }
         }
     }
@@ -152,7 +152,7 @@ where
     T: VmRootInternal,
 {
     vm: T,
-    rooted: AtomicCell<bool>,
+    rooted: bool,
     value: Value,
 }
 
@@ -170,10 +170,10 @@ unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         self.root_();
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -206,7 +206,7 @@ where
     T: VmRootInternal,
 {
     fn drop(&mut self) {
-        if self.rooted.load() {
+        if self.rooted {
             self.unroot_();
         }
     }
@@ -248,7 +248,7 @@ where
             .push(value.clone_unrooted());
         RootedValue {
             vm,
-            rooted: AtomicCell::new(true),
+            rooted: true,
             value: value.clone_unrooted(),
         }
     }
@@ -263,6 +263,10 @@ where
 
     pub fn vm(&self) -> &T {
         &self.vm
+    }
+
+    pub fn vm_mut(&mut self) -> &mut T {
+        &mut self.vm
     }
 
     pub fn clone_vm(&self) -> T
@@ -300,23 +304,33 @@ where
         self.vm.root_value(self.get_variant())
     }
 
-    unsafe fn root_(&self) {
+    unsafe fn root_(&mut self) {
         self.vm.root_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        assert!(!self.rooted.load());
-        self.rooted.store(true);
+        assert!(self.rooted);
+        self.rooted = true;
         rooted_values.push(self.value.clone_unrooted());
     }
 
-    fn unroot_(&self) {
+    fn unroot_(&mut self) {
         self.vm.unroot_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        self.rooted.store(false);
+        self.rooted = false;
         let i = rooted_values
             .iter()
             .position(|p| p.obj_eq(&self.value))
             .unwrap_or_else(|| ice!("Rooted value has already been dropped"));
         rooted_values.swap_remove(i);
+    }
+
+    pub fn into_owned(self) -> RootedValue<RootedThread> {
+        let value = RootedValue {
+            vm: self.vm.root_thread(),
+            rooted: self.rooted,
+            value: unsafe { self.value.clone_unrooted() },
+        };
+        mem::forget(self);
+        value
     }
 }
 
@@ -331,10 +345,10 @@ struct Roots<'b> {
     stack: &'b Stack,
 }
 unsafe impl<'b> Trace for Roots<'b> {
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         unreachable!()
     }
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         unreachable!()
     }
 
@@ -385,7 +399,7 @@ impl<'b> Roots<'b> {
         let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
         let child_threads = self.vm.child_threads.read().unwrap();
-        stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
+        stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
         while let Some(thread_ptr) = stack.pop() {
             if locks.iter().any(|&(_, _, ref lock_thread)| {
@@ -394,11 +408,12 @@ impl<'b> Roots<'b> {
                 continue;
             }
 
-            let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
-            let child_threads = thread.child_threads.read().unwrap();
-            stack.extend(child_threads.iter().map(|(_, (t, _))| t.clone()));
+            let thread = &*(&*thread_ptr as *const Thread);
 
             let context = thread.context.lock().unwrap();
+
+            let child_threads = thread.child_threads.read().unwrap();
+            stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
             // Since we locked the context we need to scan the thread using `Roots` rather than
             // letting it be scanned normally
@@ -474,10 +489,10 @@ impl VmType for Thread {
 }
 
 unsafe impl Trace for Thread {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         // Thread is always behind a `GcPtr`
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         // Ditto
     }
     fn trace(&self, gc: &mut Gc) {
@@ -526,12 +541,8 @@ pub struct RootedThread {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     thread: GcPtr<Thread>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    rooted: AtomicCell<bool>,
+    rooted: bool,
 }
-
-// TODO Remove when crossbeam implements this for AtomicCell
-impl std::panic::RefUnwindSafe for RootedThread {}
-impl std::panic::UnwindSafe for RootedThread {}
 
 #[cfg(feature = "serde_derive")]
 impl<'de, 'gc> serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc>>
@@ -583,37 +594,32 @@ impl Drop for Thread {
         }
 
         let mut parent_threads = self.parent_threads();
-        debug_assert!(parent_threads[self.thread_index].1 == 0);
         parent_threads.remove(self.thread_index);
     }
 }
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
-        if self.rooted.load() {
-            let is_empty = self.unroot_();
-            if is_empty {
-                // The last RootedThread was dropped, there is no way to refer to the global state any
-                // longer so drop everything
-                let mut gc_ref = self.thread.global_state.gc.lock().unwrap_or_else(|err| {
-                    // Ignore poisoning since we don't need to interact with the Gc values, only
-                    // drop them
-                    err.into_inner()
-                });
-                let mut gc_to_drop =
-                    std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
-                // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
-                // when the Gc is dropped
-                drop(gc_ref);
+        if self.rooted && self.unroot_() {
+            // The last RootedThread was dropped, there is no way to refer to the global state any
+            // longer so drop everything
+            let mut gc_ref = self.thread.global_state.gc.lock().unwrap_or_else(|err| {
+                // Ignore poisoning since we don't need to interact with the Gc values, only
+                // drop them
+                err.into_inner()
+            });
+            let mut gc_to_drop = std::mem::replace(&mut *gc_ref, Gc::new(Generation::default(), 0));
+            // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
+            // when the Gc is dropped
+            drop(gc_ref);
 
-                // Macros can contain unrooted thread references via the database so we must drop those first
-                self.global_state.get_macros().clear();
+            // Macros can contain unrooted thread references via the database so we must drop those first
+            self.global_state.get_macros().clear();
 
-                // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
-                // droppting the thread
-                unsafe {
-                    gc_to_drop.clear();
-                }
+            // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
+            // droppting the thread
+            unsafe {
+                gc_to_drop.clear();
             }
         }
     }
@@ -633,10 +639,10 @@ impl Clone for RootedThread {
 }
 
 unsafe impl Trace for RootedThread {
-    unsafe fn root(&self) {
+    unsafe fn root(&mut self) {
         self.root_();
     }
-    unsafe fn unroot(&self) {
+    unsafe fn unroot(&mut self) {
         self.unroot_();
     }
     fn trace(&self, gc: &mut Gc) {
@@ -677,7 +683,7 @@ impl RootedThread {
             let entry = parent_threads.vacant_entry();
             ptr.thread_index = entry.key();
             let ptr = GcPtr::from(ptr);
-            entry.insert((ptr.unrooted(), 0));
+            entry.insert(ptr.unrooted());
             ptr
         };
 
@@ -694,7 +700,7 @@ impl RootedThread {
     /// Converts a `RootedThread` into a raw pointer allowing to be passed through a C api.
     /// The reference count for the thread is not modified
     pub fn into_raw(self) -> *const Thread {
-        assert!(self.rooted.load());
+        assert!(self.rooted);
         let ptr: *const Thread = &*self.thread;
         ::std::mem::forget(self);
         ptr
@@ -706,50 +712,33 @@ impl RootedThread {
     pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
         RootedThread {
             thread: GcPtr::from_raw(ptr),
-            rooted: AtomicCell::new(true),
+            rooted: true,
         }
     }
 
-    fn root_(&self) {
-        let mut parent_threads_lock = self.parent_threads();
-        assert!(!self.rooted.load());
-        self.rooted.store(true);
-        parent_threads_lock[self.thread_index].1 += 1;
+    fn root_(&mut self) {
+        assert!(!self.rooted);
+        self.rooted = true;
+        self.global_state
+            .thread_reference_count
+            .fetch_add(1, atomic::Ordering::Relaxed);
     }
 
-    fn unroot_(&self) -> bool {
+    fn unroot_(&mut self) -> bool {
         let root_count = {
-            let mut roots = self.parent_threads();
-            if !self.rooted.load() {
+            if !self.rooted {
                 return false;
             }
-            self.rooted.store(false);
-            let (_, root_count) = &mut roots[self.thread_index];
-            assert!(*root_count > 0);
-            *root_count -= 1;
-            *root_count
+            self.rooted = false;
+            let root_count = self
+                .global_state
+                .thread_reference_count
+                .fetch_sub(1, atomic::Ordering::Release);
+            assert!(root_count > 0);
+            root_count - 1
         };
 
-        if root_count == 0 {
-            fn is_unrooted(thread: &Thread) -> bool {
-                let child_threads = thread.child_threads.read().unwrap();
-                child_threads
-                    .iter()
-                    .all(|(_, (t, count))| *count == 0 && is_unrooted(t))
-            }
-
-            let mut top = &**self;
-            while let Some(thread) = &top.parent {
-                top = thread;
-            }
-
-            let child_threads = top.parent_threads_read();
-            child_threads
-                .iter()
-                .all(|(_, (t, count))| *count == 0 && is_unrooted(t))
-        } else {
-            false
-        }
+        root_count == 0
     }
 }
 
@@ -780,7 +769,7 @@ impl Thread {
                 let entry = parent_threads.vacant_entry();
                 ptr.thread_index = entry.key();
                 let ptr = GcRef::from(ptr).unrooted();
-                entry.insert((ptr.clone_unrooted(), 0));
+                entry.insert(ptr.clone_unrooted());
                 ptr
             }
         };
@@ -793,28 +782,29 @@ impl Thread {
     pub fn root_thread(&self) -> RootedThread {
         unsafe {
             let thread = GcPtr::from_raw(self);
-            self.parent_threads()[self.thread_index].1 += 1;
+
+            // Using a relaxed ordering is alright here, as knowledge of the
+            // original reference prevents other threads from erroneously deleting
+            // the object.
+            let old_count = self
+                .global_state
+                .thread_reference_count
+                .fetch_add(1, atomic::Ordering::Relaxed);
+
+            const MAX_REFCOUNT: usize = std::isize::MAX as usize;
+            if old_count > MAX_REFCOUNT {
+                std::process::abort();
+            }
+
             RootedThread {
                 thread,
-                rooted: AtomicCell::new(true),
+                rooted: true,
             }
         }
     }
 
-    pub(crate) fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-    where
-        T: Pushable<'vm> + VmType,
-    {
-        // Value gets rooted by set_global
-        unsafe {
-            let value = value.marshal_unrooted(self)?;
-            self.set_global(
-                Symbol::from(format!("@{}", name)),
-                T::make_forall_type(self),
-                Default::default(),
-                &value,
-            )
-        }
+    pub fn spawner(&self) -> Option<&(dyn futures::task::Spawn + Send + Sync)> {
+        self.global_env().spawner()
     }
 
     /// Retrieves the global called `name`.
@@ -825,21 +815,23 @@ impl Thread {
     /// to an `add` function in rust
     ///
     /// ```rust
-    /// # use gluon::{new_vm, Thread, ThreadExt};
+    /// # use gluon::{new_vm_async, Thread, ThreadExt};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
-    /// # fn main() {
+    /// # #[tokio::main]
+    /// # async fn main() {
     ///
     /// # if ::std::env::var("GLUON_PATH").is_err() {
     /// #     ::std::env::set_var("GLUON_PATH", "..");
     /// # }
     ///
-    /// let vm = new_vm();
+    /// let vm = new_vm_async().await;
     ///
-    /// vm.run_expr::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
+    /// vm.run_expr_async::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
+    ///     .await
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
-    /// let result = add.call(1, 2);
+    /// let result = add.call_async(1, 2).await;
     /// assert_eq!(result, Ok(3));
     /// # }
     /// ```
@@ -991,13 +983,6 @@ impl Thread {
         }
     }
 
-    fn parent_threads_read(&self) -> sync::RwLockReadGuard<ThreadSlab> {
-        match self.parent {
-            Some(ref parent) => parent.child_threads.read().unwrap(),
-            None => self.global_state.generation_0_threads.read().unwrap(),
-        }
-    }
-
     fn with_roots<F, R>(&self, context: &mut Context, f: F) -> R
     where
         F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R,
@@ -1029,9 +1014,9 @@ pub trait VmRoot<'a>: VmRootInternal + 'a {
 }
 
 pub trait VmRootInternal: Deref<Target = Thread> + Clone {
-    fn root_vm(&self);
+    fn root_vm(&mut self);
 
-    fn unroot_vm(&self);
+    fn unroot_vm(&mut self);
 
     /// Roots a value
     unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
@@ -1049,9 +1034,9 @@ impl<'a> VmRoot<'a> for &'a Thread {
 }
 
 impl<'a> VmRootInternal for &'a Thread {
-    fn root_vm(&self) {}
+    fn root_vm(&mut self) {}
 
-    fn unroot_vm(&self) {}
+    fn unroot_vm(&mut self) {}
 }
 
 impl<'a> VmRoot<'a> for RootedThread {
@@ -1061,17 +1046,18 @@ impl<'a> VmRoot<'a> for RootedThread {
 }
 
 impl VmRootInternal for RootedThread {
-    fn root_vm(&self) {
+    fn root_vm(&mut self) {
         self.root_();
     }
 
-    fn unroot_vm(&self) {
+    fn unroot_vm(&mut self) {
         self.unroot_();
     }
 }
 
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
+#[async_trait]
 pub trait ThreadInternal: Sized
 where
     Self: ::std::borrow::Borrow<Thread>,
@@ -1085,22 +1071,19 @@ where
         T: VmRoot<'vm>;
 
     /// Evaluates a zero argument function (a thunk)
-    fn call_thunk<'vm>(
-        &'vm self,
-        closure: &GcPtr<ClosureData>,
-    ) -> FutureValue<Execute<RootedThread>>;
+    async fn call_thunk(&self, closure: &GcPtr<ClosureData>) -> Result<RootedValue<RootedThread>>;
 
-    fn call_thunk_top<'vm>(
-        &'vm self,
+    async fn call_thunk_top(
+        &self,
         closure: &GcPtr<ClosureData>,
-    ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
+    ) -> Result<RootedValue<RootedThread>>
     where
         Self: Send + Sync,
     {
         let self_ = RootedThread::new_root(self.borrow());
         let level = self_.context().stack.get_frames().len();
 
-        Box::new(self.call_thunk(closure).or_else(move |mut err| {
+        self.call_thunk(closure).await.or_else(move |mut err| {
             let mut context = self_.context();
             let stack = StackFrame::<State>::current(&mut context.stack);
             let new_trace = reset_stack(stack, level)?;
@@ -1108,22 +1091,19 @@ where
                 *trace = Some(new_trace);
             }
             Err(err)
-        }))
+        })
     }
 
     /// Executes an `IO` action
-    fn execute_io<'vm>(&'vm self, value: Variants) -> FutureValue<Execute<RootedThread>>;
+    async fn execute_io(&self, value: Variants<'_>) -> Result<RootedValue<RootedThread>>;
 
-    fn execute_io_top<'vm>(
-        &'vm self,
-        value: Variants,
-    ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
+    async fn execute_io_top(&self, value: Variants<'_>) -> Result<RootedValue<RootedThread>>
     where
         Self: Send + Sync,
     {
         let self_ = RootedThread::new_root(self.borrow());
         let level = self_.context().stack.get_frames().len();
-        Box::new(self.execute_io(value).or_else(move |mut err| {
+        self.execute_io(value).await.or_else(move |mut err| {
             let mut context = self_.context();
             let stack = StackFrame::<State>::current(&mut context.stack);
             let new_trace = reset_stack(stack, level)?;
@@ -1131,7 +1111,7 @@ where
                 *trace = Some(new_trace);
             }
             Err(err)
-        }))
+        })
     }
 
     /// Calls a function on the stack.
@@ -1139,26 +1119,19 @@ where
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(
         &'b self,
+        cx: &mut task::Context<'_>,
         stack: OwnedContext<'b>,
         args: VmIndex,
-    ) -> Result<Async<Option<OwnedContext<'b>>>>;
+    ) -> Poll<Result<Option<OwnedContext<'b>>>>;
 
-    fn resume(&self) -> Result<Async<OwnedContext>>;
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
 
-    fn set_global(
-        &self,
-        name: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()>;
-
-    /// `owner` is theread that owns `value` which is not necessarily the same as `self`
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>>;
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 }
 
+#[async_trait]
 impl ThreadInternal for Thread {
     fn context(&self) -> OwnedContext {
         OwnedContext {
@@ -1175,52 +1148,76 @@ impl ThreadInternal for Thread {
         unsafe { T::new_root(self).root_value_with_self(value.get_value()) }
     }
 
-    fn call_thunk<'vm>(
-        &'vm self,
-        closure: &GcPtr<ClosureData>,
-    ) -> FutureValue<Execute<RootedThread>> {
-        let mut context = self.owned_context();
-        context.stack.push(construct_gc!(Closure(@&closure)));
-        StackFrame::<State>::current(&mut context.stack).enter_scope(
-            0,
-            &*construct_gc!(ClosureState {
-                @closure: gc::Borrow::new(closure),
-                instruction_index: 0,
-            }),
-        );
-        match try_future!(context.execute(), Either::A) {
-            Async::Ready(context) => {
-                let mut context = context.unwrap();
+    async fn call_thunk(&self, closure: &GcPtr<ClosureData>) -> Result<RootedValue<RootedThread>> {
+        let mut fut = None;
+        future::poll_fn(|cx| match &mut fut {
+            None => {
+                let mut context = self.owned_context();
+                context.stack.push(construct_gc!(Closure(@&closure)));
+                StackFrame::<State>::current(&mut context.stack).enter_scope(
+                    0,
+                    &*construct_gc!(ClosureState {
+                        @closure: gc::Borrow::new(closure),
+                        instruction_index: 0,
+                    }),
+                );
+                let mut context = match context.execute(cx) {
+                    Poll::Pending => {
+                        fut = Some(Execute::new(self.root_thread()));
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(Ok(context)) => {
+                        context.expect("call_module to have the stack remaining")
+                    }
+                    Poll::Ready(Err(err)) => return Err(err).into(),
+                };
                 let value = self.root_value(context.stack.last().unwrap());
                 context.stack.pop();
-                Either::A(future::ok(value))
+                Ok(value).into()
             }
-            Async::NotReady => Either::B(Execute::new(self.root_thread())),
-        }
+            Some(fut) => Pin::new(fut).poll(cx),
+        })
+        .await
     }
 
     /// Calls a module, allowed to to run IO expressions
-    fn execute_io<'vm>(&'vm self, value: Variants) -> FutureValue<Execute<RootedThread>> {
+    async fn execute_io(&self, value: Variants<'_>) -> Result<RootedValue<RootedThread>> {
         trace!("Run IO {:?}", value);
-        let mut context = self.context();
-        // Dummy value to fill the place of the function for TailCall
-        context
-            .stack
-            .extend(&[Variants::int(0), value, Variants::int(0)]);
 
-        context.borrow_mut().enter_scope(2, &State::Unknown, false);
-        context = match try_future!(self.call_function(context, 1), Either::A) {
-            Async::Ready(context) => context.expect("call_module to have the stack remaining"),
-            Async::NotReady => return Either::B(Execute::new(self.root_thread())),
-        };
-        let result = self.root_value(context.stack.last().unwrap());
-        context.stack.pop();
-        {
-            let mut context = context.borrow_mut();
-            context.stack.clear();
-        }
-        let _ = context.exit_scope();
-        Either::A(future::ok(result))
+        let mut fut = None;
+        future::poll_fn(|cx| {
+            match &mut fut {
+                None => {
+                    let mut context = self.context();
+                    // Dummy value to fill the place of the function for TailCall
+                    context
+                        .stack
+                        .extend(&[Variants::int(0), value.clone(), Variants::int(0)]);
+
+                    context.borrow_mut().enter_scope(2, &State::Unknown, false);
+                    context = match self.call_function(cx, context, 1) {
+                        Poll::Pending => {
+                            fut = Some(Execute::new(self.root_thread()));
+                            return Poll::Pending;
+                        }
+                        Poll::Ready(Ok(context)) => {
+                            context.expect("call_module to have the stack remaining")
+                        }
+                        Poll::Ready(Err(err)) => return Err(err).into(),
+                    };
+                    let result = self.root_value(context.stack.last().unwrap());
+                    context.stack.pop();
+                    {
+                        let mut context = context.borrow_mut();
+                        context.stack.clear();
+                    }
+                    let _ = context.exit_scope();
+                    Ok(result).into()
+                }
+                Some(fut) => Pin::new(fut).poll(cx),
+            }
+        })
+        .await
     }
 
     /// Calls a function on the stack.
@@ -1228,35 +1225,37 @@ impl ThreadInternal for Thread {
     /// `stack.len() - args - 1` and that the arguments are of the correct type
     fn call_function<'b>(
         &'b self,
+        cx: &mut task::Context<'_>,
         mut context: OwnedContext<'b>,
         args: VmIndex,
-    ) -> Result<Async<Option<OwnedContext<'b>>>> {
+    ) -> Poll<Result<Option<OwnedContext<'b>>>> {
         context.borrow_mut().do_call(args)?;
-        context.execute()
+        context.execute(cx)
     }
 
-    fn resume(&self) -> Result<Async<OwnedContext>> {
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>> {
         let mut context = self.owned_context();
+        if let Some(poll_fn) = context.poll_fns.last() {
+            let frame_offset = poll_fn.frame_index as usize;
+            for frame in &mut context.stack.get_frames_mut()[frame_offset..] {
+                match frame.state {
+                    State::Extern(ref mut e) => {
+                        assert!(
+                            e.call_state == ExternCallState::Pending
+                                || e.call_state == ExternCallState::Poll
+                        );
+                        e.call_state = ExternCallState::Poll
+                    }
+                    _ => (),
+                }
+            }
+        }
         if context.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
-            return Err(Error::Dead);
+            return Err(Error::Dead).into();
         }
-        context = try_ready!(context.execute()).unwrap();
-        Ok(Async::Ready(context))
-    }
-
-    fn set_global(
-        &self,
-        name: Symbol,
-        typ: ArcType,
-        metadata: Arc<Metadata>,
-        value: &Value,
-    ) -> Result<()> {
-        let mut gc = self.global_env().gc.lock().unwrap();
-        let mut cloner = crate::value::Cloner::new(self, &mut gc);
-        let value = cloner.deep_clone(&value)?;
-        self.global_env()
-            .set_global(name, typ, metadata, value.get_value())
+        context = ready!(context.execute(cx))?.expect("Resume called on the top frame");
+        Ok(context).into()
     }
 
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>> {
@@ -1303,16 +1302,25 @@ impl ThreadInternal for Thread {
     }
 }
 
-pub type HookFn = Box<dyn FnMut(&Thread, DebugInfo) -> Result<Async<()>> + Send + Sync>;
+pub type HookFn = Box<dyn FnMut(&Thread, DebugInfo) -> Poll<Result<()>> + Send + Sync>;
 
 pub struct DebugInfo<'a> {
     stack: &'a Stack,
     state: HookFlags,
 }
 
-pub struct StackInfo<'a> {
-    info: &'a DebugInfo<'a>,
-    index: usize,
+impl fmt::Debug for DebugInfo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("DebugInfo")
+            .field("state", &self.state())
+            .field(
+                "stack_infos",
+                &(0..self.stack_info_len())
+                    .map(|i| self.stack_info(i).unwrap())
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
 }
 
 impl<'a> DebugInfo<'a> {
@@ -1337,6 +1345,24 @@ impl<'a> DebugInfo<'a> {
 
     pub fn stack_info_len(&self) -> usize {
         self.stack.get_frames().len()
+    }
+}
+
+pub struct StackInfo<'a> {
+    info: &'a DebugInfo<'a>,
+    index: usize,
+}
+
+impl fmt::Debug for StackInfo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("DebugInfo")
+            .field("frame", &self.frame())
+            .field("line", &self.line())
+            .field("source_name", &self.source_name())
+            .field("function_name", &self.function_name())
+            .field("locals", &self.locals().collect::<Vec<_>>())
+            .field("upvars", &self.upvars())
+            .finish()
     }
 }
 
@@ -1411,7 +1437,7 @@ impl<'a> StackInfo<'a> {
     pub fn upvars(&self) -> &[UpvarInfo] {
         match self.frame().state {
             State::Closure(ClosureState { ref closure, .. }) => &closure.function.debug_info.upvars,
-            _ => ice!("Attempted to access upvar in non closure function"),
+            _ => &[],
         }
     }
 }
@@ -1434,8 +1460,17 @@ struct Hook {
     previous_instruction_index: usize,
 }
 
+type PollFnInner<'a> = Box<
+    dyn for<'vm> FnMut(
+            &mut task::Context<'_>,
+            &'vm Thread,
+        ) -> Poll<super::Result<OwnedContext<'vm>>>
+        + Send
+        + 'a,
+>;
+
 struct PollFn {
-    poll_fn: Box<dyn for<'vm> FnMut(&'vm Thread) -> super::Result<Async<OwnedContext<'vm>>> + Send>,
+    poll_fn: PollFnInner<'static>,
     frame_index: VmIndex,
 }
 
@@ -1565,24 +1600,27 @@ impl Context {
     ///
     /// This function is unsafe because the `vm` lifetime must not outlive the lifetime of the
     /// `Thread`
-    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F, frame_index: VmIndex)
+    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F, lock: Lock, frame_index: VmIndex)
     where
-        F: Future<Error = Error> + Send + 'static,
-        F::Item: Pushable<'vm>,
+        F: Future + Send + 'vm,
+        F::Output: Pushable<'vm>,
     {
+        let poll_fn: PollFnInner<'_> = Box::new(move |cx: &mut task::Context<'_>, vm: &Thread| {
+            // `future` is moved into the closure, which is boxed and therefore pinned
+            let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
+
+            let mut context = vm.current_context();
+            let result = {
+                context.stack().release_lock(lock);
+                let context =
+                    mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(&mut context);
+                value.push(context)
+            };
+            Poll::Ready(result.map(|()| context.into_owned()))
+        });
         self.poll_fns.push(PollFn {
             frame_index,
-            poll_fn: Box::new(move |vm| {
-                let value = try_ready!(future.poll());
-
-                let mut context = vm.current_context();
-                let result = {
-                    let context =
-                        mem::transmute::<&mut ActiveThread, &mut ActiveThread<'vm>>(&mut context);
-                    value.push(context)
-                };
-                result.map(|()| Async::Ready(context.into_owned()))
-            }),
+            poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
         });
     }
 }
@@ -1693,11 +1731,12 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn execute(mut self) -> Result<Async<Option<OwnedContext<'b>>>> {
+    fn execute(mut self, cx: &mut task::Context<'_>) -> Poll<Result<Option<OwnedContext<'b>>>> {
         let mut context = self.borrow_mut();
+        // Return when the starting frame is finished
         loop {
             if context.thread.interrupted() {
-                return Err(Error::Interrupted);
+                return Err(Error::Interrupted).into();
             }
             trace!("STACK\n{:?}", context.stack.stack().get_frames());
             let state = &context.stack.frame().state;
@@ -1718,7 +1757,7 @@ impl<'b> OwnedContext<'b> {
                                 stack: &context.stack.stack(),
                                 state: HookFlags::CALL_FLAG,
                             };
-                            try_ready!(hook(thread, info))
+                            ready!(hook(thread, info))?
                         }
                     }
                     _ => (),
@@ -1727,10 +1766,13 @@ impl<'b> OwnedContext<'b> {
 
             match state {
                 State::Unknown => {
-                    return Ok(Async::Ready(Some(self)));
+                    return Ok(Some(self)).into();
                 }
-                State::Extern(ext) if ext.is_locked() => {
-                    return Ok(Async::Ready(Some(self)));
+
+                State::Extern(ext) if ext.is_locked() && context.poll_fns.is_empty() => {
+                    // The frame is locked and there is no futures to poll => The owner of the
+                    // frame is up the call stack so we should return and let them handle it.
+                    return Ok(Some(self)).into();
                 }
 
                 State::Extern(ext) => {
@@ -1738,7 +1780,11 @@ impl<'b> OwnedContext<'b> {
                     // We are currently in the poll call of this extern function.
                     // Return control to the caller.
                     if ext.call_state == ExternCallState::InPoll {
-                        return Ok(Async::Ready(Some(self)));
+                        return Ok(Some(self)).into();
+                    }
+                    if ext.call_state == ExternCallState::Pending {
+                        return Err(format!("Thread is already in use in another task").into())
+                            .into();
                     }
                     if ext.call_state == ExternCallState::Poll {
                         if let Some(frame_index) = context.poll_fns.last().map(|f| f.frame_index) {
@@ -1755,7 +1801,7 @@ impl<'b> OwnedContext<'b> {
                         _ => unreachable!(),
                     }
 
-                    self = try_ready!(self.execute_function(ext.call_state, &ext.function));
+                    self = ready!(self.execute_function(cx, ext.call_state, &ext.function))?;
                     context = self.borrow_mut();
                 }
 
@@ -1771,11 +1817,11 @@ impl<'b> OwnedContext<'b> {
                     if instruction_index == 0
                         && context.stack.stack().len() + function_size > max_stack_size
                     {
-                        return Err(Error::StackOverflow(max_stack_size));
+                        return Err(Error::StackOverflow(max_stack_size)).into();
                     }
 
                     if context.stack.stack().get_frames().len() == 0 {
-                        return Ok(Async::Ready(Some(self)));
+                        return Ok(Some(self)).into();
                     } else {
                         debug!(
                             "Continue with {}\nAt: {}/{}\n{:?}",
@@ -1786,9 +1832,9 @@ impl<'b> OwnedContext<'b> {
                         );
 
                         let closure_context = context.from_state();
-                        match try_ready!(closure_context.execute_()) {
+                        match ready!(closure_context.execute_())? {
                             Some(new_context) => context = new_context,
-                            None => return Ok(None.into()),
+                            None => return Ok(None).into(),
                         }
                     }
                 }
@@ -1798,9 +1844,10 @@ impl<'b> OwnedContext<'b> {
 
     fn execute_function(
         mut self,
+        cx: &mut task::Context<'_>,
         call_state: ExternCallState,
         function: &ExternFunction,
-    ) -> Result<Async<OwnedContext<'b>>> {
+    ) -> Poll<Result<OwnedContext<'b>>> {
         debug!(
             "CALL EXTERN {} {:?} {} {:?}",
             function.id,
@@ -1819,7 +1866,7 @@ impl<'b> OwnedContext<'b> {
                 status = (function.function)(thread);
 
                 if status == Status::Yield {
-                    return Ok(Async::NotReady);
+                    return Poll::Pending;
                 }
 
                 self = thread.owned_context();
@@ -1827,19 +1874,20 @@ impl<'b> OwnedContext<'b> {
                 if status == Status::Error {
                     return match self.stack.pop().get_repr() {
                         String(s) => {
-                            Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0))))
+                            Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))).into()
                         }
                         _ => Err(Error::Message(format!(
                             "Unexpected error calling function `{}`",
                             function.id
-                        ))),
+                        )))
+                        .into(),
                     };
                 }
 
                 // The `poll_fn` at the top may be for a stack frame at a lower level, return to the
                 // state loop to ensure that we are executing the frame at the top of the stack
                 if !self.poll_fns.is_empty() {
-                    return Ok(Async::Ready(self));
+                    return Ok(self).into();
                 }
             }
 
@@ -1855,27 +1903,28 @@ impl<'b> OwnedContext<'b> {
                     drop(self);
                     // Poll the future that was returned from the initial call to this extern function
                     debug!("POLL EXTERN {}", function.id);
-                    match (poll_fn.poll_fn)(thread) {
-                        Ok(Async::Ready(context)) => {
+                    match (poll_fn.poll_fn)(cx, thread) {
+                        Poll::Ready(Ok(context)) => {
                             debug!("READY EXTERN {}", function.id);
                             self = context;
                         }
-                        Ok(Async::NotReady) => {
+                        Poll::Pending => {
                             debug!("NOT READY EXTERN {}", function.id);
                             self = thread.owned_context();
                             match self.stack.get_frames_mut()[frame_offset].state {
-                                State::Extern(ref mut e) => e.call_state = ExternCallState::Poll,
+                                State::Extern(ref mut e) => e.call_state = ExternCallState::Pending,
                                 _ => unreachable!(),
                             }
                             // Restore `poll_fn` so it can be polled again
                             self.poll_fns.push(poll_fn);
-                            return Ok(Async::NotReady);
+                            return Poll::Pending;
                         }
-                        Err(err) => return Err(err),
+                        Poll::Ready(Err(err)) => return Err(err).into(),
                     }
                 }
             }
             // Handled outside of this function
+            ExternCallState::Pending => unreachable!(),
             ExternCallState::InPoll => unreachable!(),
         }
 
@@ -1884,10 +1933,6 @@ impl<'b> OwnedContext<'b> {
         let result = self.stack.pop();
         {
             let mut stack = self.stack.current_frame();
-            while stack.len() > 0 {
-                trace!("{} {:?}", stack.len(), &*stack);
-                stack.pop();
-            }
             debug_assert!(
                 match stack.frame().state {
                     State::Extern(ref e) => e.function.id == function.id,
@@ -1896,10 +1941,15 @@ impl<'b> OwnedContext<'b> {
                 "Attempted to pop {:?} but {} was expected",
                 stack.frame(),
                 function.id
-            )
+            );
+
+            stack.clear();
         }
         self = self.exit_scope().map_err(|_| {
-            Error::Message(StdString::from("Poped the last frame in execute_function"))
+            Error::Message(format!(
+                "Popped the last frame or a locked frame in execute_function: {}",
+                function.id
+            ))
         })?;
         self.stack.pop(); // Pop function
         self.stack.push(result);
@@ -1911,14 +1961,17 @@ impl<'b> OwnedContext<'b> {
         );
 
         match status {
-            Status::Ok => Ok(Async::Ready(self)),
-            Status::Yield => Ok(Async::NotReady),
+            Status::Ok => Ok(self).into(),
+            Status::Yield => Poll::Pending,
             Status::Error => match self.stack.pop().get_repr() {
-                String(s) => Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))),
+                String(s) => {
+                    Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))).into()
+                }
                 _ => Err(Error::Message(format!(
                     "Unexpected error calling function `{}`",
                     function.id
-                ))),
+                )))
+                .into(),
             },
         }
     }
@@ -2035,7 +2088,7 @@ where
 }
 
 impl<'b, 'gc> ExecuteContext<'b, 'gc> {
-    fn execute_(mut self) -> Result<Async<Option<ExecuteContext<'b, 'gc, State>>>> {
+    fn execute_(mut self) -> Poll<Result<Option<ExecuteContext<'b, 'gc, State>>>> {
         let state = &self.stack.frame().state;
         let function = unsafe { state.closure.function.clone_unrooted() };
         {
@@ -2059,7 +2112,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
             debug_instruction(&self.stack, instruction_index, instr);
 
             if self.hook.flags.contains(HookFlags::LINE_FLAG) {
-                try_ready!(self.run_hook(&function, instruction_index));
+                ready!(self.run_hook(&function, instruction_index))?;
             }
 
             match instr {
@@ -2070,7 +2123,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             return Err(Error::Panic(
                                 format!("ICE: Stack push out of bounds in {}", function.name),
                                 Some(self.stack.stack().stacktrace(0)),
-                            ));
+                            ))
+                            .into();
                         }
                     };
                     self.stack.push(v);
@@ -2090,7 +2144,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 Call(args) => {
                     self.stack
                         .set_instruction_index(program_counter.instruction_index);
-                    return self.do_call(args).map(|x| Async::Ready(Some(x)));
+                    return self.do_call(args).map(Some).into();
                 }
                 TailCall(mut args) => {
                     let mut amount = self.stack.len() - args;
@@ -2122,7 +2176,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     let end = context.stack.len() - args - 1;
                     context.stack.remove_range(end - amount, end);
                     trace!("{:?}", &context.stack[..]);
-                    return context.do_call(args).map(|x| Async::Ready(Some(x)));
+                    return context.do_call(args).map(Some).into();
                 }
                 ConstructVariant { tag, args } => {
                     let d = {
@@ -2258,7 +2312,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         let v = &data.fields[i as usize];
                         self.stack.push(v);
                     }
-                    x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
+                    x => return Err(Error::Message(format!("GetOffset on {:?}", x))).into(),
                 },
                 GetField(i) => {
                     let field = &function.strings[i as usize];
@@ -2271,7 +2325,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                             self.stack.push(v);
                         }
                         x => {
-                            return Err(Error::Message(format!("GetField on {:?}", x)));
+                            return Err(Error::Message(format!("GetField on {:?}", x))).into();
                         }
                     }
                 }
@@ -2279,10 +2333,12 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     let data_tag = match self.stack.top().get_repr() {
                         Data(data) => data.tag(),
                         ValueRepr::Tag(tag) => *tag,
-                        _ => {
-                            return Err(Error::Message(
-                                "Op TestTag called on non data type".to_string(),
-                            ));
+                        data => {
+                            return Err(Error::Message(format!(
+                                "Op TestTag called on non data type: {:?}",
+                                data
+                            )))
+                            .into();
                         }
                     };
                     self.stack
@@ -2295,7 +2351,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
-                            ));
+                            ))
+                            .into();
                         }
                     };
                     debug_assert!(
@@ -2321,7 +2378,8 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         _ => {
                             return Err(Error::Message(
                                 "Op Split called on non data type".to_string(),
-                            ));
+                            ))
+                            .into();
                         }
                     }
                 }
@@ -2459,22 +2517,16 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     context.stack.slide(1);
                     context.stack.extend(&excess.fields);
                     let excess_fields_len = excess.fields.len() as VmIndex;
-                    context
-                        .do_call(excess_fields_len)
-                        .map(|x| Async::Ready(Some(x)))
+                    Poll::Ready(context.do_call(excess_fields_len).map(|x| Some(x)))
                 }
                 x => ice!("Expected excess arguments found {:?}", x),
             }
         } else {
-            Ok(Async::Ready(if stack_exists {
-                Some(context)
-            } else {
-                None
-            }))
+            Poll::Ready(Ok(if stack_exists { Some(context) } else { None }))
         }
     }
 
-    fn run_hook(&mut self, function: &BytecodeFunction, index: usize) -> Result<Async<()>> {
+    fn run_hook(&mut self, function: &BytecodeFunction, index: usize) -> Poll<Result<()>> {
         if let Some(ref mut hook) = self.hook.function {
             let current_line = function.debug_info.source_map.line(index);
             let previous_line = function
@@ -2488,10 +2540,10 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                     stack: &self.stack.stack(),
                     state: HookFlags::LINE_FLAG,
                 };
-                try_ready!(hook(self.thread, info))
+                ready!(hook(self.thread, info))?
             }
         }
-        Ok(().into())
+        Ok(()).into()
     }
 }
 
@@ -2808,12 +2860,11 @@ pub struct ActiveThread<'vm> {
 }
 
 impl<'vm> ActiveThread<'vm> {
-    pub fn drop(&mut self) {
+    pub fn release_for<R>(&mut self, f: impl FnOnce() -> R) -> R {
         self.context = None;
-    }
-
-    pub fn restore(&mut self) {
+        let r = f();
         *self = self.thread.current_context();
+        r
     }
 
     pub fn thread(&self) -> &'vm Thread {
@@ -2864,15 +2915,15 @@ impl<'vm> ActiveThread<'vm> {
         &mut self.context.as_mut().unwrap().stack
     }
 
-    pub unsafe fn return_future<F>(&mut self, future: F, frame_index: VmIndex)
+    pub unsafe fn return_future<F>(&mut self, future: F, lock: Lock, frame_index: VmIndex)
     where
-        F: Future<Error = Error> + Send + 'static,
-        F::Item: Pushable<'vm>,
+        F: Future + Send + 'vm,
+        F::Output: Pushable<'vm>,
     {
         self.context
             .as_mut()
             .expect("context")
-            .return_future(future, frame_index)
+            .return_future(future, lock, frame_index)
     }
 }
 #[doc(hidden)]

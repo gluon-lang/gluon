@@ -1,6 +1,7 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use shared::split_for_impl;
 use syn::{self, Data, DeriveInput, Generics};
+
+use crate::shared::split_for_impl;
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -22,12 +23,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
 fn gen_impl(ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     assert!(generics.type_params().count() > 0);
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let map_methods = generics
         .type_params()
         .last()
-        .map(|gen| gen_map(&ident, &generics, &gen.ident, data));
+        .map(|gen| gen_map(&ident, &generics, &gen.ident, data))
+        .into_iter();
 
     quote! {
         impl #impl_generics #ident #ty_generics
@@ -113,7 +115,7 @@ enum Parameter {
 fn detect_parameter(typ: &syn::Type, param: &syn::Ident) -> Option<Parameter> {
     match typ {
         syn::Type::Path(ref p) => {
-            if p.qself.is_none() && p.path.is_ident(param.clone()) {
+            if p.qself.is_none() && p.path.is_ident(param) {
                 Some(Parameter::Direct)
             } else {
                 p.path.segments.iter().find_map(|segment| {
@@ -122,7 +124,7 @@ fn detect_parameter(typ: &syn::Type, param: &syn::Ident) -> Option<Parameter> {
                     if segment.ident == "Vec" {
                         is_vec = true;
                     }
-                    if segment.ident == "List" {
+                    if segment.ident == "List" || segment.ident == "ListSync" {
                         is_list = true;
                     }
                     match &segment.arguments {

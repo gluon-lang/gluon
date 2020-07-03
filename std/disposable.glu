@@ -12,10 +12,9 @@ type Disposable a = {
     /// Disposes of `a`, releasing the resources it manages. Calling this function
     /// a second time (or more) has no effect.
     dispose : a -> IO (),
-
     /// Indicates if `a` has been disposed, meaning that `dispose` has been called
     /// at least once.
-    is_disposed : a -> Bool,
+    is_disposed : a -> Bool
 }
 
 let dispose ?disposable : [Disposable a] -> a -> IO () = disposable.dispose

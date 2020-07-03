@@ -145,6 +145,7 @@ impl CloneUnrooted for ClosureState {
 pub(crate) enum ExternCallState {
     Start,
     InPoll,
+    Pending,
     Poll,
 }
 
@@ -410,9 +411,7 @@ pub struct Stack {
 }
 
 unsafe impl Trace for Stack {
-    impl_trace! { self, gc,
-        mark(&self.values, gc)
-    }
+    impl_trace_fields! { self, gc; values }
 }
 
 impl Stack {
@@ -424,17 +423,23 @@ impl Stack {
     }
 
     fn assert_pop(&self, count: VmIndex) {
+        let frame = self.frames.last().unwrap();
         let args = if let State::Extern(ExternState {
             locked: Some(args), ..
-        }) = self.frames.last().unwrap().state
+        }) = frame.state
         {
             args
         } else {
             0
         };
         assert!(
-            self.len() >= count + args,
-            "Attempted to pop value which did not belong to the current frame"
+            self.len() >= frame.offset + count + args,
+            "Attempted to pop value which did not belong to the current frame: {}",
+            match &self.frames.last().unwrap().state {
+                State::Extern(ext) => ext.function.id.as_str(),
+                State::Closure(closure) => closure.closure.function.name.as_str(),
+                State::Unknown => "<unknown>",
+            }
         );
     }
 
@@ -499,6 +504,7 @@ impl Stack {
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
+        self.assert_pop(to - from);
         self.values.drain(from as usize..to as usize);
     }
 
@@ -724,7 +730,12 @@ where
         };
         assert!(
             self.len() >= count + args,
-            "Attempted to pop value which did not belong to the current frame"
+            "Attempted to pop value which did not belong to the current frame: {}",
+            match &*self.frame().state.to_state() {
+                State::Extern(ext) => ext.function.id.as_str().to_string(),
+                State::Closure(closure) => closure.closure.function.name.as_str().to_string(),
+                State::Unknown => "<unknown>".to_string(),
+            }
         );
     }
 
@@ -748,7 +759,25 @@ where
     }
 
     pub fn clear(&mut self) {
-        let len = self.len();
+        let args = if let State::Extern(ExternState {
+            locked: Some(args), ..
+        }) = *self.frame().state.to_state()
+        {
+            args
+        } else {
+            0
+        };
+        debug_assert!(
+            self.len() >= args,
+            "Stack has popped locked elements from {}: {} < {}",
+            match &*self.frame().state.to_state() {
+                State::Extern(ext) => ext.function.id.clone(),
+                _ => unreachable!(),
+            },
+            self.len(),
+            args
+        );
+        let len = self.len() - args;
         self.stack.pop_many(len);
     }
 

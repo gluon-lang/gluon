@@ -16,17 +16,17 @@ use crate::{
 };
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub enum Token<'input> {
-    ShebangLine(&'input str),
-    Identifier(&'input str),
-    Operator(&'input str),
+pub enum Token<S> {
+    ShebangLine(S),
+    Identifier(S),
+    Operator(S),
 
-    StringLiteral(StringLiteral<'input>),
+    StringLiteral(StringLiteral<S>),
     CharLiteral(char),
     IntLiteral(i64),
     ByteLiteral(u8),
     FloatLiteral(NotNan<f64>),
-    DocComment(Comment<&'input str>),
+    DocComment(Comment<S>),
 
     Rec,
     Else,
@@ -68,7 +68,10 @@ pub enum Token<'input> {
     EOF, // Required for the layout algorithm
 }
 
-impl<'input> fmt::Display for Token<'input> {
+impl<S> fmt::Display for Token<S>
+where
+    S: fmt::Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Token::*;
 
@@ -127,13 +130,76 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
-pub enum StringLiteral<'input> {
-    Escaped(&'input str),
-    Raw(&'input str),
+impl<S> Token<S> {
+    pub(crate) fn map<R>(self, f: impl FnOnce(S) -> R) -> Token<R> {
+        use self::Token::*;
+        match self {
+            ShebangLine(s) => ShebangLine(f(s)),
+            Identifier(s) => Identifier(f(s)),
+            Operator(s) => Operator(f(s)),
+            StringLiteral(s) => StringLiteral(match s {
+                self::StringLiteral::Escaped(s) => self::StringLiteral::Escaped(f(s)),
+                self::StringLiteral::Raw(s) => self::StringLiteral::Raw(f(s)),
+            }),
+            CharLiteral(x) => CharLiteral(x),
+            IntLiteral(x) => IntLiteral(x),
+            ByteLiteral(x) => ByteLiteral(x),
+            FloatLiteral(x) => FloatLiteral(x),
+            DocComment(Comment { typ, content }) => DocComment(Comment {
+                typ,
+                content: f(content),
+            }),
+
+            Rec => Rec,
+            Else => Else,
+            Forall => Forall,
+            If => If,
+            In => In,
+            Let => Let,
+            Do => Do,
+            Seq => Seq,
+            Match => Match,
+            Then => Then,
+            Type => Type,
+            With => With,
+
+            LBrace => LBrace,
+            LBracket => LBracket,
+            LParen => LParen,
+
+            RBrace => RBrace,
+            RBracket => RBracket,
+            RParen => RParen,
+
+            At => At,
+            Colon => Colon,
+            Comma => Comma,
+            Dot => Dot,
+            DotDot => DotDot,
+            Equals => Equals,
+            Lambda => Lambda,
+            Pipe => Pipe,
+            RArrow => RArrow,
+            Question => Question,
+
+            OpenBlock => OpenBlock,
+            CloseBlock => CloseBlock,
+            Semi => Semi,
+
+            AttributeOpen => AttributeOpen,
+
+            EOF => EOF,
+        }
+    }
 }
 
-impl StringLiteral<'_> {
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+pub enum StringLiteral<S> {
+    Escaped(S),
+    Raw(S),
+}
+
+impl StringLiteral<&'_ str> {
     pub fn unescape(&self) -> String {
         match self {
             StringLiteral::Escaped(s) => unescape_string_literal(s),
@@ -164,7 +230,8 @@ fn unescape_string_literal(mut s: &str) -> String {
     string
 }
 
-pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
+pub type BorrowedToken<'input> = Token<&'input str>;
+pub type SpannedToken<'input> = Spanned<Token<&'input str>, Location>;
 
 pub type SpError = Spanned<Error, Location>;
 pub type Result<T, E = SpError> = std::result::Result<T, E>;
@@ -173,43 +240,43 @@ quick_error! {
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum Error {
         EmptyCharLiteral {
-            description("empty char literal")
+            display("empty char literal")
         }
         UnexpectedChar(ch: char) {
-            description("unexpected character")
+            display("unexpected character")
         }
         UnexpectedEof {
-            description("unexpected end of file")
+            display("unexpected end of file")
         }
         UnexpectedEscapeCode(ch: char) {
-            description("unexpected escape code")
+            display("unexpected escape code")
         }
         UnterminatedCharLiteral {
-            description("unterminated character literal")
+            display("unterminated character literal")
         }
         UnterminatedStringLiteral {
-            description("unterminated string literal")
+            display("unterminated string literal")
         }
         InvalidRawStringDelimiter {
-            description("raw strings can only use `#` as a delimter")
+            display("raw strings can only use `#` as a delimter")
         }
         NonParseableInt {
-            description("cannot parse integer, probable overflow")
+            display("cannot parse integer, probable overflow")
         }
         HexLiteralOverflow {
-            description("cannot parse hex literal, overflow")
+            display("cannot parse hex literal, overflow")
         }
         HexLiteralUnderflow {
-            description("cannot parse hex literal, underflow")
+            display("cannot parse hex literal, underflow")
         }
         HexLiteralWrongPrefix {
-            description("wrong hex literal prefix, should start as '0x' or '-0x'")
+            display("wrong hex literal prefix, should start as '0x' or '-0x'")
         }
         HexLiteralIncomplete {
-            description("cannot parse hex literal, incomplete")
+            display("cannot parse hex literal, incomplete")
         }
         UnexpectedAnd {
-            description("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
+            display("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
         }
     }
 }
@@ -396,7 +463,7 @@ impl<'input> Tokenizer<'input> {
                         // FIXME: whitespace alignment
                         let doc = Token::DocComment(Comment {
                             typ: CommentType::Block,
-                            content: &comment[3..].trim(),
+                            content: comment[3..].trim(),
                         });
                         return Ok(Some(pos::spanned2(start, end, doc)));
                     } else {
@@ -786,13 +853,13 @@ mod test {
         }))
     }
 
-    fn test(input: &str, expected: Vec<(&str, Token)>) {
-        use crate::base::source::Source;
+    fn test(input: &str, expected: Vec<(&str, BorrowedToken<'_>)>) {
+        use base::source::Source;
 
         let mut tokenizer = tokenizer(input);
         let mut count = 0;
         let length = expected.len();
-        let source = ::codespan::FileMap::new("test".into(), input.to_string());
+        let source = <base::source::FileMap as Source>::new(input);
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
             count += 1;
             println!("{:?}", token);

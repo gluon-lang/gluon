@@ -1,14 +1,13 @@
 #![allow(unused_macros)]
 #![allow(dead_code)]
 
-extern crate codespan;
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use self::{
-    base::{
-        ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
+    base::{source,
+        ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
@@ -20,12 +19,14 @@ use self::{
         metadata, rename,
         typecheck::{self, Typecheck},
     },
-    parser::{parse_partial_expr, reparse_infix, ParseErrors},
+    parser::{parse_partial_root_expr, reparse_infix, ParseErrors},
 };
+
+use {collect_mac::collect, quick_error::quick_error};
 
 pub use self::base::types::TypeExt;
 
-use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc, sync::Arc};
+use std::{cell::RefCell, fmt, iter::FromIterator, marker::PhantomData, rc::Rc, sync::Arc};
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
@@ -77,13 +78,11 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(
-    s: &str,
-) -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ParseErrors)> {
+pub fn parse_new(s: &str) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &TypeCache::new(), s)
+    parse_partial_root_expr(&mut module, &TypeCache::new(), s)
 }
 
 #[allow(dead_code)]
@@ -104,7 +103,13 @@ impl MockEnv {
         MockEnv {
             bool: {
                 let bool_sym = interner.simple_symbol("Bool");
-                let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
+                let bool_ty = Type::app(
+                    Type::ident(KindedIdent {
+                        name: bool_sym.clone(),
+                        typ: Kind::typ(),
+                    }),
+                    collect![],
+                );
                 Alias::new(bool_sym, Vec::new(), bool_ty)
             },
         }
@@ -180,7 +185,7 @@ pub(crate) fn in_file_error<E>(text: &str, errors: Errors<Spanned<E, BytePos>>) 
 where
     E: fmt::Display,
 {
-    let mut source = codespan::CodeMap::new();
+    let mut source = source::CodeMap::new();
     source.add_filemap("test".into(), text.into());
     InFile::new(source, errors)
 }
@@ -188,7 +193,7 @@ where
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
-) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
+) -> (RootExpr<Symbol>, Result<ArcType, Error>) {
     let mut expr = match parse_new(text) {
         Ok(expr) => expr,
         Err((expr, err)) => {
@@ -201,29 +206,36 @@ pub fn typecheck_expr_expected(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
-    let source = codespan::FileMap::new("test".into(), text.to_string());
-    rename::rename(
-        &source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+    let source = source::FileMap::new("test".into(), text.to_string());
+    let result = {
+        let (arena, expr) = expr.arena_expr();
+        let arena = arena.borrow();
 
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
+        rename::rename(
+            &source,
+            &mut SymbolModule::new("test".into(), &mut interner),
+            arena,
+            expr,
+        );
+        let (_, mut metadata) = metadata::metadata(&env, &expr);
+        reparse_infix(arena, &metadata, &*interner, expr).unwrap_or_else(|err| panic!("{}", err));
 
-    let result = tc.typecheck_expr_expected(&mut expr, expected);
+        let mut tc = Typecheck::new(
+            "test".into(),
+            &mut interner,
+            &env,
+            &TypeCache::new(),
+            &mut metadata,
+            arena,
+        );
+
+        tc.typecheck_expr_expected(expr, expected)
+    };
 
     (expr, result.map_err(|err| in_file_error(text, err).into()))
 }
 
-pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
+pub fn typecheck_expr(text: &str) -> (RootExpr<Symbol>, Result<ArcType, Error>) {
     typecheck_expr_expected(text, None)
 }
 
@@ -231,7 +243,7 @@ pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, Error
 pub fn typecheck_partial_expr(
     text: &str,
 ) -> (
-    SpannedExpr<Symbol>,
+    RootExpr<Symbol>,
     Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = match parse_new(text) {
@@ -244,24 +256,33 @@ pub fn typecheck_partial_expr(
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
 
-    let source = codespan::FileMap::new("test".into(), text.to_string());
-    rename::rename(
-        &source,
-        &mut SymbolModule::new("test".into(), &mut interner),
-        &mut expr,
-    );
-    let (_, mut metadata) = metadata::metadata(&env, &expr);
-    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+    let source = source::FileMap::new("test".into(), text.to_string());
 
-    let mut tc = Typecheck::new(
-        "test".into(),
-        &mut interner,
-        &env,
-        &TypeCache::new(),
-        &mut metadata,
-    );
+    let result = {
+        let (arena, expr) = expr.arena_expr();
+        let arena = arena.borrow();
 
-    let result = tc.typecheck_expr(&mut expr);
+        rename::rename(
+            &source,
+            &mut SymbolModule::new("test".into(), &mut interner),
+            arena,
+            expr,
+        );
+
+        let (_, mut metadata) = metadata::metadata(&env, &expr);
+
+        reparse_infix(arena, &metadata, &*interner, expr).unwrap_or_else(|err| panic!("{}", err));
+
+        let mut tc = Typecheck::new(
+            "test".into(),
+            &mut interner,
+            &env,
+            &TypeCache::new(),
+            &mut metadata,
+            arena,
+        );
+        tc.typecheck_expr(expr)
+    };
 
     (expr, result.map_err(|err| in_file_error(text, err)))
 }
@@ -269,12 +290,13 @@ pub fn typecheck_partial_expr(
 #[allow(dead_code)]
 pub fn typ(s: &str) -> ArcType {
     assert!(s.len() != 0);
-    typ_a(s, Vec::new())
+    typ_a(s, Kind::typ(), Vec::new())
 }
 
-pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
+pub fn typ_a<T>(s: &str, kind: ArcKind, args: Vec<T>) -> T
 where
-    T: From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
+    T::Types: FromIterator<T> + Extend<T>,
 {
     assert!(s.len() != 0);
 
@@ -285,9 +307,18 @@ where
         }
         Err(()) => {
             if args.len() == 0 {
-                Type::ident(intern(s))
+                Type::ident(KindedIdent {
+                    name: intern(s),
+                    typ: kind,
+                })
             } else {
-                Type::app(Type::ident(intern(s)), args.into_iter().collect())
+                Type::app(
+                    Type::ident(KindedIdent {
+                        name: intern(s),
+                        typ: kind,
+                    }),
+                    args.into_iter().collect(),
+                )
             }
         }
     }
@@ -559,10 +590,10 @@ macro_rules! assert_multi_unify_err {
 
 pub fn print_ident_types(expr: &SpannedExpr<Symbol>) {
     struct Visitor;
-    impl<'a> base::ast::Visitor<'a> for Visitor {
+    impl<'a> base::ast::Visitor<'_, 'a> for Visitor {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+        fn visit_expr(&mut self, expr: &SpannedExpr<'a, Symbol>) {
             match expr.value {
                 Expr::Ident(ref id) => {
                     println!("{} : {}", id.name, id.typ);

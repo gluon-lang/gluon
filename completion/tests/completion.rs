@@ -11,7 +11,7 @@ extern crate gluon_parser as parser;
 use crate::base::{
     ast::Argument,
     kind::{ArcKind, Kind},
-    metadata::{Comment, CommentType, Metadata},
+    metadata::{Attribute, Comment, CommentType, Metadata},
     pos::{BytePos, Span},
     types::{ArcType, Field, Type},
 };
@@ -36,6 +36,7 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKin
     let env = MockEnv::new();
 
     let (expr, result) = support::typecheck_expr(s);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
@@ -44,6 +45,7 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKin
 
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let (expr, result) = support::typecheck_expr(s);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     completion::find_all_symbols(expr.span, &expr, pos)
@@ -64,6 +66,7 @@ fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
 
 fn symbol(s: &str, pos: BytePos) -> Result<String, ()> {
     let (expr, result) = support::typecheck_expr(s);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     completion::symbol(expr.span, &expr, pos).map(|s| s.declared_name().to_string())
@@ -73,6 +76,7 @@ fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
     let env = MockEnv::new();
 
     let (expr, result) = support::typecheck_expr(s);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
@@ -88,6 +92,7 @@ fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
     let env = MockEnv::new();
 
     let (expr, _result) = support::typecheck_expr(s);
+    let expr = expr.expr();
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
     completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name).map(|meta| {
@@ -102,6 +107,7 @@ fn identifier() {
     let env = MockEnv::new();
 
     let (expr, result) = support::typecheck_expr("let abc = 1 in abc");
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env, expr.span, &expr, BytePos::from(15));
@@ -183,6 +189,7 @@ fn binop() {
     let env = MockEnv::new();
 
     let text = r#"
+#[infix(left, 4)]
 let (++) l r =
     l #Int+ 1
     r #Float+ 1.0
@@ -190,20 +197,21 @@ let (++) l r =
 1 ++ 2.0
 "#;
     let (expr, result) = support::typecheck_expr(text);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 3));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 6, 3));
     let expected = Ok(Either::Right(Type::function(
         vec![typ("Int"), typ("Float")],
         typ("Int"),
     )));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 1));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 6, 1));
     let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 7));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 6, 7));
     let expected = Ok(Either::Right(typ("Float")));
     assert_eq!(result, expected);
 }
@@ -220,6 +228,7 @@ let r = { x = 1 }
 r.x
 "#,
     );
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&typ_env, expr.span, &expr, BytePos::from(19));
@@ -266,6 +275,7 @@ let id x = x
 (id 1)
 "#;
     let (expr, result) = support::typecheck_expr(text);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let env = MockEnv::new();
@@ -410,14 +420,19 @@ fn metadata_at_binop() {
 
     let text = r#"
 /// test
+#[infix(left, 4)]
 let (+++) x y = 1
 1 +++ 3
 "#;
-    let result = get_metadata(text, BytePos::from(32));
+    let result = get_metadata(text, BytePos::from(50));
 
     let expected = Some(Metadata {
         comment: Some(line_comment("test".to_string())),
-        args: ["x@3_11", "y@3_13"]
+        attributes: vec![Attribute {
+            name: "infix".into(),
+            arguments: Some("left, 4".into()),
+        }],
+        args: ["x@4_11", "y@4_13"]
             .iter()
             .map(|arg| Argument::explicit(intern(arg)))
             .collect(),
@@ -549,6 +564,7 @@ let { x, y } = { x = 1, y = 2 }
 "#;
 
     let (expr, result) = support::typecheck_expr(text);
+    let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let symbols = completion::all_symbols(expr.span, &expr);

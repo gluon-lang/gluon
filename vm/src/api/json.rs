@@ -4,9 +4,11 @@ use std::{borrow::Borrow, fmt, result::Result as StdResult};
 
 use crate::base::types::ArcType;
 
-use crate::api::{Getable, OpaqueValue, VmType};
-use crate::thread::{ActiveThread, RootedThread, Thread, ThreadInternal};
-use crate::{ExternModule, Result, Variants};
+use crate::{
+    api::{Getable, OpaqueValue, ValueRef, VmInt, VmType},
+    thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
+    ExternModule, Result, Variants,
+};
 
 use crate::serde::de::{self, DeserializeState, MapAccess, SeqAccess, Visitor};
 
@@ -56,6 +58,89 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             ),
         },
     )
+}
+
+impl VmType for serde_json::Value {
+    type Type = Self;
+    fn make_type(vm: &Thread) -> ArcType {
+        JsonValue::make_type(vm)
+    }
+}
+
+impl<'vm> crate::api::Pushable<'vm> for serde_json::Value {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        use serde_json::Value::*;
+        let tag = match self {
+            Null => {
+                context.context().push_new_data(0, 0)?;
+                return Ok(());
+            }
+            Bool(b) => {
+                b.push(context)?;
+                1
+            }
+            Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    i.push(context)?;
+                    2
+                } else if let Some(i) = n.as_u64() {
+                    i.push(context)?;
+                    2
+                } else if let Some(i) = n.as_f64() {
+                    i.push(context)?;
+                    3
+                } else {
+                    return Err(format!("Unable to marshal serde_json::Number({})", n).into());
+                }
+            }
+            String(s) => {
+                s.push(context)?;
+                4
+            }
+            Array(a) => {
+                a.push(context)?;
+                5
+            }
+            Object(o) => {
+                crate::api::to_gluon_map(o, context)?;
+                6
+            }
+        };
+        context.context().push_new_data(tag, 1)?;
+        Ok(())
+    }
+}
+
+impl<'vm, 'value> crate::api::Getable<'vm, 'value> for serde_json::Value {
+    impl_getable_simple!();
+
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::Data(data) => match data.tag() {
+                0 => serde_json::Value::Null,
+                1 => serde_json::Value::Bool(bool::from_value(vm, data.get_variant(0).unwrap())),
+                2 => serde_json::Value::Number(
+                    VmInt::from_value(vm, data.get_variant(0).unwrap()).into(),
+                ),
+                3 => serde_json::Value::Number(
+                    serde_json::Number::from_f64(f64::from_value(vm, data.get_variant(0).unwrap()))
+                        .unwrap(),
+                ),
+                4 => {
+                    serde_json::Value::String(String::from_value(vm, data.get_variant(0).unwrap()))
+                }
+                5 => serde_json::Value::Array(Vec::from_value(vm, data.get_variant(0).unwrap())),
+                6 => {
+                    let mut map = Default::default();
+                    let inner = data.get_variant(0).unwrap();
+                    crate::api::from_gluon_map(&mut map, vm, inner);
+                    serde_json::Value::Object(map)
+                }
+                _ => ice!("ValueRef has a wrong tag: {}", data.tag()),
+            },
+            _ => ice!("ValueRef is not a std.json.Value"),
+        }
+    }
 }
 
 #[derive(Pushable, Getable, SerializeState)]

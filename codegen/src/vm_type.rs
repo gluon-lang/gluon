@@ -1,8 +1,10 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use shared::{map_type_params, split_for_impl};
 use syn::{self, Data, DeriveInput, Fields, GenericParam, Generics};
 
-use attr::{Container, CrateName};
+use crate::{
+    attr::{Container, CrateName},
+    shared::{map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -29,7 +31,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         quote! { #ty: _gluon_api::VmType, #ty::Type: Sized }
     });
 
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let gluon = match container.crate_name {
         CrateName::Some(ref ident) => quote! {
@@ -38,9 +40,9 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
             use #ident::thread as _gluon_thread;
         },
         CrateName::GluonVm => quote! {
-            use base as _gluon_base;
-            use api as _gluon_api;
-            use thread as _gluon_thread;
+            use crate::base as _gluon_base;
+            use crate::api as _gluon_api;
+            use crate::thread as _gluon_thread;
         },
         CrateName::None => quote! {
             use gluon::base as _gluon_base;
@@ -222,7 +224,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
 fn gen_type_application(generics: &Generics) -> TokenStream {
     let applications = map_type_params(generics, |param| {
         quote! {
-            vec.push(<#param as _gluon_api::VmType>::make_type(vm));
+            _gluon_base::types::AppVec::push(&mut vec, <#param as _gluon_api::VmType>::make_type(vm));
         }
     });
 

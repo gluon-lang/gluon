@@ -1,7 +1,9 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.15.1")] // # GLUON
 
 use std::{slice, str};
+
+use futures::{executor::block_on, future};
 
 use gluon::{
     vm::{
@@ -83,8 +85,10 @@ pub unsafe extern "C" fn glu_load_script(
 
 #[no_mangle]
 pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
-    let context = thread.context();
-    match thread.call_function(context, args) {
+    match block_on(future::poll_fn(|cx| {
+        let context = thread.context();
+        thread.call_function(cx, context, args)
+    })) {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
     }

@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/gluon_base/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_base/0.15.1")] // # GLUON
 #![allow(unknown_lints)]
 //! The base crate contains pervasive types used in the compiler such as type representations, the
 //! AST and some basic containers.
@@ -22,17 +22,21 @@ extern crate serde_state as serde;
 use std::fmt;
 
 macro_rules! type_cache {
-    ($name: ident ($($args: ident),*) ($($arg: ident : $arg_type: ty),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
+    ($name: ident ($($args: ident),*) $( where [ $($where_: tt)* ] )? ($($arg: ident : $arg_type: ty),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
 
         #[derive(Debug, Clone)]
-        pub struct $name<$($args),*> {
+        pub struct $name<$($args),*>
+            $(where $($where_)* )?
+        {
             $(pub $arg : $arg_type,)*
             $(pub $id : $typ,)+
             _marker: ::std::marker::PhantomData<( $($args),* )>,
         }
 
         impl<$($args),*> Default for $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>>,
+            where
+                $typ: From<$inner_type<$($args,)*>>,
+                $( $($where_)* )?
         {
             fn default() -> Self {
                 $name::new()
@@ -40,7 +44,9 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: From<$inner_type<$($args,)*>>,
+            where
+                $typ: From<$inner_type<$($args,)*>>,
+                $( $($where_)* )?
         {
             pub fn new() -> Self {
                 $name {
@@ -54,7 +60,9 @@ macro_rules! type_cache {
         }
 
         impl<$($args),*> $name<$($args),*>
-            where $typ: Clone,
+            where
+                $typ: Clone,
+                $( $($where_)* )?
         {
             $(
                 pub fn $id(&self) -> $typ {
@@ -65,8 +73,9 @@ macro_rules! type_cache {
     }
 }
 
+#[macro_export]
 macro_rules! chain {
-    ($alloc: expr; $first: expr, $($rest: expr),+) => {{
+    ($alloc: expr; $first: expr, $($rest: expr),+ $(,)?) => {{
         let mut doc = ::pretty::DocBuilder($alloc, $first.into());
         $(
             doc = doc.append($rest);
@@ -110,7 +119,8 @@ pub fn filename_to_module(filename: &str) -> String {
             .unwrap_or(filename)
     });
 
-    name.replace(|c: char| c == '/' || c == '\\', ".")
+    name.trim_start_matches(|c: char| c == '.' || c == '/')
+        .replace(|c: char| c == '/' || c == '\\', ".")
 }
 
 #[derive(Debug, Clone)]
@@ -151,5 +161,19 @@ impl fmt::Display for DebugLevel {
                 &High => "high",
             }
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn filename_to_module_test() {
+        assert_eq!(filename_to_module("./main.glu"), "main");
+        assert_eq!(filename_to_module("main.glu"), "main");
+        assert_eq!(filename_to_module("./main/test.glu"), "main.test");
+        assert_eq!(filename_to_module("main/test.glu"), "main.test");
     }
 }

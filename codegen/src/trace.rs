@@ -2,14 +2,16 @@ use std::borrow::Cow;
 
 use {
     proc_macro2::{Span, TokenStream},
-    shared::{map_type_params, split_for_impl},
     syn::{
         self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
         Generics, Ident, Type, Variant,
     },
 };
 
-use attr;
+use crate::{
+    attr,
+    shared::{map_type_params, split_for_impl},
+};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -55,9 +57,16 @@ fn gen_struct_cons<'a, I>(_ident: &Ident, fields: I) -> TokenStream
 where
     I: IntoIterator<Item = &'a Field>,
 {
-    let fields = fields.into_iter().map(|field| &field.ident);
+    let fields = fields
+        .into_iter()
+        .map(|field| &field.ident)
+        .collect::<Vec<_>>();
     quote! {
-        #(mark(&self.#fields, gc);)*
+        match self {
+            Self { #(#fields),* } => {
+                #(mark(#fields, gc);)*
+            }
+        }
     }
 }
 
@@ -86,20 +95,20 @@ fn derive_enum(
     ident: Ident,
     generics: Generics,
 ) -> TokenStream {
-    let cons;
-    {
+    let cons = if ast.variants.is_empty() {
+        quote!()
+    } else {
         let variants = ast
             .variants
             .iter()
             .map(|variant| gen_variant_match(&ident, variant));
 
-        cons = quote! {
-
-            match *self {
+        quote! {
+            match self {
                 #(#variants,)*
             }
-        };
-    }
+        }
+    };
 
     let tokens = gen_impl(container, ident, generics, cons);
     tokens
@@ -114,7 +123,7 @@ fn gen_impl(
     // generate bounds like T: Getable for every type parameter
     let trace_bounds = create_trace_bounds(&generics);
 
-    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
     let dummy_const = Ident::new(
         &format!("_IMPL_TRAVERSEABLE_FOR_{}", ident),
@@ -143,15 +152,15 @@ fn gen_impl(
             unsafe impl #impl_generics _gluon_gc::Trace for #ident #ty_generics
                 #where_clause #(#trace_bounds,)*
             {
-                unsafe fn root(&self) {
-                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, _: ()) {
+                unsafe fn root(&mut self) {
+                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &mut T, _: ()) {
                         _gluon_gc::Trace::root(this)
                     }
                     let gc = ();
                     #push_impl
                 }
-                unsafe fn unroot(&self) {
-                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &T, _: ()) {
+                unsafe fn unroot(&mut self) {
+                    unsafe fn mark<T: ?Sized + _gluon_gc::Trace>(this: &mut T, _: ()) {
                         _gluon_gc::Trace::unroot(this)
                     }
                     let gc = ();
@@ -174,8 +183,8 @@ fn gen_variant_match(ident: &Ident, variant: &Variant) -> TokenStream {
     let variant_ident = &variant.ident;
 
     let pattern = match &variant.fields {
-        Fields::Named(_) => quote! { #ident::#variant_ident{ #(ref #field_idents2),* } },
-        Fields::Unnamed(_) => quote! { #ident::#variant_ident( #(ref #field_idents2),* ) },
+        Fields::Named(_) => quote! { #ident::#variant_ident{ #( #field_idents2),* } },
+        Fields::Unnamed(_) => quote! { #ident::#variant_ident( #(#field_idents2),* ) },
         Fields::Unit => quote! { #ident::#variant_ident },
     };
 

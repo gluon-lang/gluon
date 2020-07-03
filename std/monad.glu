@@ -49,5 +49,8 @@ let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
 {
     Monad,
-    flat_map, (>>=), (=<<), join
+    flat_map,
+    (>>=),
+    (=<<),
+    join,
 }

@@ -1,27 +1,24 @@
-extern crate gluon_base;
-extern crate itertools;
-extern crate walkdir;
+use std::{
+    env,
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
-use std::env;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
-
-use itertools::Itertools;
-
-use walkdir::WalkDir;
+use {itertools::Itertools, walkdir::WalkDir};
 
 use gluon_base::filename_to_module;
 
 #[cfg(feature = "test")]
 mod gen_skeptic {
-    extern crate little_skeptic as skeptic;
-    extern crate walkdir;
+    use little_skeptic as skeptic;
 
-    use std::env;
-    use std::fs::{self, File};
-    use std::io::prelude::*;
-    use std::path::{Path, PathBuf};
+    use std::{
+        env,
+        fs::{self, File},
+        io::Read,
+        path::{Path, PathBuf},
+    };
 
     /// skeptic templates look for `rust` after the opening code fences so writing
     /// ```f#,rust
@@ -64,14 +61,12 @@ return;
         File::open(file)
             .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
             .unwrap();
-        File::create(&out_file_name)
-            .and_then(|mut out_file| out_file.write_all(&contents))
-            .unwrap();
+        fs::write(&out_file_name, contents).unwrap();
         out_file_name.to_str().expect("UTF-8 string").into()
     }
 
     pub fn generate() {
-        let test_locations: Vec<_> = self::walkdir::WalkDir::new("book/src")
+        let test_locations: Vec<_> = walkdir::WalkDir::new("book/src")
             .into_iter()
             .filter_map(|e| {
                 let e = e.unwrap();

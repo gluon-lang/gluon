@@ -1,6 +1,6 @@
 use std::fmt;
 
-use codespan_reporting::Diagnostic;
+use codespan_reporting::diagnostic::Diagnostic;
 
 use pretty::Arena;
 
@@ -8,6 +8,7 @@ use base::{
     ast,
     error::AsDiagnostic,
     pos::{self, BytePos, Spanned},
+    source::FileId,
     types::{ArcType, Filter, ToDoc, TypeExt, TypeFormatter},
 };
 
@@ -30,7 +31,10 @@ pub enum TypeError<I, T> {
     /// Type were expected to have a certain field
     UndefinedField(T, I),
     /// Constructor type was found in a pattern but did not have the expected number of arguments
-    PatternError(T, usize),
+    PatternError {
+        constructor_type: T,
+        pattern_args: usize,
+    },
     /// Errors found when trying to unify two types
     Unification(T, T, Vec<UnifyTypeError<I, T>>),
     /// Error were found when trying to unify the kinds of two types
@@ -145,7 +149,7 @@ where
                         arena.space(),
                         TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
-                    arena.newline(),
+                    arena.hardline(),
                     "Found:",
                     chain![&arena;
                         arena.space(),
@@ -155,9 +159,9 @@ where
                 .group();
                 let doc = chain![&arena;
                     "Expected the following types to be equal",
-                    arena.newline(),
+                    arena.hardline(),
                     types,
-                    arena.newline(),
+                    arena.hardline(),
                     arena.as_string(errors.len()),
                     " errors were found during unification:"
                 ];
@@ -176,8 +180,14 @@ where
                 }
                 write!(f, "{}", errors.last().unwrap())
             }
-            PatternError(typ, expected_len) => {
-                write!(f, "Type {} has {} to few arguments", typ, expected_len)
+            PatternError { constructor_type, pattern_args } => {
+                write!(
+                    f,
+                    "Matching on constructor `{}` requires `{}` arguments but the pattern specifies `{}`",
+                    constructor_type,
+                    constructor_type.arg_iter().count(),
+                    pattern_args
+                )
             }
             KindError(err) => kindcheck::fmt_kind_error(err, f),
             RecursionCheck(err) => write!(f, "{}", err),
@@ -221,11 +231,11 @@ where
         + pos::HasSpan
         + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
 {
-    fn as_diagnostic(&self) -> Diagnostic {
+    fn as_diagnostic(&self, map: &base::source::CodeMap) -> Diagnostic<FileId> {
         use self::TypeError::*;
         match *self {
-            UnableToResolveImplicit(ref err) => err.as_diagnostic(),
-            _ => Diagnostic::new_error(self.to_string()),
+            UnableToResolveImplicit(ref err) => err.as_diagnostic(map),
+            _ => Diagnostic::error().with_message(self.to_string()),
         }
     }
 }

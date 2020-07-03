@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -ex
 
 LEVEL=$1
@@ -9,7 +9,7 @@ if [ -z "$LEVEL" ]; then
 fi
 
 clog --$LEVEL
-if [ -z $(head -1 CHANGELOG.md | grep $VERSION) ]; then
+if [[ -z $(head -1 CHANGELOG.md | grep $VERSION) ]]; then
     git checkout CHANGELOG.md
     echo "Wrong version specified"
     exit 1

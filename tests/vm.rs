@@ -9,12 +9,12 @@ mod support;
 use crate::support::*;
 
 use gluon::{
-    base::{pos::BytePos, types::Type},
+    base::{pos::BytePos, source::Source, types::Type},
     vm,
     vm::{
         api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},
         channel::Sender,
-        thread::{RootedThread, Thread, ThreadInternal},
+        thread::Thread,
     },
     Error, ThreadExt,
 };
@@ -782,10 +782,10 @@ g 10
     }
 }
 
-#[test]
-fn completion_with_prelude() {
+#[tokio::test]
+async fn completion_with_prelude() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let source = r#"
 let prelude  = import! std.prelude
@@ -813,53 +813,61 @@ let from f : (Int -> Option a) -> Stream a =
 "#;
 
     let (expr, _) = vm
-        .typecheck_str("example", source, None)
+        .typecheck_str_async("example", source, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::find(
         &vm.get_env(),
         lines.span(),
-        &expr,
+        &expr.expr(),
         lines.byte_index(16.into(), 29.into()).unwrap(),
     )
     .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
 
-#[test]
-fn completion_with_prelude_at_0() {
+#[tokio::test]
+async fn completion_with_prelude_at_0() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1";
 
     let (expr, _) = vm
-        .typecheck_str("example", expr, None)
+        .typecheck_str_async("example", expr, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let file_map = vm.get_database().get_filemap("example").expect("file_map");
-    let result = completion::find(&vm.get_env(), file_map.span(), &expr, BytePos::from(0))
-        .map(|either| either.right().unwrap());
+    let result = completion::find(
+        &vm.get_env(),
+        file_map.span(),
+        &expr.expr(),
+        BytePos::from(0),
+    )
+    .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
 
-#[test]
-fn suggestion_from_implicit_prelude() {
+#[tokio::test]
+async fn suggestion_from_implicit_prelude() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1 ";
 
     let (expr, _) = vm
-        .typecheck_str("example", expr, None)
+        .typecheck_str_async("example", expr, None)
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
     let lines = vm.get_database().get_filemap("example").expect("file_map");
     let result = completion::suggest(
         &vm.get_env(),
         lines.span(),
-        &expr,
+        &expr.expr(),
         lines.byte_index(0.into(), 2.into()).unwrap(),
     );
     assert!(!result.is_empty());
@@ -867,26 +875,22 @@ fn suggestion_from_implicit_prelude() {
 
 /// Would cause panics in `Source` as the spans from the implicit prelude were used with the
 /// `Source` from the normal expression
-#[test]
-fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
+#[tokio::test]
+async fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
     let _ = ::env_logger::try_init();
-    let vm = make_vm();
+    let vm = make_vm_async().await;
 
     let expr = "1";
 
-    vm.typecheck_str("example", expr, Some(&Type::float()))
+    vm.typecheck_str_async("example", expr, Some(&Type::float()))
+        .await
         .unwrap_err();
 }
 
 #[test]
-#[ignore] // FIXME
 fn deep_clone_partial_application() {
-    use gluon::base::symbol::Symbol;
-
     let _ = ::env_logger::try_init();
-    let vm = RootedThread::new();
-
-    assert_eq!(vm.allocated_memory(), 0);
+    let vm = gluon::VmBuilder::new().build();
 
     let child = vm.new_thread().unwrap();
 
@@ -905,13 +909,12 @@ fn deep_clone_partial_application() {
     let global_memory_without_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
     let memory_for_closures = child.allocated_memory();
 
-    vm.set_global(
-        Symbol::from("@test"),
+    vm.get_database_mut().set_global(
+        "test",
         Type::hole(),
         Default::default(),
-        result.unwrap().0.get_value(),
-    )
-    .unwrap();
+        &result.unwrap().0.into_inner(),
+    );
 
     let global_memory_with_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
 
@@ -1074,7 +1077,7 @@ r#"
 rec
 type Eff (r : Type -> Type) a =
     | Pure a
-    | Impure : forall x . Arr r x a -> Eff r a 
+    | Impure : forall x . Arr r x a -> Eff r a
 
 type Arr r a b = a -> Eff r b
 in

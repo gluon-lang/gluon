@@ -16,6 +16,7 @@ let { Show, show } = import! std.show
 let { Category, id, compose } = import! std.category
 let { Num, (+), (-), (*), (/), negate } = import! std.num
 let { Bool, not } = import! std.bool
+let { Array } = import! std.array
 let { (++) } = import! std.string
 let { error } = import! std.prim
 let { flat_map } = import! std.monad
@@ -35,13 +36,18 @@ let { flat_map } = import! std.monad
     Group,
 
     Eq,
-    (==), (/=),
+    (==),
+    (/=),
 
     Ord,
-    (<), (<=), (>=), (>),
+    (<),
+    (<=),
+    (>=),
+    (>),
 
     Category,
-    id, compose,
+    id,
+    compose,
 
     Functor,
     Applicative,
@@ -49,13 +55,19 @@ let { flat_map } = import! std.monad
     Monad,
 
     Num,
-    (+), (-), (*), (/), negate,
+    (+),
+    (-),
+    (*),
+    (/),
+    negate,
 
     Show,
     show,
 
     Option,
     Bool,
+
+    Array,
 
     (++),
 

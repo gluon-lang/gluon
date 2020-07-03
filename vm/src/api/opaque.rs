@@ -108,7 +108,9 @@ where
     T: Trace,
 {
     impl_trace! { self, gc,
-        mark(&self.0, gc)
+        match self {
+            Self(x, ..) => mark(x, gc),
+        }
     }
 }
 

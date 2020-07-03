@@ -1,13 +1,18 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use crate::base::ast::Visitor;
-use crate::base::ast::{
-    self, Argument, AstType, Expr, HasMetadata, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+#[cfg(feature = "serde_derive")]
+use serde_derive::{Deserialize, Serialize};
+
+use crate::base::{
+    ast::{
+        self, Argument, AstType, Expr, HasMetadata, Pattern, PatternField, SpannedExpr,
+        SpannedPattern, ValueBinding, Visitor,
+    },
+    fnv::FnvMap,
+    metadata::{BaseMetadata, Metadata, MetadataEnv},
+    symbol::{Name, Symbol},
+    types::{row_iter, TypeExt},
 };
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::{Metadata, MetadataEnv};
-use crate::base::symbol::{Name, Symbol};
-use crate::base::types::{row_iter, TypeExt};
 
 struct Environment<'b> {
     env: &'b dyn MetadataEnv,
@@ -96,12 +101,12 @@ impl From<MaybeMetadata> for Arc<Metadata> {
 }
 
 impl MaybeMetadata {
-    fn merge(metadata: &Metadata, other: &MaybeMetadata) -> MaybeMetadata {
+    fn merge_base(metadata: &BaseMetadata, other: &MaybeMetadata) -> MaybeMetadata {
         if metadata.has_data() {
             match other {
-                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.clone())),
+                MaybeMetadata::Empty => MaybeMetadata::Data(Arc::new(metadata.to_metadata())),
                 MaybeMetadata::Data(other) => {
-                    MaybeMetadata::Data(Arc::new(metadata.clone().merge_ref(other)))
+                    MaybeMetadata::Data(Arc::new(metadata.to_metadata().merge_ref(other)))
                 }
             }
         } else {
@@ -130,12 +135,13 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: MaybeMetadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = MaybeMetadata::merge(&bind.metadata, &metadata);
+                    let metadata = MaybeMetadata::merge_base(&bind.metadata, &metadata);
                     self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let mut metadata = MaybeMetadata::merge(&bind.metadata, &metadata).into_owned();
+                    let mut metadata =
+                        MaybeMetadata::merge_base(&bind.metadata, &metadata).into_owned();
                     metadata.args = bind
                         .args
                         .iter()
@@ -174,7 +180,6 @@ pub fn metadata(
             match pattern.value {
                 Pattern::Record {
                     ref fields,
-                    ref types,
                     ref typ,
                     ref implicit_import,
                 } => {
@@ -182,37 +187,39 @@ pub fn metadata(
                         self.stack_var(implicit_import.value.clone(), metadata.clone());
                     }
 
-                    for field in fields {
-                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            let id = match field.value {
-                                Some(ref pat) => match pat.value {
-                                    Pattern::Ident(ref id) => &id.name,
-                                    _ => {
-                                        return self
-                                            .new_pattern(MaybeMetadata::Data(m.clone()), pat);
-                                    }
-                                },
-                                None => &field.name.value,
-                            };
-                            self.stack_var(id.clone(), m.clone());
-                        }
-                    }
-                    for field in types {
-                        if let Some(m) = metadata.get_module(field.name.value.as_ref()) {
-                            // TODO Shouldn't need to insert this metadata twice
-                            if let Some(type_field) = typ
-                                .type_field_iter()
-                                .find(|type_field| type_field.name.name_eq(&field.name.value))
-                            {
-                                self.stack_var(type_field.typ.name.clone(), m.clone());
+                    for field in &**fields {
+                        match field {
+                            PatternField::Value { name, value } => {
+                                if let Some(m) = metadata.get_module(name.value.as_ref()) {
+                                    let id = match value {
+                                        Some(pat) => match pat.value {
+                                            Pattern::Ident(ref id) => &id.name,
+                                            _ => {
+                                                return self.new_pattern(
+                                                    MaybeMetadata::Data(m.clone()),
+                                                    pat,
+                                                );
+                                            }
+                                        },
+                                        None => &name.value,
+                                    };
+                                    self.stack_var(id.clone(), m.clone());
+                                }
                             }
+                            PatternField::Type { name } => {
+                                if let Some(m) = metadata.get_module(name.value.as_ref()) {
+                                    // TODO Shouldn't need to insert this metadata twice
+                                    if let Some(type_field) = typ
+                                        .type_field_iter()
+                                        .find(|type_field| type_field.name.name_eq(&name.value))
+                                    {
+                                        self.stack_var(type_field.typ.name.clone(), m.clone());
+                                    }
 
-                            let id = field
-                                .value
-                                .as_ref()
-                                .unwrap_or_else(|| &field.name.value)
-                                .clone();
-                            self.stack_var(id, m.clone());
+                                    let id = name.value.clone();
+                                    self.stack_var(id, m.clone());
+                                }
+                            }
                         }
                     }
                 }
@@ -259,7 +266,7 @@ pub fn metadata(
         }
 
         fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> MaybeMetadata {
-            for arg in &bind.args {
+            for arg in &*bind.args {
                 if let Some(type_metadata) = arg
                     .name
                     .value
@@ -289,19 +296,20 @@ pub fn metadata(
                 } => {
                     let mut module = BTreeMap::new();
 
-                    for field in exprs {
+                    for field in &**exprs {
                         let maybe_metadata = match field.value {
                             Some(ref expr) => self.metadata_expr(expr),
                             None => self.metadata(&field.name.value).into(),
                         };
-                        let maybe_metadata = MaybeMetadata::merge(&field.metadata, &maybe_metadata);
+                        let maybe_metadata =
+                            MaybeMetadata::merge_base(&field.metadata, &maybe_metadata);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata {
                             let field_name = String::from(field.name.value.as_ref());
                             module.insert(field_name, metadata);
                         }
                     }
 
-                    for field in types {
+                    for field in &**types {
                         let maybe_metadata = self.metadata(&field.name.value);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
                             let name = Name::new(field.name.value.as_ref()).name().as_str();
@@ -348,11 +356,11 @@ pub fn metadata(
                     result
                 }
                 Expr::TypeBindings(ref bindings, ref expr) => {
-                    for bind in bindings {
+                    for bind in &**bindings {
                         let type_metadata = Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
-                            || bind.metadata.clone(),
-                            |m| m.merge(bind.metadata.clone()),
+                            || bind.metadata.to_metadata(),
+                            |m| m.merge_with_base(&bind.metadata),
                         );
 
                         if metadata.has_data() {
@@ -406,7 +414,7 @@ pub fn metadata(
         }
     }
 
-    impl<'a, 'b> Visitor<'a> for MetadataVisitor<'b> {
+    impl<'a, 'b> Visitor<'a, '_> for MetadataVisitor<'b> {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {

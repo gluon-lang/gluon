@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.12.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.15.1")] // # GLUON
 #![recursion_limit = "128"]
 #[cfg(test)]
 extern crate env_logger;
@@ -33,7 +33,7 @@ pub extern crate gluon_vm as vm;
 
 macro_rules! try_future {
     ($e:expr) => {
-        try_future!($e, Box::new)
+        try_future!($e, Box::pin)
     };
     ($e:expr, $f:expr) => {
         match $e {
@@ -51,9 +51,10 @@ pub mod lift_io;
 pub mod query;
 pub mod std_lib;
 
-pub use crate::vm::thread::{RootedThread, Thread};
-
-use futures::{future, prelude::*};
+pub use crate::vm::{
+    field_decl, primitive, record, record_p, record_type,
+    thread::{RootedThread, Thread},
+};
 
 use either::Either;
 
@@ -63,11 +64,12 @@ use std::{
 };
 
 use crate::base::{
-    ast::{self, SpannedExpr},
+    ast::{self, OwnedExpr, SpannedExpr},
     error::{Errors, InFile},
     filename_to_module,
     metadata::Metadata,
     pos::{BytePos, Span, Spanned},
+    source::FileId,
     symbol::{Symbol, Symbols},
     types::{ArcType, TypeCache},
 };
@@ -82,52 +84,46 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::*,
-    import::{add_extern_module, DefaultImporter, Import},
-    query::{Compilation, CompilationBase},
+    import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
+    query::{Compilation, CompilationBase, CompilationMut},
 };
 
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[allow(deprecated)]
 pub enum Error {
     /// Error found when parsing gluon code
     Parse(err: InFile<parser::Error>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when typechecking gluon code
     Typecheck(err: InFile<check::typecheck::HelpError<Symbol>>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when performing an IO action such as loading a file
     IO(err: IoError) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when executing code in the virtual machine
     VM(err: crate::vm::Error) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Error found when expanding macros
     Macro(err: InFile<macros::Error>) {
-        description(err.description())
         display("{}", err)
         from()
     }
     Other(err: macros::Error) {
-        description(err.description())
         display("{}", err)
         from()
     }
     /// Multiple errors where found
     Multiple(err: Errors<Error>) {
-        description(err.description())
         display("{}", err)
     }
 }
@@ -165,9 +161,6 @@ impl fmt::Display for IoError {
 }
 
 impl StdError for IoError {
-    fn description(&self) -> &str {
-        self.0.description()
-    }
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         self.0.source()
     }
@@ -200,8 +193,11 @@ impl std::hash::Hash for IoError {
 }
 
 impl base::error::AsDiagnostic for Error {
-    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
-        codespan_reporting::Diagnostic::new_error(self.to_string())
+    fn as_diagnostic(
+        &self,
+        _map: &base::source::CodeMap,
+    ) -> codespan_reporting::diagnostic::Diagnostic<FileId> {
+        codespan_reporting::diagnostic::Diagnostic::error().with_message(self.to_string())
     }
 }
 
@@ -252,29 +248,28 @@ impl From<Errors<Error>> for Error {
 }
 
 impl Error {
-    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> ::std::io::Result<String> {
+    pub fn emit_string(&self) -> ::std::io::Result<String> {
         let mut output = Vec::new();
-        self.emit(
-            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
-            code_map,
-        )?;
+        self.emit(&mut codespan_reporting::term::termcolor::NoColor::new(
+            &mut output,
+        ))?;
         Ok(String::from_utf8(output).unwrap())
     }
 
-    pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> ::std::io::Result<()>
-    where
-        W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
-    {
-        match *self {
-            Error::Parse(ref err) => err.emit(writer, code_map),
-            Error::Typecheck(ref err) => err.emit(writer, code_map),
-            Error::IO(ref err) => write!(writer, "{}", err),
-            Error::VM(ref err) => write!(writer, "{}", err),
-            Error::Macro(ref err) => err.emit(writer, code_map),
-            Error::Other(ref err) => write!(writer, "{}", err),
-            Error::Multiple(ref errors) => {
+    pub fn emit(
+        &self,
+        writer: &mut dyn codespan_reporting::term::termcolor::WriteColor,
+    ) -> ::std::io::Result<()> {
+        match self {
+            Error::Parse(err) => err.emit(writer),
+            Error::Typecheck(err) => err.emit(writer),
+            Error::IO(err) => write!(writer, "{}", err),
+            Error::VM(err) => write!(writer, "{}", err),
+            Error::Macro(err) => err.emit(writer),
+            Error::Other(err) => write!(writer, "{}", err),
+            Error::Multiple(errors) => {
                 for err in errors {
-                    err.emit(writer, code_map)?;
+                    err.emit(writer)?;
                 }
                 Ok(())
             }
@@ -309,14 +304,29 @@ impl Default for Settings {
 }
 
 pub struct ModuleCompiler<'a> {
-    pub database: &'a query::CompilerDatabase,
+    pub database: &'a mut query::CompilerDatabase,
     symbols: Symbols,
 }
 
+impl<'a> ModuleCompiler<'a> {
+    fn new(database: &'a mut query::CompilerDatabase) -> Self {
+        Self {
+            database,
+            symbols: Symbols::default(),
+        }
+    }
+}
+
 impl<'a> std::ops::Deref for ModuleCompiler<'a> {
-    type Target = &'a query::CompilerDatabase;
+    type Target = query::CompilerDatabase;
     fn deref(&self) -> &Self::Target {
-        &self.database
+        self.database
+    }
+}
+
+impl<'a> std::ops::DerefMut for ModuleCompiler<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.database
     }
 }
 
@@ -390,7 +400,9 @@ impl import::DatabaseMut {
 }
 
 /// Extension trait which provides methods to load and execute gluon code
-pub trait ThreadExt {
+
+#[async_trait::async_trait]
+pub trait ThreadExt: Send + Sync {
     fn get_database(&self) -> import::DatabaseSnapshot;
     fn get_database_mut(&self) -> import::DatabaseMut;
 
@@ -401,11 +413,11 @@ pub trait ThreadExt {
     #[doc(hidden)]
     fn thread(&self) -> &Thread;
 
-    fn module_compiler<'a>(&'a self, database: &'a query::CompilerDatabase) -> ModuleCompiler<'a> {
-        ModuleCompiler {
-            database,
-            symbols: Default::default(),
-        }
+    fn module_compiler<'a>(
+        &'a self,
+        database: &'a mut query::CompilerDatabase,
+    ) -> ModuleCompiler<'a> {
+        ModuleCompiler::new(database)
     }
 
     /// Parse `expr_str`, returning an expression if successful
@@ -414,7 +426,7 @@ pub trait ThreadExt {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> StdResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
         self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
@@ -425,10 +437,10 @@ pub trait ThreadExt {
         type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
-    ) -> SalvageResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    ) -> SalvageResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
         let vm = self.thread();
         parse_expr(
-            &mut self.module_compiler(&vm.get_database()),
+            &mut ModuleCompiler::new(&mut vm.get_database()),
             type_cache,
             file,
             expr_str,
@@ -437,20 +449,21 @@ pub trait ThreadExt {
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
     /// expression
-    fn typecheck_expr(
+    async fn typecheck_expr(
         &self,
         file: &str,
         expr_str: &str,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut OwnedExpr<Symbol>,
     ) -> Result<ArcType> {
         let vm = self.thread();
         expr.typecheck_expected(
-            &mut self.module_compiler(&vm.get_database()),
+            &mut ModuleCompiler::new(&mut vm.get_database()),
             vm,
             file,
             expr_str,
             None,
         )
+        .await
         .map(|result| result.typ)
         .map_err(|t| t.1)
     }
@@ -460,26 +473,41 @@ pub trait ThreadExt {
         file: &str,
         expr_str: &str,
         expected_type: Option<&ArcType>,
-    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType)> {
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType)> {
+        futures::executor::block_on(self.typecheck_str_async(file, expr_str, expected_type))
+    }
+
+    async fn typecheck_str_async(
+        &self,
+        file: &str,
+        expr_str: &str,
+        expected_type: Option<&ArcType>,
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType)> {
         let vm = self.thread();
         {
             let mut db = vm.get_database_mut();
             db.add_module(file.into(), expr_str.into());
         }
-        let db = vm.get_database();
+        let mut db = vm.get_database();
 
         let TypecheckValue { expr, typ, .. } = db
-            .typechecked_module(file.into(), expected_type.cloned())
+            .typechecked_source_module(file.into(), expected_type.cloned())
+            .await
             .map_err(|t| t.1)?;
+
+        // Ensure the type is stored in the database so we can collect typechecked_module later
+        db.module_type(file.into(), None).await?;
+        db.module_metadata(file.into(), None).await?;
+
         Ok((expr, typ))
     }
 
     /// Compiles `expr` into a function which can be added and run by the `vm`
-    fn compile_script(
+    async fn compile_script(
         &self,
         filename: &str,
         expr_str: &str,
-        expr: &SpannedExpr<Symbol>,
+        expr: &OwnedExpr<Symbol>,
     ) -> Result<CompiledModule> {
         let vm = self.thread();
         TypecheckValue {
@@ -489,71 +517,99 @@ pub trait ThreadExt {
             metadata_map: Default::default(),
         }
         .compile(
-            &mut self.module_compiler(&vm.get_database()),
+            &mut ModuleCompiler::new(&mut vm.get_database()),
             vm,
             filename,
             expr_str,
             (),
         )
+        .await
         .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
     #[cfg(feature = "serialization")]
-    fn compile_to_bytecode<S>(
+    async fn compile_to_bytecode<S>(
         &self,
         name: &str,
         expr_str: &str,
         serializer: S,
     ) -> StdResult<S::Ok, Either<Error, S::Error>>
     where
-        S: serde::Serializer,
+        S: serde::Serializer + Send,
         S::Error: 'static,
     {
         let thread = self.thread();
         compile_to(
             expr_str,
-            &mut self.module_compiler(&thread.get_database()),
+            &mut ModuleCompiler::new(&mut thread.get_database()),
             &thread,
             name,
             expr_str,
             None,
             serializer,
         )
+        .await
     }
 
     /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
     ///
     /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
     #[cfg(feature = "serialization")]
-    fn load_bytecode<'vm, D>(&'vm self, name: &str, deserializer: D) -> BoxFuture<'vm, (), Error>
+    async fn load_bytecode<'vm, D, E>(&self, name: &str, deserializer: D) -> Result<()>
     where
-        D: serde::Deserializer<'vm> + 'vm,
-        D::Error: Send + Sync,
+        D: for<'de> serde::Deserializer<'de, Error = E> + Send,
+        E: Send + Sync,
     {
         let thread = self.thread();
-        Box::new(Precompiled(deserializer).load_script(
-            &mut self.module_compiler(&thread.get_database()),
-            thread,
-            name,
-            "",
-            (),
-        ))
+        Precompiled(deserializer)
+            .load_script(
+                &mut ModuleCompiler::new(&mut thread.get_database()),
+                thread,
+                name,
+                "",
+                (),
+            )
+            .await
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
-    fn extract_metadata(
+    async fn extract_metadata(
         &self,
         file: &str,
         expr_str: &str,
-    ) -> Result<(Arc<SpannedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
+    ) -> Result<(Arc<OwnedExpr<Symbol>>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
-        let (expr, typ) = self.typecheck_str(file, expr_str, None)?;
 
+        let module_name = filename_to_module(file);
         let vm = self.thread();
-        let (metadata, _) = metadata::metadata(&vm.get_env(), &expr);
-        Ok((expr, typ, metadata))
+        {
+            let mut db = vm.get_database_mut();
+            db.add_module(module_name.clone(), expr_str.into());
+        }
+
+        let mut db = vm.get_database();
+        let TypecheckValue {
+            expr,
+            typ,
+            metadata,
+            ..
+        } = db
+            .typechecked_source_module(module_name.clone(), None)
+            .await
+            .map_err(|(_, err)| err)?;
+
+        // Ensure the type is stored in the database so we can collect typechecked_module later
+        db.module_type(module_name.clone(), None).await?;
+        db.module_metadata(module_name.clone(), None).await?;
+
+        if db.compiler_settings().full_metadata {
+            Ok((expr, typ, metadata))
+        } else {
+            let (metadata, _) = metadata::metadata(&vm.get_env(), &expr.expr());
+            Ok((expr, typ, metadata))
+        }
     }
 
     /// Compiles `input` and if it is successful runs the resulting code and stores the resulting
@@ -562,10 +618,10 @@ pub trait ThreadExt {
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
     fn load_script(&self, filename: &str, input: &str) -> Result<()> {
-        self.load_script_async(filename, input).wait()
+        futures::executor::block_on(self.load_script_async(filename, input))
     }
 
-    fn load_script_async<'vm>(&self, filename: &str, input: &str) -> BoxFuture<'vm, (), Error> {
+    async fn load_script_async(&self, filename: &str, input: &str) -> Result<()> {
         let module_name = filename_to_module(filename);
 
         let vm = self.thread();
@@ -573,32 +629,30 @@ pub trait ThreadExt {
             let mut db = vm.get_database_mut();
             db.add_module(module_name.clone(), input.into());
         }
-        let db = vm.get_database();
-        Box::new(future::result(db.global(module_name).map(|_| ())))
+        let mut db = vm.get_database();
+        db.global(module_name).await.map(|_| ())
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
     fn load_file<'vm>(&'vm self, filename: &str) -> Result<()> {
-        self.load_file_async(filename).wait()
+        futures::executor::block_on(self.load_file_async(filename))
     }
 
-    fn load_file_async<'vm>(&self, filename: &str) -> BoxFuture<'static, (), Error> {
+    async fn load_file_async<'vm>(&self, filename: &str) -> Result<()> {
         let vm = self.thread();
         // Use the import macro's path resolution if it exists so that we mimick the import
         // macro as close as possible
         let import = get_import(vm);
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
-        Box::new(
-            import
-                .load_module(
-                    &mut self.module_compiler(&import.snapshot(vm.root_thread())),
-                    vm,
-                    &module_name,
-                )
-                .map_err(|(_, err)| err.into())
-                .map(|_| ())
-                .into_future(),
-        )
+        import
+            .load_module(
+                &mut ModuleCompiler::new(&mut import.snapshot(vm.root_thread())),
+                vm,
+                &module_name,
+            )
+            .await
+            .map_err(|(_, err)| err.into())
+            .map(|_| ())
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -611,6 +665,8 @@ pub trait ThreadExt {
     /// ```
     /// # use gluon::{new_vm, ThreadExt};
     /// # fn main() {
+    /// # // Workaround stack overflow on appveyor
+    /// # std::thread::Builder::new().stack_size(2_000_000).spawn(move || {
     /// let vm = new_vm();
     /// let (result, _) = vm
     ///     .run_expr::<String>(
@@ -619,6 +675,7 @@ pub trait ThreadExt {
     ///     )
     ///     .unwrap();
     /// assert_eq!(result, "Hello world");
+    /// }).unwrap().join().unwrap()
     /// # }
     /// ```
     ///
@@ -626,23 +683,7 @@ pub trait ThreadExt {
     where
         T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
     {
-        let vm = self.thread();
-        let expected = T::make_type(vm);
-        expr_str
-            .run_expr(
-                &mut self.module_compiler(&vm.get_database()),
-                vm,
-                name,
-                expr_str,
-                Some(&expected),
-            )
-            .and_then(move |execute_value| {
-                Ok((
-                    T::from_value(vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
-            .wait()
+        futures::executor::block_on(self.run_expr_async(name, expr_str))
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -653,13 +694,15 @@ pub trait ThreadExt {
     /// Import from gluon's standard library and evaluate a string
     ///
     /// ```
-    /// # use gluon::{new_vm, ThreadExt};
+    /// # use gluon::{new_vm_async, ThreadExt};
     /// # use gluon::base::types::Type;
-    /// # fn main() {
-    /// let vm = new_vm();
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let vm = new_vm_async().await;
     /// let result = vm
-    ///     .run_expr::<String>("example",
+    ///     .run_expr_async::<String>("example",
     ///         " let string  = import! \"std/string.glu\" in string.trim \"    Hello world  \t\" ")
+    ///     .await
     ///     .unwrap();
     /// let expected = ("Hello world".to_string(), Type::string());
     ///
@@ -667,37 +710,39 @@ pub trait ThreadExt {
     /// }
     /// ```
     ///
-    fn run_expr_async<T>(
-        &self,
-        name: &str,
-        expr_str: &str,
-    ) -> BoxFuture<'static, (T, ArcType), Error>
+    async fn run_expr_async<'vm, T>(&'vm self, name: &str, expr_str: &str) -> Result<(T, ArcType)>
     where
-        T: for<'vm, 'value> Getable<'vm, 'value> + VmType + Send + 'static,
+        T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
     {
         let vm = self.thread();
         let expected = T::make_type(&vm);
-        let vm = vm.root_thread();
-        Box::new(
-            expr_str
-                .run_expr(
-                    &mut self.module_compiler(&vm.get_database()),
-                    vm.clone(),
-                    name,
-                    expr_str,
-                    Some(&expected),
-                )
-                .and_then(move |execute_value| {
-                    Ok((
-                        T::from_value(&vm, execute_value.value.get_variant()),
-                        execute_value.typ,
-                    ))
-                }),
-        )
+
+        let execute_value = expr_str
+            .run_expr(
+                &mut ModuleCompiler::new(&mut vm.get_database()),
+                vm,
+                name,
+                expr_str,
+                Some(&expected),
+            )
+            .await?;
+        Ok((
+            T::from_value(vm, execute_value.value.get_variant()),
+            execute_value.typ,
+        ))
     }
 
     fn format_expr(&self, formatter: &mut Formatter, file: &str, input: &str) -> Result<String> {
-        fn has_format_disabling_errors(file: &codespan::FileName, err: &Error) -> bool {
+        futures::executor::block_on(self.format_expr_async(formatter, file, input))
+    }
+
+    async fn format_expr_async(
+        &self,
+        formatter: &mut Formatter,
+        file: &str,
+        input: &str,
+    ) -> Result<String> {
+        fn has_format_disabling_errors(file: &str, err: &Error) -> bool {
             match *err {
                 Error::Multiple(ref errors) => errors
                     .iter()
@@ -708,14 +753,14 @@ pub trait ThreadExt {
         }
 
         let thread = self.thread();
-        let db = thread.get_database();
-        let mut compiler = self.module_compiler(&db);
+        let mut db = thread.get_database();
+        let mut compiler = ModuleCompiler::new(&mut db);
         let compiler = &mut compiler;
 
-        let expr = match input.reparse_infix(compiler, thread, file, input) {
+        let expr = match input.reparse_infix(compiler, thread, file, input).await {
             Ok(expr) => expr.expr,
             Err((Some(expr), err)) => {
-                if has_format_disabling_errors(&codespan::FileName::from(file.to_string()), &err) {
+                if has_format_disabling_errors(file, &err) {
                     return Err(err);
                 }
                 expr.expr
@@ -724,17 +769,18 @@ pub trait ThreadExt {
         };
 
         let file_map = db.get_filemap(file).unwrap();
-        let expr = skip_implicit_prelude(file_map.span(), &expr);
+        let expr = skip_implicit_prelude(file_map.span(), &expr.expr());
         Ok(formatter.pretty_expr(&*file_map, expr))
     }
 }
 
-fn skip_implicit_prelude(span: Span<BytePos>, mut l: &SpannedExpr<Symbol>) -> &SpannedExpr<Symbol> {
+fn skip_implicit_prelude<'a, 'ast>(
+    span: Span<BytePos>,
+    mut l: &'a SpannedExpr<'ast, Symbol>,
+) -> &'a SpannedExpr<'ast, Symbol> {
     loop {
         match l.value {
-            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
-                l = e;
-            }
+            ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => l = e,
             _ => break l,
         }
     }
@@ -767,22 +813,26 @@ impl<'a> ModuleCompiler<'a> {
         &mut self.symbols
     }
 
-    fn include_implicit_prelude(
+    fn include_implicit_prelude<'ast>(
         &mut self,
+        arena: ast::ArenaRef<'_, 'ast, Symbol>,
         type_cache: &TypeCache<Symbol, ArcType>,
         name: &str,
-        expr: &mut SpannedExpr<Symbol>,
+        expr: &mut SpannedExpr<'ast, Symbol>,
     ) {
         use std::mem;
         if name == "std.prelude" {
             return;
         }
 
-        let prelude_expr = parse_expr(self, type_cache, "", PRELUDE).unwrap();
+        let prelude_expr = parse_expr_inner(arena, self, type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
         // Replace the 0 in the prelude with the actual expression
-        fn assign_last_body(mut l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
+        fn assign_last_body<'ast>(
+            mut l: &mut SpannedExpr<'ast, Symbol>,
+            original_expr: SpannedExpr<'ast, Symbol>,
+        ) {
             while let ast::Expr::LetBindings(_, ref mut e) = l.value {
                 l = e;
             }
@@ -798,17 +848,22 @@ let { IO, Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = _
 
 let { (+), (-), (*), (/), negate, (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
 
-let __implicit_bool @ { ? } = import! std.bool
+let { ? } = import! std.bool
 
 let { ? } = import! std.option
 
-let __implicit_float @ { ? } = import! std.float
+let { ? } = import! std.float
 
-let __implicit_int @ { ? } = import! std.int
+let { ? } = import! std.int
 
-let __implicit_string @ { ? } = import! std.string
+let { ? } = import! std.string
+
+let { ? } = import! std.array
 
 let { error } = import! std.prim
+
+let __error = error
+let __string_eq: String -> String -> Bool = (==)
 
 in ()
 "#;
@@ -829,8 +884,33 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        let vm =
-            RootedThread::with_global_state(crate::vm::vm::GlobalVmStateBuilder::new().build());
+        futures::executor::block_on(self.build_inner(None))
+    }
+
+    pub async fn build_async(self) -> RootedThread {
+        struct TokioSpawn;
+        impl futures::task::Spawn for TokioSpawn {
+            fn spawn_obj(
+                &self,
+                future: futures::task::FutureObj<'static, ()>,
+            ) -> StdResult<(), futures::task::SpawnError> {
+                tokio::spawn(future);
+                Ok(())
+            }
+        }
+
+        self.build_inner(Some(Box::new(TokioSpawn))).await
+    }
+
+    async fn build_inner(
+        self,
+        spawner: Option<Box<dyn futures::task::Spawn + Send + Sync>>,
+    ) -> RootedThread {
+        let vm = RootedThread::with_global_state(
+            crate::vm::vm::GlobalVmStateBuilder::new()
+                .spawner(spawner)
+                .build(),
+        );
 
         {
             let macros = vm.get_macros();
@@ -850,9 +930,14 @@ impl VmBuilder {
             macros.insert(String::from("lift_io"), lift_io::LiftIo);
         }
 
-        add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
+        add_extern_module_with_deps(
+            &vm,
+            "std.prim",
+            crate::vm::primitives::load,
+            vec!["std.types".into()],
+        );
 
-        vm.run_expr::<OpaqueValue<&Thread, Hole>>(
+        vm.run_expr_async::<OpaqueValue<RootedThread, Hole>>(
             "",
             r#"//@NO-IMPLICIT-PRELUDE
                     let _ = import! std.types
@@ -860,27 +945,44 @@ impl VmBuilder {
                     ()
                 "#,
         )
+        .await
         .unwrap_or_else(|err| panic!("{}", err));
 
-        add_extern_module(&vm, "std.byte.prim", crate::vm::primitives::load_byte);
-        add_extern_module(&vm, "std.int.prim", crate::vm::primitives::load_int);
-        add_extern_module(&vm, "std.float.prim", crate::vm::primitives::load_float);
-        add_extern_module(&vm, "std.string.prim", crate::vm::primitives::load_string);
-        add_extern_module(&vm, "std.fs.prim", crate::vm::primitives::load_fs);
-        add_extern_module(&vm, "std.path.prim", crate::vm::primitives::load_path);
-        add_extern_module(&vm, "std.char.prim", crate::vm::primitives::load_char);
-        add_extern_module(&vm, "std.array.prim", crate::vm::primitives::load_array);
+        let deps: &[(_, fn(&Thread) -> _)] = &[
+            ("std.byte.prim", crate::vm::primitives::load_byte),
+            ("std.int.prim", crate::vm::primitives::load_int),
+            ("std.float.prim", crate::vm::primitives::load_float),
+            ("std.string.prim", crate::vm::primitives::load_string),
+            ("std.fs.prim", crate::vm::primitives::load_fs),
+            ("std.char.prim", crate::vm::primitives::load_char),
+            ("std.char.prim", crate::vm::primitives::load_char),
+            ("std.thread.prim", crate::vm::channel::load_thread),
+            ("std.io.prim", crate::std_lib::io::load),
+        ];
+        for (name, load_fn) in deps {
+            add_extern_module_with_deps(&vm, name, load_fn, vec!["std.types".into()]);
+        }
 
-        add_extern_module(&vm, "std.lazy.prim", crate::vm::lazy::load);
-        add_extern_module(&vm, "std.reference.prim", crate::vm::reference::load);
+        add_extern_module_with_deps(
+            &vm,
+            "std.path.prim",
+            crate::vm::primitives::load_path,
+            vec!["std.path.types".into()],
+        );
 
-        add_extern_module(&vm, "std.channel.prim", crate::vm::channel::load_channel);
-        add_extern_module(&vm, "std.thread.prim", crate::vm::channel::load_thread);
-        add_extern_module(&vm, "std.debug.prim", crate::vm::debug::load);
-        add_extern_module(&vm, "std.io.prim", crate::std_lib::io::load);
-        add_extern_module(&vm, "std.process.prim", crate::std_lib::process::load);
-        add_extern_module(&vm, "std.env.prim", crate::std_lib::env::load);
-        add_extern_module(&vm, "std.time.prim", crate::std_lib::time::load);
+        let deps: &[(_, fn(&Thread) -> _)] = &[
+            ("std.array.prim", crate::vm::primitives::load_array),
+            ("std.lazy.prim", crate::vm::lazy::load),
+            ("std.reference.prim", crate::vm::reference::load),
+            ("std.channel.prim", crate::vm::channel::load_channel),
+            ("std.debug.prim", crate::vm::debug::load),
+            ("std.process.prim", crate::std_lib::process::load),
+            ("std.env.prim", crate::std_lib::env::load),
+            ("std.time.prim", crate::std_lib::time::load),
+        ];
+        for (name, load_fn) in deps {
+            add_extern_module(&vm, name, load_fn);
+        }
 
         add_extern_module(
             &vm,
@@ -891,12 +993,14 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
             available_if = "gluon is compiled with the 'serialization' feature",
+            dependencies = ["std.json"],
             args(&vm, "std.json.prim", crate::vm::api::json::load)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "regex")],
             available_if = "gluon is compiled with the 'regex' feature",
+            dependencies = ["std.regex.types"],
             args(&vm, "std.regex.prim", crate::std_lib::regex::load)
         );
 
@@ -909,6 +1013,7 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
+            dependencies = ["std.http.types"],
             args(&vm, "std.http.prim", crate::std_lib::http::load)
         );
 
@@ -926,6 +1031,10 @@ impl VmBuilder {
 /// loaded.
 pub fn new_vm() -> RootedThread {
     VmBuilder::default().build()
+}
+
+pub async fn new_vm_async() -> RootedThread {
+    VmBuilder::default().build_async().await
 }
 
 #[cfg(test)]

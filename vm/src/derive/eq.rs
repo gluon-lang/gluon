@@ -1,32 +1,33 @@
 use crate::base::{
     ast::{
-        Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
+        self, Alternative, Argument, Expr, ExprField, Pattern, TypeBinding, TypedIdent,
         ValueBinding,
     },
     pos,
     symbol::{Symbol, Symbols},
-    types::{ctor_args, remove_forall, row_iter, Type},
+    types::{ctor_args, remove_forall, row_iter, Type, TypeContext},
 };
 
 use crate::macros::Error;
 
 use crate::derive::*;
 
-pub fn generate(
+pub fn generate<'ast>(
+    mut arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
-    bind: &TypeBinding<Symbol>,
-) -> Result<ValueBinding<Symbol>, Error> {
+    bind: &TypeBinding<'ast, Symbol>,
+) -> Result<ValueBinding<'ast, Symbol>, Error> {
     let span = bind.name.span;
 
     let eq = TypedIdent::new(symbols.simple_symbol("eq"));
     let l = Symbol::from("l");
     let r = Symbol::from("r");
 
-    let matcher = Box::new(pos::spanned(
+    let matcher = arena.alloc(pos::spanned(
         span,
         Expr::Tuple {
             typ: Type::hole(),
-            elems: vec![ident(span, l.clone()), ident(span, r.clone())],
+            elems: arena.alloc_extend(vec![ident(span, l.clone()), ident(span, r.clone())]),
         },
     ));
 
@@ -41,7 +42,7 @@ pub fn generate(
                 symbols.simple_symbol("==")
             };
 
-            let eq_check = app(
+            let eq_check = arena.app(
                 span,
                 equal_symbol,
                 vec![
@@ -51,7 +52,7 @@ pub fn generate(
             );
 
             Some(match acc {
-                Some(acc) => infix(span, acc, symbols.simple_symbol("&&"), eq_check),
+                Some(acc) => arena.infix(span, acc, symbols.simple_symbol("&&"), eq_check),
                 None => eq_check,
             })
         })
@@ -68,7 +69,7 @@ pub fn generate(
                 expr: ident(span, symbols.simple_symbol("False")),
             };
 
-            let alts = row_iter(variants)
+            let alts: Vec<_> = row_iter(variants)
                 .map(|variant| {
                     let l_pattern_args: Vec<_> = ctor_args(&variant.typ)
                         .map(|field| {
@@ -92,10 +93,11 @@ pub fn generate(
                             span,
                             Pattern::Constructor(
                                 TypedIdent::new(variant.name.clone()),
-                                pattern_args
-                                    .into_iter()
-                                    .map(|arg| pos::spanned(span, Pattern::Ident(arg)))
-                                    .collect(),
+                                arena.alloc_extend(
+                                    pattern_args
+                                        .into_iter()
+                                        .map(|arg| pos::spanned(span, Pattern::Ident(arg))),
+                                ),
                             ),
                         )
                     };
@@ -104,10 +106,10 @@ pub fn generate(
                             span,
                             Pattern::Tuple {
                                 typ: Type::hole(),
-                                elems: vec![
+                                elems: arena.alloc_extend(vec![
                                     ctor_pattern(l_pattern_args.into_iter().map(|t| t.1).collect()),
                                     ctor_pattern(r_pattern_args),
-                                ],
+                                ]),
                             },
                         ),
                         expr,
@@ -115,7 +117,7 @@ pub fn generate(
                 })
                 .chain(Some(catch_all_alternative))
                 .collect();
-            Expr::Match(matcher, alts)
+            Expr::Match(matcher, arena.alloc_extend(alts))
         }
         Type::Record(ref row) => {
             let l_symbols: Vec<_> = row_iter(row)
@@ -139,79 +141,73 @@ pub fn generate(
                     Pattern::Record {
                         implicit_import: None,
                         typ: Type::hole(),
-                        types: Vec::new(),
-                        fields: row_iter(row)
-                            .zip(symbols)
-                            .map(|(field, bind)| PatternField {
+                        fields: arena.alloc_extend(row_iter(row).zip(symbols).map(
+                            |(field, bind)| PatternField::Value {
                                 name: pos::spanned(span, field.name.clone()),
                                 value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                            })
-                            .collect(),
+                            },
+                        )),
                     },
                 )
             };
             Expr::Match(
                 matcher,
-                vec![Alternative {
+                arena.alloc_extend(vec![Alternative {
                     pattern: pos::spanned(
                         span,
                         Pattern::Tuple {
-                            elems: vec![
+                            elems: arena.alloc_extend(vec![
                                 generate_record_pattern(
                                     l_symbols.into_iter().map(|t| t.1).collect(),
                                 ),
                                 generate_record_pattern(r_symbols),
-                            ],
+                            ]),
                             typ: Type::hole(),
                         },
                     ),
                     expr,
-                }],
+                }]),
             )
         }
         _ => return Err(Error::message("Unable to derive eq for this type")),
     };
 
-    let self_type: AstType<_> = Type::app(
-        Type::ident(bind.alias.value.name.clone()),
-        bind.alias
-            .value
-            .params()
-            .iter()
-            .cloned()
-            .map(Type::generic)
-            .collect(),
-    );
+    let mut self_type = {
+        let mut arena = arena;
+        move || bind.alias.value.self_type(&mut arena)
+    };
 
-    let eq_record_expr = Expr::rec_let_bindings(
-        vec![ValueBinding {
-            name: pos::spanned(span, Pattern::Ident(eq.clone())),
-            args: [l, r]
-                .iter()
-                .map(|arg| Argument::explicit(pos::spanned(span, TypedIdent::new(arg.clone()))))
-                .collect(),
-            expr: pos::spanned(span, comparison_expr),
-            metadata: Default::default(),
-            typ: Some(Type::function(
-                vec![self_type.clone(), self_type.clone()],
-                Type::hole(),
-            )),
-            resolved_type: Type::hole(),
-        }],
-        pos::spanned(
-            span,
-            Expr::Record {
-                typ: Type::hole(),
-                types: Vec::new(),
-                exprs: vec![ExprField {
-                    metadata: Default::default(),
-                    name: pos::spanned(span, symbols.simple_symbol("==")),
-                    value: Some(ident(span, eq.name.clone())),
-                }],
-                base: None,
-            },
-        ),
-    );
+    let eq_record_expr =
+        Expr::rec_let_bindings(
+            arena,
+            vec![ValueBinding {
+                name: pos::spanned(span, Pattern::Ident(eq.clone())),
+                args: arena.alloc_extend([l, r].iter().map(|arg| {
+                    Argument::explicit(pos::spanned(span, TypedIdent::new(arg.clone())))
+                })),
+                expr: pos::spanned(span, comparison_expr),
+                metadata: Default::default(),
+                typ: Some(
+                    arena
+                        .clone()
+                        .function(vec![self_type(), self_type()], arena.hole()),
+                ),
+                resolved_type: Type::hole(),
+            }],
+            pos::spanned(
+                span,
+                Expr::Record {
+                    typ: Type::hole(),
+                    types: &mut [],
+                    exprs: arena.alloc_extend(vec![ExprField {
+                        metadata: Default::default(),
+                        name: pos::spanned(span, symbols.simple_symbol("==")),
+                        value: Some(ident(span, eq.name.clone())),
+                    }]),
+                    base: None,
+                },
+            ),
+        );
 
     Ok(ValueBinding {
         name: pos::spanned(
@@ -221,10 +217,10 @@ pub fn generate(
                 bind.alias.value.name.declared_name()
             )))),
         ),
-        args: Vec::new(),
+        args: &mut [],
         expr: pos::spanned(span, eq_record_expr),
         metadata: Default::default(),
-        typ: Some(binding_type(symbols, "Eq", self_type, bind)),
+        typ: Some(binding_type(arena, symbols, "Eq", self_type(), bind)),
         resolved_type: Type::hole(),
     })
 }
