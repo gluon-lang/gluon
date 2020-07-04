@@ -1,3 +1,19 @@
+<a name="v0.16.0"></a>
+## v0.16.0 (2020-07-04)
+
+
+#### Features
+
+*   Make tokio an optional dependency ([c3450a99](https://github.com/gluon-lang/gluon/commit/c3450a99656f2c6298d7b937d976ac5d0e96f6c2), closes [#843](https://github.com/gluon-lang/gluon/issues/843))
+*   Update to codespan_reporting 0.9 ([a6f214ce](https://github.com/gluon-lang/gluon/commit/a6f214ce120c34f37d5b2169dba593f576f24265))
+
+#### Bug Fixes
+
+*   Handle errors when pushing a BTreeMap ([bd8ad34f](https://github.com/gluon-lang/gluon/commit/bd8ad34fbf294729442c0c8d0e8983903b59cbdf), closes [#847](https://github.com/gluon-lang/gluon/issues/847))
+*   Convert rust tuples such that they can be used polymorphically ([6c4d5731](https://github.com/gluon-lang/gluon/commit/6c4d5731cefff867f468c2982eb55df6cf69aa8f), closes [#848](https://github.com/gluon-lang/gluon/issues/848))
+
+
+
 <a name="v0.15.1"></a>
 ### v0.15.1 (2020-06-20)
 

@@ -1,5 +1,5 @@
 //! Code formatter.
-#![doc(html_root_url = "https://docs.rs/gluon_formatter/0.15.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_formatter/0.16.0")] // # GLUON
 
 extern crate codespan;
 #[macro_use]
