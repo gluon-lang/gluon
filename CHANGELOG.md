@@ -1,3 +1,13 @@
+<a name="v0.16.1"></a>
+### v0.16.1 (2020-07-05)
+
+
+#### Bug Fixes
+
+*   Gracefully error on concurrently loaded cyclic modules ([e6f1aa95](https://github.com/gluon-lang/gluon/commit/e6f1aa9555684b049f44f412d6f606fceda6cd7b))
+
+
+
 <a name="v0.16.0"></a>
 ## v0.16.0 (2020-07-04)
 
