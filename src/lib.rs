@@ -630,7 +630,7 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(module_name.clone(), input.into());
         }
         let mut db = vm.get_database();
-        db.global(module_name).await.map(|_| ())
+        db.import(module_name).await.map(|_| ())
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`

@@ -183,7 +183,7 @@ pub(crate) trait ImportApi: Send + Sync {
         compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
-    ) -> Result<ArcType, (Option<ArcType>, MacroError)>;
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
     fn fork(
         &mut self,
@@ -210,14 +210,14 @@ where
         compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
-    ) -> Result<ArcType, (Option<ArcType>, MacroError)> {
+    ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
         assert!(module_id.is_global());
         let modulename = module_id.name().definition_name();
 
         self.importer
             .import(compiler, vm, &modulename)
             .await
-            .map_err(|(t, err)| (t, MacroError::new(err)))
+            .map_err(|(t, err)| (t, err))
     }
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         Self::snapshot(self, thread)
@@ -542,9 +542,7 @@ where
                         .map_err(|err| Error::String(err.to_string()))?;
                     modulename
                 }
-                Expr::Literal(Literal::String(ref filename)) => {
-                    format!("@{}", filename_to_module(filename))
-                }
+                Expr::Literal(Literal::String(ref filename)) => filename_to_module(filename),
                 _ => {
                     return Err(Error::String(
                         "Expected a string literal or path to import".into(),

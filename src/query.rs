@@ -439,18 +439,20 @@ fn recover_cycle<T>(
     cycle: &[String],
     module: &String,
 ) -> StdResult<T, Error> {
+    let mut cycle: Vec<_> = cycle
+        .iter()
+        .filter(|k| k.contains("CompileStorage(import("))
+        .map(|k| {
+            k.trim_matches(|c: char| c != '"')
+                .trim_matches('"')
+                .trim_start_matches('@')
+                .to_string()
+        })
+        .collect();
+    cycle.pop();
     Err(macros::Error::new(crate::import::Error::CyclicDependency(
         module.to_string(),
-        cycle
-            .iter()
-            .filter(|k| k.contains("import"))
-            .map(|k| {
-                k.trim_matches(|c: char| c != '"')
-                    .trim_matches('"')
-                    .trim_start_matches('@')
-                    .to_string()
-            })
-            .collect(),
+        cycle,
     ))
     .into())
 }
@@ -638,14 +640,11 @@ async fn import(
     db: &mut dyn Compilation,
     modulename: String,
 ) -> StdResult<TypedIdent<Symbol>, Error> {
+    assert!(!modulename.starts_with('@'));
     let thread = db.thread().root_thread();
     let compiler = db.compiler();
 
-    let name = Symbol::from(if modulename.starts_with('@') {
-        modulename.clone()
-    } else {
-        format!("@{}", modulename)
-    });
+    let name = Symbol::from(format!("@{}", modulename));
     let result = crate::get_import(&thread)
         .load_module(&mut ModuleCompiler::new(compiler), &thread, &name)
         .await
