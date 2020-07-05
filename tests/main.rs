@@ -1,15 +1,16 @@
 use std::{
-    fs::File,
-    io::{self, Read},
+    io,
     path::{Path, PathBuf},
 };
 
 use {
+    anyhow::anyhow,
     collect_mac::collect,
     futures::{join, prelude::*, stream, task::SpawnExt},
     serde_derive::Deserialize,
     structopt::StructOpt,
     thiserror::Error,
+    tokio::fs,
 };
 
 use gluon::{
@@ -182,22 +183,36 @@ impl TestCase {
 }
 
 async fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
-    let mut file = File::open(&filename)?;
-    let mut text = String::new();
-    file.read_to_string(&mut text)?;
+    let text = fs::read_to_string(filename).await?;
     let (De(test), _) = vm.run_expr_async(&name, &text).await?;
     Ok(test)
 }
 
-async fn run_file<'t>(
-    vm: &'t Thread,
-    name: &str,
-    filename: &Path,
-) -> Result<(OpaqueValue<RootedThread, Hole>, ArcType), Error> {
-    let mut file = File::open(&filename)?;
-    let mut text = String::new();
-    file.read_to_string(&mut text)?;
-    Ok(vm.run_expr_async(&name, &text).await?)
+async fn run_fail_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<(), Error> {
+    let source = fs::read_to_string(&filename).await?;
+    let error_pattern = {
+        let pat = "// ERROR";
+        assert!(
+            source.starts_with(pat),
+            "Failure tests must have an error pattern to match against"
+        );
+        &source.lines().next().unwrap()[pat.len()..].trim()
+    };
+    match vm.load_script_async(&name, &source).await {
+        Ok(err) => Err(anyhow!(
+            "Expected test '{}' to fail\n{:?}",
+            filename.to_str().unwrap(),
+            err
+        )
+        .into()),
+        Err(ref err) if !err.to_string().contains(error_pattern) => Err(anyhow!(
+            "Error does not match the error pattern.\nExpected:\n\t`{}`\nActual:\n\t`{}`",
+            error_pattern,
+            err
+        )
+        .into()),
+        Err(_) => Ok(()),
+    }
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
@@ -279,9 +294,7 @@ async fn run_doc_tests<'t>(
     name: &str,
     filename: &Path,
 ) -> Result<Vec<tensile::Test<Error>>, Error> {
-    let mut file = File::open(&filename)?;
-    let mut text = String::new();
-    file.read_to_string(&mut text)?;
+    let text = fs::read_to_string(filename).await?;
 
     let (expr, _, _) = vm.extract_metadata(&name, &text).await?;
 
@@ -386,15 +399,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
             tensile::test(
                 name.clone(),
                 tensile::Future(std::panic::AssertUnwindSafe(async move {
-                    match run_file(&vm, &name, &filename).await {
-                        Ok(err) => Err(format!(
-                            "Expected test '{}' to fail\n{:?}",
-                            filename.to_str().unwrap(),
-                            err.0,
-                        )
-                        .into()),
-                        Err(_) => Ok(()),
-                    }
+                    run_fail_test(&vm, &name, &filename).await
                 })),
             )
         })
