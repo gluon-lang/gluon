@@ -16,7 +16,7 @@ documentation = "https://docs.rs/gluon"
 proc-macro = true
 
 [dependencies]
-syn = "1"
+syn = { version = "1", features = ["extra-traits"] }
 quote = "1"
 proc-macro2 = "1"
 

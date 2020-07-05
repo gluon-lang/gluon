@@ -1,10 +1,13 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
 
-use syn::{
-    self,
-    parse::{self, Parse},
-    Meta::*,
-    Path,
+use {
+    quote::ToTokens,
+    syn::{
+        self,
+        parse::{self, Parse},
+        Meta::*,
+        Path,
+    },
 };
 
 fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
@@ -84,7 +87,18 @@ impl Container {
                             Some(get_lit_str(&m.path, &m.path, &m.lit).unwrap().value())
                     }
 
-                    _ => panic!("unexpected gluon container attribute: {:?}", meta_item),
+                    Meta(meta_item) => {
+                        let path = meta_item
+                            .path()
+                            .into_token_stream()
+                            .to_string()
+                            .replace(' ', "");
+                        panic!("unexpected gluon container attribute: `{}`", path)
+                    }
+
+                    Lit(_) => {
+                        panic!("Unexpected literal in gluon container attribute",);
+                    }
                 }
             }
         }
@@ -108,7 +122,10 @@ fn get_lit_str<'a>(
     if let syn::Lit::Str(ref lit) = *lit {
         Ok(lit)
     } else {
-        panic!("Expected attribute `{:?}` to be a string", attr_name)
+        panic!(
+            "Expected attribute `{:?}` to be a string",
+            attr_name.into_token_stream().to_string().replace(' ', "")
+        )
     }
 }
 
