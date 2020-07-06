@@ -2833,11 +2833,13 @@ where
             }
 
             let f = chain![arena;
-                field.name.as_ref(),
-                arena.line(),
-                arena.concat(field.typ.params().iter().map(|param| {
-                    arena.text(param.id.as_ref()).append(arena.line())
-                })),
+                chain![arena;
+                    field.name.as_ref(),
+                    arena.line(),
+                    arena.concat(field.typ.params().iter().map(|param| {
+                        arena.text(param.id.as_ref()).append(arena.line())
+                    }))
+                ].group(),
                 arena.text("= "),
                 if filter == Filter::RetainKey {
                     arena.text("...")
