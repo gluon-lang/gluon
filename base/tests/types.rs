@@ -102,6 +102,7 @@ fn show_record_multifield() {
     );
     assert_eq_display!(format!("{}", typ), "{ Test a = a -> String, x : Int }");
 }
+
 #[test]
 fn show_record_multiline() {
     let data = |s, a| ArcType::from(type_con(s, a));
@@ -136,6 +137,44 @@ fn show_record_multiline() {
     x : Int,
     test : Test a,
     (+) : Int -> Int -> Int
+}"#
+    );
+}
+
+#[test]
+fn show_record_long_type() {
+    let data = |s, a| ArcType::from(type_con(s, a));
+    let fun = Type::function(
+        vec![
+            data(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                vec![],
+            ),
+            data("a", vec![]),
+            data("a", vec![]),
+        ],
+        Type::string(),
+    );
+    let test = data("Test", vec![data("a", vec![])]);
+    let record = Type::record(
+        vec![Field::new(
+            "Test",
+            Alias::from(AliasData::new(
+                "Test",
+                vec![Generic::new("a", Kind::typ())],
+                fun.clone(),
+            )),
+        )],
+        vec![],
+    );
+
+    assert_eq_display!(
+        format!("{}", record),
+        r#"{
+    Test a = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        -> a
+        -> a
+        -> String
 }"#
     );
 }
@@ -262,10 +301,7 @@ fn show_record_multi_line_nested() {
 #[test]
 fn show_variant() {
     let typ: ArcType<&str> = Type::variant(vec![
-        Field::new(
-            "A",
-            Type::function(vec![Type::int()], Type::opaque()),
-        ),
+        Field::new("A", Type::function(vec![Type::int()], Type::opaque())),
         Field::new("B", Type::opaque()),
     ]);
     assert_eq_display!(format!("{}", typ), "| A Int\n| B");
