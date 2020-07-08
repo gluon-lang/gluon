@@ -69,16 +69,17 @@ y
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
 
-#[test]
-fn unclosed_string() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse(
-        r#"
+test_parse_error! {
+    unclosed_string,
+    r#"
 "abc
-"#,
-    );
-    assert!(result.is_err());
+123"#,
+    |_: base::ast::ArenaRef<'_, '_, String>| string("abc\n123"),
+    {
+        let error = Error::Token(parser::TokenizeError::UnterminatedStringLiteral);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
+        ParseErrors::from(vec![pos::spanned(span, error)])
+    }
 }
 
 #[test]

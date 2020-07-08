@@ -9,6 +9,7 @@ use self::Error::*;
 use crate::{
     base::{
         ast::is_operator_byte,
+        error::Errors,
         metadata::{Comment, CommentType},
         pos::{self, BytePos, Column, Line, Location, Spanned},
     },
@@ -351,6 +352,7 @@ pub struct Tokenizer<'input> {
     input: &'input str,
     chars: CharLocations<'input>,
     start_index: BytePos,
+    pub errors: Errors<SpError>,
 }
 
 impl<'input> Tokenizer<'input> {
@@ -364,6 +366,7 @@ impl<'input> Tokenizer<'input> {
             input: input.src(),
             chars,
             start_index: input.start_index(),
+            errors: Errors::new(),
         }
     }
 
@@ -541,7 +544,16 @@ impl<'input> Tokenizer<'input> {
             }
         }
 
-        self.error(start, UnterminatedStringLiteral)
+        let end = self.chars.location;
+
+        self.errors
+            .push(pos::spanned2(start, end, UnterminatedStringLiteral));
+
+        Ok(pos::spanned2(
+            start,
+            end,
+            Token::StringLiteral(StringLiteral::Escaped(self.slice(content_start, end))),
+        ))
     }
 
     fn raw_string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
@@ -845,11 +857,18 @@ mod test {
     fn tokenizer<'input>(
         input: &'input str,
     ) -> impl Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input {
-        Box::new(Tokenizer::new(input).take_while(|token| match *token {
-            Ok(Spanned {
-                value: Token::EOF, ..
-            }) => false,
-            _ => true,
+        let mut tokenizer = Tokenizer::new(input);
+        Box::new(std::iter::from_fn(move || {
+            let result = tokenizer.next()?;
+            if let Some(err) = tokenizer.errors.pop() {
+                return Some(Err(err));
+            }
+            match result {
+                Ok(Spanned {
+                    value: Token::EOF, ..
+                }) => None,
+                result => Some(result),
+            }
         }))
     }
 
@@ -1019,7 +1038,11 @@ mod test {
     fn string_literal_unterminated() {
         assert_eq!(
             tokenizer(r#"foo "bar\"\n baz"#).last(),
-            Some(error(loc(4), UnterminatedStringLiteral))
+            Some(Err(pos::spanned2(
+                loc(4),
+                loc(16),
+                UnterminatedStringLiteral
+            )))
         );
     }
 

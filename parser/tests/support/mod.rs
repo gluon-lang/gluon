@@ -222,6 +222,10 @@ pub fn int<'a>(i: i64) -> SpExpr<'a> {
     no_loc(Expr::Literal(Literal::Int(i)))
 }
 
+pub fn string<'a>(s: &str) -> SpExpr<'a> {
+    no_loc(Expr::Literal(Literal::String(s.into())))
+}
+
 pub fn let_<'ast>(
     arena: ast::ArenaRef<'_, 'ast, String>,
     s: &str,
@@ -556,9 +560,13 @@ macro_rules! test_parse_error {
             let _ = ::env_logger::try_init();
             let text = $text;
             let result = parse(text);
-            assert!(result.is_err(), "{:#?}", result.unwrap());
+            assert!(
+                result.is_err(),
+                "Expected error but got expression: {:#?}",
+                result.unwrap()
+            );
             let (expr, err) = result.unwrap_err();
-            let expr = clear_span(expr.unwrap());
+            let expr = clear_span(expr.expect("Recovered expression"));
             mk_ast_arena!(arena);
             fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
                 f(a)
