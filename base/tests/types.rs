@@ -155,7 +155,6 @@ fn show_record_long_type() {
         ],
         Type::string(),
     );
-    let test = data("Test", vec![data("a", vec![])]);
     let record = Type::record(
         vec![Field::new(
             "Test",
