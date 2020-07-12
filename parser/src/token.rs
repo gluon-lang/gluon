@@ -9,6 +9,7 @@ use self::Error::*;
 use crate::{
     base::{
         ast::is_operator_byte,
+        error::Errors,
         metadata::{Comment, CommentType},
         pos::{self, BytePos, Column, Line, Location, Spanned},
     },
@@ -275,9 +276,6 @@ quick_error! {
         HexLiteralIncomplete {
             display("cannot parse hex literal, incomplete")
         }
-        UnexpectedAnd {
-            display("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
-        }
     }
 }
 
@@ -351,6 +349,7 @@ pub struct Tokenizer<'input> {
     input: &'input str,
     chars: CharLocations<'input>,
     start_index: BytePos,
+    pub errors: Errors<SpError>,
 }
 
 impl<'input> Tokenizer<'input> {
@@ -364,6 +363,7 @@ impl<'input> Tokenizer<'input> {
             input: input.src(),
             chars,
             start_index: input.start_index(),
+            errors: Errors::new(),
         }
     }
 
@@ -386,6 +386,23 @@ impl<'input> Tokenizer<'input> {
     fn error<T>(&mut self, location: Location, code: Error) -> Result<T, SpError> {
         self.skip_to_end();
         error(location, code)
+    }
+
+    fn recover<T>(
+        &mut self,
+        start: Location,
+        end: Location,
+        code: Error,
+        value: T,
+    ) -> Result<Spanned<T, Location>, SpError> {
+        self.errors.push(pos::spanned2(start, end, code));
+
+        Ok(pos::spanned2(start, end, value))
+    }
+
+    fn eof_recover<T>(&mut self, value: T) -> Result<Spanned<T, Location>, SpError> {
+        let end = self.next_loc();
+        self.recover(end, end, UnexpectedEof, value)
     }
 
     fn next_loc(&self) -> Location {
@@ -499,7 +516,7 @@ impl<'input> Tokenizer<'input> {
         pos::spanned2(start, end, token)
     }
 
-    fn escape_code(&mut self) -> Result<u8, SpError> {
+    fn escape_code(&mut self, start: Location) -> Result<u8, SpError> {
         match self.bump() {
             Some((_, b'\'')) => Ok(b'\''),
             Some((_, b'"')) => Ok(b'"'),
@@ -509,11 +526,12 @@ impl<'input> Tokenizer<'input> {
             Some((_, b'r')) => Ok(b'\r'),
             Some((_, b't')) => Ok(b'\t'),
             // TODO: Unicode escape codes
-            Some((start, ch)) => {
-                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                self.error(start, UnexpectedEscapeCode(ch))
+            Some((end, b)) => {
+                let ch = self.chars.chars.as_str_suffix().restore_char(&[b]);
+                self.recover(start, end, UnexpectedEscapeCode(ch), b)
+                    .map(|s| s.value)
             }
-            None => self.eof_error(),
+            None => self.eof_recover(b'\0').map(|s| s.value),
         }
     }
 
@@ -523,8 +541,8 @@ impl<'input> Tokenizer<'input> {
             let scan_start = self.next_loc();
             self.take_until(scan_start, |b| b == b'"' || b == b'\\');
             match self.bump() {
-                Some((_, b'\\')) => {
-                    self.escape_code()?;
+                Some((start, b'\\')) => {
+                    self.escape_code(start)?;
                 }
                 Some((_, b'"')) => {
                     let end = self.next_loc();
@@ -541,7 +559,10 @@ impl<'input> Tokenizer<'input> {
             }
         }
 
-        self.error(start, UnterminatedStringLiteral)
+        let end = self.chars.location;
+
+        let token = Token::StringLiteral(StringLiteral::Escaped(self.slice(content_start, end)));
+        self.recover(start, end, UnterminatedStringLiteral, token)
     }
 
     fn raw_string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
@@ -581,7 +602,10 @@ impl<'input> Tokenizer<'input> {
             }
         }
 
-        self.error(start, UnterminatedStringLiteral)
+        let end = self.chars.location;
+
+        let token = Token::StringLiteral(StringLiteral::Raw(self.slice(content_start, end)));
+        self.recover(start, end, UnterminatedStringLiteral, token)
     }
 
     fn shebang_line(&mut self, start: Location) -> Option<SpannedToken<'input>> {
@@ -599,10 +623,12 @@ impl<'input> Tokenizer<'input> {
 
     fn char_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let ch = match self.bump() {
-            Some((_, b'\\')) => self.escape_code()?,
-            Some((_, b'\'')) => return self.error(start, EmptyCharLiteral),
+            Some((start, b'\\')) => self.escape_code(start)?,
+            Some((end, b'\'')) => {
+                return self.recover(start, end, EmptyCharLiteral, Token::CharLiteral('\0'))
+            }
             Some((_, ch)) => ch,
-            None => return self.eof_error(),
+            None => return self.eof_recover(Token::CharLiteral('\0')),
         };
 
         match self.bump() {
@@ -614,52 +640,71 @@ impl<'input> Tokenizer<'input> {
                     Token::CharLiteral(ch),
                 ))
             }
-            Some((_, _)) => self.error(start, UnterminatedCharLiteral), // UnexpectedEscapeCode?
-            None => self.eof_error(),
+            Some((end, _)) => {
+                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
+                self.recover(start, end, UnterminatedCharLiteral, Token::CharLiteral(ch))
+            } // UnexpectedEscapeCode?
+            None => self.eof_recover(Token::CharLiteral('\0')),
         }
     }
 
     fn numeric_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let (end, int) = self.take_while(start, is_digit);
 
-        let (start, end, token) = match self.lookahead() {
+        Ok(match self.lookahead() {
             Some((_, b'.')) => {
                 self.bump(); // Skip b'.'
                 let (end, float) = self.take_while(start, is_digit);
                 match self.lookahead() {
-                    Some((_, ch)) if is_ident_start(ch) => {
+                    Some((next, ch)) if is_ident_start(ch) => {
                         let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                        return self.error(end, UnexpectedChar(ch));
+                        self.recover(end, next, UnexpectedChar(ch), ())?;
                     }
-                    _ => (
-                        start,
-                        end,
-                        Token::FloatLiteral(NotNan::new(float.parse().unwrap()).unwrap()),
-                    ),
+                    _ => (),
                 }
+                pos::spanned2(
+                    start,
+                    end,
+                    Token::FloatLiteral(NotNan::new(float.parse().unwrap()).unwrap()),
+                )
             }
             Some((_, b'x')) => {
                 self.bump(); // Skip b'x'
                 let int_start = self.next_loc();
+                let end1 = end;
                 let (end, hex) = self.take_while(int_start, is_hex);
                 match int {
-                    "0" | "-0" => match self.lookahead() {
-                        Some((_, ch)) if is_ident_start(ch) => {
-                            let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                            return self.error(end, UnexpectedChar(ch));
-                        }
-                        _ => {
-                            if hex.is_empty() {
-                                return self.error(start, HexLiteralIncomplete);
+                    "0" | "-0" => {
+                        match self.lookahead() {
+                            Some((lookahead_end, ch)) if is_ident_start(ch) => {
+                                let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
+
+                                self.recover(end, lookahead_end, UnexpectedChar(ch), ())?;
                             }
-                            let is_positive = int == "0";
-                            match i64_from_hex(hex, is_positive) {
-                                Ok(val) => (start, end, Token::IntLiteral(val)),
-                                Err(err) => return self.error(start, err),
-                            }
+                            _ => (),
                         }
-                    },
-                    _ => return self.error(start, HexLiteralWrongPrefix),
+                        if hex.is_empty() {
+                            return self.recover(
+                                start,
+                                end,
+                                HexLiteralIncomplete,
+                                Token::IntLiteral(0),
+                            );
+                        }
+                        let is_positive = int == "0";
+                        match i64_from_hex(hex, is_positive) {
+                            Ok(val) => pos::spanned2(start, end, Token::IntLiteral(val)),
+                            Err(err) => return self.recover(start, end, err, Token::IntLiteral(0)),
+                        }
+                    }
+                    _ => {
+                        return self.recover(
+                            start,
+                            end1,
+                            HexLiteralWrongPrefix,
+                            Token::IntLiteral(0),
+                        )
+                    }
                 }
             }
             Some((_, b'b')) => {
@@ -668,31 +713,34 @@ impl<'input> Tokenizer<'input> {
                 match self.lookahead() {
                     Some((pos, ch)) if is_ident_start(ch) => {
                         let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                        return self.error(pos, UnexpectedChar(ch));
+                        self.recover(end, pos, UnexpectedChar(ch), ())?;
                     }
-                    _ => {
-                        if let Ok(val) = int.parse() {
-                            (start, end, Token::ByteLiteral(val))
-                        } else {
-                            return self.error(start, NonParseableInt);
-                        }
-                    }
+                    _ => (),
+                }
+                if let Ok(val) = int.parse() {
+                    pos::spanned2(start, end, Token::ByteLiteral(val))
+                } else {
+                    self.recover(start, end, NonParseableInt, Token::ByteLiteral(0))?
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => {
                 let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                return self.error(start, UnexpectedChar(ch));
+                self.recover(start, start, UnexpectedChar(ch), ())?;
+
+                if let Ok(val) = int.parse() {
+                    pos::spanned2(start, end, Token::IntLiteral(val))
+                } else {
+                    self.recover(start, end, NonParseableInt, Token::IntLiteral(0))?
+                }
             }
             None | Some(_) => {
                 if let Ok(val) = int.parse() {
-                    (start, end, Token::IntLiteral(val))
+                    pos::spanned2(start, end, Token::IntLiteral(val))
                 } else {
-                    return self.error(start, NonParseableInt);
+                    self.recover(start, end, NonParseableInt, Token::IntLiteral(0))?
                 }
             }
-        };
-
-        Ok(pos::spanned2(start, end, token))
+        })
     }
 
     fn identifier(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
@@ -720,7 +768,6 @@ impl<'input> Tokenizer<'input> {
             "then" => Token::Then,
             "type" => Token::Type,
             "with" => Token::With,
-            "and" => return Err(pos::spanned2(start, end, Error::UnexpectedAnd)),
             src => Token::Identifier(src),
         };
 
@@ -785,7 +832,11 @@ impl<'input> Iterator for Tokenizer<'input> {
 
                 ch => {
                     let ch = self.chars.chars.as_str_suffix().restore_char(&[ch]);
-                    Some(self.error(start, UnexpectedChar(ch)))
+                    let end = self.next_loc();
+                    if let Err(err) = self.recover(start, end, UnexpectedChar(ch), ()) {
+                        return Some(Err(err));
+                    }
+                    continue;
                 }
             };
         }
@@ -842,14 +893,25 @@ mod test {
         }
     }
 
+    fn error2<T>(start: u32, end: u32, code: Error) -> Result<T, SpError> {
+        Err(pos::spanned2(loc(start), loc(end), code))
+    }
+
     fn tokenizer<'input>(
         input: &'input str,
     ) -> impl Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input {
-        Box::new(Tokenizer::new(input).take_while(|token| match *token {
-            Ok(Spanned {
-                value: Token::EOF, ..
-            }) => false,
-            _ => true,
+        let mut tokenizer = Tokenizer::new(input);
+        Box::new(std::iter::from_fn(move || {
+            let result = tokenizer.next()?;
+            if let Some(err) = tokenizer.errors.pop() {
+                return Some(Err(err));
+            }
+            match result {
+                Ok(Spanned {
+                    value: Token::EOF, ..
+                }) => None,
+                result => Some(result),
+            }
         }))
     }
 
@@ -1011,7 +1073,7 @@ mod test {
     fn string_literal_unexpected_escape_code() {
         assert_eq!(
             tokenizer(r#""\X""#).last(),
-            Some(error(loc(2), UnexpectedEscapeCode('X')))
+            Some(error2(1, 2, UnexpectedEscapeCode('X')))
         );
     }
 
@@ -1019,7 +1081,11 @@ mod test {
     fn string_literal_unterminated() {
         assert_eq!(
             tokenizer(r#"foo "bar\"\n baz"#).last(),
-            Some(error(loc(4), UnterminatedStringLiteral))
+            Some(Err(pos::spanned2(
+                loc(4),
+                loc(16),
+                UnterminatedStringLiteral
+            )))
         );
     }
 
@@ -1040,7 +1106,7 @@ mod test {
     fn char_literal_empty() {
         assert_eq!(
             tokenizer(r#"foo ''"#).last(),
-            Some(error(loc(4), EmptyCharLiteral))
+            Some(error2(4, 5, EmptyCharLiteral))
         );
     }
 
@@ -1048,7 +1114,7 @@ mod test {
     fn char_literal_unexpected_escape_code() {
         assert_eq!(
             tokenizer(r#"'\X'"#).last(),
-            Some(error(loc(2), UnexpectedEscapeCode('X')))
+            Some(error2(1, 2, UnexpectedEscapeCode('X')))
         );
     }
 
@@ -1076,8 +1142,8 @@ mod test {
     #[test]
     fn char_literal_unterminated() {
         assert_eq!(
-            tokenizer(r#"'frooble'"#).last(),
-            Some(error(loc(0), UnterminatedCharLiteral))
+            tokenizer(r#"'frooble'"#).next(),
+            Some(error2(0, 2, UnterminatedCharLiteral))
         );
     }
 
@@ -1111,8 +1177,8 @@ mod test {
     #[test]
     fn hex_literals_wrong_prefix() {
         assert_eq!(
-            tokenizer(r#"10x1"#).last(),
-            Some(error(loc(0), HexLiteralWrongPrefix))
+            tokenizer(r#"10x1"#).next(),
+            Some(error2(0, 2, HexLiteralWrongPrefix))
         );
     }
 
@@ -1120,7 +1186,7 @@ mod test {
     fn hex_literals_overflow() {
         assert_eq!(
             tokenizer(r#"0x8000000000000000"#).last(),
-            Some(error(loc(0), HexLiteralOverflow))
+            Some(error2(0, 18, HexLiteralOverflow))
         );
     }
 
@@ -1128,7 +1194,7 @@ mod test {
     fn hex_literals_underflow() {
         assert_eq!(
             tokenizer(r#"-0x8000000000000001"#).last(),
-            Some(error(loc(0), HexLiteralUnderflow))
+            Some(error2(0, 19, HexLiteralUnderflow))
         );
     }
 
@@ -1136,30 +1202,30 @@ mod test {
     fn hex_literals_incomplete() {
         assert_eq!(
             tokenizer(r#"0x"#).last(),
-            Some(error(loc(0), HexLiteralIncomplete))
+            Some(error2(0, 2, HexLiteralIncomplete))
         );
 
         assert_eq!(
             tokenizer(r#"0x "#).last(),
-            Some(error(loc(0), HexLiteralIncomplete))
+            Some(error2(0, 2, HexLiteralIncomplete))
         );
     }
 
     #[test]
     fn hex_literals_unexpected_char() {
         assert_eq!(
-            tokenizer(r#"0x1q"#).last(),
-            Some(error(loc(3), UnexpectedChar('q')))
+            tokenizer(r#"0x1q"#).next(),
+            Some(error2(3, 3, UnexpectedChar('q')))
         );
 
         assert_eq!(
-            tokenizer(r#"0xff_"#).last(),
-            Some(error(loc(4), UnexpectedChar('_')))
+            tokenizer(r#"0xff_"#).next(),
+            Some(error2(4, 4, UnexpectedChar('_')))
         );
 
         assert_eq!(
             tokenizer(r#"0xx"#).last(),
-            Some(error(loc(2), UnexpectedChar('x')))
+            Some(error2(2, 2, UnexpectedChar('x')))
         );
     }
 
@@ -1184,7 +1250,7 @@ mod test {
     fn int_literal_overflow() {
         assert_eq!(
             tokenizer(r#"12345678901234567890"#).last(),
-            Some(error(loc(0), NonParseableInt))
+            Some(error2(0, 20, NonParseableInt))
         );
     }
 
@@ -1203,7 +1269,7 @@ mod test {
     #[test]
     fn byte_literals_unexpected_char() {
         assert_eq!(
-            tokenizer(r#"3bs"#).last(),
+            tokenizer(r#"3bs"#).next(),
             Some(error(loc(2), UnexpectedChar('s')))
         );
     }
@@ -1232,7 +1298,7 @@ mod test {
     #[test]
     fn float_literals_unexpected_char() {
         assert_eq!(
-            tokenizer(r#"12.3a"#).last(),
+            tokenizer(r#"12.3a"#).next(),
             Some(error(loc(4), UnexpectedChar('a')))
         );
     }

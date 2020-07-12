@@ -130,7 +130,7 @@ where
 {
     pub fn new(tokens: Tokens) -> Layout<'input, Tokens> {
         Layout {
-            tokens: tokens,
+            tokens,
             unprocessed_tokens: Vec::new(),
             indent_levels: Contexts::new(),
         }

@@ -422,33 +422,17 @@ where
     Id: Clone + AsRef<str> + std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let layout = Layout::new(Tokenizer::new(input));
-
-    let mut parse_errors = Errors::new();
-
-    let result = grammar::TopExprParser::new().parse(
-        &input,
-        type_cache,
-        arena,
-        symbols,
-        &mut parse_errors,
-        &mut TempVecs::new(),
-        layout,
-    );
-
-    match result {
-        Ok(expr) => {
-            if parse_errors.has_errors() {
-                Err((Some(expr), transform_errors(input.span(), parse_errors)))
-            } else {
-                Ok(expr)
-            }
-        }
-        Err(err) => {
-            parse_errors.push(err);
-            Err((None, transform_errors(input.span(), parse_errors)))
-        }
-    }
+    parse_with(input, &mut |parse_errors, layout| {
+        grammar::TopExprParser::new().parse(
+            &input,
+            type_cache,
+            arena,
+            symbols,
+            parse_errors,
+            &mut TempVecs::new(),
+            layout,
+        )
+    })
 }
 
 pub fn parse_expr<'ast>(
@@ -475,34 +459,65 @@ where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let layout = Layout::new(Tokenizer::new(input));
+    parse_with(input, &mut |parse_errors, layout| {
+        let type_cache = TypeCache::default();
+
+        grammar::ReplLineParser::new()
+            .parse(
+                &input,
+                &type_cache,
+                arena,
+                symbols,
+                parse_errors,
+                &mut TempVecs::new(),
+                layout,
+            )
+            .map(|o| o.map(|b| *b))
+    })
+    .map_err(|(opt, err)| (opt.and_then(|opt| opt), err))
+}
+
+fn parse_with<'ast, 'input, S, T>(
+    input: &'input S,
+    parse: &mut dyn FnMut(
+        ErrorEnv<'_, 'input>,
+        Layout<'input, &mut Tokenizer<'input>>,
+    ) -> Result<
+        T,
+        lalrpop_util::ParseError<BytePos, Token<&'input str>, Spanned<Error, BytePos>>,
+    >,
+) -> Result<T, (Option<T>, ParseErrors)>
+where
+    S: ?Sized + ParserSource,
+{
+    let mut tokenizer = Tokenizer::new(input);
+    let layout = Layout::new(&mut tokenizer);
 
     let mut parse_errors = Errors::new();
 
-    let type_cache = TypeCache::default();
+    let result = parse(&mut parse_errors, layout);
 
-    let result = grammar::ReplLineParser::new().parse(
-        &input,
-        &type_cache,
-        arena,
-        symbols,
-        &mut parse_errors,
-        &mut TempVecs::new(),
-        layout,
-    );
+    let mut all_errors = transform_errors(input.span(), parse_errors);
+
+    all_errors.extend(tokenizer.errors.drain(..).map(|sp_error| {
+        pos::spanned2(
+            sp_error.span.start().absolute,
+            sp_error.span.end().absolute,
+            sp_error.value.into(),
+        )
+    }));
 
     match result {
-        Ok(repl_line) => {
-            let repl_line = repl_line.map(|b| *b);
-            if parse_errors.has_errors() {
-                Err((repl_line, transform_errors(input.span(), parse_errors)))
+        Ok(value) => {
+            if all_errors.has_errors() {
+                Err((Some(value), all_errors))
             } else {
-                Ok(repl_line)
+                Ok(value)
             }
         }
         Err(err) => {
-            parse_errors.push(err);
-            Err((None, transform_errors(input.span(), parse_errors)))
+            all_errors.push(Error::from_lalrpop(input.span(), err));
+            Err((None, all_errors))
         }
     }
 }

@@ -63,6 +63,13 @@ impl<T> Errors<T> {
     pub fn iter(&self) -> slice::Iter<T> {
         self.errors.iter()
     }
+
+    pub fn drain(
+        &mut self,
+        range: impl std::ops::RangeBounds<usize>,
+    ) -> impl Iterator<Item = T> + '_ {
+        self.errors.drain(range)
+    }
 }
 
 impl<T> Index<usize> for Errors<T> {

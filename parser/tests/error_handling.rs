@@ -69,16 +69,17 @@ y
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
 
-#[test]
-fn unclosed_string() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse(
-        r#"
+test_parse_error! {
+    unclosed_string,
+    r#"
 "abc
-"#,
-    );
-    assert!(result.is_err());
+123"#,
+    |_: base::ast::ArenaRef<'_, '_, String>| string("abc\n123"),
+    {
+        let error = Error::Token(parser::TokenizeError::UnterminatedStringLiteral);
+        let span = pos::span(BytePos::from(0), BytePos::from(0));
+        ParseErrors::from(vec![pos::spanned(span, error)])
+    }
 }
 
 #[test]
@@ -248,7 +249,7 @@ fn unterminated_char_literal() {
     let (_expr, err) = result.unwrap_err();
 
     let error = Error::Token(TokenizeError::UnterminatedCharLiteral);
-    let span = pos::span(BytePos::from(6), BytePos::from(6));
+    let span = pos::span(BytePos::from(6), BytePos::from(8));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
 
@@ -277,26 +278,6 @@ fn invalid_case() {
     assert!(parse(r#"type X = { Test : Type } in ()"#).is_err());
     assert!(parse(r#"type x = { } in ()"#).is_err());
     assert!(parse(r#"type x = | Test in ()"#).is_err());
-}
-
-#[test]
-fn old_expression() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse(
-        r#"
-let f x = x
-and g y = f
-1
-"#,
-    );
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    let errors = ParseErrors::from(vec![pos::spanned(
-        span,
-        Error::Token(TokenizeError::UnexpectedAnd),
-    )]);
-
-    assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
 
 #[test]
