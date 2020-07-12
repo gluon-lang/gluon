@@ -357,10 +357,7 @@ pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos>
 where
     Pos: Ord,
 {
-    Spanned {
-        span: span(start, end),
-        value,
-    }
+    spanned(span(start, end), value)
 }
 
 pub trait HasSpan {

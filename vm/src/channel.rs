@@ -290,7 +290,7 @@ fn spawn_on<'vm>(
             + Send
             + 'static,
     {
-        extern "C" fn future_wrapper<F>(
+        fn future_wrapper<F>(
             data: &SpawnFuture<F>,
         ) -> impl Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
         where
