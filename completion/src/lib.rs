@@ -359,17 +359,31 @@ where
                 }
                 Variant::FieldIdent(ident, record_type) => {
                     if ident.span.containment(self.pos) == Ordering::Equal {
-                        let typ = resolve::remove_aliases(
+                        let record_type = resolve::remove_aliases(
                             &crate::base::ast::EmptyEnv::default(),
                             &mut NullInterner,
                             record_type.clone(),
-                        )
-                        .row_iter()
-                        .find(|field| field.name.name_eq(&ident.value))
-                        .map(|field| field.typ.clone())
-                        .unwrap_or_else(|| Type::hole());
+                        );
+                        let either = record_type
+                            .row_iter()
+                            .find(|field| field.name.name_eq(&ident.value))
+                            .map(|field| Either::Left(field.typ.clone()))
+                            .or_else(|| {
+                                record_type
+                                    .type_field_iter()
+                                    .find(|field| field.name.name_eq(&ident.value))
+                                    .map(|field| {
+                                        Either::Right(
+                                            field.typ.kind(&Default::default()).into_owned(),
+                                        )
+                                    })
+                            })
+                            .unwrap_or_else(|| Either::Left(Type::hole()));
 
-                        self.found = MatchState::Found(Match::Ident(ident.span, &ident.value, typ));
+                        self.found = MatchState::Found(match either {
+                            Either::Left(typ) => Match::Ident(ident.span, &ident.value, typ),
+                            Either::Right(kind) => Match::Type(ident.span, &ident.value, kind),
+                        });
                     } else {
                         self.found = MatchState::Empty;
                     }

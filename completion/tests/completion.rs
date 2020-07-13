@@ -663,6 +663,22 @@ let f x : Int -> Int = x
 }
 
 #[test]
+fn completion_on_type_field() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = | Test
+{
+    Test,
+    // ^
+}
+"#;
+    let result = find_kind2(text);
+
+    assert_eq!(result, Ok(Kind::typ()));
+}
+
+#[test]
 fn type_symbol() {
     let _ = env_logger::try_init();
 
