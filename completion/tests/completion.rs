@@ -44,12 +44,31 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKin
     completion::completion(extract, expr.span, &expr, pos)
 }
 
+fn find_span_type2(s: &str) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
+    let pos = {
+        let marker = s.find("// ^").expect("Position marker") + "// ".len();
+        let previous_line_end = s[..marker].rfind('\n').expect("Previous line");
+        let previous_line_start = s[..previous_line_end].rfind('\n').expect("Previous line");
+        previous_line_start + (marker - previous_line_end)
+    };
+    find_span_type(s, BytePos::from(pos as u32 + 1))
+}
+
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let (expr, result) = support::typecheck_expr(s);
     let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     completion::find_all_symbols(expr.span, &expr, pos)
+}
+
+fn find_kind2(s: &str) -> Result<ArcKind, ()> {
+    find_span_type2(s).map(|t| {
+        t.1.as_ref()
+            .left()
+            .cloned()
+            .unwrap_or_else(|| panic!("Expected kind, got: {}", t.1))
+    })
 }
 
 fn find_kind(s: &str, pos: BytePos) -> Result<ArcKind, ()> {
@@ -628,16 +647,16 @@ let x : Test Int = Test 1
 }
 
 #[test]
-// TODO Implement
 #[ignore]
 fn completion_on_function_type() {
     let _ = env_logger::try_init();
 
     let text = r#"
 let f x : Int -> Int = x
+            // ^
 1.0
 "#;
-    let result = find_kind(text, loc(text, 1, 15));
+    let result = find_kind2(text);
     let expected = Ok(Kind::typ());
 
     assert_eq!(result, expected);

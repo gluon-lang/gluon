@@ -49,12 +49,18 @@ pub struct Positioned<T, Pos> {
 }
 
 /// A region of code in a source file
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serialization", derive(Deserialize, Serialize))]
 #[cfg_attr(feature = "memory_usage", derive(HeapSizeOf))]
 pub struct Span<I> {
     start: I,
     end: I,
+}
+
+impl<I: fmt::Debug> fmt::Debug for Span<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}..{:?}", self.start, self.end)
+    }
 }
 
 impl<I: Ord> Span<I> {
@@ -174,6 +180,10 @@ impl<I: Index> Span<I> {
     /// ```
     pub fn contains(self, other: Span<I>) -> bool {
         self.start() <= other.start() && other.end() <= self.end()
+    }
+
+    pub fn contains_pos(self, other: I) -> bool {
+        self.start() <= other && other <= self.end()
     }
 
     /// Return `Equal` if `self` contains `pos`, otherwise it returns `Less` if `pos` is before

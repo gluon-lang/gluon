@@ -76,13 +76,13 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, AstClone)]
+#[derive(Eq, PartialEq, AstClone)]
 pub struct InnerAstType<'ast, Id> {
     metadata: BaseMetadata<'ast>,
     typ: Spanned<Type<Id, AstType<'ast, Id>>, BytePos>,
 }
 
-#[derive(Eq, PartialEq, Debug, AstClone)]
+#[derive(Eq, PartialEq, AstClone)]
 pub struct AstType<'ast, Id> {
     _typ: &'ast mut InnerAstType<'ast, Id>,
 }
@@ -103,6 +103,15 @@ impl<'ast, Id> Deref for AstType<'ast, Id> {
 impl<'ast, Id> DerefMut for AstType<'ast, Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self._typ.typ.value
+    }
+}
+
+impl<Id: fmt::Debug> fmt::Debug for AstType<'_, Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("AstType")
+            .field("metadata", &self._typ.metadata)
+            .field("typ", &self._typ.typ)
+            .finish()
     }
 }
 

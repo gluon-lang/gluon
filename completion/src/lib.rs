@@ -210,6 +210,7 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
     }
 }
 
+#[derive(Debug)]
 enum MatchState<'a, 'ast> {
     NotFound,
     Empty,
