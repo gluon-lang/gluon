@@ -492,8 +492,7 @@ pub trait ThreadExt: Send + Sync {
 
         let TypecheckValue { expr, typ, .. } = db
             .typechecked_source_module(file.into(), expected_type.cloned())
-            .await
-            .map_err(|t| t.1)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(file.into(), None).await?;
@@ -597,8 +596,7 @@ pub trait ThreadExt: Send + Sync {
             ..
         } = db
             .typechecked_source_module(module_name.clone(), None)
-            .await
-            .map_err(|(_, err)| err)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(module_name.clone(), None).await?;
