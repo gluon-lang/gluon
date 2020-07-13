@@ -1,11 +1,6 @@
 //! Primitive auto completion and type quering on ASTs
 #![doc(html_root_url = "https://docs.rs/gluon_completion/0.16.1")] // # GLUON
 
-extern crate codespan;
-extern crate either;
-extern crate itertools;
-extern crate walkdir;
-
 extern crate gluon_base as base;
 
 use std::{borrow::Cow, cmp::Ordering, iter::once, path::PathBuf, sync::Arc};
@@ -132,7 +127,10 @@ where
     }
 }
 
-impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
+impl<E> OnFound for Suggest<E>
+where
+    E: TypeEnv<Type = ArcType>,
+{
     fn on_ident(&mut self, ident: &TypedIdent) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
