@@ -358,28 +358,20 @@ where
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
-        let mut macro_error = None;
-        let expr = match self.rename(compiler, thread, file, expr_str).await {
-            Ok(expr) => expr,
-            Err((Some(expr), err)) => {
-                macro_error = Some(err);
-                expr
+        join_result!(
+            self.rename(compiler, thread, file, expr_str).await,
+            |Renamed { expr }| Renamed {
+                expr: expr.borrow_mut()
             }
-            Err((None, err)) => return Err((None, err)),
-        };
-        match expr
             .extract_metadata(compiler, thread, file, expr_str)
             .await
-        {
-            Ok(value) => match macro_error {
-                Some(err) => return Err((Some(value), err)),
-                None => Ok(value),
-            },
-            Err((opt, err)) => Err((
-                opt,
-                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            )),
-        }
+            .map(|_| ()),
+            |Renamed { expr }| WithMetadata {
+                expr,
+                metadata_map: Default::default(),
+                metadata: Default::default()
+            }
+        )
     }
 }
 
