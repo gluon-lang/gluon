@@ -1347,6 +1347,7 @@ dependencies = [
  "gluon_check",
  "gluon_parser",
  "itertools",
+ "pretty_assertions",
  "quick-error",
  "walkdir",
 ]

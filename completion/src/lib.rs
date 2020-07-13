@@ -169,12 +169,13 @@ impl<E: TypeEnv<Type = ArcType>> OnFound for Suggest<E> {
                             Some(ref value) => self.on_pattern(value),
                             None => {
                                 let name = name.value.clone();
-                                let typ = unaliased.row_iter()
-                                .find(|f| f.name.name_eq(&name))
-                                .map(|f| f.typ.clone())
-                                // If we did not find a matching field in the type, default to a
-                                // type hole so that the user at least gets completion on the name
-                                .unwrap_or_else(Type::hole);
+                                let typ = unaliased
+                                    .row_iter()
+                                    .find(|f| f.name.name_eq(&name))
+                                    .map(|f| f.typ.clone())
+                                    // If we did not find a matching field in the type, default to a
+                                    // type hole so that the user at least gets completion on the name
+                                    .unwrap_or_else(Type::hole);
                                 self.stack.insert(name, typ);
                             }
                         },
@@ -971,7 +972,7 @@ pub struct CompletionSymbol<'a, 'ast> {
 pub enum CompletionSymbolContent<'a, 'ast> {
     Value {
         typ: &'a ArcType,
-        expr: &'a SpannedExpr<'ast, Symbol>,
+        expr: Option<&'a SpannedExpr<'ast, Symbol>>,
     },
     Type {
         alias: &'a AliasData<Symbol, AstType<'ast, Symbol>>,
@@ -982,12 +983,12 @@ pub fn all_symbols<'a, 'ast>(
     source_span: Span<BytePos>,
     expr: &'a SpannedExpr<'ast, Symbol>,
 ) -> Vec<SpCompletionSymbol<'a, 'ast>> {
-    struct AllIdents<'a, 'ast> {
+    struct AllIdents<'r, 'a, 'ast> {
         source_span: Span<BytePos>,
-        result: Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>>,
+        result: &'r mut Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>>,
     }
 
-    impl<'a, 'ast> Visitor<'a, 'ast> for AllIdents<'a, 'ast> {
+    impl<'a, 'ast> Visitor<'a, 'ast> for AllIdents<'_, 'a, 'ast> {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, e: &'a SpannedExpr<'ast, Self::Ident>) {
@@ -1015,23 +1016,42 @@ pub fn all_symbols<'a, 'ast>(
                         self.visit_expr(expr);
                     }
                     Expr::LetBindings(binds, expr) => {
-                        self.result.extend(binds.iter().flat_map(|bind| {
-                            let children = idents_of(source_span, &bind.expr);
-                            match &bind.name.value {
-                                Pattern::Ident(id) => vec![pos::spanned(
-                                    bind.name.span,
+                        for bind in binds {
+                            let mut children = Vec::new();
+
+                            children.extend(bind.args.iter().map(|arg| {
+                                pos::spanned(
+                                    arg.name.span,
                                     CompletionSymbol {
-                                        name: &id.name,
+                                        name: &arg.name.value.name,
                                         content: CompletionSymbolContent::Value {
-                                            typ: &id.typ,
-                                            expr: &bind.expr,
+                                            typ: &arg.name.value.typ,
+                                            expr: None,
                                         },
-                                        children,
+                                        children: Vec::new(),
                                     },
-                                )],
-                                _ => children,
+                                )
+                            }));
+
+                            idents_of(source_span, &bind.expr, &mut children);
+
+                            match &bind.name.value {
+                                Pattern::Ident(id) => {
+                                    self.result.push(pos::spanned(
+                                        bind.name.span,
+                                        CompletionSymbol {
+                                            name: &id.name,
+                                            content: CompletionSymbolContent::Value {
+                                                typ: &id.typ,
+                                                expr: Some(&bind.expr),
+                                            },
+                                            children,
+                                        },
+                                    ));
+                                }
+                                _ => self.result.extend(children),
                             }
-                        }));
+                        }
 
                         self.visit_expr(expr);
                     }
@@ -1046,16 +1066,18 @@ pub fn all_symbols<'a, 'ast>(
     fn idents_of<'a, 'ast>(
         source_span: Span<BytePos>,
         expr: &'a SpannedExpr<'ast, Symbol>,
-    ) -> Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>> {
+        result: &mut Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>>,
+    ) {
         let mut visitor = AllIdents {
             source_span,
-            result: Vec::new(),
+            result,
         };
         visitor.visit_expr(expr);
-        visitor.result
     }
 
-    idents_of(source_span, expr)
+    let mut result = Vec::new();
+    idents_of(source_span, expr, &mut result);
+    result
 }
 
 pub fn suggest<'ast, T>(
@@ -1526,45 +1548,59 @@ pub fn signature_help<'ast>(
         .ok()
         .and_then(|found| {
             let applications = found
-            .enclosing_matches
-            .iter()
-            .chain(&found.near_matches)
-            .rev()
-            // Stop searching for an application if it would mean we exit a nested expression
-            // Ie. `test { abc = func }`
-            //                     ^
-            // Should not return the signature for `test` but for `func`
-            .take_while(|enclosing_match| match **enclosing_match {
-                Match::Expr(expr) => match expr.value {
-                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App { .. } | Expr::Tuple { .. } => {
-                        true
-                    }
-                    Expr::Record { ref exprs, ref base, ..} => exprs.is_empty() && base.is_none(),
+                .enclosing_matches
+                .iter()
+                .chain(&found.near_matches)
+                .rev()
+                // Stop searching for an application if it would mean we exit a nested expression
+                // Ie. `test { abc = func }`
+                //                     ^
+                // Should not return the signature for `test` but for `func`
+                .take_while(|enclosing_match| match **enclosing_match {
+                    Match::Expr(expr) => match expr.value {
+                        Expr::Ident(..)
+                        | Expr::Literal(..)
+                        | Expr::Projection(..)
+                        | Expr::App { .. }
+                        | Expr::Tuple { .. } => true,
+                        Expr::Record {
+                            ref exprs,
+                            ref base,
+                            ..
+                        } => exprs.is_empty() && base.is_none(),
+                        _ => false,
+                    },
                     _ => false,
-                },
-                _ => false,
-            })
-            .filter_map(|enclosing_match| match *enclosing_match {
-                Match::Expr(expr) => match expr.value {
-                    Expr::App { ref func, ref args, .. } => func.try_type_of(env).ok().map(|typ| {
-                        let name = match func.value {
-                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
-                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
-                            _ => "".to_string(),
-                        };
-                        let index = if args.first().map_or(false, |arg| pos >= arg.span.start()) {
-                            Some(args.iter()
-                                .position(|arg| pos <= arg.span.end())
-                                .unwrap_or_else(|| args.len()) as u32)
-                        } else {
-                            None
-                        };
-                        SignatureHelp { name, typ, index }
-                    }),
+                })
+                .filter_map(|enclosing_match| match *enclosing_match {
+                    Match::Expr(expr) => match expr.value {
+                        Expr::App {
+                            ref func, ref args, ..
+                        } => func.try_type_of(env).ok().map(|typ| {
+                            let name = match func.value {
+                                Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                                Expr::Projection(_, ref name, _) => {
+                                    name.declared_name().to_string()
+                                }
+                                _ => "".to_string(),
+                            };
+                            let index = if args.first().map_or(false, |arg| pos >= arg.span.start())
+                            {
+                                Some(
+                                    args.iter()
+                                        .position(|arg| pos <= arg.span.end())
+                                        .unwrap_or_else(|| args.len())
+                                        as u32,
+                                )
+                            } else {
+                                None
+                            };
+                            SignatureHelp { name, typ, index }
+                        }),
+                        _ => None,
+                    },
                     _ => None,
-                },
-                _ => None,
-            });
+                });
             let any_expr = found
                 .enclosing_matches
                 .iter()

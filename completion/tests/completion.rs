@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate collect_mac;
-extern crate either;
-extern crate env_logger;
+
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -554,7 +555,7 @@ fn all_symbols_test() {
 
     let text = r#"
 let test = 1
-let dummy =
+let dummy a =
     let test = 3
     test
 type Abc a = a Int
@@ -570,7 +571,15 @@ let { x, y } = { x = 1, y = 2 }
     let symbols = completion::all_symbols(expr.span, &expr);
 
     assert_eq!(symbols.len(), 3);
-    assert_eq!(symbols[1].value.children.len(), 1);
+    assert_eq!(
+        symbols[1]
+            .value
+            .children
+            .iter()
+            .map(|c| c.value.name.to_string())
+            .collect::<Vec<_>>(),
+        vec!["a".to_string(), "test".to_string()]
+    );
 }
 
 #[test]
