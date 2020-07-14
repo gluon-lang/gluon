@@ -51,9 +51,9 @@ fn call<T, U>(v: T, f: impl FnOnce(T) -> U) -> U {
 }
 
 macro_rules! join_result {
-    ($result: expr, |$f_arg: pat| $f_body: expr, $join: expr $(,)?) => {{
+    ($result: expr, |$f_arg: pat| $f_body: expr $(,)?) => {{
         let mut first_error = None;
-        let mut x = match $result {
+        let $f_arg = match $result {
             Ok(x) => x,
             Err((Some(expr), err)) => {
                 first_error = Some(err);
@@ -62,25 +62,15 @@ macro_rules! join_result {
             Err((None, err)) => return Err((None, err)),
         };
 
-        let $f_arg = &mut x;
-        let result = $f_body
-            .map(|_| ())
-            .map_err(|(value, err)| (value.map(|_| ()), err));
-        if let Err((value, err)) = result {
-            return Err((
-                value.map(|_| call(x, $join)),
-                if first_error.is_some() {
-                    Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>())
-                        .into()
-                } else {
-                    err
-                },
-            ));
-        }
-        let v = call(x, $join);
-        match first_error {
-            Some(err) => Err((Some(v), err)),
-            None => Ok(v),
+        match $f_body {
+            Ok(value) => match first_error {
+                Some(err) => return Err((Some(value), err)),
+                None => Ok(value),
+            },
+            Err((opt, err)) => Err((
+                opt,
+                Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            )),
         }
     }};
 }
@@ -161,13 +151,7 @@ impl<'s> MacroExpandable for &'s str {
         join_result!(
             parse_expr(compiler, thread.global_env().type_cache(), file, self)
                 .map_err(|(x, err)| (x, err.into())),
-            |expr| {
-                expr.expand_macro(compiler, thread, file, expr_str)
-                    .await
-                    .map(|_| ())
-                    .map_err(|(opt, err)| (opt.map(|_| ()), err))
-            },
-            |expr| MacroValue { expr },
+            |expr| expr.expand_macro(compiler, thread, file, expr_str).await,
         )
     }
 }
@@ -286,16 +270,7 @@ where
     ) -> SalvageResult<Renamed<Self::Expr>> {
         join_result!(
             self.expand_macro(compiler, thread, file, expr_str).await,
-            |MacroValue { expr }| {
-                MacroValue {
-                    expr: expr.borrow_mut(),
-                }
-                .rename(compiler, thread, file, expr_str)
-                .await
-                .map(|_| ())
-                .map_err(|(opt, err)| (opt.map(|_| ()), err))
-            },
-            |MacroValue { expr }| Renamed { expr },
+            |mac| mac.rename(compiler, thread, file, expr_str).await,
         )
     }
 }
@@ -360,17 +335,9 @@ where
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
         join_result!(
             self.rename(compiler, thread, file, expr_str).await,
-            |Renamed { expr }| Renamed {
-                expr: expr.borrow_mut()
-            }
-            .extract_metadata(compiler, thread, file, expr_str)
-            .await
-            .map(|_| ()),
-            |Renamed { expr }| WithMetadata {
-                expr,
-                metadata_map: Default::default(),
-                metadata: Default::default()
-            }
+            |renamed| renamed
+                .extract_metadata(compiler, thread, file, expr_str)
+                .await,
         )
     }
 }
@@ -434,28 +401,11 @@ where
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
-        let mut macro_error = None;
-        let expr = match self
-            .extract_metadata(compiler, thread, file, expr_str)
-            .await
-        {
-            Ok(expr) => expr,
-            Err((Some(expr), err)) => {
-                macro_error = Some(err);
-                expr
-            }
-            Err((None, err)) => return Err((None, err)),
-        };
-        match expr.reparse_infix(compiler, thread, file, expr_str).await {
-            Ok(value) => match macro_error {
-                Some(err) => return Err((Some(value), err)),
-                None => Ok(value),
-            },
-            Err((opt, err)) => Err((
-                opt,
-                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            )),
-        }
+        join_result!(
+            self.extract_metadata(compiler, thread, file, expr_str)
+                .await,
+            |expr| expr.reparse_infix(compiler, thread, file, expr_str).await,
+        )
     }
 }
 
@@ -566,28 +516,12 @@ where
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> SalvageResult<TypecheckValue<Self::Expr>> {
-        let mut macro_error = None;
-        let expr = match self.reparse_infix(compiler, thread, file, expr_str).await {
-            Ok(expr) => expr,
-            Err((Some(expr), err)) => {
-                macro_error = Some(err);
-                expr
-            }
-            Err((None, err)) => return Err((None, err)),
-        };
-        match expr
-            .typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            .await
-        {
-            Ok(value) => match macro_error {
-                Some(err) => return Err((Some(value), err)),
-                None => Ok(value),
-            },
-            Err((opt, err)) => Err((
-                opt,
-                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            )),
-        }
+        join_result!(
+            self.reparse_infix(compiler, thread, file, expr_str).await,
+            |expr| expr
+                .typecheck_expected(compiler, thread, file, expr_str, expected_type)
+                .await,
+        )
     }
 }
 
