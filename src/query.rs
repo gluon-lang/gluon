@@ -38,35 +38,6 @@ use crate::{compiler_pipeline::*, import::PtrEq, Error, ModuleCompiler, Result, 
 
 pub use {crate::import::DatabaseSnapshot, salsa};
 
-pub type SalvageResult<T, E = Error> = StdResult<T, Salvage<T, E>>;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Salvage<T, E> {
-    pub value: Option<T>,
-    pub error: E,
-}
-
-impl<T, E> Salvage<T, E> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Salvage<U, E> {
-        Salvage {
-            value: self.value.map(f),
-            error: self.error,
-        }
-    }
-}
-
-impl<T, E> From<E> for Salvage<T, E> {
-    fn from(error: E) -> Self {
-        Salvage { value: None, error }
-    }
-}
-
-impl<T> From<Salvage<T, Error>> for Error {
-    fn from(s: Salvage<T, Error>) -> Self {
-        s.error
-    }
-}
-
 #[derive(Debug, Trace)]
 #[gluon(crate_name = "gluon_vm")]
 pub struct UnrootedValue(RootedValue<RootedThread>);
@@ -544,10 +515,7 @@ async fn typechecked_source_module(
             expected_type.as_ref(),
         )
         .await
-        .map_err(|(opt, error)| Salvage {
-            value: opt.map(|value| value.map(Arc::new)),
-            error,
-        })?;
+        .map_err(|err| err.map(|value| value.map(Arc::new)))?;
 
     Ok(value.map(Arc::new))
 }
@@ -672,8 +640,7 @@ async fn import(
     let name = Symbol::from(format!("@{}", modulename));
     let result = crate::get_import(&thread)
         .load_module(&mut ModuleCompiler::new(compiler), &thread, &name)
-        .await
-        .map_err(|(_, err)| err);
+        .await;
 
     compiler.collect_garbage();
 

@@ -44,10 +44,54 @@ use crate::{
 pub type BoxFuture<'vm, T, E> =
     std::pin::Pin<Box<dyn futures::Future<Output = StdResult<T, E>> + Send + 'vm>>;
 
-pub type SalvageResult<T, E = Error> = StdResult<T, (Option<T>, E)>;
+pub type SalvageResult<T, E = Error> = StdResult<T, Salvage<T, E>>;
 
-fn call<T, U>(v: T, f: impl FnOnce(T) -> U) -> U {
-    f(v)
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Salvage<T, E> {
+    pub value: Option<T>,
+    pub error: E,
+}
+
+impl<T, E> Salvage<T, E> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Salvage<U, E> {
+        Salvage {
+            value: self.value.map(f),
+            error: self.error,
+        }
+    }
+
+    pub fn get_value(self) -> std::result::Result<T, E> {
+        self.value.ok_or(self.error)
+    }
+
+    pub fn err_into<F>(self) -> Salvage<T, F>
+    where
+        F: From<E>,
+    {
+        let Salvage { value, error } = self;
+        Salvage {
+            value,
+            error: error.into(),
+        }
+    }
+}
+
+impl<T, E> From<E> for Salvage<T, E> {
+    fn from(error: E) -> Self {
+        Salvage { value: None, error }
+    }
+}
+
+impl<T, E> From<Salvage<T, InFile<E>>> for InFile<E> {
+    fn from(s: Salvage<T, InFile<E>>) -> Self {
+        s.error
+    }
+}
+
+impl<T> From<Salvage<T, Error>> for Error {
+    fn from(s: Salvage<T, Error>) -> Self {
+        s.error
+    }
 }
 
 macro_rules! join_result {
@@ -55,22 +99,36 @@ macro_rules! join_result {
         let mut first_error = None;
         let $f_arg = match $result {
             Ok(x) => x,
-            Err((Some(expr), err)) => {
-                first_error = Some(err);
+            Err(Salvage {
+                value: Some(expr),
+                error,
+            }) => {
+                first_error = Some(error);
                 expr
             }
-            Err((None, err)) => return Err((None, err)),
+            Err(Salvage { value: None, error }) => return Err(Salvage { value: None, error }),
         };
 
         match $f_body {
             Ok(value) => match first_error {
-                Some(err) => return Err((Some(value), err)),
+                Some(error) => {
+                    return Err(Salvage {
+                        value: Some(value),
+                        error,
+                    })
+                }
                 None => Ok(value),
             },
-            Err((opt, err)) => Err((
-                opt,
-                Errors::from(first_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            )),
+            Err(Salvage { value, error }) => Err(Salvage {
+                value,
+                error: Errors::from(
+                    first_error
+                        .into_iter()
+                        .chain(Some(error))
+                        .collect::<Vec<_>>(),
+                )
+                .into(),
+            }),
         }
     }};
 }
@@ -89,9 +147,12 @@ pub fn parse_expr_inner<'ast>(
         type_cache,
         &*map,
     )
-    .map_err(|(expr, err)| {
-        info!("Parse error: {}", err);
-        (expr, InFile::new(compiler.code_map().clone(), err))
+    .map_err(|(value, error)| {
+        info!("Parse error: {}", error);
+        Salvage {
+            value,
+            error: InFile::new(compiler.code_map().clone(), error),
+        }
     })
 }
 
@@ -105,17 +166,12 @@ pub fn parse_expr(
         mk_ast_arena!(arena);
 
         parse_expr_inner((*arena).borrow(), compiler, type_cache, file, expr_str)
-            .map_err(|(expr, err)| {
-                (
-                    expr.map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr))),
-                    err,
-                )
-            })
             .map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr)))
+            .map_err(|err| err.map(|expr| RootExpr::new(arena.clone(), arena.alloc(expr))))
     };
     result
         .map(|expr| expr.try_into_send().unwrap())
-        .map_err(|(expr, err)| (expr.map(|expr| expr.try_into_send().unwrap()), err))
+        .map_err(|err| err.map(|expr| expr.try_into_send().unwrap()))
 }
 
 /// Result type of successful macro expansion
@@ -150,7 +206,7 @@ impl<'s> MacroExpandable for &'s str {
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         join_result!(
             parse_expr(compiler, thread.global_env().type_cache(), file, self)
-                .map_err(|(x, err)| (x, err.into())),
+                .map_err(|err| err.err_into()),
             |expr| expr.expand_macro(compiler, thread, file, expr_str).await,
         )
     }
@@ -201,10 +257,10 @@ impl<'s> MacroExpandable for &'s mut OwnedExpr<Symbol> {
         };
         let value = MacroValue { expr: self };
         if let Err(errors) = result {
-            Err((
-                Some(value),
-                InFile::new(compiler.code_map().clone(), errors).into(),
-            ))
+            Err(Salvage {
+                value: Some(value),
+                error: InFile::new(compiler.code_map().clone(), errors).into(),
+            })
         } else {
             Ok(value)
         }
@@ -226,12 +282,15 @@ impl MacroExpandable for OwnedExpr<Symbol> {
             .expand_macro(compiler, thread, file, expr_str)
             .await
             .map(|_| ())
-            .map_err(|(_, err)| err);
+            .map_err(|err| err.error);
 
         let value = MacroValue { expr: self };
         match result {
             Ok(()) => Ok(value),
-            Err(err) => Err((Some(value), err)),
+            Err(error) => Err(Salvage {
+                value: Some(value),
+                error,
+            }),
         }
     }
 }
@@ -438,14 +497,14 @@ where
                 metadata,
                 metadata_map,
             }),
-            Err(err) => Err((
-                Some(InfixReparsed {
+            Err(err) => Err(Salvage {
+                value: Some(InfixReparsed {
                     expr,
                     metadata,
                     metadata_map,
                 }),
-                InFile::new(compiler.code_map().clone(), err).into(),
-            )),
+                error: InFile::new(compiler.code_map().clone(), err).into(),
+            }),
         }
     }
 }
@@ -581,9 +640,9 @@ where
             &mut metadata_map,
         ) {
             Ok(typ) => typ,
-            Err(err) => {
-                return Err((
-                    Some(TypecheckValue {
+            Err(error) => {
+                return Err(Salvage {
+                    value: Some(TypecheckValue {
                         typ: expr
                             .borrow_mut()
                             .expr()
@@ -593,8 +652,8 @@ where
                         metadata_map,
                         metadata,
                     }),
-                    err,
-                ))
+                    error,
+                })
             }
         };
 
@@ -678,8 +737,7 @@ where
     ) -> Result<CompileValue<Self::Expr>> {
         let tc_value = self
             .typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            .await
-            .map_err(|(_, err)| err)?;
+            .await?;
         tc_value.compile(compiler, thread, file, expr_str, ()).await
     }
 }

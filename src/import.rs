@@ -39,6 +39,7 @@ use crate::vm::{
 };
 
 use crate::{
+    compiler_pipeline::SalvageResult,
     query::{Compilation, CompilationMut, CompilerDatabase},
     IoError, ModuleCompiler, ThreadExt,
 };
@@ -85,7 +86,7 @@ pub trait Importer: Any + Clone + Sync + Send {
         compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         modulename: &str,
-    ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
+    ) -> SalvageResult<ArcType, crate::Error>;
 }
 
 #[derive(Clone)]
@@ -97,12 +98,8 @@ impl Importer for DefaultImporter {
         compiler: &mut ModuleCompiler<'_>,
         _vm: &Thread,
         modulename: &str,
-    ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
-        let value = compiler
-            .database
-            .global(modulename.to_string())
-            .await
-            .map_err(|err| (None, err))?;
+    ) -> SalvageResult<ArcType> {
+        let value = compiler.database.global(modulename.to_string()).await?;
         Ok(value.typ)
     }
 }
@@ -183,7 +180,7 @@ pub(crate) trait ImportApi: Send + Sync {
         compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
-    ) -> Result<ArcType, (Option<ArcType>, crate::Error)>;
+    ) -> SalvageResult<ArcType>;
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
     fn fork(
         &mut self,
@@ -210,14 +207,11 @@ where
         compiler: &mut ModuleCompiler<'_>,
         vm: &Thread,
         module_id: &Symbol,
-    ) -> Result<ArcType, (Option<ArcType>, crate::Error)> {
+    ) -> SalvageResult<ArcType> {
         assert!(module_id.is_global());
         let modulename = module_id.name().definition_name();
 
-        self.importer
-            .import(compiler, vm, &modulename)
-            .await
-            .map_err(|(t, err)| (t, err))
+        self.importer.import(compiler, vm, &modulename).await
     }
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         Self::snapshot(self, thread)
