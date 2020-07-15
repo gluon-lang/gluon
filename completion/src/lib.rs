@@ -995,7 +995,7 @@ pub enum CompletionSymbolContent<'a, 'ast> {
         expr: Option<&'a SpannedExpr<'ast, Symbol>>,
     },
     Type {
-        alias: &'a AliasData<Symbol, AstType<'ast, Symbol>>,
+        typ: &'a AstType<'ast, Symbol>,
     },
 }
 
@@ -1018,12 +1018,8 @@ pub fn all_symbols<'a, 'ast>(
                         self.result.push(pos::spanned(
                             field.name.span,
                             CompletionSymbol {
-                                name: &field.name.value.name,
-                                content: CompletionSymbolContent::Value {
-                                    typ: &arg.name.value.typ,
-                                    kind: CompletionValueKind::Parameter,
-                                    expr: None,
-                                },
+                                name: &field.name.value,
+                                content: CompletionSymbolContent::Type { typ: &field.typ },
                                 children: Vec::new(),
                             },
                         ));
@@ -1051,7 +1047,7 @@ pub fn all_symbols<'a, 'ast>(
                                         .map(|alias| &alias.name)
                                         .unwrap_or(&bind.name.value),
                                     content: CompletionSymbolContent::Type {
-                                        alias: &bind.alias.value,
+                                        typ: &bind.alias.unresolved_type(),
                                     },
                                     children,
                                 },
@@ -1331,7 +1327,7 @@ impl SuggestionQuery {
                             }
                         }
                         Expr::Ident(ref id) if id.name.is_global() => {
-                            self.suggest_module_import(env, &id.name.as_ref()[1..], &mut result);
+                            self.suggest_module_import(env, id.name.as_pretty_str(), &mut result);
                         }
                         _ => {
                             self.suggest_local(
@@ -1735,7 +1731,7 @@ pub fn get_metadata<'a, 'ast>(
                 }) => {
                     if let Expr::Ident(ref expr_id) = expr.value {
                         env.get(&expr_id.name)
-                            .and_then(|metadata| metadata.module.get(id.as_ref()))
+                            .and_then(|metadata| metadata.module.get(id.as_str()))
                     } else {
                         None
                     }
