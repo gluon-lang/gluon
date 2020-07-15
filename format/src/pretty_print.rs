@@ -58,7 +58,7 @@ pub(super) struct Printer<'a, I: 'a, A: 'a> {
 
 impl<'a, I, A> Printer<'a, I, A>
 where
-    I: AsRef<str> + std::fmt::Debug + 'a,
+    I: AsRef<str> + AsRef<I> + std::fmt::Debug + 'a,
     A: std::fmt::Debug,
     A: 'a,
 {
@@ -203,7 +203,7 @@ where
                 }
             }
 
-            Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref()),
+            Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref() as &str),
 
             Expr::IfElse(..) => self.pretty_if_expr(expr),
 
@@ -216,7 +216,7 @@ where
                 pretty(lhs).group(),
                 chain![arena;
                     hardline(arena, rhs),
-                    op.value.name.as_ref(),
+                    op.value.name.as_ref() as &str,
                     " ",
                     pretty(rhs).group()
                 ].nest(INDENT)
@@ -238,7 +238,7 @@ where
                                     } else {
                                         arena.nil()
                                     },
-                                    arena.text(arg.name.value.name.as_ref()).append(" ")
+                                    arena.text(arg.name.value.name.as_ref() as &str).append(" ")
                                 ]
                             }))
                         ].group(),
@@ -341,7 +341,7 @@ where
             Expr::Projection(ref expr, ref field, _) => chain![arena;
                 pretty(expr),
                 ".",
-                pretty_types::ident(arena, field.as_ref())
+                pretty_types::ident(arena, field.as_ref() as &str)
             ],
 
             Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda(_) => {
@@ -399,21 +399,21 @@ where
 
                             "type",
                             " ",
-                            bind.name.value.as_ref(),
+                            bind.name.value.as_ref() as &str,
                             " ",
                             arena.concat(bind.alias.value.params().iter().map(|arg| {
                                 chain![arena;
                                     if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
                                         chain![arena;
                                             "(",
-                                            arg.id.as_ref(),
+                                            arg.id.as_ref() as &str,
                                             " :",
                                             arena.line(),
                                             pretty_kind(arena, Prec::Top, &arg.kind).group(),
                                             ")"
                                         ].group()
                                     } else {
-                                        arena.text(arg.id.as_ref())
+                                        arena.text(arg.id.as_ref() as &str)
                                     },
                                     arena.line()
                                 ]
@@ -557,7 +557,7 @@ where
                 let from = chain![arena;
                     "\\",
                     arena.concat(lambda.args.iter().map(|arg| {
-                        arena.text(arg.name.value.name.as_ref()).append(" ")
+                        arena.text(arg.name.value.name.as_ref() as &str).append(" ")
                     })),
                     "->"
                 ];
@@ -629,10 +629,10 @@ where
                         ordered_iter().map(|either| match either {
                             Either::Left(l) => pos::spanned(
                                 l.name.span,
-                                pretty_types::ident(arena, l.name.value.as_ref()),
+                                pretty_types::ident(arena, l.name.value.as_ref() as &str),
                             ),
                             Either::Right(r) => {
-                                let id = pretty_types::ident(arena, r.name.value.as_ref());
+                                let id = pretty_types::ident(arena, r.name.value.as_ref() as &str);
                                 let doc = chain![
                                     arena;
                                     pretty_types::doc_comment(arena, r.metadata.comment()),
@@ -801,7 +801,7 @@ where
                 Prec::Constructor,
                 arena,
                 chain![arena;
-                    ident.value.as_ref(),
+                    ident.value.as_ref() as &str,
                     " @ ",
                     self.pretty_pattern_(pat, Prec::Constructor)
                 ],
@@ -830,11 +830,11 @@ where
                         .iter()
                         .map(|field| match field {
                             PatternField::Type { name } => {
-                                pos::spanned(name.span, arena.text(name.value.as_ref()))
+                                pos::spanned(name.span, arena.text(name.value.as_ref() as &str))
                             }
                             PatternField::Value { name, value } => {
                                 let doc = chain![arena;
-                                    pretty_types::ident(arena, name.value.as_ref()),
+                                    pretty_types::ident(arena, name.value.as_ref() as &str),
                                     match value {
                                         Some(ref new_name) => {
                                             chain![arena;
@@ -1035,7 +1035,7 @@ where
 
 impl<'a, 'e, F, I, J, T, U, A> Iterator for CommaSeparated<'a, 'e, F, I, J, U, A>
 where
-    I: AsRef<str> + std::fmt::Debug,
+    I: AsRef<str> + AsRef<I> + std::fmt::Debug,
     F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
     J: Iterator<Item = T>,
     T: ::std::borrow::Borrow<Spanned<U, BytePos>>,

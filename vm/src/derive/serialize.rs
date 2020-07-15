@@ -126,7 +126,7 @@ pub fn generate<'ast>(
                         pos::spanned(
                             span,
                             Pattern::Constructor(
-                                TypedIdent::new(variant.name.clone()),
+                                TypedIdent::new(variant.name.value.clone()),
                                 arena.alloc_extend(
                                     pattern_args
                                         .into_iter()

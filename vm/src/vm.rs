@@ -410,7 +410,7 @@ impl<'a> VmEnvInstance<'a> {
         let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
-                .find(|field| field.name.as_ref() == field_name.as_str())
+                .find(|field| field.name.as_str() == field_name.as_str())
                 .map(|field| &field.typ)
                 .cloned()
         };
@@ -475,7 +475,7 @@ impl<'a> VmEnvInstance<'a> {
             let next_type = {
                 typ.row_iter()
                     .enumerate()
-                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .find(|&(_, field)| field.name.as_str() == field_name)
                     .map(|(index, field)| match value.as_ref() {
                         ValueRef::Data(data) => {
                             value = data.get_variant(index).unwrap();

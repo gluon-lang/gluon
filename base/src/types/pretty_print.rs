@@ -130,6 +130,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     where
         T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
         I: AsRef<str>,
+        T::SpannedId: AsRef<str> + AsRef<I>,
         A: Clone,
     {
         use super::top;
@@ -156,6 +157,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
     T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
+    T::SpannedId: AsRef<str> + AsRef<I>,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -182,7 +184,7 @@ pub struct Printer<'a, I: 'a, A: 'a> {
 }
 
 impl<'a, I, A> Printer<'a, I, A> {
-    pub fn new(arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Printer<'a, I, A>
+    pub fn new(arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Self
     where
         I: AsRef<str>,
     {

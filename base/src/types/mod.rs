@@ -27,7 +27,7 @@ use crate::{
     kind::{ArcKind, Kind, KindCache, KindEnv},
     merge::{merge, merge_collect},
     metadata::Metadata,
-    pos::{BytePos, HasSpan, Span},
+    pos::{BytePos, HasSpan, Span, Spanned},
     source::Source,
     symbol::{Name, Symbol, SymbolRef},
 };
@@ -156,13 +156,14 @@ where
     pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
+        T::SpannedId: From<Id>,
         I: IntoIterator<Item = T>,
     {
         let fields: Vec<_> = elems
             .into_iter()
             .enumerate()
             .map(|(i, typ)| Field {
-                name: symbols.from_str(&format!("_{}", i)),
+                name: symbols.from_str(&format!("_{}", i)).into(),
                 typ,
             })
             .collect();
@@ -173,23 +174,27 @@ where
         }
     }
 
-    pub fn variant(&self, fields: Vec<Field<Id, T>>) -> T {
+    pub fn variant(&self, fields: Vec<Field<T::SpannedId, T>>) -> T {
         self.poly_variant(fields, self.empty_row())
     }
 
-    pub fn poly_variant(&self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+    pub fn poly_variant(&self, fields: Vec<Field<T::SpannedId, T>>, rest: T) -> T {
         Type::poly_variant(fields, rest)
     }
 
-    pub fn record(&self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+    pub fn record(
+        &self,
+        types: Vec<Field<T::SpannedId, Alias<Id, T>>>,
+        fields: Vec<Field<T::SpannedId, T>>,
+    ) -> T {
         Type::poly_record(types, fields, self.empty_row())
     }
 
-    pub fn effect(&self, fields: Vec<Field<Id, T>>) -> T {
+    pub fn effect(&self, fields: Vec<Field<T::SpannedId, T>>) -> T {
         self.poly_effect(fields, self.empty_row())
     }
 
-    pub fn poly_effect(&self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+    pub fn poly_effect(&self, fields: Vec<Field<T::SpannedId, T>>, rest: T) -> T {
         Type::poly_effect(fields, rest)
     }
 
@@ -479,6 +484,7 @@ where
     T::Generics: Clone,
     T::Fields: Clone,
     Id: Clone + PartialEq,
+    T::SpannedId: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
     pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
@@ -625,6 +631,7 @@ where
     T::Generics: Clone,
     T::Fields: Clone,
     Id: Clone + PartialEq,
+    T::SpannedId: Clone + PartialEq,
 {
     pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
         match self.typ_(interner, &self.typ) {
@@ -793,23 +800,26 @@ where
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug, AstClone)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "Seed<FieldId, U>")
+)]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(bound(deserialize = "
-           Id: DeserializeState<'de, Seed<Id, U>> + Clone + ::std::any::Any,
-           T: DeserializeState<'de, Seed<Id, U>>
+           FieldId: DeserializeState<'de, Seed<FieldId, U>> + Clone + ::std::any::Any,
+           T: DeserializeState<'de, Seed<FieldId, U>>
                              "))
 )]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>"))
+    serde(bound(serialize = "T: SerializeState<SeSeed>, FieldId: SerializeState<SeSeed>"))
 )]
-pub struct Field<Id, T = ArcType<Id>> {
+pub struct Field<FieldId, T = ArcType<FieldId>> {
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
+    pub name: FieldId,
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub typ: T,
 }
@@ -820,14 +830,14 @@ pub struct Field<Id, T = ArcType<Id>> {
 /// increasing the size of `Type`.
 pub type AppVec<T> = SmallVec<[T; 2]>;
 
-impl<Id, T> Field<Id, T> {
-    pub fn new(name: Id, typ: T) -> Field<Id, T> {
+impl<SpId, T> Field<SpId, T> {
+    pub fn new(name: SpId, typ: T) -> Self {
         Field { name, typ }
     }
 
-    pub fn ctor_with<J>(
+    pub fn ctor_with<J, Id>(
         context: &mut (impl TypeContext<Id, T> + ?Sized),
-        ctor_name: Id,
+        ctor_name: SpId,
         elems: J,
     ) -> Self
     where
@@ -843,7 +853,7 @@ impl<Id, T> Field<Id, T> {
         }
     }
 
-    pub fn ctor<J>(ctor_name: Id, elems: J) -> Self
+    pub fn ctor<J, Id>(ctor_name: SpId, elems: J) -> Self
     where
         J: IntoIterator<Item = T>,
         J::IntoIter: DoubleEndedIterator,
@@ -1065,26 +1075,28 @@ where
         }
     }
 
-    pub fn variant(fields: Vec<Field<Id, T>>) -> T {
+    pub fn variant(fields: Vec<Field<T::SpannedId, T>>) -> T {
         Type::poly_variant(fields, Type::empty_row())
     }
 
-    pub fn poly_variant(fields: Vec<Field<Id, T>>, rest: T) -> T {
+    pub fn poly_variant(fields: Vec<Field<T::SpannedId, T>>, rest: T) -> T {
         T::from(Type::Variant(Type::extend_row(fields, rest)))
     }
 
-    pub fn effect(fields: Vec<Field<Id, T>>) -> T {
+    pub fn effect(fields: Vec<Field<T::SpannedId, T>>) -> T {
         Type::poly_effect(fields, Type::empty_row())
     }
 
-    pub fn poly_effect(fields: Vec<Field<Id, T>>, rest: T) -> T {
+    pub fn poly_effect(fields: Vec<Field<T::SpannedId, T>>, rest: T) -> T {
         T::from(Type::Effect(Type::extend_row(fields, rest)))
     }
 
     pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
+        T::SpannedId: From<Id>,
         I: IntoIterator<Item = T>,
+        T: From<(Type<Id, T>, Flags)>,
     {
         T::from(Type::tuple_(symbols, elems))
     }
@@ -1092,42 +1104,37 @@ where
     pub fn tuple_<S, I>(symbols: &mut S, elems: I) -> Type<Id, T>
     where
         S: ?Sized + IdentEnv<Ident = Id>,
+        T::SpannedId: From<Id>,
         I: IntoIterator<Item = T>,
+        T: From<(Type<Id, T>, Flags)>,
     {
-        Type::Record(Type::extend_row(
-            elems
-                .into_iter()
-                .enumerate()
-                .map(|(i, typ)| Field {
-                    name: symbols.from_str(&format!("_{}", i)),
-                    typ,
-                })
-                .collect(),
-            Type::empty_row(),
-        ))
+        NullInterner.tuple_(symbols, elems)
     }
 
-    pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
+    pub fn record(
+        types: Vec<Field<T::SpannedId, Alias<Id, T>>>,
+        fields: Vec<Field<T::SpannedId, T>>,
+    ) -> T {
         Type::poly_record(types, fields, Type::empty_row())
     }
 
     pub fn poly_record(
-        types: Vec<Field<Id, Alias<Id, T>>>,
-        fields: Vec<Field<Id, T>>,
+        types: Vec<Field<T::SpannedId, Alias<Id, T>>>,
+        fields: Vec<Field<T::SpannedId, T>>,
         rest: T,
     ) -> T {
         T::from(Type::Record(Type::extend_full_row(types, fields, rest)))
     }
 
     pub fn extend_full_row(
-        types: Vec<Field<Id, Alias<Id, T>>>,
-        fields: Vec<Field<Id, T>>,
+        types: Vec<Field<T::SpannedId, Alias<Id, T>>>,
+        fields: Vec<Field<T::SpannedId, T>>,
         rest: T,
     ) -> T {
         Self::extend_type_row(types, Self::extend_row(fields, rest))
     }
 
-    pub fn extend_row(fields: Vec<Field<Id, T>>, rest: T) -> T {
+    pub fn extend_row(fields: Vec<Field<T::SpannedId, T>>, rest: T) -> T {
         if fields.is_empty() {
             rest
         } else {
@@ -1135,7 +1142,7 @@ where
         }
     }
 
-    pub fn extend_type_row(types: Vec<Field<Id, Alias<Id, T>>>, rest: T) -> T {
+    pub fn extend_type_row(types: Vec<Field<T::SpannedId, Alias<Id, T>>>, rest: T) -> T {
         if types.is_empty() {
             rest
         } else {
@@ -1570,7 +1577,7 @@ impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
     }
 }
 
-impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
+impl<Id: AsRef<str> + AsRef<Id>> fmt::Display for ArcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", TypeFormatter::new(self))
     }
@@ -1682,19 +1689,20 @@ type_alloc_impl! { T ['ast, T: TypePtr<Generics = Self>] &'ast mut [Generic<<T a
 type_alloc_impl! { T [T: TypePtr<Types = Self>] AppVec<T>, T => intern_types }
 type_alloc_impl! { T ['ast, T: TypePtr<Types = Self>] &'ast mut [T], T => intern_types }
 
-type_alloc_impl! { T [T: TypePtr<Fields = Self>] Vec<Field<<T as TypePtr>::Id, T>>, Field<<T as TypePtr>::Id, T> => intern_fields }
-type_alloc_impl! { T ['ast, T: TypePtr<Fields = Self>] &'ast mut [Field<<T as TypePtr>::Id, T>], Field<<T as TypePtr>::Id, T> => intern_fields }
+type_alloc_impl! { T [T: TypePtr<Fields = Self>] Vec<Field<<T as TypePtr>::SpannedId, T>>, Field<<T as TypePtr>::SpannedId, T> => intern_fields }
+type_alloc_impl! { T ['ast, T: TypePtr<Fields = Self>] &'ast mut [Field<<T as TypePtr>::SpannedId, T>], Field<<T as TypePtr>::SpannedId, T> => intern_fields }
 
-type_alloc_impl! { T [T: TypePtr<TypeFields = Self>] Vec<Field<<T as TypePtr>::Id, Alias<<T as TypePtr>::Id, T>>>, Field<<T as TypePtr>::Id, Alias<<T as TypePtr>::Id, T>> => intern_type_fields }
-type_alloc_impl! { T ['ast, T: TypePtr<TypeFields = Self>] &'ast mut [Field<<T as TypePtr>::Id, Alias<<T as TypePtr>::Id, T>>], Field<<T as TypePtr>::Id, Alias<<T as TypePtr>::Id, T>> => intern_type_fields }
+type_alloc_impl! { T [T: TypePtr<TypeFields = Self>] Vec<Field<<T as TypePtr>::SpannedId, Alias<<T as TypePtr>::Id, T>>>, Field<<T as TypePtr>::SpannedId, Alias<<T as TypePtr>::Id, T>> => intern_type_fields }
+type_alloc_impl! { T ['ast, T: TypePtr<TypeFields = Self>] &'ast mut [Field<<T as TypePtr>::SpannedId, Alias<<T as TypePtr>::Id, T>>], Field<<T as TypePtr>::SpannedId, Alias<<T as TypePtr>::Id, T>> => intern_type_fields }
 
 pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
     type Id;
+    type SpannedId;
     type Types: TypeAlloc<Self> + Deref<Target = [Self]> + Default;
     type Generics: TypeAlloc<Self> + Deref<Target = [Generic<Self::Id>]> + Default;
-    type Fields: TypeAlloc<Self> + Deref<Target = [Field<Self::Id, Self>]> + Default;
+    type Fields: TypeAlloc<Self> + Deref<Target = [Field<Self::SpannedId, Self>]> + Default;
     type TypeFields: TypeAlloc<Self>
-        + Deref<Target = [Field<Self::Id, Alias<Self::Id, Self>>]>
+        + Deref<Target = [Field<Self::SpannedId, Alias<Self::Id, Self>>]>
         + Default;
 
     fn flags(&self) -> Flags {
@@ -1713,8 +1721,8 @@ pub trait TypeExt:
     TypePtr<
         Types = AppVec<Self>,
         Generics = Vec<Generic<<Self as TypePtr>::Id>>,
-        Fields = Vec<Field<<Self as TypePtr>::Id, Self>>,
-        TypeFields = Vec<Field<<Self as TypePtr>::Id, Alias<<Self as TypePtr>::Id, Self>>>,
+        Fields = Vec<Field<<Self as TypePtr>::SpannedId, Self>>,
+        TypeFields = Vec<Field<<Self as TypePtr>::SpannedId, Alias<<Self as TypePtr>::Id, Self>>>,
     > + Clone
     + Sized
 {
@@ -1766,6 +1774,7 @@ pub trait TypeExt:
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
@@ -1785,6 +1794,7 @@ pub trait TypeExt:
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
@@ -1828,6 +1838,7 @@ pub trait TypeExt:
     fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         Self::Id: AsRef<str> + 'a,
+        Self::SpannedId: AsRef<str> + AsRef<Self::Id> + 'a,
         A: Clone,
         Self: HasMetadata + HasSpan,
     {
@@ -1837,6 +1848,7 @@ pub trait TypeExt:
     fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A>
     where
         Self::Id: AsRef<str>,
+        Self::SpannedId: AsRef<str>,
     {
         TypeFormatter::new(self).width(width)
     }
@@ -1860,6 +1872,7 @@ pub trait TypeExt:
     ) -> Option<Self>
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self: fmt::Display,
         Self::Id: fmt::Display,
         Self::Types: Clone + FromIterator<Self>,
@@ -1949,6 +1962,7 @@ pub trait TypeExt:
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
         Self::Fields: Clone,
@@ -1977,6 +1991,7 @@ pub trait TypeExt:
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self::Types: Clone,
         Self::Generics: Clone,
         Self::Fields: Clone,
@@ -2008,6 +2023,7 @@ pub trait TypeExt:
     ) -> Self
     where
         Self::Id: Clone + Eq + Hash,
+        Self::SpannedId: Clone,
         Self::Types: Clone,
         Self::Generics: FromIterator<Generic<Self::Id>> + Clone,
         Self::Fields: Clone,
@@ -2050,6 +2066,7 @@ where
 
 impl<Id> TypePtr for ArcType<Id> {
     type Id = Id;
+    type SpannedId = Id;
     type Types = AppVec<Self>;
     type Generics = Vec<Generic<Id>>;
     type Fields = Vec<Field<Id, Self>>;
@@ -2123,9 +2140,9 @@ impl<'a, Id: 'a, T> Iterator for TypeFieldIterator<'a, T>
 where
     T: TypePtr<Id = Id>,
 {
-    type Item = &'a Field<Id, Alias<Id, T>>;
+    type Item = &'a Field<T::SpannedId, Alias<Id, T>>;
 
-    fn next(&mut self) -> Option<&'a Field<Id, Alias<Id, T>>> {
+    fn next(&mut self) -> Option<&'a Field<T::SpannedId, Alias<Id, T>>> {
         match **self.typ {
             Type::ExtendRow { ref rest, .. } | Type::Record(ref rest) => {
                 self.typ = rest;
@@ -2164,9 +2181,9 @@ impl<'a, Id: 'a, T> Iterator for RowIterator<'a, T>
 where
     T: TypePtr<Id = Id>,
 {
-    type Item = &'a Field<Id, T>;
+    type Item = &'a Field<T::SpannedId, T>;
 
-    fn next(&mut self) -> Option<&'a Field<Id, T>> {
+    fn next(&mut self) -> Option<&'a Field<T::SpannedId, T>> {
         match **self.typ {
             Type::Record(ref row) | Type::Variant(ref row) => {
                 self.typ = row;
@@ -2225,23 +2242,23 @@ where
     }
 }
 
-pub struct RowIteratorMut<'a, Id: 'a, T: 'a> {
-    fields: ::std::slice::IterMut<'a, Field<Id, T>>,
+pub struct RowIteratorMut<'a, SpId: 'a, T: 'a> {
+    fields: ::std::slice::IterMut<'a, Field<SpId, T>>,
     rest: Option<&'a mut T>,
 }
 
-impl<'a, Id, T> RowIteratorMut<'a, Id, T> {
+impl<'a, SpId, T> RowIteratorMut<'a, SpId, T> {
     pub fn current_type(&mut self) -> &mut T {
         self.rest.as_mut().unwrap()
     }
 }
 
-impl<'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, Id, T>
+impl<'a, SpId: 'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, SpId, T>
 where
-    T: DerefMut<Target = Type<Id, T>> + TypePtr<Id = Id>,
-    T::Fields: DerefMut<Target = [Field<Id, T>]>,
+    T: DerefMut<Target = Type<Id, T>> + TypePtr<Id = Id, SpannedId = SpId>,
+    T::Fields: DerefMut<Target = [Field<SpId, T>]>,
 {
-    type Item = &'a mut Field<Id, T>;
+    type Item = &'a mut Field<SpId, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -2514,7 +2531,7 @@ pub trait ToDoc<'a, A, B, E> {
 
 impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, ()> for ArcType<I>
 where
-    I: AsRef<str>,
+    I: AsRef<str> + AsRef<I>,
     A: Clone,
 {
     fn to_doc(&'a self, arena: &'a Arena<'a, A>, _: ()) -> DocBuilder<'a, Arena<'a, A>, A> {
@@ -2524,7 +2541,7 @@ where
 
 impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, &'a dyn Source> for ArcType<I>
 where
-    I: AsRef<str>,
+    I: AsRef<str> + AsRef<I>,
     A: Clone,
 {
     fn to_doc(
@@ -2537,10 +2554,10 @@ where
     }
 }
 
-fn is_tuple<I, T>(typ: &T) -> bool
+fn is_tuple<T>(typ: &T) -> bool
 where
-    I: AsRef<str>,
-    T: TypePtr<Id = I>,
+    T: TypePtr,
+    T::SpannedId: AsRef<str>,
 {
     match **typ {
         Type::Record(_) => {
@@ -2560,6 +2577,7 @@ impl<'a, I, T> DisplayType<'a, T>
 where
     T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
     I: AsRef<str> + 'a,
+    T::SpannedId: AsRef<str> + AsRef<I> + 'a,
 {
     pub fn pretty<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
@@ -2651,7 +2669,7 @@ where
                                     },
                                     chain![arena;
                                         "| ",
-                                        field.name.as_ref(),
+                                        field.name.as_ref() as &str,
                                         if field.typ.is_simple_constructor() {
                                             arena.concat(arg_iter(&field.typ).map(|arg| {
                                                 chain![arena;
@@ -2695,10 +2713,10 @@ where
                 row,
                 printer,
                 "[|",
-                &mut |field: &'a Field<I, T>| {
+                &mut |field: &'a Field<T::SpannedId, T>| {
                     chain![arena;
                         pretty_print::doc_comment(arena, field.typ.comment()),
-                        pretty_print::ident(arena, field.name.as_ref()),
+                        pretty_print::ident(arena, field.name.as_ref() as &str),
                         " : "
                     ]
                 },
@@ -2713,10 +2731,10 @@ where
                 if is_tuple(typ) {
                     Self::pretty_record_like(row, printer, "(", &mut |_| arena.nil(), ")")
                 } else {
-                    let mut pretty_record_field = |field: &'a Field<I, T>| {
+                    let mut pretty_record_field = |field: &'a Field<T::SpannedId, T>| {
                         chain![arena;
                             pretty_print::doc_comment(arena, field.typ.comment()),
-                            pretty_print::ident(arena, field.name.as_ref()),
+                            pretty_print::ident(arena, field.name.as_ref() as &str),
                             " : "
                         ]
                     };
@@ -2727,7 +2745,7 @@ where
                 self.pretty_row("{", printer, &mut |field| {
                     chain![arena;
                         pretty_print::doc_comment(arena, field.typ.comment()),
-                        pretty_print::ident(arena, field.name.as_ref()),
+                        pretty_print::ident(arena, field.name.as_ref() as &str),
                         " : "
                     ]
                 })
@@ -2751,7 +2769,7 @@ where
         row: &'a T,
         printer: &Printer<'a, I, A>,
         open: &'static str,
-        pretty_field: &mut dyn FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+        pretty_field: &mut dyn FnMut(&'a Field<T::SpannedId, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
         close: &'static str,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
@@ -2790,7 +2808,7 @@ where
         &self,
         open: &str,
         printer: &Printer<'a, I, A>,
-        pretty_field: &mut dyn FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+        pretty_field: &mut dyn FnMut(&'a Field<T::SpannedId, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         A: Clone,
@@ -2820,13 +2838,13 @@ where
 
         let print_any_field = fields
             .iter()
-            .any(|field| printer.filter(&field.name) != Filter::Drop);
+            .any(|field| printer.filter(field.name.as_ref()) != Filter::Drop);
 
         let mut filtered = false;
 
         let types_len = type_field_iter(typ).count();
         for (i, field) in type_field_iter(typ).enumerate() {
-            let filter = printer.filter(&field.name);
+            let filter = printer.filter(field.name.as_ref());
             if filter == Filter::Drop {
                 filtered = true;
                 continue;
@@ -2834,7 +2852,7 @@ where
 
             let f = chain![arena;
                 chain![arena;
-                    field.name.as_ref(),
+                    field.name.as_ref() as &str,
                     arena.line(),
                     arena.concat(field.typ.params().iter().map(|param| {
                         arena.text(param.id.as_ref()).append(arena.line())
@@ -2858,7 +2876,7 @@ where
 
         let mut row_iter = row_iter(typ);
         for (i, field) in row_iter.by_ref().enumerate() {
-            let filter = printer.filter(&field.name);
+            let filter = printer.filter(field.name.as_ref());
             if filter == Filter::Drop {
                 filtered = true;
                 continue;
@@ -2964,6 +2982,7 @@ pub fn pretty_print<'a, I, T, A>(
 where
     I: AsRef<str> + 'a,
     T: TypePtr<Id = I> + HasSpan + HasMetadata,
+    T::SpannedId: AsRef<str> + AsRef<I> + 'a,
     A: Clone,
 {
     dt(Prec::Top, typ).pretty(printer)
@@ -3036,8 +3055,8 @@ where
     F: WalkerMut<T>,
     T: TypePtr<Id = Id> + DerefMut<Target = Type<Id, T>>,
     T::Types: DerefMut<Target = [T]>,
-    T::Fields: DerefMut<Target = [Field<Id, T>]>,
-    T::TypeFields: DerefMut<Target = [Field<Id, Alias<Id, T>>]>,
+    T::Fields: DerefMut<Target = [Field<T::SpannedId, T>]>,
+    T::TypeFields: DerefMut<Target = [Field<T::SpannedId, Alias<Id, T>>]>,
 {
     match **typ {
         Type::Forall(_, ref mut typ) => f.walk_mut(typ),
@@ -3125,6 +3144,7 @@ where
     where
         T: TypePtr<Id = Id> + Clone,
         Id: Clone,
+        T::SpannedId: Clone,
     {
         walk_move_type_opt(typ, self)
     }
@@ -3154,10 +3174,11 @@ impl<Id, T, F> TypeVisitor<Id, T> for F
 where
     F: ?Sized + FnMut(&T) -> Option<T>,
     Id: Clone,
+    T::SpannedId: Clone,
     T: TypeExt<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
     T::Generics: FromIterator<Generic<Id>> + Clone,
-    T::Fields: FromIterator<Field<Id, T>> + Clone,
+    T::Fields: FromIterator<Field<T::SpannedId, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -3212,11 +3233,11 @@ macro_rules! forward_type_interner_methods {
             $crate::expr!(self, $($tokens)+).intern_generics(types)
         }
 
-        fn intern_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<$id, $typ>>) -> <$typ as $crate::types::TypePtr>::Fields {
+        fn intern_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<<$typ as $crate::types::TypePtr>::SpannedId, $typ>>) -> <$typ as $crate::types::TypePtr>::Fields {
             $crate::expr!(self, $($tokens)+).intern_fields(types)
         }
 
-        fn intern_type_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<$id, $crate::types::Alias<$id, $typ>>>) -> <$typ as $crate::types::TypePtr>::TypeFields {
+        fn intern_type_fields(&mut self, types: impl IntoIterator<Item = $crate::types::Field<<$typ as $crate::types::TypePtr>::SpannedId, $crate::types::Alias<$id, $typ>>>) -> <$typ as $crate::types::TypePtr>::TypeFields {
             $crate::expr!(self, $($tokens)+).intern_type_fields(types)
         }
 
@@ -3430,11 +3451,14 @@ where
 
     fn intern_generics(&mut self, types: impl IntoIterator<Item = Generic<Id>>) -> T::Generics;
 
-    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields;
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<T::SpannedId, T>>,
+    ) -> T::Fields;
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>,
+        types: impl IntoIterator<Item = Field<T::SpannedId, Alias<Id, T>>>,
     ) -> T::TypeFields;
 
     fn hole(&mut self) -> T {
@@ -3512,6 +3536,7 @@ where
     fn tuple<S, I>(&mut self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
+        T::SpannedId: From<Id>,
         I: IntoIterator<Item = T>,
     {
         let t = self.tuple_(symbols, elems);
@@ -3521,11 +3546,12 @@ where
     fn tuple_<S, I>(&mut self, symbols: &mut S, elems: I) -> Type<Id, T>
     where
         S: ?Sized + IdentEnv<Ident = Id>,
+        T::SpannedId: From<Id>,
         I: IntoIterator<Item = T>,
     {
         let empty_row = self.empty_row();
         let elems = self.intern_fields(elems.into_iter().enumerate().map(|(i, typ)| Field {
-            name: symbols.from_str(&format!("_{}", i)),
+            name: symbols.from_str(&format!("_{}", i)).into(),
             typ,
         }));
         Type::Record(self.extend_row(elems, empty_row))
@@ -3756,8 +3782,8 @@ where
     T: TypePtr<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
-    T::Fields: FromIterator<Field<Id, T>>,
-    T::TypeFields: FromIterator<Field<Id, Alias<Id, T>>>,
+    T::Fields: FromIterator<Field<T::SpannedId, T>>,
+    T::TypeFields: FromIterator<Field<T::SpannedId, Alias<Id, T>>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3771,13 +3797,16 @@ where
         types.into_iter().collect()
     }
 
-    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<T::SpannedId, T>>,
+    ) -> T::Fields {
         types.into_iter().collect()
     }
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>,
+        types: impl IntoIterator<Item = Field<T::SpannedId, Alias<Id, T>>>,
     ) -> T::TypeFields {
         types.into_iter().collect()
     }
@@ -3802,8 +3831,8 @@ where
     T: TypeExt<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
     T::Types: Default + Extend<T> + FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
-    T::Fields: FromIterator<Field<Id, T>>,
-    T::TypeFields: FromIterator<Field<Id, Alias<Id, T>>>,
+    T::Fields: FromIterator<Field<T::SpannedId, T>>,
+    T::TypeFields: FromIterator<Field<T::SpannedId, Alias<Id, T>>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3817,13 +3846,16 @@ where
         types.into_iter().collect()
     }
 
-    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<T::SpannedId, T>>,
+    ) -> T::Fields {
         types.into_iter().collect()
     }
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>,
+        types: impl IntoIterator<Item = Field<T::SpannedId, Alias<Id, T>>>,
     ) -> T::TypeFields {
         types.into_iter().collect()
     }
@@ -3843,8 +3875,8 @@ where
     T: TypeExt<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>> + Clone,
     T::Types: Default + Extend<T> + FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
-    T::Fields: FromIterator<Field<Id, T>>,
-    T::TypeFields: FromIterator<Field<Id, Alias<Id, T>>>,
+    T::Fields: FromIterator<Field<T::SpannedId, T>>,
+    T::TypeFields: FromIterator<Field<T::SpannedId, Alias<Id, T>>>,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
         T::from(typ)
@@ -3858,13 +3890,16 @@ where
         types.into_iter().collect()
     }
 
-    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<T::SpannedId, T>>,
+    ) -> T::Fields {
         types.into_iter().collect()
     }
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>,
+        types: impl IntoIterator<Item = Field<T::SpannedId, Alias<Id, T>>>,
     ) -> T::TypeFields {
         types.into_iter().collect()
     }
@@ -3901,15 +3936,15 @@ impl<'ast, Id> TypeContext<Id, AstType<'ast, Id>> for ArenaRef<'_, 'ast, Id> {
 
     fn intern_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, AstType<'ast, Id>>>,
-    ) -> &'ast mut [Field<Id, AstType<'ast, Id>>] {
+        types: impl IntoIterator<Item = Field<Spanned<Id, BytePos>, AstType<'ast, Id>>>,
+    ) -> &'ast mut [Field<Spanned<Id, BytePos>, AstType<'ast, Id>>] {
         self.alloc_extend(types)
     }
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, AstType<'ast, Id>>>>,
-    ) -> &'ast mut [Field<Id, Alias<Id, AstType<'ast, Id>>>] {
+        types: impl IntoIterator<Item = Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>>>,
+    ) -> &'ast mut [Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>>] {
         self.alloc_extend(types)
     }
 
@@ -4040,7 +4075,8 @@ where
     T: TypeContextAlloc<Id = Id> + TypeExt<Id = Id> + Eq + Hash + Clone,
     T::Types: FromIterator<T>,
     T::Generics: FromIterator<Generic<Id>>,
-    T::TypeFields: FromIterator<Field<Id, Alias<Id, T>>>,
+    T::TypeFields: FromIterator<Field<T::SpannedId, Alias<Id, T>>>,
+    T::SpannedId: Eq + Hash,
     Id: Eq + Hash,
 {
     fn intern(&mut self, typ: Type<Id, T>) -> T {
@@ -4056,13 +4092,16 @@ where
         types.into_iter().collect()
     }
 
-    fn intern_fields(&mut self, types: impl IntoIterator<Item = Field<Id, T>>) -> T::Fields {
+    fn intern_fields(
+        &mut self,
+        types: impl IntoIterator<Item = Field<T::SpannedId, T>>,
+    ) -> T::Fields {
         types.into_iter().collect()
     }
 
     fn intern_type_fields(
         &mut self,
-        types: impl IntoIterator<Item = Field<Id, Alias<Id, T>>>,
+        types: impl IntoIterator<Item = Field<T::SpannedId, Alias<Id, T>>>,
     ) -> T::TypeFields {
         types.into_iter().collect()
     }
@@ -4116,10 +4155,11 @@ impl<'i, F, V, Id, T> TypeVisitor<Id, T> for InternerVisitor<'i, F, V>
 where
     F: FnMut(&mut V, &T) -> Option<T>,
     Id: Clone,
+    T::SpannedId: Clone,
     T: TypeExt<Id = Id, Types = AppVec<T>>,
     V: TypeContext<Id, T>,
     T::Generics: FromIterator<Generic<Id>> + Clone,
-    T::Fields: FromIterator<Field<Id, T>> + Clone,
+    T::Fields: FromIterator<Field<T::SpannedId, T>> + Clone,
 {
     type Context = V;
 
@@ -4142,6 +4182,7 @@ impl<'i, F, V, Id, T> TypeVisitor<Id, T> for InternerVisitor<'i, ControlVisitati
 where
     F: FnMut(&mut V, &T) -> Option<T>,
     Id: Clone,
+    T::SpannedId: Clone,
     T: TypeExt<Id = Id>,
     V: TypeContext<Id, T>,
     T::Types: Clone,
@@ -4170,10 +4211,11 @@ impl<F, Id, T> TypeVisitor<Id, T> for ControlVisitation<F>
 where
     F: FnMut(&T) -> Option<T>,
     Id: Clone,
+    T::SpannedId: Clone,
     T: TypeExt<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
     T::Generics: FromIterator<Generic<Id>> + Clone,
-    T::Fields: FromIterator<Field<Id, T>> + Clone,
+    T::Fields: FromIterator<Field<T::SpannedId, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -4206,10 +4248,11 @@ impl<F, Id, T> TypeVisitor<Id, T> for FlagsVisitor<F>
 where
     F: FnMut(&T) -> Option<T>,
     Id: Clone,
+    T::SpannedId: Clone,
     T: TypeExt<Id = Id> + From<(Type<Id, T>, Flags)> + From<Type<Id, T>>,
     T::Types: FromIterator<T> + Clone,
     T::Generics: FromIterator<Generic<Id>> + Clone,
-    T::Fields: FromIterator<Field<Id, T>> + Clone,
+    T::Fields: FromIterator<Field<T::SpannedId, T>> + Clone,
 {
     type Context = NullInterner;
 
@@ -4266,8 +4309,8 @@ where
     F: FnMut(&mut T),
     T: TypePtr<Id = Id> + DerefMut<Target = Type<Id, T>>,
     T::Types: DerefMut<Target = [T]>,
-    T::Fields: DerefMut<Target = [Field<Id, T>]>,
-    T::TypeFields: DerefMut<Target = [Field<Id, Alias<Id, T>>]>,
+    T::Fields: DerefMut<Target = [Field<T::SpannedId, T>]>,
+    T::TypeFields: DerefMut<Target = [Field<T::SpannedId, Alias<Id, T>>]>,
 {
     fn walk_mut(&mut self, typ: &mut T) {
         self(typ);
@@ -4284,6 +4327,7 @@ where
     T::Generics: Clone,
     T::Fields: Clone,
     T::TypeFields: Clone,
+    T::SpannedId: Clone,
     I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
@@ -4297,6 +4341,7 @@ where
     T::Generics: Clone,
     T::Fields: Clone,
     T::TypeFields: Clone,
+    T::SpannedId: Clone,
     I: Clone,
 {
     f.visit(typ)
@@ -4310,6 +4355,7 @@ where
     T::Generics: Clone,
     T::Fields: Clone,
     T::TypeFields: Clone,
+    T::SpannedId: Clone,
     I: Clone,
 {
     match *typ {
@@ -4392,6 +4438,7 @@ where
     T: TypePtr<Id = Id>,
     U: TypePtr<Id = Id>,
     Id: Clone,
+    T::SpannedId: Clone,
     F: FnMut(&mut I, &T) -> U,
     I: TypeContext<Id, U>,
 {
@@ -4408,6 +4455,8 @@ where
     T: TypePtr<Id = Id>,
     U: TypePtr<Id = Id>,
     Id: Clone,
+    T::SpannedId: Into<U::SpannedId>,
+    T::SpannedId: Clone,
 {
     translate_type_with(interner, arc_type, |interner, typ| {
         translate_type(interner, typ)
@@ -4423,6 +4472,8 @@ where
     T: TypePtr<Id = Id>,
     U: TypePtr<Id = Id>,
     Id: Clone,
+    T::SpannedId: Into<U::SpannedId>,
+    T::SpannedId: Clone,
     F: FnMut(&mut I, &T) -> U,
     I: TypeContext<Id, U>,
 {
@@ -4468,7 +4519,7 @@ where
             let fields = fields
                 .iter()
                 .map(|field| Field {
-                    name: field.name.clone(),
+                    name: field.name.clone().into(),
                     typ: translate(interner, &field.typ),
                 })
                 .collect::<SmallVec<[_; 10]>>();
@@ -4485,7 +4536,7 @@ where
             let types = types
                 .iter()
                 .map(|field| Field {
-                    name: field.name.clone(),
+                    name: field.name.clone().into(),
                     typ: Alias {
                         _typ: translate(interner, &field.typ.as_type()),
                         _marker: PhantomData,

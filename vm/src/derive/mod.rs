@@ -121,7 +121,7 @@ pub trait ArenaExt<'ast>: Sized + Copy {
                 typ: Type::hole(),
                 fields: self.alloc_extend(row_iter(row).zip(symbols).map(|(field, bind)| {
                     PatternField::Value {
-                        name: pos::spanned(span, field.name.clone()),
+                        name: field.name.clone(),
                         value: Some(pos::spanned(span, Pattern::Ident(bind))),
                     }
                 })),

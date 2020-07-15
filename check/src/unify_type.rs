@@ -127,6 +127,7 @@ impl<T> From<ResolveError> for TypeError<Symbol, T> {
 impl<I, T> fmt::Display for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str>,
+    T::SpannedId: AsRef<str> + AsRef<I>,
     T: TypeExt<Id = I> + ast::HasMetadata + pos::HasSpan,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -139,6 +140,7 @@ pub fn similarity_filter<'a, I, T>(typ: &'a T, fields: &'a [I]) -> Box<dyn Fn(&I
 where
     T: TypeExt<Id = I>,
     I: AsRef<str>,
+    T::SpannedId: AsRef<str>,
 {
     let mut field_similarity = typ
         .type_field_iter()
@@ -176,6 +178,7 @@ where
 impl<I, T> TypeError<I, T>
 where
     I: fmt::Display + AsRef<str>,
+    T::SpannedId: AsRef<str> + AsRef<I>,
     T: TypeExt<Id = I> + ast::HasMetadata + pos::HasSpan,
 {
     pub fn make_filter<'a>(&'a self) -> Box<dyn Fn(&I) -> Filter + 'a> {

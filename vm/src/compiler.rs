@@ -965,7 +965,7 @@ impl<'a> Compiler<'a> {
         assert!(args.len() == 2, "Invalid primitive application: {}", op);
         let lhs = &args[0];
         let rhs = &args[1];
-        if op.as_ref() == "&&" {
+        if op.as_str() == "&&" {
             self.compile(lhs, function, false)?;
             let lhs_end = function.function.instructions.len();
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
@@ -978,7 +978,7 @@ impl<'a> Compiler<'a> {
             // replace jump instruction
             function.function.instructions[lhs_end + 2] =
                 Jump(function.function.instructions.len() as VmIndex);
-        } else if op.as_ref() == "||" {
+        } else if op.as_str() == "||" {
             self.compile(lhs, function, false)?;
             let lhs_end = function.function.instructions.len();
             function.emit(CJump(0));

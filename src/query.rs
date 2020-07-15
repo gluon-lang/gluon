@@ -934,7 +934,7 @@ impl Extract for ArcType {
     fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, self);
         typ.row_iter()
-            .find(|field| field.name.as_ref() == field_name)
+            .find(|field| field.name.as_str() == field_name)
             .map(|field| field.typ.clone())
     }
     fn typ(&self) -> &ArcType {
@@ -947,7 +947,7 @@ impl Extract for (RootedValue<RootedThread>, ArcType) {
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, typ);
         typ.row_iter()
             .enumerate()
-            .find(|&(_, field)| field.name.as_ref() == field_name)
+            .find(|&(_, field)| field.name.as_str() == field_name)
             .map(|(index, field)| match value.get_variants().as_ref() {
                 ValueRef::Data(data) => (
                     db.thread().root_value(data.get_variant(index).unwrap()),
@@ -975,7 +975,7 @@ impl CompilerDatabase {
         let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
-                .find(|field| field.name.as_ref() == field_name.as_str())
+                .find(|field| field.name.as_str() == field_name.as_str())
                 .map(|field| &field.typ)
                 .cloned()
         };

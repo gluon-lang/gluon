@@ -319,6 +319,50 @@ pub struct Spanned<T, Pos> {
     pub value: T,
 }
 
+impl<T, Pos> From<T> for Spanned<T, Pos>
+where
+    Pos: Default,
+{
+    fn from(value: T) -> Self {
+        Spanned {
+            span: Span::default(),
+            value,
+        }
+    }
+}
+
+impl<T, Pos> PartialEq<T> for Spanned<T, Pos>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.value == *other
+    }
+}
+
+impl<T, Pos> std::ops::Deref for Spanned<T, Pos> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T, Pos> std::ops::DerefMut for Spanned<T, Pos> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+impl<T, U, Pos> AsRef<U> for Spanned<T, Pos>
+where
+    T: AsRef<U>,
+    U: ?Sized,
+{
+    fn as_ref(&self) -> &U {
+        self.value.as_ref()
+    }
+}
+
 impl<T, Pos> std::hash::Hash for Spanned<T, Pos>
 where
     T: std::hash::Hash,

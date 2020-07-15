@@ -9,6 +9,7 @@
 
 use std::{
     borrow::{Borrow, BorrowMut, Cow},
+    fmt,
     result::Result as StdResult,
     sync::Arc,
 };
@@ -50,6 +51,15 @@ pub type SalvageResult<T, E = Error> = StdResult<T, Salvage<T, E>>;
 pub struct Salvage<T, E> {
     pub value: Option<T>,
     pub error: E,
+}
+
+impl<T, E> fmt::Display for Salvage<T, E>
+where
+    E: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.error)
+    }
 }
 
 impl<T, E> Salvage<T, E> {
@@ -1082,7 +1092,7 @@ where
             .deserialize(self.0)
             .map_err(|err| err.to_string())?;
         let module_id = module.module.function.id.clone();
-        if filename != module_id.as_ref() {
+        if filename != module_id.as_str() {
             return Err(format!("filenames do not match `{}` != `{}`", filename, module_id).into());
         }
 

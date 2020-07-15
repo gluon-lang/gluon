@@ -79,8 +79,8 @@ where
         s.span = (self.0)(s.span);
     }
 
-    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
-        s.span = (self.0)(s.span);
+    fn visit_ast_type(&mut self, s: &mut AstType<Self::Ident>) {
+        *s.span_mut() = (self.0)(s.span());
         walk_mut_ast_type(self, s);
     }
 }

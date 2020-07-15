@@ -101,6 +101,12 @@ impl Borrow<SymbolRef> for Symbol {
     }
 }
 
+impl AsRef<Symbol> for Symbol {
+    fn as_ref(&self) -> &Symbol {
+        self
+    }
+}
+
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
         self.as_pretty_str()
@@ -263,6 +269,10 @@ impl Symbol {
         self.0.global
     }
 
+    pub fn is_primitive(&self) -> bool {
+        self.0.name.0.starts_with('#')
+    }
+
     pub fn name_eq(&self, other: &Symbol) -> bool {
         self.name() == other.name()
     }
@@ -399,11 +409,6 @@ impl Name {
     }
 
     pub fn as_str(&self) -> &str {
-        debug_assert!(
-            !self.0.contains('@'),
-            "Did you mean to call as_pretty_str?: {}",
-            &self.0
-        );
         &self.0
     }
 
@@ -779,5 +784,11 @@ impl<'s> DisplayEnv for SymbolModule<'s> {
 impl<'a> IdentEnv for SymbolModule<'a> {
     fn from_str(&mut self, s: &str) -> Symbol {
         self.symbol(SymbolData::<&Name>::from(s))
+    }
+}
+
+impl<P> From<crate::pos::Spanned<Symbol, P>> for Symbol {
+    fn from(s: crate::pos::Spanned<Symbol, P>) -> Self {
+        s.value
     }
 }

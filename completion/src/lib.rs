@@ -982,9 +982,16 @@ pub struct CompletionSymbol<'a, 'ast> {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum CompletionValueKind {
+    Parameter,
+    Binding,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum CompletionSymbolContent<'a, 'ast> {
     Value {
         typ: &'a ArcType,
+        kind: CompletionValueKind,
         expr: Option<&'a SpannedExpr<'ast, Symbol>>,
     },
     Type {
@@ -1004,12 +1011,37 @@ pub fn all_symbols<'a, 'ast>(
     impl<'a, 'ast> Visitor<'a, 'ast> for AllIdents<'_, 'a, 'ast> {
         type Ident = Symbol;
 
+        fn visit_ast_type(&mut self, typ: &'a ast::AstType<'ast, Self::Ident>) {
+            match &**typ {
+                Type::Record(_) => {
+                    for field in base::types::row_iter(typ) {
+                        self.result.push(pos::spanned(
+                            field.name.span,
+                            CompletionSymbol {
+                                name: &field.name.value.name,
+                                content: CompletionSymbolContent::Value {
+                                    typ: &arg.name.value.typ,
+                                    kind: CompletionValueKind::Parameter,
+                                    expr: None,
+                                },
+                                children: Vec::new(),
+                            },
+                        ));
+                    }
+                }
+                _ => ast::walk_ast_type(self, typ),
+            }
+        }
+
         fn visit_expr(&mut self, e: &'a SpannedExpr<'ast, Self::Ident>) {
             if self.source_span.contains(e.span) {
                 let source_span = self.source_span;
                 match &e.value {
                     Expr::TypeBindings(binds, expr) => {
                         self.result.extend(binds.iter().map(|bind| {
+                            let mut children = Vec::new();
+                            idents_of(source_span, &bind.alias, &mut children);
+
                             pos::spanned(
                                 bind.name.span,
                                 CompletionSymbol {
@@ -1021,7 +1053,7 @@ pub fn all_symbols<'a, 'ast>(
                                     content: CompletionSymbolContent::Type {
                                         alias: &bind.alias.value,
                                     },
-                                    children: Vec::new(),
+                                    children,
                                 },
                             )
                         }));
@@ -1039,6 +1071,7 @@ pub fn all_symbols<'a, 'ast>(
                                         name: &arg.name.value.name,
                                         content: CompletionSymbolContent::Value {
                                             typ: &arg.name.value.typ,
+                                            kind: CompletionValueKind::Parameter,
                                             expr: None,
                                         },
                                         children: Vec::new(),
@@ -1056,6 +1089,7 @@ pub fn all_symbols<'a, 'ast>(
                                             name: &id.name,
                                             content: CompletionSymbolContent::Value {
                                                 typ: &id.typ,
+                                                kind: CompletionValueKind::Binding,
                                                 expr: Some(&bind.expr),
                                             },
                                             children,
@@ -1076,16 +1110,51 @@ pub fn all_symbols<'a, 'ast>(
         }
     }
 
+    trait Visit<'a, 'ast> {
+        type Ident: 'a + 'ast;
+        fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>);
+    }
+
+    impl<'a, 'ast, I> Visit<'a, 'ast> for SpannedExpr<'ast, I>
+    where
+        I: 'a + 'ast,
+    {
+        type Ident = I;
+        fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>) {
+            visitor.visit_expr(self)
+        }
+    }
+
+    impl<'a, 'ast, I> Visit<'a, 'ast> for ArcType<I>
+    where
+        I: 'a + 'ast,
+    {
+        type Ident = I;
+        fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>) {
+            visitor.visit_typ(self)
+        }
+    }
+
+    impl<'a, 'ast, I> Visit<'a, 'ast> for ast::SpannedAlias<'ast, I>
+    where
+        I: 'a + 'ast,
+    {
+        type Ident = I;
+        fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>) {
+            visitor.visit_alias(self)
+        }
+    }
+
     fn idents_of<'a, 'ast>(
         source_span: Span<BytePos>,
-        expr: &'a SpannedExpr<'ast, Symbol>,
+        v: &'a impl Visit<'a, 'ast, Ident = Symbol>,
         result: &mut Vec<Spanned<CompletionSymbol<'a, 'ast>, BytePos>>,
     ) {
         let mut visitor = AllIdents {
             source_span,
             result,
         };
-        visitor.visit_expr(expr);
+        v.visit(&mut visitor)
     }
 
     let mut result = Vec::new();

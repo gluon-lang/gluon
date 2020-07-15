@@ -29,6 +29,8 @@ use crate::{
     },
 };
 
+pub type Sp<T> = Spanned<T, BytePos>;
+
 pub trait DisplayEnv {
     type Ident;
 
@@ -115,7 +117,7 @@ impl<Id: fmt::Debug> fmt::Debug for AstType<'_, Id> {
     }
 }
 
-impl<Id: AsRef<str>> fmt::Display for AstType<'_, Id> {
+impl<Id: AsRef<str> + AsRef<Id>> fmt::Display for AstType<'_, Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", types::TypeFormatter::new(self))
     }
@@ -129,10 +131,11 @@ impl<Id> HasSpan for AstType<'_, Id> {
 
 impl<'ast, Id> TypePtr for AstType<'ast, Id> {
     type Id = Id;
+    type SpannedId = Spanned<Id, BytePos>;
     type Types = &'ast mut [AstType<'ast, Id>];
     type Generics = &'ast mut [Generic<Id>];
-    type Fields = &'ast mut [Field<Id, Self>];
-    type TypeFields = &'ast mut [Field<Id, Alias<Id, Self>>];
+    type Fields = &'ast mut [Field<Self::SpannedId, Self>];
+    type TypeFields = &'ast mut [Field<Self::SpannedId, Alias<Id, Self>>];
 }
 
 pub trait HasMetadata {
@@ -195,6 +198,10 @@ impl<'ast, Id> AstType<'ast, Id> {
             Type::Forall(_, ref mut typ) => typ,
             _ => self,
         }
+    }
+
+    pub fn span_mut(&mut self) -> &mut Span<BytePos> {
+        &mut self._typ.typ.span
     }
 }
 
@@ -749,7 +756,7 @@ pub trait $trait_name<'a, 'ast> {
     }
     fn visit_spanned_ident(&mut self, _: &'a $($mut)* Spanned<Self::Ident, BytePos>) {}
     fn visit_typ(&mut self, _: &'a $($mut)* ArcType<Self::Ident>) {}
-    fn visit_ast_type(&mut self, s: &'a $($mut)* SpannedAstType<'ast, Self::Ident>) {
+    fn visit_ast_type(&mut self, s: &'a $($mut)* AstType<'ast, Self::Ident>) {
         walk_ast_type(self, s);
     }
 }
@@ -760,7 +767,7 @@ pub fn walk_alias<'a, 'ast, V>(
 )
     where V: ?Sized + $trait_name<'a, 'ast>,
 {
-    v.visit_ast_type(&$($mut)* alias.value.$unresolved_type()._typ.typ);
+    v.visit_ast_type(alias.value.$unresolved_type());
 }
 
 pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Ident>)
@@ -794,7 +801,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
                 v.visit_typ(&$($mut)* bind.resolved_type);
                 v.visit_expr(&$($mut)* bind.expr);
                 if let Some(ref $($mut)* ast_type) = bind.typ {
-                    v.visit_ast_type(&$($mut)* ast_type._typ.typ)
+                    v.visit_ast_type(ast_type)
                 }
             }
             v.visit_expr(body);
@@ -955,35 +962,35 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
 
 pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
     v: &mut V,
-    s: &'a $($mut)* SpannedAstType<'ast, V::Ident>,
+    s: &'a $($mut)* AstType<'ast, V::Ident>,
 ) {
-    match s.value {
+    match **s {
         Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
         Type::Forall(_, ref $($mut)* ast_type) => {
-            v.visit_ast_type(&$($mut)* ast_type._typ.typ);
+            v.visit_ast_type(ast_type);
         }
         Type::Function(_, ref $($mut)* arg, ref $($mut)* ret) => {
-            v.visit_ast_type(&$($mut)* arg._typ.typ);
-            v.visit_ast_type(&$($mut)* ret._typ.typ);
+            v.visit_ast_type(arg);
+            v.visit_ast_type(ret);
         }
         Type::App(ref $($mut)* ast_type, ref $($mut)* ast_types) => {
             for ast_type in & $($mut)* **ast_types {
-                v.visit_ast_type(&$($mut)* ast_type._typ.typ);
+                v.visit_ast_type(ast_type);
             }
-            v.visit_ast_type(&$($mut)* ast_type._typ.typ)
+            v.visit_ast_type(ast_type)
         }
-        Type::Record(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
-        Type::Variant(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
-        Type::Effect(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
+        Type::Record(ref $($mut)* ast_type) => v.visit_ast_type(ast_type),
+        Type::Variant(ref $($mut)* ast_type) => v.visit_ast_type(ast_type),
+        Type::Effect(ref $($mut)* ast_type) => v.visit_ast_type(ast_type),
         Type::EmptyRow => (),
         Type::ExtendRow {
             ref $($mut)* fields,
             ref $($mut)* rest,
         } => {
             for field in & $($mut)* **fields {
-                v.visit_ast_type(&$($mut)* field.typ._typ.typ);
+                v.visit_ast_type(&$($mut)* field.typ);
             }
-            v.visit_ast_type(&$($mut)* rest._typ.typ);
+            v.visit_ast_type(rest);
         }
         Type::ExtendTypeRow {
             ref $($mut)* types,
@@ -991,14 +998,14 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
         } => {
             for field in & $($mut)* **types {
                 if let Some(alias) = field.typ.$try_get_alias() {
-                    v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
+                    v.visit_ast_type(alias.$unresolved_type());
                 }
             }
-            v.visit_ast_type(&$($mut)* rest._typ.typ);
+            v.visit_ast_type(rest);
         }
         Type::Alias(ref $($mut)* alias) => {
             if let Some(alias) = alias.$try_get_alias() {
-                v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
+                v.visit_ast_type(alias.$unresolved_type());
             }
         }
         Type::Ident(_) | Type::Projection(_) | Type::Variable(_) | Type::Generic(_) | Type::Skolem(_) => (),
@@ -1291,8 +1298,8 @@ impl_ast_arena! {
     InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
     Generic<Id> => generics,
-    Field<Id, AstType<'ast, Id>> => type_fields,
-    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Field<Spanned<Id, BytePos>, AstType<'ast, Id>> => type_fields,
+    Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
     Metadata => metadata,
 }
 

@@ -65,7 +65,7 @@ impl<'a> Expr<'a> {
                         arena.space(),
                         arena.concat(record.row_iter().zip(args).map(|(field, arg)| {
                             chain![arena;
-                                field.name.as_ref(),
+                                field.name.as_str(),
                                 " =",
                                 chain![arena;
                                     arena.space(),
@@ -250,7 +250,7 @@ impl Pattern {
                                 chain![arena;
                                     "=",
                                     arena.space(),
-                                    value.as_ref()
+                                    value.as_str()
                                 ]
                             }
                             None => arena.nil(),

@@ -35,8 +35,7 @@ where
 
 impl<Id, T> AddFlags for Field<Id, T>
 where
-    T: AddFlags + TypeExt<Id = Id>,
-    Id: PartialEq,
+    T: AddFlags,
 {
     fn add_flags(&self, flags: &mut Flags) {
         self.typ.add_flags(flags);
@@ -88,7 +87,7 @@ where
             }
             Type::Skolem(_) => *flags |= Flags::HAS_SKOLEMS,
             Type::ExtendRow { fields, rest } => {
-                fields.add_flags(flags);
+                fields[..].add_flags(flags);
                 rest.add_flags(flags);
             }
             Type::ExtendTypeRow { rest, .. } => {
