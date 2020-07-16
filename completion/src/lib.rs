@@ -1013,14 +1013,16 @@ pub fn all_symbols<'a, 'ast>(
 
         fn visit_ast_type(&mut self, typ: &'a ast::AstType<'ast, Self::Ident>) {
             match &**typ {
-                Type::Record(_) => {
+                Type::Record(_) | Type::Variant(_) | Type::Effect(_) => {
                     for field in base::types::row_iter(typ) {
+                        let mut children = Vec::new();
+                        idents_of(self.source_span, &field.typ, &mut children);
                         self.result.push(pos::spanned(
                             field.name.span,
                             CompletionSymbol {
                                 name: &field.name.value,
                                 content: CompletionSymbolContent::Type { typ: &field.typ },
-                                children: Vec::new(),
+                                children,
                             },
                         ));
                     }
@@ -1128,6 +1130,16 @@ pub fn all_symbols<'a, 'ast>(
         type Ident = I;
         fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>) {
             visitor.visit_typ(self)
+        }
+    }
+
+    impl<'a, 'ast, I> Visit<'a, 'ast> for ast::AstType<'ast, I>
+    where
+        I: 'a + 'ast,
+    {
+        type Ident = I;
+        fn visit(&'a self, visitor: &mut impl Visitor<'a, 'ast, Ident = Self::Ident>) {
+            visitor.visit_ast_type(self)
         }
     }
 

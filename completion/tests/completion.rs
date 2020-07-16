@@ -10,6 +10,7 @@ extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
 use crate::base::{
+    ast::Sp,
     kind::{ArcKind, Kind},
     pos::{BytePos, Span},
     types::{ArcType, Field, Type},
@@ -391,6 +392,31 @@ test #Int+ test #Int+ dummy
     );
 }
 
+#[derive(PartialEq, Debug)]
+struct Symbols {
+    name: String,
+    children: Vec<Symbols>,
+}
+
+impl From<&'_ str> for Symbols {
+    fn from(s: &str) -> Self {
+        Self {
+            name: s.into(),
+            children: Vec::new(),
+        }
+    }
+}
+
+fn simple_symbols(symbols: Vec<Sp<completion::CompletionSymbol<'_, '_>>>) -> Vec<Symbols> {
+    symbols
+        .into_iter()
+        .map(|s| Symbols {
+            name: s.value.name.to_string(),
+            children: simple_symbols(s.value.children),
+        })
+        .collect()
+}
+
 #[test]
 fn all_symbols_test() {
     let _ = env_logger::try_init();
@@ -400,7 +426,12 @@ let test = 1
 let dummy a =
     let test = 3
     test
-type Abc a = a Int
+type Abc a = {
+    field: a,
+}
+type Enum =
+    | A { a: Int }
+    | B
 // Unpacked values are not counted because they probably originated in another module
 let { x, y } = { x = 1, y = 2 }
 1
@@ -412,15 +443,29 @@ let { x, y } = { x = 1, y = 2 }
 
     let symbols = completion::all_symbols(expr.span, &expr);
 
-    assert_eq!(symbols.len(), 3);
     assert_eq!(
-        symbols[1]
-            .value
-            .children
-            .iter()
-            .map(|c| c.value.name.to_string())
-            .collect::<Vec<_>>(),
-        vec!["a".to_string(), "test".to_string()]
+        simple_symbols(symbols),
+        vec![
+            "test".into(),
+            Symbols {
+                name: "dummy".into(),
+                children: vec!["a".into(), "test".into()]
+            },
+            Symbols {
+                name: "test.Abc".into(),
+                children: vec!["field".into()]
+            },
+            Symbols {
+                name: "test.Enum".into(),
+                children: vec![
+                    Symbols {
+                        name: "A".into(),
+                        children: vec!["a".into()]
+                    },
+                    "B".into()
+                ],
+            }
+        ]
     );
 }
 
