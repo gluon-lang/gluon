@@ -1715,6 +1715,14 @@ pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
             _ => self,
         }
     }
+
+    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A>
+    where
+        Self::Id: AsRef<str>,
+        Self::SpannedId: AsRef<str>,
+    {
+        TypeFormatter::new(self).width(width)
+    }
 }
 
 pub trait TypeExt:
@@ -1843,14 +1851,6 @@ pub trait TypeExt:
         Self: HasMetadata + HasSpan,
     {
         top(self).pretty(&Printer::new(arena, &()))
-    }
-
-    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A>
-    where
-        Self::Id: AsRef<str>,
-        Self::SpannedId: AsRef<str>,
-    {
-        TypeFormatter::new(self).width(width)
     }
 
     /// Applies a list of arguments to a parameterised type, returning `Some`
