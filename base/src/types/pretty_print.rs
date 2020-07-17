@@ -17,7 +17,7 @@ where
 {
     let name = name.into();
     if name.starts_with(is_operator_char) {
-        chain![arena; "(", name, ")"]
+        chain![arena, "(", name, ")"]
     } else {
         arena.text(name)
     }
@@ -35,7 +35,8 @@ pub fn doc_comment<'a, A>(
                     .lines()
                     .map(|line| arena.text("/// ").append(line).append(arena.hardline())),
             ),
-            CommentType::Block => chain![arena;
+            CommentType::Block => chain![
+                arena,
                 "/**",
                 arena.hardline(),
                 arena.concat(comment.content.lines().map(|line| {
@@ -43,11 +44,7 @@ pub fn doc_comment<'a, A>(
                     if line.is_empty() {
                         arena.hardline()
                     } else {
-                        chain![arena;
-                            " ",
-                            line,
-                            arena.hardline()
-                        ]
+                        chain![arena, " ", line, arena.hardline()]
                     }
                 })),
                 "*/",

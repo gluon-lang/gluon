@@ -144,21 +144,21 @@ where
                 };
 
                 let arena = Arena::<()>::new();
-                let types = chain![&arena;
+                let types = chain![&arena,
                     "Expected:",
-                    chain![&arena;
+                    chain![&arena,
                         arena.space(),
                         TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
                     arena.hardline(),
                     "Found:",
-                    chain![&arena;
+                    chain![&arena,
                         arena.space(),
                         TypeFormatter::new(actual).filter(&filter).pretty(&arena)
                     ].nest(4).group()
                 ]
                 .group();
-                let doc = chain![&arena;
+                let doc = chain![&arena,
                     "Expected the following types to be equal",
                     arena.hardline(),
                     types,

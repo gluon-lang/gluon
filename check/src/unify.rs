@@ -62,7 +62,8 @@ where
         match *self {
             TypeMismatch(ref l, ref r) => {
                 let arena = Arena::new();
-                let doc = chain![&arena;
+                let doc = chain![
+                    &arena,
                     arena.hardline(),
                     "Expected:",
                     arena.space(),
