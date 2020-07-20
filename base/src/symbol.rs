@@ -101,12 +101,6 @@ impl Borrow<SymbolRef> for Symbol {
     }
 }
 
-impl AsRef<Symbol> for Symbol {
-    fn as_ref(&self) -> &Symbol {
-        self
-    }
-}
-
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
         self.as_pretty_str()

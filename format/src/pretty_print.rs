@@ -16,7 +16,7 @@ use base::{
     metadata::Attribute,
     pos::{self, BytePos, HasSpan, Span, Spanned},
     source,
-    types::{self, ArgType, Prec, Type},
+    types::{self, ArgType, AsId,Prec, Type},
 };
 
 const INDENT: isize = 4;
@@ -58,7 +58,7 @@ pub(super) struct Printer<'a, I: 'a, A: 'a> {
 
 impl<'a, I, A> Printer<'a, I, A>
 where
-    I: AsRef<str> + AsRef<I> + std::fmt::Debug + 'a,
+    I: AsRef<str> + AsId<I> + std::fmt::Debug + 'a,
     A: std::fmt::Debug,
     A: 'a,
 {
@@ -1079,7 +1079,7 @@ where
 
 impl<'a, 'e, F, I, J, T, U, A> Iterator for CommaSeparated<'a, 'e, F, I, J, U, A>
 where
-    I: AsRef<str> + AsRef<I> + std::fmt::Debug,
+    I: AsRef<str> + AsId<I> + std::fmt::Debug,
     F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
     J: Iterator<Item = T>,
     T: ::std::borrow::Borrow<Spanned<U, BytePos>>,

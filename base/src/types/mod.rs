@@ -73,6 +73,22 @@ macro_rules! forward_eq_hash {
     }
 }
 
+pub trait AsId<Id> where Id: ?Sized {
+    fn as_id(&self) -> &Id;
+}
+
+impl<Id> AsId<Id> for Id where Id: ?Sized{
+    fn as_id(&self) -> &Id {
+        self
+    }
+}
+
+impl<T, Pos> AsId<T> for Spanned<T, Pos> {
+    fn as_id(&self) -> &T {
+        &self.value
+    }
+}
+
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     type Type;
@@ -1577,7 +1593,7 @@ impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
     }
 }
 
-impl<Id: AsRef<str> + AsRef<Id>> fmt::Display for ArcType<Id> {
+impl<Id: AsRef<str> + AsId<Id>> fmt::Display for ArcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", TypeFormatter::new(self))
     }
@@ -1846,7 +1862,7 @@ pub trait TypeExt:
     fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         Self::Id: AsRef<str> + 'a,
-        Self::SpannedId: AsRef<str> + AsRef<Self::Id> + 'a,
+        Self::SpannedId: AsRef<str> + AsId<Self::Id> + 'a,
         A: Clone,
         Self: HasMetadata + HasSpan,
     {
@@ -2531,7 +2547,7 @@ pub trait ToDoc<'a, A, B, E> {
 
 impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, ()> for ArcType<I>
 where
-    I: AsRef<str> + AsRef<I>,
+    I: AsRef<str> + AsId<I>,
     A: Clone,
 {
     fn to_doc(&'a self, arena: &'a Arena<'a, A>, _: ()) -> DocBuilder<'a, Arena<'a, A>, A> {
@@ -2541,7 +2557,7 @@ where
 
 impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, &'a dyn Source> for ArcType<I>
 where
-    I: AsRef<str> + AsRef<I>,
+    I: AsRef<str> + AsId<I>,
     A: Clone,
 {
     fn to_doc(
@@ -2577,7 +2593,7 @@ impl<'a, I, T> DisplayType<'a, T>
 where
     T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
     I: AsRef<str> + 'a,
-    T::SpannedId: AsRef<str> + AsRef<I> + 'a,
+    T::SpannedId: AsRef<str> + AsId<I> + 'a,
 {
     pub fn pretty<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
@@ -2846,13 +2862,13 @@ where
 
         let print_any_field = fields
             .iter()
-            .any(|field| printer.filter(field.name.as_ref()) != Filter::Drop);
+            .any(|field| printer.filter(field.name.as_id()) != Filter::Drop);
 
         let mut filtered = false;
 
         let types_len = type_field_iter(typ).count();
         for (i, field) in type_field_iter(typ).enumerate() {
-            let filter = printer.filter(field.name.as_ref());
+            let filter = printer.filter(field.name.as_id());
             if filter == Filter::Drop {
                 filtered = true;
                 continue;
@@ -2890,7 +2906,7 @@ where
 
         let mut row_iter = row_iter(typ);
         for (i, field) in row_iter.by_ref().enumerate() {
-            let filter = printer.filter(field.name.as_ref());
+            let filter = printer.filter(field.name.as_id());
             if filter == Filter::Drop {
                 filtered = true;
                 continue;
@@ -3006,7 +3022,7 @@ pub fn pretty_print<'a, I, T, A>(
 where
     I: AsRef<str> + 'a,
     T: TypePtr<Id = I> + HasSpan + HasMetadata,
-    T::SpannedId: AsRef<str> + AsRef<I> + 'a,
+    T::SpannedId: AsRef<str> + AsId<I> + 'a,
     A: Clone,
 {
     dt(Prec::Top, typ).pretty(printer)

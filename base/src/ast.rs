@@ -24,8 +24,8 @@ use crate::{
     resolve::remove_aliases_cow,
     symbol::Symbol,
     types::{
-        self, Alias, AliasData, ArcType, ArgType, Field, Generic, NullInterner, Type, TypeEnv,
-        TypeExt, TypePtr,
+        self, Alias, AliasData, ArcType, ArgType, AsId, Field, Generic, NullInterner, Type,
+        TypeEnv, TypeExt, TypePtr,
     },
 };
 
@@ -117,7 +117,7 @@ impl<Id: fmt::Debug> fmt::Debug for AstType<'_, Id> {
     }
 }
 
-impl<Id: AsRef<str> + AsRef<Id>> fmt::Display for AstType<'_, Id> {
+impl<Id: AsRef<str> + AsId<Id>> fmt::Display for AstType<'_, Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", types::TypeFormatter::new(self))
     }

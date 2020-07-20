@@ -1,13 +1,14 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::marker::PhantomData;
+use std::{borrow::Cow, fmt, marker::PhantomData};
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
-use crate::ast::{is_operator_char, HasMetadata};
-use crate::metadata::{Comment, CommentType};
-use crate::pos::{BytePos, HasSpan, Span};
-use crate::source::Source;
+use crate::{
+    ast::{is_operator_char, HasMetadata},
+    metadata::{Comment, CommentType},
+    pos::{BytePos, HasSpan, Span},
+    source::Source,
+    types::AsId,
+};
 
 use crate::types::{pretty_print, TypePtr};
 
@@ -127,7 +128,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     where
         T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
         I: AsRef<str>,
-        T::SpannedId: AsRef<str> + AsRef<I>,
+        T::SpannedId: AsRef<str> + AsId<I>,
         A: Clone,
     {
         use super::top;
@@ -154,7 +155,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
     T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
-    T::SpannedId: AsRef<str> + AsRef<I>,
+    T::SpannedId: AsRef<str> + AsId<I>,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

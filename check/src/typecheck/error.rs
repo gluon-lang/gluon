@@ -9,7 +9,7 @@ use base::{
     error::AsDiagnostic,
     pos::{self, BytePos, Spanned},
     source::FileId,
-    types::{ArcType, Filter, ToDoc, TypeExt, TypeFormatter},
+    types::{ArcType, AsId, Filter, ToDoc, TypeExt, TypeFormatter},
 };
 
 use crate::{
@@ -88,7 +88,7 @@ impl<I, T> From<crate::recursion_check::Error> for TypeError<I, T> {
 impl<I, T> fmt::Display for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
-    T::SpannedId: AsRef<str> + AsRef<I>,
+    T::SpannedId: AsRef<str> + AsId<I>,
     T: TypeExt<Id = I>
         + fmt::Display
         + ast::HasMetadata
@@ -226,7 +226,7 @@ where
 impl<I, T> AsDiagnostic for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
-    T::SpannedId: fmt::Display + AsRef<str> + AsRef<I> + Clone,
+    T::SpannedId: fmt::Display + AsRef<str> + AsId<I> + Clone,
     T: TypeExt<Id = I>
         + fmt::Display
         + ast::HasMetadata

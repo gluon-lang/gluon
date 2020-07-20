@@ -475,7 +475,7 @@ impl<'a> VmEnvInstance<'a> {
             let next_type = {
                 typ.row_iter()
                     .enumerate()
-                    .find(|&(_, field)| field.name.as_str() == field_name)
+                    .find(|&(_, field)| field.name.as_pretty_str() == field_name)
                     .map(|(index, field)| match value.as_ref() {
                         ValueRef::Data(data) => {
                             value = data.get_variant(index).unwrap();

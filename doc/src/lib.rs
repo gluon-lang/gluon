@@ -33,7 +33,7 @@ use gluon::{
         metadata::Metadata,
         source::Source,
         symbol::{Name, Symbol},
-        types::{ArcType, ArgType, Type, TypeExt},
+        types::{ArcType, ArgType, Type, TypeExt, TypePtr},
     },
     check::metadata::metadata,
     Thread, ThreadExt,
