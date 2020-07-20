@@ -2105,9 +2105,12 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     .value
                     .unresolved_type_mut()
                     .remove_single_forall();
-                if let Err(err) = check.kindcheck_type(typ) {
-                    self.errors
-                        .push(pos::spanned(err.span, TypeError::from(err.value).into()));
+                if let Err(errors) = check.kindcheck_type(typ) {
+                    self.errors.extend(
+                        errors
+                            .into_iter()
+                            .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
+                    );
                 }
                 check.exit_scope();
             }
@@ -2187,9 +2190,12 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             );
             check.kindcheck_type(typ)
         };
-        if let Err(err) = result {
-            self.errors
-                .push(pos::spanned(err.span, TypeError::from(err.value).into()));
+        if let Err(errors) = result {
+            self.errors.extend(
+                errors
+                    .into_iter()
+                    .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
+            );
         }
     }
 
