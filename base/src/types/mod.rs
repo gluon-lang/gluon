@@ -73,11 +73,17 @@ macro_rules! forward_eq_hash {
     }
 }
 
-pub trait AsId<Id> where Id: ?Sized {
+pub trait AsId<Id>
+where
+    Id: ?Sized,
+{
     fn as_id(&self) -> &Id;
 }
 
-impl<Id> AsId<Id> for Id where Id: ?Sized{
+impl<Id> AsId<Id> for Id
+where
+    Id: ?Sized,
+{
     fn as_id(&self) -> &Id {
         self
     }
@@ -582,9 +588,10 @@ impl<Id, T> fmt::Debug for AliasRef<Id, T>
 where
     Id: fmt::Debug,
     T: TypePtr<Id = Id> + fmt::Debug,
+    AliasData<Id, T>: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("AliasRef").finish()
+        (**self).fmt(f)
     }
 }
 
