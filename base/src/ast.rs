@@ -988,6 +988,7 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
             ref $($mut)* rest,
         } => {
             for field in & $($mut)* **fields {
+                v.visit_spanned_ident(& $($mut)* field.name);
                 v.visit_ast_type(&$($mut)* field.typ);
             }
             v.visit_ast_type(rest);
@@ -997,6 +998,7 @@ pub fn walk_ast_type<'a, 'ast, V: ?Sized + $trait_name<'a, 'ast>>(
             ref $($mut)* rest,
         } => {
             for field in & $($mut)* **types {
+                v.visit_spanned_ident(& $($mut)* field.name);
                 if let Some(alias) = field.typ.$try_get_alias() {
                     v.visit_ast_type(alias.$unresolved_type());
                 }

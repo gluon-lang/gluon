@@ -661,6 +661,17 @@ impl GlobalVmState {
         Ok(t)
     }
 
+    #[doc(hidden)]
+    pub fn get_cache_alias(&self, name: &str) -> Option<ArcType> {
+        let env = self.env.read();
+        env
+            .type_infos
+            .id_to_type
+            .get(name)
+            .map(|alias| alias.clone().into_type())
+    }
+
+    #[doc(hidden)]
     pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
         let mut env = self.env.write();
         let type_infos = &mut env.type_infos;

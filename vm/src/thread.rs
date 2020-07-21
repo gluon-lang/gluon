@@ -890,6 +890,10 @@ impl Thread {
         self.global_env().register_type_as(name, alias, id)
     }
 
+    pub fn get_cache_alias(&self, name: &str) -> Option<ArcType> {
+        self.global_env().get_cache_alias(name)
+    }
+
     pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
         self.global_env().cache_alias(alias)
     }

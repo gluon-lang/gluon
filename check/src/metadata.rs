@@ -304,7 +304,7 @@ pub fn metadata(
                         let maybe_metadata =
                             MaybeMetadata::merge_base(&field.metadata, &maybe_metadata);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata {
-                            let field_name = String::from(field.name.value.as_ref() as &str);
+                            let field_name = String::from(field.name.value.as_pretty_str());
                             module.insert(field_name, metadata);
                         }
                     }
@@ -312,7 +312,7 @@ pub fn metadata(
                     for field in &**types {
                         let maybe_metadata = self.metadata(&field.name.value);
                         if let MaybeMetadata::Data(metadata) = maybe_metadata.into() {
-                            let name = Name::new(field.name.value.as_ref() as &str).name().as_str();
+                            let name = Name::new(field.name.value.as_pretty_str()).name().as_str();
                             module.insert(String::from(name), metadata);
                         }
                     }
@@ -399,7 +399,8 @@ pub fn metadata(
                         }
                         None => field_metadata,
                     };
-                    field_metadata.map(|m| (field.name.to_string(), Arc::new(m)))
+                    field_metadata
+                        .map(|m| (String::from(field.name.value.as_pretty_str()), Arc::new(m)))
                 })
                 .collect();
 
