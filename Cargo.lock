@@ -601,30 +601,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69323bff1fb41c635347b8ead484a5ca6c3f11914d784170b158d8449ab07f8e"
-dependencies = [
- "cfg-if",
- "crossbeam-channel",
- "crossbeam-deque",
- "crossbeam-epoch",
- "crossbeam-queue",
- "crossbeam-utils 0.7.2",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cced8691919c02aac3cb0a1bc2e9b73d89e832bf9a06fc579d4e71b68a2da061"
-dependencies = [
- "crossbeam-utils 0.7.2",
- "maybe-uninit",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1189,7 +1165,6 @@ dependencies = [
  "either",
  "env_logger 0.7.1",
  "futures 0.3.5",
- "gluon-salsa",
  "gluon_base",
  "gluon_check",
  "gluon_codegen",
@@ -1211,6 +1186,7 @@ dependencies = [
  "rand 0.7.3",
  "rand_xorshift 0.2.0",
  "regex 1.3.9",
+ "salsa",
  "serde",
  "serde_derive",
  "serde_derive_state",
@@ -1224,37 +1200,6 @@ dependencies = [
  "tokio-native-tls",
  "tower-service",
  "walkdir",
-]
-
-[[package]]
-name = "gluon-salsa"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82259f6f7d8f8cf33b4b40bbd3da8119a147827e6563c5a024034482f6e8d28f"
-dependencies = [
- "async-trait",
- "crossbeam",
- "futures 0.3.5",
- "gluon-salsa-macros",
- "indexmap",
- "lock_api 0.4.0",
- "log 0.4.8",
- "parking_lot 0.11.0",
- "rand 0.7.3",
- "rustc-hash",
- "smallvec 1.4.0",
-]
-
-[[package]]
-name = "gluon-salsa-macros"
-version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "118ca3427c8528856c15a83b574ee52a95ed2647e4c77cd0191485c2e014ed88"
-dependencies = [
- "heck",
- "proc-macro2 1.0.18",
- "quote 1.0.7",
- "syn 1.0.33",
 ]
 
 [[package]]
@@ -3104,6 +3049,33 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
+
+[[package]]
+name = "salsa"
+version = "0.15.0"
+dependencies = [
+ "crossbeam-utils 0.7.2",
+ "futures-channel",
+ "futures-util",
+ "indexmap",
+ "lock_api 0.4.0",
+ "log 0.4.8",
+ "parking_lot 0.11.0",
+ "rand 0.7.3",
+ "rustc-hash",
+ "salsa-macros",
+ "smallvec 1.4.0",
+]
+
+[[package]]
+name = "salsa-macros"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "proc-macro2 1.0.18",
+ "quote 1.0.7",
+ "syn 1.0.33",
+]
 
 [[package]]
 name = "same-file"

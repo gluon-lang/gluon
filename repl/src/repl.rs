@@ -374,6 +374,7 @@ fn eval_line(
 
 async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
     let mut db = vm.get_database();
+    let mut db = gluon::salsa::OwnedDb::<dyn gluon::query::Compilation>::from(&mut db);
     let mut module_compiler = vm.module_compiler(&mut db);
     let mut is_let_binding = false;
     let mut eval_expr = {
