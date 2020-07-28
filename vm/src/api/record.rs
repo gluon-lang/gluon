@@ -84,7 +84,12 @@ where
         let field_name = Symbol::from(alias_name.declared_name());
 
         let mut rhs_is_equivalent = None;
-        if let Type::App(f, a) = &*typ {
+        {
+            let (f, a) = if let Type::App(f, a) = &*typ {
+                (f, &a[..])
+            } else {
+                (&typ, &[][..])
+            };
             if let Type::Alias(f) = &**f {
                 if f.name.declared_name() == field_name.declared_name()
                     && args.len() == a.len()

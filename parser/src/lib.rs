@@ -27,7 +27,7 @@ use itertools::Either;
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr, SpannedPattern,
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, Sp, SpannedExpr, SpannedPattern,
         TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
@@ -254,8 +254,8 @@ pub enum FieldExpr<'ast, Id> {
 }
 
 pub enum Variant<'ast, Id> {
-    Gadt(Id, AstType<'ast, Id>),
-    Simple(Id, Vec<AstType<'ast, Id>>),
+    Gadt(Sp<Id>, AstType<'ast, Id>),
+    Simple(Sp<Id>, Vec<AstType<'ast, Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -344,9 +344,9 @@ impl_temp_vec! {
     ast::InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
     Generic<Id> => generics,
-    Field<Id, AstType<'ast, Id>> => type_fields,
-    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
-    Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,
+    Field<Spanned<Id, BytePos>, AstType<'ast, Id>> => type_fields,
+    Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Either<Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>>, Field<Spanned<Id, BytePos>, AstType<'ast, Id>>> => either_type_fields,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;

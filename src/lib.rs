@@ -427,8 +427,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
     ) -> StdResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(type_cache, file, expr_str)
-            .map_err(|(_, err)| err)
+        Ok(self.parse_partial_expr(type_cache, file, expr_str)?)
     }
 
     /// Parse `input`, returning an expression if successful
@@ -456,16 +455,16 @@ pub trait ThreadExt: Send + Sync {
         expr: &mut OwnedExpr<Symbol>,
     ) -> Result<ArcType> {
         let vm = self.thread();
-        expr.typecheck_expected(
-            &mut ModuleCompiler::new(&mut vm.get_database()),
-            vm,
-            file,
-            expr_str,
-            None,
-        )
-        .await
-        .map(|result| result.typ)
-        .map_err(|t| t.1)
+        Ok(expr
+            .typecheck_expected(
+                &mut ModuleCompiler::new(&mut vm.get_database()),
+                vm,
+                file,
+                expr_str,
+                None,
+            )
+            .await
+            .map(|result| result.typ)?)
     }
 
     fn typecheck_str(
@@ -492,8 +491,7 @@ pub trait ThreadExt: Send + Sync {
 
         let TypecheckValue { expr, typ, .. } = db
             .typechecked_source_module(file.into(), expected_type.cloned())
-            .await
-            .map_err(|t| t.1)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(file.into(), None).await?;
@@ -597,8 +595,7 @@ pub trait ThreadExt: Send + Sync {
             ..
         } = db
             .typechecked_source_module(module_name.clone(), None)
-            .await
-            .map_err(|(_, err)| err)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(module_name.clone(), None).await?;
@@ -650,9 +647,8 @@ pub trait ThreadExt: Send + Sync {
                 vm,
                 &module_name,
             )
-            .await
-            .map_err(|(_, err)| err.into())
-            .map(|_| ())
+            .await?;
+        Ok(())
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -759,13 +755,16 @@ pub trait ThreadExt: Send + Sync {
 
         let expr = match input.reparse_infix(compiler, thread, file, input).await {
             Ok(expr) => expr.expr,
-            Err((Some(expr), err)) => {
-                if has_format_disabling_errors(file, &err) {
-                    return Err(err);
+            Err(Salvage {
+                value: Some(expr),
+                error,
+            }) => {
+                if has_format_disabling_errors(file, &error) {
+                    return Err(error);
                 }
                 expr.expr
             }
-            Err((None, err)) => return Err(err),
+            Err(Salvage { value: None, error }) => return Err(error),
         };
 
         let file_map = db.get_filemap(file).unwrap();

@@ -155,6 +155,7 @@
 #[macro_use]
 extern crate quote;
 
+mod ast_clone;
 mod attr;
 mod functor;
 mod getable;
@@ -162,7 +163,6 @@ mod pushable;
 mod shared;
 mod trace;
 mod userdata;
-mod ast_clone;
 mod vm_type;
 
 #[doc(hidden)]
@@ -206,4 +206,3 @@ pub fn functor(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn ast_clone(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     ast_clone::derive(input.into()).into()
 }
-

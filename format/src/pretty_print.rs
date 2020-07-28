@@ -16,7 +16,7 @@ use base::{
     metadata::Attribute,
     pos::{self, BytePos, HasSpan, Span, Spanned},
     source,
-    types::{self, ArgType, Prec, Type},
+    types::{self, ArgType, AsId,Prec, Type},
 };
 
 const INDENT: isize = 4;
@@ -58,7 +58,7 @@ pub(super) struct Printer<'a, I: 'a, A: 'a> {
 
 impl<'a, I, A> Printer<'a, I, A>
 where
-    I: AsRef<str> + std::fmt::Debug + 'a,
+    I: AsRef<str> + AsId<I> + std::fmt::Debug + 'a,
     A: std::fmt::Debug,
     A: 'a,
 {
@@ -185,11 +185,7 @@ where
 
             Expr::Block(ref elems) => {
                 if elems.len() == 1 {
-                    chain![arena;
-                        "(",
-                        pretty(&elems[0]),
-                        ")"
-                    ]
+                    chain![arena, "(", pretty(&elems[0]), ")"]
                 } else {
                     arena.concat(elems.iter().enumerate().map(|(i, elem)| {
                         if i + 1 == elems.len() {
@@ -203,7 +199,7 @@ where
                 }
             }
 
-            Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref()),
+            Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref() as &str),
 
             Expr::IfElse(..) => self.pretty_if_expr(expr),
 
@@ -212,52 +208,65 @@ where
                 ref op,
                 ref rhs,
                 ..
-            } => chain![arena;
+            } => chain![
+                arena,
                 pretty(lhs).group(),
-                chain![arena;
+                chain![
+                    arena,
                     hardline(arena, rhs),
-                    op.value.name.as_ref(),
+                    op.value.name.as_ref() as &str,
                     " ",
                     pretty(rhs).group()
-                ].nest(INDENT)
+                ]
+                .nest(INDENT)
             ]
             .group(),
 
             Expr::LetBindings(ref binds, ref body) => {
                 let binding = |bind: &'a ValueBinding<I>| {
-                    let decl = chain![arena;
+                    let decl = chain![
+                        arena,
                         "let ",
-                        chain![arena;
+                        chain![
+                            arena,
                             self.pretty_pattern(&bind.name),
                             " ",
                             arena.concat(bind.args.iter().map(|arg| {
                                 chain![
-                                    arena;
+                                    arena,
                                     if arg.arg_type == ArgType::Implicit {
                                         arena.text("?")
                                     } else {
                                         arena.nil()
                                     },
-                                    arena.text(arg.name.value.name.as_ref()).append(" ")
+                                    arena.text(arg.name.value.name.as_ref() as &str).append(" ")
                                 ]
                             }))
-                        ].group(),
+                        ]
+                        .group(),
                         match bind.typ {
                             None => arena.nil(),
                             Some(ref typ) => {
-                                arena.text(": ")
+                                arena
+                                    .text(": ")
                                     .append(types::pretty_print(self, typ))
                                     .append(self.space_after(typ.span().end()))
                                     .nest(INDENT)
-                            },
+                            }
                         },
                         "="
                     ]
                     .group();
-                    chain![arena;
+                    chain![
+                        arena,
                         pretty_types::doc_comment(arena, bind.metadata.comment()),
                         self.pretty_attributes(bind.metadata.attributes()),
-                        self.hang(decl, (self.space_before(bind.expr.span.start()), true), &bind.expr).group(),
+                        self.hang(
+                            decl,
+                            (self.space_before(bind.expr.span.start()), true),
+                            &bind.expr
+                        )
+                        .group(),
                         if self.formatter.expanded {
                             arena.hardline()
                         } else {
@@ -269,26 +278,33 @@ where
                     ValueBindings::Recursive(_) => true,
                     ValueBindings::Plain(_) => false,
                 };
-                chain![arena;
+                chain![
+                    arena,
                     if is_recursive {
-                        arena.text("rec").append(if binds.len() == 1 { arena.softline() } else { arena.hardline() })
+                        arena.text("rec").append(if binds.len() == 1 {
+                            arena.softline()
+                        } else {
+                            arena.hardline()
+                        })
                     } else {
                         arena.nil()
                     },
                     arena.concat(
-                        binds.iter()
+                        binds
+                            .iter()
                             .map(|bind| binding(bind))
                             .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
                     ),
                     if is_recursive {
                         match body.value {
                             Expr::LetBindings(..) => arena.hardline().append(arena.text("in")),
-                            _ => arena.nil()
+                            _ => arena.nil(),
                         }
                     } else {
                         arena.nil()
                     },
-                    self.pretty_expr_(binds.last().unwrap().span().end(), body).group()
+                    self.pretty_expr_(binds.last().unwrap().span().end(), body)
+                        .group()
                 ]
             }
 
@@ -307,41 +323,41 @@ where
                         Literal::Byte(b) => arena.text(b.to_string()),
                         Literal::Int(i) => arena.text(i.to_string()),
                         Literal::Float(f) => arena.text(f.to_string()),
-                        Literal::String(ref s) => chain![arena;
-                            "\"",
-                            arena.text(&s[..]),
-                            "\""
-                        ],
-                        Literal::Char(c) => chain![arena;
-                            "'",
-                            arena.text(c.to_string()),
-                            "'"
-                        ],
+                        Literal::String(ref s) => chain![arena, "\"", arena.text(&s[..]), "\""],
+                        Literal::Char(c) => chain![arena, "'", arena.text(c.to_string()), "'"],
                     }
                 }
             }
 
-            Expr::Match(ref expr, ref alts) => chain![arena;
-                chain![arena;
-                    "match ",
-                    pretty(expr),
-                    " with"
-                ].group(),
+            Expr::Match(ref expr, ref alts) => chain![
+                arena,
+                chain![arena, "match ", pretty(expr), " with"].group(),
                 arena.hardline(),
-                arena.concat(alts.iter().map(|alt| {
-                    chain![arena;
-                        "| ",
-                        self.pretty_pattern(&alt.pattern),
-                        " ->",
-                        self.hang(arena.nil(), (self.space_before(alt.expr.span.start()), true), &alt.expr).group()
-                    ]
-                }).intersperse(arena.hardline()))
+                arena.concat(
+                    alts.iter()
+                        .map(|alt| {
+                            chain![
+                                arena,
+                                "| ",
+                                self.pretty_pattern(&alt.pattern),
+                                " ->",
+                                self.hang(
+                                    arena.nil(),
+                                    (self.space_before(alt.expr.span.start()), true),
+                                    &alt.expr
+                                )
+                                .group()
+                            ]
+                        })
+                        .intersperse(arena.hardline())
+                )
             ],
 
-            Expr::Projection(ref expr, ref field, _) => chain![arena;
+            Expr::Projection(ref expr, ref field, _) => chain![
+                arena,
                 pretty(expr),
                 ".",
-                pretty_types::ident(arena, field.as_ref())
+                pretty_types::ident(arena, field.as_ref() as &str)
             ],
 
             Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda(_) => {
@@ -351,87 +367,97 @@ where
             Expr::TypeBindings(ref binds, ref body) => {
                 let is_recursive = binds.len() > 1;
 
-                chain![arena;
+                chain![
+                    arena,
                     if is_recursive && binds.len() != 1 {
                         arena.text("rec").append(arena.hardline())
                     } else {
                         arena.nil()
                     },
-
                     pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment()),
                     self.pretty_attributes(binds.first().unwrap().metadata.attributes()),
-
                     if is_recursive && binds.len() == 1 {
                         arena.text("rec").append(arena.line())
                     } else {
                         arena.nil()
                     },
-
-                    arena.concat(binds.iter().enumerate().map(|(i, bind)| {
-                        let typ = bind.alias.value.unresolved_type();
-                        let typ = match **typ {
-                            // Remove the "parameters"
-                            Type::Forall(_, ref typ) => typ,
-                            _ => typ
-                        };
-                        let mut type_doc = types::pretty_print(self, typ);
-                        match **typ {
-                            Type::Record(_) | Type::Variant(_) => (),
-                            _ => type_doc = type_doc.nest(INDENT),
-                        }
-                        let variant =
-                            match &**typ {
-                                Type::Variant(row) => match &**row {
-                                    Type::ExtendRow { fields, .. } => !fields.is_empty(),
-                                    _ => false,
+                    arena.concat(
+                        binds
+                            .iter()
+                            .enumerate()
+                            .map(|(i, bind)| {
+                                let typ = bind.alias.value.unresolved_type();
+                                let typ = match **typ {
+                                    // Remove the "parameters"
+                                    Type::Forall(_, ref typ) => typ,
+                                    _ => typ,
+                                };
+                                let mut type_doc = types::pretty_print(self, typ);
+                                match **typ {
+                                    Type::Record(_) | Type::Variant(_) => (),
+                                    _ => type_doc = type_doc.nest(INDENT),
                                 }
-                                _ => false,
-                            };
-                        chain![arena;
-                            if i != 0 {
-                                chain![arena;
-                                    pretty_types::doc_comment(arena, bind.metadata.comment()),
-                                    self.pretty_attributes(bind.metadata.attributes())
-                                ]
-                            } else {
-                                arena.nil()
-                            },
-
-                            "type",
-                            " ",
-                            bind.name.value.as_ref(),
-                            " ",
-                            arena.concat(bind.alias.value.params().iter().map(|arg| {
-                                chain![arena;
-                                    if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
-                                        chain![arena;
-                                            "(",
-                                            arg.id.as_ref(),
-                                            " :",
-                                            arena.line(),
-                                            pretty_kind(arena, Prec::Top, &arg.kind).group(),
-                                            ")"
-                                        ].group()
-                                    } else {
-                                        arena.text(arg.id.as_ref())
+                                let variant = match &**typ {
+                                    Type::Variant(row) => match &**row {
+                                        Type::ExtendRow { fields, .. } => !fields.is_empty(),
+                                        _ => false,
                                     },
-                                    arena.line()
+                                    _ => false,
+                                };
+                                chain![
+                                    arena,
+                                    if i != 0 {
+                                        chain![
+                                            arena,
+                                            pretty_types::doc_comment(
+                                                arena,
+                                                bind.metadata.comment()
+                                            ),
+                                            self.pretty_attributes(bind.metadata.attributes())
+                                        ]
+                                    } else {
+                                        arena.nil()
+                                    },
+                                    "type",
+                                    " ",
+                                    bind.name.value.as_ref() as &str,
+                                    " ",
+                                    arena
+                                        .concat(bind.alias.value.params().iter().map(|arg| {
+                                            chain![
+                                                arena,
+                                                if *arg.kind != Kind::Type
+                                                    && *arg.kind != Kind::Hole
+                                                {
+                                                    chain![
+                                                        arena,
+                                                        "(",
+                                                        arg.id.as_ref() as &str,
+                                                        " :",
+                                                        arena.line(),
+                                                        pretty_kind(arena, Prec::Top, &arg.kind)
+                                                            .group(),
+                                                        ")"
+                                                    ]
+                                                    .group()
+                                                } else {
+                                                    arena.text(arg.id.as_ref() as &str)
+                                                },
+                                                arena.line()
+                                            ]
+                                        }))
+                                        .group(),
+                                    "=",
+                                    if variant {
+                                        chain![arena, arena.hardline(), type_doc].nest(INDENT)
+                                    } else {
+                                        chain![arena, arena.space(), type_doc].group()
+                                    }
                                 ]
-                            })).group(),
-                            "=",
-                            if variant {
-                                chain![arena;
-                                    arena.hardline(),
-                                    type_doc
-                                ].nest(INDENT)
-                            } else {
-                                chain![arena;
-                                    arena.space(),
-                                    type_doc
-                                ].group()
-                            }
-                        ].group()
-                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
+                                .group()
+                            })
+                            .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
+                    ),
                     if is_recursive {
                         arena.hardline().append(arena.text("in"))
                     } else {
@@ -454,7 +480,8 @@ where
                 ..
             }) => {
                 let from = match id {
-                    Some(pattern) => chain![arena;
+                    Some(pattern) => chain![
+                        arena,
                         "do",
                         self.space_before(pattern.span.start()),
                         self.pretty_pattern(pattern),
@@ -463,7 +490,8 @@ where
                     ],
                     None => arena.text("seq"),
                 };
-                chain![arena;
+                chain![
+                    arena,
                     self.hang(from, (self.space_before(bound.span.start()), true), bound),
                     self.pretty_expr_(bound.span.end(), body)
                 ]
@@ -472,7 +500,7 @@ where
                 return self.pretty_expr_(previous_end, original);
             }
             Expr::Annotated(ref expr, ref typ) => chain![
-                arena;
+                arena,
                 pretty(expr).group(),
                 arena.line(),
                 ":",
@@ -511,14 +539,19 @@ where
         let mut doc = arena.nil();
         let mut prefix: Option<DocBuilder<Arena<A>, A>> = None;
         while let Expr::IfElse(body, if_true, if_false) = &expr.value {
-            let next = chain![arena;
-                chain![arena;
-                    prefix.map(|prefix| prefix.append(" ")).unwrap_or_else(|| arena.nil()),
+            let next = chain![
+                arena,
+                chain![
+                    arena,
+                    prefix
+                        .map(|prefix| prefix.append(" "))
+                        .unwrap_or_else(|| arena.nil()),
                     "if ",
                     pretty(body),
                     arena.line(),
                     "then"
-                ].group(),
+                ]
+                .group(),
                 arena.line().append(pretty(if_true)).nest(INDENT).group(),
             ]
             .group();
@@ -526,13 +559,12 @@ where
             prefix = Some(arena.text("else"));
             expr = if_false;
         }
-        chain![arena;
+        chain![
+            arena,
             doc,
-            chain![arena;
-                prefix.unwrap(),
-                arena.line(),
-                pretty(expr),
-            ].nest(INDENT).group(),
+            chain![arena, prefix.unwrap(), arena.line(), pretty(expr),]
+                .nest(INDENT)
+                .group(),
         ]
     }
 
@@ -554,10 +586,11 @@ where
         let arena = self.arena;
         match expr.value {
             Expr::Lambda(ref lambda) => {
-                let from = chain![arena;
+                let from = chain![
+                    arena,
                     "\\",
                     arena.concat(lambda.args.iter().map(|arg| {
-                        arena.text(arg.name.value.name.as_ref()).append(" ")
+                        arena.text(arg.name.value.name.as_ref() as &str).append(" ")
                     })),
                     "->"
                 ];
@@ -629,21 +662,27 @@ where
                         ordered_iter().map(|either| match either {
                             Either::Left(l) => pos::spanned(
                                 l.name.span,
-                                pretty_types::ident(arena, l.name.value.as_ref()),
+                                pretty_types::ident(arena, l.name.value.as_ref() as &str),
                             ),
                             Either::Right(r) => {
-                                let id = pretty_types::ident(arena, r.name.value.as_ref());
+                                let id = pretty_types::ident(arena, r.name.value.as_ref() as &str);
                                 let doc = chain![
-                                    arena;
+                                    arena,
                                     pretty_types::doc_comment(arena, r.metadata.comment()),
                                     match r.value {
                                         Some(ref expr) => {
-                                            let x = chain![arena;
+                                            let x = chain![
+                                                arena,
                                                 id,
                                                 self.space_after(r.name.span.end()),
                                                 "="
                                             ];
-                                            self.hang(x, (self.space_before(expr.span.start()), true), expr).group()
+                                            self.hang(
+                                                x,
+                                                (self.space_before(expr.span.start()), true),
+                                                expr,
+                                            )
+                                            .group()
                                         }
                                         None => id,
                                     }
@@ -661,7 +700,8 @@ where
                     .append(match *base {
                         Some(ref base) => {
                             let comments = self.comments_after(last_field_end);
-                            chain![arena;
+                            chain![
+                                arena,
                                 if let Doc::Nil = *comments.1 {
                                     line.clone()
                                 } else {
@@ -713,7 +753,8 @@ where
                         |spanned| spanned.value,
                     ),
                 );
-                let tuple = chain![arena;
+                let tuple = chain![
+                    arena,
                     self.nilline_after(expr.span.start() + ByteOffset::from(1)),
                     inner,
                     trailing_comma(arena),
@@ -769,15 +810,12 @@ where
     {
         let arena = self.arena;
         arena.concat(attributes.into_iter().map(|attribute| {
-            chain![arena;
+            chain![
+                arena,
                 "#[",
                 &attribute.name[..],
                 match attribute.arguments {
-                    Some(ref arguments) => chain![arena;
-                        "(",
-                        &arguments[..],
-                        ")"
-                    ],
+                    Some(ref arguments) => chain![arena, "(", &arguments[..], ")"],
                     None => arena.nil(),
                 },
                 "]",
@@ -800,17 +838,21 @@ where
             Pattern::As(ref ident, ref pat) => prec.enclose(
                 Prec::Constructor,
                 arena,
-                chain![arena;
-                    ident.value.as_ref(),
+                chain![
+                    arena,
+                    ident.value.as_ref() as &str,
                     " @ ",
                     self.pretty_pattern_(pat, Prec::Constructor)
                 ],
             ),
             Pattern::Constructor(ref ctor, ref args) => {
-                let doc = chain![arena;
+                let doc = chain![
+                    arena,
                     ctor.as_ref(),
                     arena.concat(args.iter().map(|arg| {
-                        arena.text(" ").append(self.pretty_pattern_(arg, Prec::Constructor))
+                        arena
+                            .text(" ")
+                            .append(self.pretty_pattern_(arg, Prec::Constructor))
                     }))
                 ];
                 if args.is_empty() {
@@ -830,17 +872,15 @@ where
                         .iter()
                         .map(|field| match field {
                             PatternField::Type { name } => {
-                                pos::spanned(name.span, arena.text(name.value.as_ref()))
+                                pos::spanned(name.span, arena.text(name.value.as_ref() as &str))
                             }
                             PatternField::Value { name, value } => {
-                                let doc = chain![arena;
-                                    pretty_types::ident(arena, name.value.as_ref()),
+                                let doc = chain![
+                                    arena,
+                                    pretty_types::ident(arena, name.value.as_ref() as &str),
                                     match value {
                                         Some(ref new_name) => {
-                                            chain![arena;
-                                                " = ",
-                                                self.pretty_pattern(new_name)
-                                            ]
+                                            chain![arena, " = ", self.pretty_pattern(new_name)]
                                         }
                                         None => arena.nil(),
                                     }
@@ -856,7 +896,8 @@ where
                     |spanned| spanned.value,
                 );
                 let doc = arena.concat(iter).nest(INDENT);
-                chain![arena;
+                chain![
+                    arena,
                     "{",
                     doc,
                     if fields.is_empty() && implicit_import.is_none() {
@@ -868,13 +909,16 @@ where
                 ]
                 .group()
             }
-            Pattern::Tuple { ref elems, .. } => chain![arena;
+            Pattern::Tuple { ref elems, .. } => chain![
+                arena,
                 "(",
-                arena.concat(self.comma_sep_paren(
-                    elems
-                        .iter()
-                        .map(|elem| pos::spanned(elem.span, self.pretty_pattern(elem))),
-                    |elem| elem.value)
+                arena.concat(
+                    self.comma_sep_paren(
+                        elems
+                            .iter()
+                            .map(|elem| pos::spanned(elem.span, self.pretty_pattern(elem))),
+                        |elem| elem.value
+                    )
                 ),
                 ")"
             ]
@@ -1035,7 +1079,7 @@ where
 
 impl<'a, 'e, F, I, J, T, U, A> Iterator for CommaSeparated<'a, 'e, F, I, J, U, A>
 where
-    I: AsRef<str> + std::fmt::Debug,
+    I: AsRef<str> + AsId<I> + std::fmt::Debug,
     F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
     J: Iterator<Item = T>,
     T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
@@ -1049,7 +1093,8 @@ where
             let arena = self.printer.arena;
             let i = self.i;
             self.i += 1;
-            chain![arena;
+            chain![
+                arena,
                 if i == 0 && self.parens {
                     self.printer.comments_before(span.start())
                 } else {
@@ -1080,7 +1125,8 @@ fn pretty_kind<'a, A>(
         Kind::Hole => arena.text("_"),
         Kind::Variable(ref id) => arena.text(id.to_string()),
         Kind::Function(ref a, ref r) => {
-            let doc = chain![arena;
+            let doc = chain![
+                arena,
                 pretty_kind(arena, Prec::Function, a),
                 arena.line(),
                 "-> ",

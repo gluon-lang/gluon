@@ -410,7 +410,7 @@ impl<'a> VmEnvInstance<'a> {
         let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
-                .find(|field| field.name.as_ref() == field_name.as_str())
+                .find(|field| field.name.as_str() == field_name.as_str())
                 .map(|field| &field.typ)
                 .cloned()
         };
@@ -475,7 +475,7 @@ impl<'a> VmEnvInstance<'a> {
             let next_type = {
                 typ.row_iter()
                     .enumerate()
-                    .find(|&(_, field)| field.name.as_ref() == field_name)
+                    .find(|&(_, field)| field.name.as_pretty_str() == field_name)
                     .map(|(index, field)| match value.as_ref() {
                         ValueRef::Data(data) => {
                             value = data.get_variant(index).unwrap();
@@ -661,6 +661,17 @@ impl GlobalVmState {
         Ok(t)
     }
 
+    #[doc(hidden)]
+    pub fn get_cache_alias(&self, name: &str) -> Option<ArcType> {
+        let env = self.env.read();
+        env
+            .type_infos
+            .id_to_type
+            .get(name)
+            .map(|alias| alias.clone().into_type())
+    }
+
+    #[doc(hidden)]
     pub fn cache_alias(&self, alias: Alias<Symbol, ArcType>) -> ArcType {
         let mut env = self.env.write();
         let type_infos = &mut env.type_infos;

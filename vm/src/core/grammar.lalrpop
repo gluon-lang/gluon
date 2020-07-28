@@ -34,7 +34,7 @@ Literal: Literal = {
 
 Pattern: Pattern = {
     <id: Identifier> => {
-        if id.as_ref().starts_with(char::is_uppercase) {
+        if id.as_str().starts_with(char::is_uppercase) {
             Pattern::Constructor(TypedIdent::new(id), Vec::new())
         } else {
             Pattern::Ident(TypedIdent::new(id))
@@ -74,7 +74,7 @@ AtomicExpr: Expr<'a> = {
         Expr::Data(id, args, BytePos::default())
     },
     <id: Identifier> => {
-        if id.as_ref().starts_with(char::is_uppercase) {
+        if id.as_str().starts_with(char::is_uppercase) {
             Expr::Data(TypedIdent::new(id), &[], BytePos::default())
         } else {
             Expr::Ident(TypedIdent::new(id), Span::default())

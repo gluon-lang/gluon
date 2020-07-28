@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use crate::base::{
     ast::{
-        self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
+        self, AstType, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedExpr,
         TypedIdent,
     },
     fnv::FnvMap,
@@ -213,7 +213,7 @@ pub fn rename<'s, 'ast>(
                             }
                         }
                         if let Some(ref mut typ) = bind.typ {
-                            self.visit_ast_type(typ.as_mut())
+                            self.visit_ast_type(typ)
                         }
                         self.new_pattern(&mut bind.name);
                     }
@@ -346,12 +346,12 @@ pub fn rename<'s, 'ast>(
             }
         }
 
-        fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<'ast, Self::Ident>) {
-            match &mut s.value {
+        fn visit_ast_type(&mut self, s: &'c mut AstType<'ast, Self::Ident>) {
+            match &mut **s {
                 Type::ExtendTypeRow { types, .. } => {
                     for field in &mut **types {
                         if let Some(alias) = field.typ.try_get_alias_mut() {
-                            if let Some(new_name) = self.rename(&field.name) {
+                            if let Some(new_name) = self.rename(&field.name.value) {
                                 alias.name = new_name;
                             }
                         }

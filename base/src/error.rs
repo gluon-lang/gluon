@@ -218,6 +218,10 @@ impl<E: fmt::Display> InFile<E> {
             .name()
     }
 
+    pub fn source(&self) -> &crate::source::CodeMap {
+        &self.source
+    }
+
     pub fn errors(&self) -> &Errors<Spanned<E, BytePos>> {
         &self.error
     }

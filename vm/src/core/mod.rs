@@ -276,7 +276,7 @@ impl<'a> Expr<'a> {
 }
 
 fn is_constructor(s: &Symbol) -> bool {
-    s.as_ref()
+    s.as_str()
         .rsplit('.')
         .next()
         .unwrap()
@@ -2263,7 +2263,8 @@ impl<'a> ExactSizeIterator for PatternIdentifiers<'a> {
 }
 
 pub(crate) fn is_primitive(name: &Symbol) -> bool {
-    name.as_ref() == "&&" || name.as_ref() == "||" || name.as_ref().starts_with('#')
+    let name = name.as_str();
+    name == "&&" || name == "||" || name.starts_with('#')
 }
 
 #[cfg(any(test, feature = "test"))]

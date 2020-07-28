@@ -372,22 +372,19 @@ pub trait Compilation: CompilationBase {
         &self,
         module: String,
         expected_type: Option<ArcType>,
-    ) -> StdResult<
-        TypecheckValue<Arc<OwnedExpr<Symbol>>>,
-        (Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>, Error),
-    >;
+    ) -> SalvageResult<TypecheckValue<Arc<OwnedExpr<Symbol>>>, Error>;
 
     async fn module_type(
         &self,
         module: String,
         expected_type: Option<ArcType>,
-    ) -> StdResult<ArcType, Error>;
+    ) -> SalvageResult<ArcType, Error>;
 
     async fn module_metadata(
         &self,
         module: String,
         expected_type: Option<ArcType>,
-    ) -> StdResult<Arc<Metadata>, Error>;
+    ) -> SalvageResult<Arc<Metadata>, Error>;
 
     #[salsa::cycle(recover_cycle_expected_type)]
     async fn core_expr(
@@ -421,8 +418,8 @@ fn recover_cycle_typecheck<T>(
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
-) -> StdResult<T, (Option<T>, Error)> {
-    recover_cycle(db, cycle, module).map_err(|err| (None, err))
+) -> SalvageResult<T, Error> {
+    Ok(recover_cycle(db, cycle, module)?)
 }
 
 fn recover_cycle_expected_type<T>(
@@ -502,13 +499,10 @@ async fn typechecked_source_module(
     db: &mut (impl Compilation + salsa::Database),
     module: String,
     expected_type: Option<ArcType>,
-) -> StdResult<
-    TypecheckValue<Arc<OwnedExpr<Symbol>>>,
-    (Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>>, Error),
-> {
+) -> SalvageResult<TypecheckValue<Arc<OwnedExpr<Symbol>>>, Error> {
     db.salsa_runtime_mut().report_untracked_read();
 
-    let text = db.module_text(module.clone()).map_err(|err| (None, err))?;
+    let text = db.module_text(module.clone())?;
 
     let thread = db.thread().root_thread();
     let mut compiler = ModuleCompiler::new(db.compiler());
@@ -521,7 +515,7 @@ async fn typechecked_source_module(
             expected_type.as_ref(),
         )
         .await
-        .map_err(|(opt, err)| (opt.map(|value| value.map(Arc::new)), err))?;
+        .map_err(|err| err.map(|value| value.map(Arc::new)))?;
 
     Ok(value.map(Arc::new))
 }
@@ -530,7 +524,7 @@ async fn module_type(
     db: &mut (impl Compilation + salsa::Database),
     name: String,
     expected_type: Option<ArcType>,
-) -> StdResult<ArcType, Error> {
+) -> SalvageResult<ArcType, Error> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
         let global = db.extern_module(name).await?;
         return Ok(global.typ.clone());
@@ -538,14 +532,14 @@ async fn module_type(
     db.typechecked_source_module(name, expected_type)
         .await
         .map(|module| module.typ)
-        .map_err(|(_, err)| err)
+        .map_err(|err| err.map(|m| m.typ))
 }
 
 async fn module_metadata(
     db: &mut (impl Compilation + salsa::Database),
     name: String,
     expected_type: Option<ArcType>,
-) -> StdResult<Arc<Metadata>, Error> {
+) -> SalvageResult<Arc<Metadata>, Error> {
     if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
         let global = db.extern_module(name).await?;
         return Ok(global.metadata.clone());
@@ -553,7 +547,7 @@ async fn module_metadata(
     db.typechecked_source_module(name, expected_type)
         .await
         .map(|module| module.metadata)
-        .map_err(|(_, err)| err)
+        .map_err(|err| err.map(|m| m.metadata))
 }
 
 async fn core_expr(
@@ -565,8 +559,7 @@ async fn core_expr(
 
     let value = db
         .typechecked_source_module(module.clone(), expected_type.clone())
-        .await
-        .map_err(|(_, err)| err)?;
+        .await?;
 
     // Ensure the type is stored in the database so we can collect typechecked_source_module later
     db.module_type(module.clone(), expected_type.clone())
@@ -647,8 +640,7 @@ async fn import(
     let name = Symbol::from(format!("@{}", modulename));
     let result = crate::get_import(&thread)
         .load_module(&mut ModuleCompiler::new(compiler), &thread, &name)
-        .await
-        .map_err(|(_, err)| err);
+        .await;
 
     compiler.collect_garbage();
 
@@ -668,10 +660,8 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
         return Ok(global);
     }
 
-    let TypecheckValue { metadata, typ, .. } = db
-        .typechecked_source_module(name.clone(), None)
-        .await
-        .map_err(|(_, err)| err)?;
+    let TypecheckValue { metadata, typ, .. } =
+        db.typechecked_source_module(name.clone(), None).await?;
 
     // Ensure the type is stored in the database so we can collect typechecked_source_module later
     db.module_type(name.clone(), None).await?;
@@ -944,7 +934,7 @@ impl Extract for ArcType {
     fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, self);
         typ.row_iter()
-            .find(|field| field.name.as_ref() == field_name)
+            .find(|field| field.name.as_str() == field_name)
             .map(|field| field.typ.clone())
     }
     fn typ(&self) -> &ArcType {
@@ -957,7 +947,7 @@ impl Extract for (RootedValue<RootedThread>, ArcType) {
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, typ);
         typ.row_iter()
             .enumerate()
-            .find(|&(_, field)| field.name.as_ref() == field_name)
+            .find(|&(_, field)| field.name.as_str() == field_name)
             .map(|(index, field)| match value.get_variants().as_ref() {
                 ValueRef::Data(data) => (
                     db.thread().root_value(data.get_variant(index).unwrap()),
@@ -985,7 +975,7 @@ impl CompilerDatabase {
         let maybe_type_info = {
             let field_name = name.name();
             typ.type_field_iter()
-                .find(|field| field.name.as_ref() == field_name.as_str())
+                .find(|field| field.name.as_str() == field_name.as_str())
                 .map(|field| &field.typ)
                 .cloned()
         };

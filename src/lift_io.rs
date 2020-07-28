@@ -3,8 +3,8 @@ use gluon_codegen::Trace;
 use {
     base::{
         ast::{
-            self, AstClone, Argument, AstType, EmptyEnv, Expr, ExprField, Pattern, SpannedExpr, Typed,
-            TypedIdent, ValueBinding,
+            self, Argument, AstClone, AstType, EmptyEnv, Expr, ExprField, Pattern, SpannedExpr,
+            Typed, TypedIdent, ValueBinding,
         },
         pos::{self, BytePos, Span},
         symbol::{Symbol, SymbolData, Symbols},

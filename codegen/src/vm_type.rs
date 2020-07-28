@@ -183,8 +183,8 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         });
 
         quote! {
-            let ty = if let Ok(ty) = vm.find_type_info(stringify!(#ident)) {
-                ty.into_type()
+            let ty = if let Some(ty) = vm.get_cache_alias(stringify!(#ident)) {
+                ty
             } else {
                 let ty = _gluon_base::types::Alias::new(
                     _gluon_base::symbol::Symbol::from(stringify!(#ident)),

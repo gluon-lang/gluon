@@ -91,7 +91,7 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
         match *expr {
             Expr::Call(ref f, _) => match f {
                 Expr::Ident(ref id, ..) => {
-                    if self.pure_symbols.pure_call(&*id.name) || id.name.as_ref().starts_with("#") {
+                    if self.pure_symbols.pure_call(&*id.name) || id.name.is_primitive() {
                         walk_expr(self, expr);
                     } else {
                         self.is_pure = false;
@@ -104,7 +104,7 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
 
             Expr::Ident(ref id, ..) => {
                 if !self.pure_symbols.pure_load(&id.name)
-                    && !id.name.as_ref().starts_with("#")
+                    && !id.name.is_primitive()
                     && !id.name.is_global()
                 {
                     self.is_pure = false;

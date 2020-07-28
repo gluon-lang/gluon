@@ -291,11 +291,10 @@ GenericIdent: Generic<Id> = {
     Ident => Generic::new(<>, type_cache.kind_cache.hole()),
 };
 
-RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> = {
+RecordField: Either<Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>>, Field<Spanned<Id, BytePos>, AstType<'ast, Id>>> = {
     <metadata: Metadata> <id: Sp<Ident>> <args: Many<GenericIdent>> <alias: ("=" <Sp<Type_>>)> => {
-        let span = id.span;
         Either::Left(Field::new(
-            id.value.clone(),
+            id.clone(),
             Alias::new_with(
                 &mut arena.clone(),
                 id.value,
@@ -307,7 +306,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
     <metadata: Metadata> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
-            id.value.clone(),
+            id.clone(),
             Alias::new_with(
                 &mut arena.clone(),
                 id.value,
@@ -316,8 +315,8 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
             ),
         ))
     },
-    <metadata: Metadata> <id: Ident> ":" <typ: Sp<Type_>> => {
-        if env.string(&id).starts_with(char::is_uppercase) {
+    <metadata: Metadata> <id: Sp<Ident>> ":" <typ: Sp<Type_>> => {
+        if env.string(&id.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(typ.span, format!("Defining a kind for a type in this location is not supported yet").into()),
             });
@@ -325,7 +324,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
                 id.clone(),
                 Alias::new_with(
                     &mut arena.clone(),
-                    id,
+                    id.value,
                     Default::default(),
                     AstType::with_metadata(arena, metadata, typ),
                 ),
@@ -340,8 +339,8 @@ RecordField: Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'
 };
 
 VariantField: Variant<'ast, Id> = {
-    "|" <CtorIdent> <AtomicType*> => Variant::Simple(<>),
-    "|" <CtorIdent> ":" <Type> => Variant::Gadt(<>)
+    "|" <Sp<CtorIdent>> <AtomicType*> => Variant::Simple(<>),
+    "|" <Sp<CtorIdent>> ":" <Type> => Variant::Gadt(<>)
 };
 
 VariantType: (Vec<Id>, Vec<Variant<'ast, Id>>, Option<AstType<'ast, Id>>) = {
@@ -427,8 +426,8 @@ TypeBinding: TypeBinding<'ast, Id> = {
     },
 };
 
-Effect: Field<Id, AstType<'ast, Id>> = {
-    <name: Ident> ":" <typ: Type> => Field { <> }
+Effect: Field<Spanned<Id, BytePos>, AstType<'ast, Id>> = {
+    <name: Sp<Ident>> ":" <typ: Type> => Field { <> }
 };
 
 AtomicType_: Type<Id, AstType<'ast, Id>> = {

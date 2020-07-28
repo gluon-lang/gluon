@@ -714,7 +714,7 @@ where
         match self.iter.next() {
             Some((value, field, typ)) => {
                 self.value = Some((value, typ));
-                seed.deserialize(field.as_ref().into_deserializer())
+                seed.deserialize(field.as_str().into_deserializer())
                     .map(Some)
             }
             None => Ok(None),

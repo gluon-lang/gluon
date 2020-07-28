@@ -120,7 +120,7 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 where
-    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + From<Type<Symbol, T>>,
     T::Types: FromIterator<T> + Default + Extend<T>,
 {
     assert!(!s.is_empty());

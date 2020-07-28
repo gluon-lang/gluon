@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate collect_mac;
-extern crate either;
-extern crate env_logger;
+
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -9,9 +10,8 @@ extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
 use crate::base::{
-    ast::Argument,
+    ast::Sp,
     kind::{ArcKind, Kind},
-    metadata::{Attribute, Comment, CommentType, Metadata},
     pos::{BytePos, Span},
     types::{ArcType, Field, Type},
 };
@@ -21,16 +21,6 @@ use either::Either;
 #[allow(unused)]
 mod support;
 use crate::support::{intern, loc, typ, MockEnv};
-
-fn line_comment<S>(s: S) -> Comment
-where
-    S: Into<String>,
-{
-    Comment {
-        typ: CommentType::Line,
-        content: s.into(),
-    }
-}
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
     let env = MockEnv::new();
@@ -43,12 +33,31 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKin
     completion::completion(extract, expr.span, &expr, pos)
 }
 
+fn find_span_type2(s: &str) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
+    let pos = {
+        let marker = s.find("// ^").expect("Position marker") + "// ".len();
+        let previous_line_end = s[..marker].rfind('\n').expect("Previous line");
+        let previous_line_start = s[..previous_line_end].rfind('\n').expect("Previous line");
+        previous_line_start + (marker - previous_line_end)
+    };
+    find_span_type(s, BytePos::from(pos as u32 + 1))
+}
+
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let (expr, result) = support::typecheck_expr(s);
     let expr = expr.expr();
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     completion::find_all_symbols(expr.span, &expr, pos)
+}
+
+fn find_kind2(s: &str) -> Result<ArcKind, ()> {
+    find_span_type2(s).map(|t| {
+        t.1.as_ref()
+            .left()
+            .cloned()
+            .unwrap_or_else(|| panic!("Expected kind, got: {}", t.1))
+    })
 }
 
 fn find_kind(s: &str, pos: BytePos) -> Result<ArcKind, ()> {
@@ -70,36 +79,6 @@ fn symbol(s: &str, pos: BytePos) -> Result<String, ()> {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     completion::symbol(expr.span, &expr, pos).map(|s| s.declared_name().to_string())
-}
-
-fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
-    let env = MockEnv::new();
-
-    let (expr, result) = support::typecheck_expr(s);
-    let expr = expr.expr();
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-
-    let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::get_metadata(&metadata_map, expr.span, &expr, pos)
-        .cloned()
-        .map(|mut meta| {
-            meta.definition.take();
-            meta
-        })
-}
-
-fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
-    let env = MockEnv::new();
-
-    let (expr, _result) = support::typecheck_expr(s);
-    let expr = expr.expr();
-
-    let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name).map(|meta| {
-        let mut meta = Metadata::clone(meta);
-        meta.definition.take();
-        meta
-    })
 }
 
 #[test]
@@ -388,141 +367,6 @@ fn unit() {
 }
 
 #[test]
-fn metadata_at_variable() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-/// test
-let abc = 1
-let abb = 2
-abb
-abc
-"#;
-    let result = get_metadata(text, BytePos::from(37));
-
-    let expected = Some(Metadata {
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-
-    let result = get_metadata(text, BytePos::from(41));
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn metadata_at_binop() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-/// test
-#[infix(left, 4)]
-let (+++) x y = 1
-1 +++ 3
-"#;
-    let result = get_metadata(text, BytePos::from(50));
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        attributes: vec![Attribute {
-            name: "infix".into(),
-            arguments: Some("left, 4".into()),
-        }],
-        args: ["x@4_11", "y@4_13"]
-            .iter()
-            .map(|arg| Argument::explicit(intern(arg)))
-            .collect(),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn metadata_at_field_access() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-let module = {
-        /// test
-        abc = 1,
-        abb = 2
-    }
-module.abc
-"#;
-    let result = get_metadata(text, BytePos::from(81));
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn metadata_at_type_pattern() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-let { Test } =
-    /// test
-    type Test = Int
-    { Test }
-()
-"#;
-    let result = get_metadata(text, loc(text, 1, 7));
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn suggest_metadata_at_variable() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-/// test
-let abc = 1
-let abb = 2
-ab
-"#;
-    let result = suggest_metadata(text, BytePos::from(36), "abc");
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn suggest_metadata_at_field_access() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-let module = {
-        /// test
-        abc = 1,
-        abb = 2
-    }
-module.ab
-"#;
-    let result = suggest_metadata(text, BytePos::from(81), "abc");
-
-    let expected = Some(Metadata {
-        comment: Some(line_comment("test".to_string())),
-        ..Metadata::default()
-    });
-    assert_eq!(result, expected);
-}
-
-#[test]
 fn find_all_symbols_test() {
     let _ = env_logger::try_init();
 
@@ -548,16 +392,46 @@ test #Int+ test #Int+ dummy
     );
 }
 
+#[derive(PartialEq, Debug)]
+struct Symbols {
+    name: String,
+    children: Vec<Symbols>,
+}
+
+impl From<&'_ str> for Symbols {
+    fn from(s: &str) -> Self {
+        Self {
+            name: s.into(),
+            children: Vec::new(),
+        }
+    }
+}
+
+fn simple_symbols(symbols: Vec<Sp<completion::CompletionSymbol<'_, '_>>>) -> Vec<Symbols> {
+    symbols
+        .into_iter()
+        .map(|s| Symbols {
+            name: s.value.name.to_string(),
+            children: simple_symbols(s.value.children),
+        })
+        .collect()
+}
+
 #[test]
 fn all_symbols_test() {
     let _ = env_logger::try_init();
 
     let text = r#"
 let test = 1
-let dummy =
+let dummy a =
     let test = 3
     test
-type Abc a = a Int
+type Abc a = {
+    field: a,
+}
+type Enum =
+    | A { a: Int }
+    | B
 // Unpacked values are not counted because they probably originated in another module
 let { x, y } = { x = 1, y = 2 }
 1
@@ -569,8 +443,30 @@ let { x, y } = { x = 1, y = 2 }
 
     let symbols = completion::all_symbols(expr.span, &expr);
 
-    assert_eq!(symbols.len(), 3);
-    assert_eq!(symbols[1].value.children.len(), 1);
+    assert_eq!(
+        simple_symbols(symbols),
+        vec![
+            "test".into(),
+            Symbols {
+                name: "dummy".into(),
+                children: vec!["a".into(), "test".into()]
+            },
+            Symbols {
+                name: "test.Abc".into(),
+                children: vec!["field".into()]
+            },
+            Symbols {
+                name: "test.Enum".into(),
+                children: vec![
+                    Symbols {
+                        name: "A".into(),
+                        children: vec!["a".into()]
+                    },
+                    "B".into()
+                ],
+            }
+        ]
+    );
 }
 
 #[test]
@@ -619,19 +515,35 @@ let x : Test Int = Test 1
 }
 
 #[test]
-// TODO Implement
 #[ignore]
 fn completion_on_function_type() {
     let _ = env_logger::try_init();
 
     let text = r#"
 let f x : Int -> Int = x
+            // ^
 1.0
 "#;
-    let result = find_kind(text, loc(text, 1, 15));
+    let result = find_kind2(text);
     let expected = Ok(Kind::typ());
 
     assert_eq!(result, expected);
+}
+
+#[test]
+fn completion_on_type_field() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = | Test
+{
+    Test,
+    // ^
+}
+"#;
+    let result = find_kind2(text);
+
+    assert_eq!(result, Ok(Kind::typ()));
 }
 
 #[test]

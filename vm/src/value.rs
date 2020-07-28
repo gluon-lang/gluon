@@ -702,41 +702,58 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             ValueRepr::String(s) => arena.text(format!("{:?}", &s[..])),
             ValueRepr::Data(ref data) => self.pretty_data(data.tag(), variant_iter(&data.fields)),
             ValueRepr::Tag(tag) => self.pretty_data(tag, iter::empty()),
-            ValueRepr::Function(ref function) => chain![arena;
+            ValueRepr::Function(ref function) => chain![
+                arena,
                 "<extern ",
                 function.id.declared_name().to_string(),
                 ">"
             ],
             ValueRepr::Closure(ref closure) => match self.debug_level {
-                &DebugLevel::None => chain![arena;
-                    "<",
-                 arena.text(closure.function.name.declared_name().to_string()),
-                    ">"
-                ],
-                &DebugLevel::Low | &DebugLevel::High => chain![arena;
+                &DebugLevel::None => chain![
+                    arena,
                     "<",
                     arena.text(closure.function.name.declared_name().to_string()),
-                    arena.concat(variant_iter(&closure.upvars).zip(&closure.function.debug_info.upvars)
-                        .map(|(field, info)| {
-                            chain![arena;
-                                arena.space(),
-                                info.name.clone(),
-                                ":",
-                                arena.space(),
-                                self.p(&info.typ, Top).pretty(field)
-                            ]
-                        }).intersperse(arena.text(","))).nest(INDENT),
+                    ">"
+                ],
+                &DebugLevel::Low | &DebugLevel::High => chain![
+                    arena,
+                    "<",
+                    arena.text(closure.function.name.declared_name().to_string()),
+                    arena
+                        .concat(
+                            variant_iter(&closure.upvars)
+                                .zip(&closure.function.debug_info.upvars)
+                                .map(|(field, info)| {
+                                    chain![
+                                        arena,
+                                        arena.space(),
+                                        info.name.clone(),
+                                        ":",
+                                        arena.space(),
+                                        self.p(&info.typ, Top).pretty(field)
+                                    ]
+                                })
+                                .intersperse(arena.text(","))
+                        )
+                        .nest(INDENT),
                     ">"
                 ],
             },
-            ValueRepr::Array(ref array) => chain![arena;
+            ValueRepr::Array(ref array) => chain![
+                arena,
                 "[",
-                arena.concat(array.iter().map(|field| {
-                    match **self.typ {
-                        Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
-                        _ => arena.text(format!("{:?}", field)),
-                    }
-                }).intersperse(arena.text(",").append(arena.space())))
+                arena
+                    .concat(
+                        array
+                            .iter()
+                            .map(|field| {
+                                match **self.typ {
+                                    Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
+                                    _ => arena.text(format!("{:?}", field)),
+                                }
+                            })
+                            .intersperse(arena.text(",").append(arena.space()))
+                    )
                     .nest(INDENT),
                 "]"
             ],
@@ -774,7 +791,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             doc: DocBuilder<'a, Arena<'a>>,
         ) -> DocBuilder<'a, Arena<'a>> {
             if p >= limit {
-                chain![arena; "(", doc, ")"]
+                chain![arena, "(", doc, ")"]
             } else {
                 doc
             }
@@ -796,30 +813,27 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         .zip(row.row_iter())
                         .map(|(field, type_field)| {
                             is_empty = false;
-                            chain![arena;
+                            chain![
+                                arena,
                                 pretty_ident(arena, type_field.name.declared_name().to_string()),
                                 ":",
-                                chain![arena;
+                                chain![
+                                    arena,
                                     arena.space(),
                                     self.p(&type_field.typ, Top).pretty(field),
                                     arena.text(",")
-                                ].nest(INDENT)
+                                ]
+                                .nest(INDENT)
                             ]
                             .group()
                         })
                         .intersperse(arena.space()),
                 );
-                chain![arena;
+                chain![
+                    arena,
                     "{",
-                    chain![arena;
-                        arena.space(),
-                        fields_doc
-                    ].nest(INDENT),
-                    if is_empty {
-                        arena.nil()
-                    } else {
-                        arena.space()
-                    },
+                    chain![arena, arena.space(), fields_doc].nest(INDENT),
+                    if is_empty { arena.nil() } else { arena.space() },
                     "}"
                 ]
             }
@@ -829,13 +843,16 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     .nth(tag as usize)
                     .expect("Variant tag is out of bounds");
                 let mut empty = true;
-                let doc = chain![arena;
+                let doc = chain![
+                    arena,
                     type_field.name.declared_name().to_string(),
-                    arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
-                        .map(|(field, typ)| {
-                            empty = false;
-                            arena.space().append(self.p(typ, Constructor).pretty(field))
-                        }))
+                    arena
+                        .concat(fields.into_iter().zip(arg_iter(&type_field.typ)).map(
+                            |(field, typ)| {
+                                empty = false;
+                                arena.space().append(self.p(typ, Constructor).pretty(field))
+                            }
+                        ))
                         .nest(INDENT)
                 ];
                 if empty {
@@ -844,11 +861,20 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     enclose(self.prec, Constructor, arena, doc)
                 }
             }
-            _ => chain![arena;
+            _ => chain![
+                arena,
                 "{",
-                arena.concat(fields.into_iter().map(|field| {
-                    arena.space().append(self.p(&Type::hole(), Top).pretty(field))
-                }).intersperse(arena.text(",")))
+                arena
+                    .concat(
+                        fields
+                            .into_iter()
+                            .map(|field| {
+                                arena
+                                    .space()
+                                    .append(self.p(&Type::hole(), Top).pretty(field))
+                            })
+                            .intersperse(arena.text(","))
+                    )
                     .nest(INDENT),
                 arena.space(),
                 "}"

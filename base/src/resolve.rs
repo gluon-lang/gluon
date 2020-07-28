@@ -60,7 +60,7 @@ impl<T> AliasRemover<T> {
 
 impl<T> AliasRemover<T>
 where
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,
@@ -243,7 +243,7 @@ pub fn remove_aliases<T>(
     mut typ: T,
 ) -> T
 where
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,
@@ -261,7 +261,7 @@ pub fn remove_aliases_cow<'t, T>(
     typ: &'t T,
 ) -> Cow<'t, T>
 where
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,
@@ -282,7 +282,7 @@ pub fn canonical_alias<'t, F, T>(
 ) -> Cow<'t, T>
 where
     F: FnMut(&AliasRef<Symbol, T>) -> bool,
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,
@@ -318,7 +318,7 @@ pub fn remove_alias<T>(
     typ: &T,
 ) -> Result<Option<T>, Error>
 where
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T> + FromIterator<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,
@@ -342,7 +342,7 @@ pub fn peek_alias<'t, T>(
     typ: &'t T,
 ) -> Result<Option<AliasRef<Symbol, T>>, Error>
 where
-    T: TypeExt<Id = Symbol> + Clone + ::std::fmt::Display,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + Clone + ::std::fmt::Display,
     T::Types: Clone + Default + Extend<T>,
     T::Generics: Clone + FromIterator<Generic<Symbol>>,
     T::Fields: Clone,

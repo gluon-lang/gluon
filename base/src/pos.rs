@@ -49,12 +49,18 @@ pub struct Positioned<T, Pos> {
 }
 
 /// A region of code in a source file
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Ord, PartialOrd)]
 #[cfg_attr(feature = "serialization", derive(Deserialize, Serialize))]
 #[cfg_attr(feature = "memory_usage", derive(HeapSizeOf))]
 pub struct Span<I> {
     start: I,
     end: I,
+}
+
+impl<I: fmt::Debug> fmt::Debug for Span<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}..{:?}", self.start, self.end)
+    }
 }
 
 impl<I: Ord> Span<I> {
@@ -174,6 +180,10 @@ impl<I: Index> Span<I> {
     /// ```
     pub fn contains(self, other: Span<I>) -> bool {
         self.start() <= other.start() && other.end() <= self.end()
+    }
+
+    pub fn contains_pos(self, other: I) -> bool {
+        self.start() <= other && other <= self.end()
     }
 
     /// Return `Equal` if `self` contains `pos`, otherwise it returns `Less` if `pos` is before
@@ -309,6 +319,50 @@ pub struct Spanned<T, Pos> {
     pub value: T,
 }
 
+impl<T, Pos> From<T> for Spanned<T, Pos>
+where
+    Pos: Default,
+{
+    fn from(value: T) -> Self {
+        Spanned {
+            span: Span::default(),
+            value,
+        }
+    }
+}
+
+impl<T, Pos> PartialEq<T> for Spanned<T, Pos>
+where
+    T: PartialEq,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.value == *other
+    }
+}
+
+impl<T, Pos> std::ops::Deref for Spanned<T, Pos> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
+    }
+}
+
+impl<T, Pos> std::ops::DerefMut for Spanned<T, Pos> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.value
+    }
+}
+
+impl<T, U, Pos> AsRef<U> for Spanned<T, Pos>
+where
+    T: AsRef<U>,
+    U: ?Sized,
+{
+    fn as_ref(&self) -> &U {
+        self.value.as_ref()
+    }
+}
+
 impl<T, Pos> std::hash::Hash for Spanned<T, Pos>
 where
     T: std::hash::Hash,
@@ -357,10 +411,7 @@ pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos>
 where
     Pos: Ord,
 {
-    Spanned {
-        span: span(start, end),
-        value,
-    }
+    spanned(span(start, end), value)
 }
 
 pub trait HasSpan {

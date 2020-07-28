@@ -9,7 +9,7 @@ use base::{
     error::AsDiagnostic,
     pos::{self, BytePos, Spanned},
     source::FileId,
-    types::{ArcType, Filter, ToDoc, TypeExt, TypeFormatter},
+    types::{ArcType, AsId, Filter, ToDoc, TypeExt, TypeFormatter},
 };
 
 use crate::{
@@ -88,6 +88,7 @@ impl<I, T> From<crate::recursion_check::Error> for TypeError<I, T> {
 impl<I, T> fmt::Display for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
+    T::SpannedId: AsRef<str> + AsId<I>,
     T: TypeExt<Id = I>
         + fmt::Display
         + ast::HasMetadata
@@ -143,21 +144,21 @@ where
                 };
 
                 let arena = Arena::<()>::new();
-                let types = chain![&arena;
+                let types = chain![&arena,
                     "Expected:",
-                    chain![&arena;
+                    chain![&arena,
                         arena.space(),
                         TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
                     arena.hardline(),
                     "Found:",
-                    chain![&arena;
+                    chain![&arena,
                         arena.space(),
                         TypeFormatter::new(actual).filter(&filter).pretty(&arena)
                     ].nest(4).group()
                 ]
                 .group();
-                let doc = chain![&arena;
+                let doc = chain![&arena,
                     "Expected the following types to be equal",
                     arena.hardline(),
                     types,
@@ -225,6 +226,7 @@ where
 impl<I, T> AsDiagnostic for TypeError<I, T>
 where
     I: fmt::Display + AsRef<str> + Clone,
+    T::SpannedId: fmt::Display + AsRef<str> + AsId<I> + Clone,
     T: TypeExt<Id = I>
         + fmt::Display
         + ast::HasMetadata

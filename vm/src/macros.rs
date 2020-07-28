@@ -532,7 +532,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                 func,
                 args: _,
             } => match &func.value {
-                Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                Expr::Ident(ref id) if id.name.as_str().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,
@@ -540,7 +540,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                         ));
                     }
 
-                    let name = id.name.as_ref();
+                    let name = id.name.as_str();
                     match self.expander.macros.get(&name[..name.len() - 1]) {
                         // FIXME Avoid cloning args
                         Some(m) => Some(m.clone()),

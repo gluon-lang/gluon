@@ -87,7 +87,8 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             new => primitive!(1, std::regex::prim::new),
             is_match => primitive!(2, std::regex::prim::is_match),
             find => primitive!(2, std::regex::prim::find),
-            captures => primitive!(2, std::regex::prim::captures),
+            // Workaround MIR bug in rustc
+            captures => primitive!(2, "std.regex.prim.captures", |x, y| std::regex::prim::captures(x, y)),
             error_to_string => primitive!(1, std::regex::prim::error_to_string)
         },
     )
