@@ -2100,7 +2100,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
 
             debug_instruction(&self.stack, instruction_index, instr);
 
-            if self.hook.flags.contains(HookFlags::LINE_FLAG) {
+            if !self.hook.flags.is_empty() && self.hook.flags.contains(HookFlags::LINE_FLAG) {
                 ready!(self.run_hook(&function, instruction_index))?;
             }
 
