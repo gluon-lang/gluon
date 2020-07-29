@@ -358,13 +358,13 @@ vm_function_impl!([dyn Fn] $($args),*);
 
 impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
     fn arguments() -> VmIndex {
-        count!($($args),*) + R::extra_args()
+        count!($($args),*) + R::EXTRA_ARGS
     }
 }
 
 impl <'s, $($args,)* R: VmType> FunctionType for dyn Fn($($args),*) -> R + 's {
     fn arguments() -> VmIndex {
-        count!($($args),*) + R::extra_args()
+        count!($($args),*) + R::EXTRA_ARGS
     }
 }
 
@@ -400,10 +400,10 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         $(
             $args.push(&mut context)?;
         )*
-        for _ in 0..R::extra_args() {
+        for _ in 0..R::EXTRA_ARGS {
             0.push(&mut context).unwrap();
         }
-        let args = count!($($args),*) + R::extra_args();
+        let args = count!($($args),*) + R::EXTRA_ARGS;
         let context =  ready!(vm.call_function(cx, context.into_owned(), args))?;
         let mut context = context.unwrap();
         let result = {
@@ -510,12 +510,12 @@ where
         let mut context = vm.current_context();
         context.push(self.value.get_variant());
 
-        let mut arg_count = R::extra_args();
+        let mut arg_count = R::EXTRA_ARGS;
         for arg in args {
             arg_count += 1;
             arg.push(&mut context)?;
         }
-        for _ in 0..R::extra_args() {
+        for _ in 0..R::EXTRA_ARGS {
             0.push(&mut context).unwrap();
         }
         let context = ready!(vm.call_function(cx, context.into_owned(), arg_count))?;
@@ -561,9 +561,7 @@ impl<T: VmType> VmType for TypedBytecode<T> {
         T::make_forall_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {

@@ -321,9 +321,7 @@ impl<T: VmType> VmType for Unrooted<T> {
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -460,9 +458,7 @@ pub trait VmType {
     /// How many extra arguments a function returning this type requires.
     /// Used for abstract types which when used in return position should act like they still need
     /// more arguments before they are called
-    fn extra_args() -> VmIndex {
-        0
-    }
+    const EXTRA_ARGS: VmIndex = 0;
 }
 
 /// Trait which allows a possibly asynchronous rust value to be pushed to the virtual machine
@@ -617,9 +613,7 @@ impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 /// Wrapper which extracts a `Userdata` value from gluon
@@ -640,9 +634,7 @@ where
         T::make_forall_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
@@ -783,9 +775,7 @@ where
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
@@ -1470,9 +1460,7 @@ where
     fn make_type(vm: &Thread) -> ArcType {
         <F::Output>::make_type(vm)
     }
-    fn extra_args() -> VmIndex {
-        <F::Output>::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = F::Output::EXTRA_ARGS;
 }
 
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
@@ -1519,9 +1507,7 @@ impl<T: VmType, E> VmType for RuntimeResult<T, E> {
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, E> {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -1552,9 +1538,8 @@ where
         let alias = env.find_type_info("std.io.IO").unwrap();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
-    fn extra_args() -> VmIndex {
-        1
-    }
+
+    const EXTRA_ARGS: VmIndex = 1;
 }
 
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for IO<T> {
@@ -1750,9 +1735,7 @@ impl<T: VmType> VmType for Pushed<T> {
         T::make_forall_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, T: VmType> Pushable<'vm> for Pushed<T> {
