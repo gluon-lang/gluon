@@ -512,7 +512,7 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(construct_gc!(ValueRepr::Thread(@&self.thread)));
         Ok(())
     }
@@ -932,7 +932,7 @@ impl Thread {
         T: Pushable<'vm>,
     {
         let mut context = self.current_context();
-        v.push(&mut context)
+        v.vm_push(&mut context)
     }
 
     /// Removes the top value from the stack
@@ -1618,7 +1618,7 @@ impl Context {
                 context.stack().release_lock(lock);
                 let context =
                     mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(&mut context);
-                value.push(context)
+                value.vm_push(context)
             };
             Poll::Ready(result.map(|()| context.into_owned()))
         });

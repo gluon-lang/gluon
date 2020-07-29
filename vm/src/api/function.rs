@@ -77,7 +77,7 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
 where
     F: FunctionType + VmType,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         // Map rust modules into gluon modules
         let name = if let Some(i) = self.name.rfind("::<") {
             &self.name[..i]
@@ -111,7 +111,7 @@ impl CPrimitive {
 }
 
 impl<'vm> Pushable<'vm> for CPrimitive {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.context().push_new_alloc(Move(ExternFunction {
             id: self.id,
             args: self.args,
@@ -196,7 +196,7 @@ where
     T: VmRootInternal,
     F: VmType,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(self.value.get_variant());
         Ok(())
     }
@@ -292,7 +292,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
                     Ok(x) => x,
                     Err(err) => {
                         drop(stack);
-                        err.to_string().push(&mut context).unwrap();
+                        err.to_string().vm_push(&mut context).unwrap();
                         return Status::Error;
                     }
                 };
@@ -398,10 +398,10 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         let mut context = vm.current_context();
         context.push(self.value.get_variant());
         $(
-            $args.push(&mut context)?;
+            $args.vm_push(&mut context)?;
         )*
         for _ in 0..R::EXTRA_ARGS {
-            0.push(&mut context).unwrap();
+            0.vm_push(&mut context).unwrap();
         }
         let args = count!($($args),*) + R::EXTRA_ARGS;
         let context =  ready!(vm.call_function(cx, context.into_owned(), args))?;
@@ -510,10 +510,10 @@ where
         let mut arg_count = R::EXTRA_ARGS;
         for arg in args {
             arg_count += 1;
-            arg.push(&mut context)?;
+            arg.vm_push(&mut context)?;
         }
         for _ in 0..R::EXTRA_ARGS {
-            0.push(&mut context).unwrap();
+            0.vm_push(&mut context).unwrap();
         }
         let context = ready!(vm.call_function(cx, context.into_owned(), arg_count))?;
         let mut context = context.unwrap();
@@ -562,7 +562,7 @@ impl<T: VmType> VmType for TypedBytecode<T> {
 }
 
 impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let closure = {
             let thread = context.thread();
             let mut compiled_module = CompiledModule::from(CompiledFunction::new(
@@ -576,6 +576,6 @@ impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
                 .global_env()
                 .new_global_thunk(thread, compiled_module)?
         };
-        closure.push(context)
+        closure.vm_push(context)
     }
 }

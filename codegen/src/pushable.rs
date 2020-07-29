@@ -47,7 +47,7 @@ fn derive_struct(
         Fields::Unnamed(_) if field_idents.len() == 1 => {
             let ty = &field_types[0];
             let push_impl = quote! {
-                <#ty as _gluon_api::Pushable<'__vm>>::push(self.0, ctx)?;
+                <#ty as _gluon_api::Pushable<'__vm>>::vm_push(self.0, ctx)?;
             };
             return gen_impl(&container, &ident, generics, push_impl);
         }
@@ -163,7 +163,7 @@ fn gen_impl(
             impl #impl_generics _gluon_api::Pushable<'__vm> for #ident #ty_generics
             #where_clause #(#pushable_bounds),*
             {
-                fn push(self, ctx: &mut _gluon_thread::ActiveThread<'__vm>) -> _GluonResult<()> {
+                fn vm_push(self, ctx: &mut _gluon_thread::ActiveThread<'__vm>) -> _GluonResult<()> {
                     #push_impl
                     Ok(())
                 }
@@ -182,7 +182,7 @@ fn gen_push_impl(
     // push each field onto the stack
     let stack_pushes = field_idents.iter().zip(field_types).map(|(ident, ty)| {
         quote! {
-            <#ty as _gluon_api::Pushable<'__vm>>::push(#ident, ctx)?;
+            <#ty as _gluon_api::Pushable<'__vm>>::vm_push(#ident, ctx)?;
         }
     });
 

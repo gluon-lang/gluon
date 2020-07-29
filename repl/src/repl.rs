@@ -302,8 +302,8 @@ macro_rules! define_vmtype {
 define_vmtype! { ReadlineError }
 
 impl<'vm> Pushable<'vm> for ReadlineError {
-    fn push(self, context: &mut ActiveThread<'vm>) -> VMResult<()> {
-        gluon::vm::api::ser::Ser(self).push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> VMResult<()> {
+        gluon::vm::api::ser::Ser(self).vm_push(context)
     }
 }
 

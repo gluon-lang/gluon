@@ -369,8 +369,8 @@ where
     T: Pushable<'vm>,
     V: ?Sized,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.vm_push(context)
     }
 }
 
