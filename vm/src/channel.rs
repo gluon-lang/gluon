@@ -229,7 +229,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
         };
         value_variant.clone().push(&mut context)?;
         context.push(ValueRepr::Int(0));
-        context.context().stack.enter_scope(1, &*callable);
+        context.context().stack.enter_scope(1, &*callable)?;
     }
     Ok(thread)
 }
