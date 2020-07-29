@@ -1815,22 +1815,18 @@ impl<'b> OwnedContext<'b> {
                 }) => {
                     let instruction_index = *instruction_index;
 
-                    if context.stack.stack().get_frames().len() == 0 {
-                        return Ok(Some(self)).into();
-                    } else {
-                        debug!(
-                            "Continue with {}\nAt: {}/{}\n{:?}",
-                            closure.function.name,
-                            instruction_index,
-                            closure.function.instructions.len(),
-                            &context.stack[..]
-                        );
+                    debug!(
+                        "Continue with {}\nAt: {}/{}\n{:?}",
+                        closure.function.name,
+                        instruction_index,
+                        closure.function.instructions.len(),
+                        &context.stack[..]
+                    );
 
-                        let closure_context = context.from_state();
-                        match ready!(closure_context.execute_())? {
-                            Some(new_context) => context = new_context,
-                            None => return Ok(None).into(),
-                        }
+                    let closure_context = context.from_state();
+                    match ready!(closure_context.execute_())? {
+                        Some(new_context) => context = new_context,
+                        None => return Ok(None).into(),
                     }
                 }
             };
