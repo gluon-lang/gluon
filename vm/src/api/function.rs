@@ -384,11 +384,11 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
 {
     #[allow(non_snake_case)]
     pub fn call(&mut self $(, $args: $args)*) -> Result<R> {
-        $(
-            let mut $args = Some($args);
-        )*
-        block_on_sync(future::poll_fn(|cx| {
-            self.call_first(cx, $($args.take().unwrap()),*)
+        block_on_sync(future::lazy(|cx| {
+            match self.call_first(cx, $($args),*) {
+                Poll::Ready(r) => r,
+                Poll::Pending => Err(Error::Message("Unexpected async".into())).into(),
+            }
         }))
     }
 
@@ -431,10 +431,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         ) -> Result<R>
     {
         use crate::thread::Execute;
-        $(
-            let mut $args = Some($args);
-        )*
-        match future::poll_fn(|cx| Poll::Ready(self.call_first(cx, $($args.take().unwrap()),*))).await {
+        match future::lazy(|cx| self.call_first(cx, $($args),*)).await {
             Poll::Ready(result) => result,
             Poll::Pending => {
                 let vm = self.value.vm().root_thread();
