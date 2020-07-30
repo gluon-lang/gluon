@@ -3,7 +3,7 @@ use support::*;
 
 mod support;
 
-use gluon::{self, query::Compilation, vm::core::tests::check_expr_eq, ThreadExt};
+use gluon::{self, query::{Compilation, AsyncCompilation}, vm::core::tests::check_expr_eq, ThreadExt};
 
 #[tokio::test]
 async fn inline_cross_module() {
@@ -24,6 +24,7 @@ async fn inline_cross_module() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -69,6 +70,7 @@ num.(+) 3
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -98,6 +100,7 @@ async fn inline_across_two_modules() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -127,6 +130,7 @@ async fn prune_prelude() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -161,6 +165,7 @@ async fn prune_factorial() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -198,6 +203,7 @@ mod.(+) (no_inline 1) 2
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -236,6 +242,7 @@ match A with
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -267,6 +274,7 @@ m.(<)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await
@@ -300,6 +308,7 @@ f (Some 1)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let mut db = thread.get_database();
+    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
     let core_expr = db
         .core_expr("test".into(), None)
         .await

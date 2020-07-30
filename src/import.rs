@@ -595,11 +595,15 @@ where
         Box::pin(async move {
             Ok(From::from(move || {
                 async move {
-                    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
-                    db.import(modulename)
-                        .await
-                        .map_err(|err| MacroError::message(err.to_string()))
-                        .map(move |id| pos::spanned(span, Expr::Ident(id)))
+                    let result = {
+                        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+                        db.import(modulename)
+                            .await
+                            .map_err(|err| MacroError::message(err.to_string()))
+                            .map(move |id| pos::spanned(span, Expr::Ident(id)))
+                    };
+                    drop(db);
+                    result
                 }
                 .boxed()
             }))

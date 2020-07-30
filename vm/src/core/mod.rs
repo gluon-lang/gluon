@@ -1544,9 +1544,7 @@ fn get_return_type(
         .remove_forall()
         .as_function()
         .map(|t| Cow::Borrowed(t.1))
-        .unwrap_or_else(|| {
-            panic!("Unexpected type {} is not a function", function_type);
-        });
+        .ok_or_else(|| format!("Unexpected type {} is not a function", function_type))?;
 
     get_return_type(env, &ret, arg_count - 1)
 }

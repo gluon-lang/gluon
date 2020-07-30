@@ -182,9 +182,27 @@ impl TestCase {
     }
 }
 
+async fn catch_unwind_test(
+    name: String,
+    f: impl Future<Output = tensile::Test<Error>>,
+) -> tensile::Test<Error> {
+    std::panic::AssertUnwindSafe(f)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|err| {
+            let err = Error::from(
+                err.downcast::<String>()
+                    .map(|s| *s)
+                    .or_else(|e| e.downcast::<&str>().map(|s| String::from(&s[..])))
+                    .unwrap_or_else(|_| "Unknown panic".to_string()),
+            );
+            tensile::test(name, Err(err))
+        })
+}
+
 async fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
     let text = fs::read_to_string(filename).await?;
-    let (De(test), _) = vm.run_expr_async(&name, &text).await?;
+    let (De(test), _) = std::panic::AssertUnwindSafe(vm.run_expr_async(&name, &text)).await?;
     Ok(test)
 }
 
@@ -306,7 +324,7 @@ async fn run_doc_tests<'t>(
         .into_iter()
         .map(move |(test_name, test_source)| {
             let mut convert_test_fn = convert_test_fn.clone();
-            async move {
+            catch_unwind_test(test_name.clone(), async move {
                 let vm = vm.new_thread().unwrap();
 
                 match vm
@@ -320,7 +338,7 @@ async fn run_doc_tests<'t>(
                         tensile::test(test_name, || Err(err.0.into()))
                     }
                 }
-            }
+            })
         })
         .collect::<stream::FuturesOrdered<_>>()
         .collect()
@@ -366,7 +384,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
-            pool.spawn_with_handle(async move {
+            pool.spawn_with_handle(catch_unwind_test(name.clone(), async move {
                 match make_test(&vm, &name, &filename).await {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
@@ -374,7 +392,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         tensile::test(name2, || Err(err.0))
                     }
                 }
-            })
+            }))
             .expect("Could not spawn test future")
         })
         .collect::<stream::FuturesOrdered<_>>()
@@ -404,7 +422,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
         .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
-            pool.spawn_with_handle(async move {
+            pool.spawn_with_handle(catch_unwind_test(name.clone(), async move {
                 match run_doc_tests(&vm, &name, &filename).await {
                     Ok(tests) => tensile::group(name.clone(), tests),
                     Err(err) => {
@@ -412,7 +430,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         tensile::test(name.clone(), || Err(err.0))
                     }
                 }
-            })
+            }))
             .expect("Could not spawn test future")
         })
         .collect::<stream::FuturesOrdered<_>>()
