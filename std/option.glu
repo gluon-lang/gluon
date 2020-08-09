@@ -23,6 +23,16 @@ let unwrap opt : Option a -> a =
     | Some x -> x
     | None -> error "Option was None"
 
+let unwrap_or default opt : a -> Option a -> a =
+    match opt with
+    | Some x -> x
+    | None -> default
+
+let to_result err opt : e -> Option a -> Result e a =
+    match opt with
+    | Some x -> Ok x
+    | None -> Err err
+
 let former =
     let semigroup : Semigroup (Option a) = {
         append = \l r ->
@@ -148,7 +158,11 @@ let traversable : Traversable Option = {
 
 {
     Option,
+
     unwrap,
+    unwrap_or,
+    to_result,
+
     semigroup,
     monoid,
     former,
