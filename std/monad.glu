@@ -47,10 +47,19 @@ let (>>=) x f : [Monad m] -> m a -> (a -> m b) -> m b = flat_map f x
 
 let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
+// Kleisli composition
+#[infix(right, 9)]
+let (<=<) g f : [Monad m] -> (b -> m c) -> (a -> m b) -> m c = flat_map g << f
+
+#[infix(left, 9)]
+let (>=>) f g : [Monad m] -> (a -> m b) -> (b -> m c) -> m c = f >> flat_map g
+
 {
     Monad,
     flat_map,
     (>>=),
     (=<<),
     join,
+    (<=<),
+    (>=>)
 }
