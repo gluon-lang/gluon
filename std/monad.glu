@@ -49,10 +49,10 @@ let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
 // Kleisli composition
 #[infix(right, 9)]
-let (<=<) g f x : [Monad m] -> (b -> m c) -> (a -> m b) -> (a -> m c) = g =<< f x
+let (<=<) g f x : [Monad m] -> (b -> m c) -> (a -> m b) -> a -> m c = g =<< f x
 
 #[infix(left, 9)]
-let (>=>) f g x : [Monad m] -> (a -> m b) -> (b -> m c) -> (a -> m c) = f x >>= g
+let (>=>) f g x : [Monad m] -> (a -> m b) -> (b -> m c) -> a -> m c = f x >>= g
 
 {
     Monad,
@@ -61,5 +61,5 @@ let (>=>) f g x : [Monad m] -> (a -> m b) -> (b -> m c) -> (a -> m c) = f x >>= 
     (=<<),
     join,
     (<=<),
-    (>=>)
+    (>=>),
 }
