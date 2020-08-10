@@ -18,7 +18,7 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2020-03-12
+  - rust: nightly-2020-07-26
     #  - rust: beta
   - rust: stable
     env: ARCH=i686
