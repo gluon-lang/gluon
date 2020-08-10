@@ -373,72 +373,76 @@ fn eval_line(
 }
 
 async fn eval_line_(vm: RootedThread, line: &str) -> gluon::Result<()> {
-    let mut db = vm.get_database();
-    let mut db = gluon::salsa::OwnedDb::<dyn gluon::query::Compilation>::from(&mut db);
-    let mut module_compiler = vm.module_compiler(&mut db);
     let mut is_let_binding = false;
-    let mut eval_expr = {
-        let eval_expr = {
-            mk_ast_arena!(arena);
-            let repl_line = {
-                let result = {
-                    let filemap = vm.get_database().add_filemap("line", line);
-                    let mut module =
-                        SymbolModule::new("line".into(), module_compiler.mut_symbols());
-                    parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap)
+    let mut eval_expr;
+    let value = {
+        let mut db = vm.get_database();
+        let mut db = gluon::salsa::OwnedDb::<dyn gluon::query::Compilation>::from(&mut db);
+        let mut module_compiler = vm.module_compiler(&mut db);
+        eval_expr = {
+            let eval_expr = {
+                mk_ast_arena!(arena);
+                let repl_line = {
+                    let result = {
+                        let filemap = vm.get_database().add_filemap("line", line);
+                        let mut module =
+                            SymbolModule::new("line".into(), module_compiler.mut_symbols());
+                        parse_partial_repl_line((*arena).borrow(), &mut module, &*filemap)
+                    };
+                    match result {
+                        Ok(x) => x,
+                        Err((_, err)) => {
+                            let code_map = db.code_map();
+                            return Err(InFile::new(code_map, err).into());
+                        }
+                    }
                 };
-                match result {
-                    Ok(x) => x,
-                    Err((_, err)) => {
-                        let code_map = vm.get_database().code_map();
-                        return Err(InFile::new(code_map, err).into());
+                match repl_line {
+                    None => return Ok(()),
+                    Some(ReplLine::Expr(expr)) => RootExpr::new(arena.clone(), arena.alloc(expr)),
+                    Some(ReplLine::Let(let_binding)) => {
+                        is_let_binding = true;
+                        // We can't compile function bindings by only looking at `let_binding.expr`
+                        // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
+                        // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
+                        let id = match let_binding.name.value {
+                            Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
+                            _ => {
+                                let id = Symbol::from("repl_temp");
+                                let_binding.name = pos::spanned(
+                                    let_binding.name.span,
+                                    Pattern::As(
+                                        pos::spanned(let_binding.name.span, id.clone()),
+                                        arena.alloc(let_binding.name.ast_clone(arena.borrow())),
+                                    ),
+                                );
+                                TypedIdent {
+                                    name: id,
+                                    typ: let_binding.resolved_type.clone(),
+                                }
+                            }
+                        };
+                        let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
+                        let expr = Expr::LetBindings(
+                            ast::ValueBindings::Plain(let_binding),
+                            arena.alloc(id),
+                        );
+                        let eval_expr = RootExpr::new(
+                            arena.clone(),
+                            arena.alloc(pos::spanned2(0.into(), 0.into(), expr)),
+                        );
+                        eval_expr
                     }
                 }
             };
-            match repl_line {
-                None => return Ok(()),
-                Some(ReplLine::Expr(expr)) => RootExpr::new(arena.clone(), arena.alloc(expr)),
-                Some(ReplLine::Let(let_binding)) => {
-                    is_let_binding = true;
-                    // We can't compile function bindings by only looking at `let_binding.expr`
-                    // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
-                    // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
-                    let id = match let_binding.name.value {
-                        Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
-                        _ => {
-                            let id = Symbol::from("repl_temp");
-                            let_binding.name = pos::spanned(
-                                let_binding.name.span,
-                                Pattern::As(
-                                    pos::spanned(let_binding.name.span, id.clone()),
-                                    arena.alloc(let_binding.name.ast_clone(arena.borrow())),
-                                ),
-                            );
-                            TypedIdent {
-                                name: id,
-                                typ: let_binding.resolved_type.clone(),
-                            }
-                        }
-                    };
-                    let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-                    let expr =
-                        Expr::LetBindings(ast::ValueBindings::Plain(let_binding), arena.alloc(id));
-                    let eval_expr = RootExpr::new(
-                        arena.clone(),
-                        arena.alloc(pos::spanned2(0.into(), 0.into(), expr)),
-                    );
-                    eval_expr
-                }
-            }
+            eval_expr.try_into_send().unwrap()
         };
-        eval_expr.try_into_send().unwrap()
+
+        (&mut eval_expr)
+            .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
+            .await?
     };
-
-    let ExecuteValue { value, typ, .. } = (&mut eval_expr)
-        .run_expr(&mut module_compiler, vm.clone(), "line", line, None)
-        .await?;
-
-    drop(db);
+    let ExecuteValue { value, typ, .. } = value;
 
     if is_let_binding {
         let mut expr = eval_expr.expr();
