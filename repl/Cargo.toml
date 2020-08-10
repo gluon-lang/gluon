@@ -36,7 +36,7 @@ structopt = "0.3"
 log = "0.4"
 env_logger = { version = "0.7", optional = true }
 lazy_static = "1"
-rustyline = "6"
+rustyline = "=6.0.0"
 walkdir = "2"
 codespan = "0.9"
 codespan-reporting = "0.9"
