@@ -12,7 +12,7 @@ let { Applicative } = import! std.applicative
 let { Alternative } = import! std.alternative
 let { Show } = import! std.show
 let { Bool } = import! std.bool
-let { Option } = import! std.types
+let { Option, Result } = import! std.types
 let string @ { ? } = import! std.string
 let { Foldable } = import! std.foldable
 let { (<>) } = import! std.semigroup
@@ -22,6 +22,16 @@ let unwrap opt : Option a -> a =
     match opt with
     | Some x -> x
     | None -> error "Option was None"
+
+let unwrap_or default opt : a -> Option a -> a =
+    match opt with
+    | Some x -> x
+    | None -> default
+
+let to_result err opt : e -> Option a -> Result e a =
+    match opt with
+    | Some x -> Ok x
+    | None -> Err err
 
 let former =
     let semigroup : Semigroup (Option a) = {
@@ -148,7 +158,11 @@ let traversable : Traversable Option = {
 
 {
     Option,
+
     unwrap,
+    unwrap_or,
+    to_result,
+
     semigroup,
     monoid,
     former,
