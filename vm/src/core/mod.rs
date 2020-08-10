@@ -668,7 +668,7 @@ impl<T> ArenaExt<T> for Arena<T> {
         I: IntoIterator<Item = T>,
         T: Default,
     {
-        use std::ptr;
+        use std::{mem::MaybeUninit, ptr};
 
         let iter = iter.into_iter();
 
@@ -694,7 +694,7 @@ impl<T> ArenaExt<T> for Arena<T> {
             let elems = self.alloc_uninitialized(len);
 
             {
-                let elems = elems as *mut T;
+                let elems = elems as *mut _ as *mut MaybeUninit<T>;
                 let mut fill = FillRemainingOnDrop {
                     ptr: elems as *mut T,
                     end: elems.add(len) as *mut T,
@@ -707,6 +707,7 @@ impl<T> ArenaExt<T> for Arena<T> {
                 }
             }
 
+            let elems = elems as *mut _ as *mut [T];
             &mut *elems
         }
     }
@@ -1061,7 +1062,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     let mut reordered_args = SmallVec::<[_; 16]>::new();
 
                     let mut overridden_fields = FnvMap::default();
-                    for (field, arg) in exprs.iter().zip(args.drain()) {
+                    for (field, arg) in exprs.iter().zip(args.drain(..)) {
                         let field_name = field.name.value.declared_name();
                         if base_fields.contains(field_name) {
                             overridden_fields.insert(field_name, arg);
