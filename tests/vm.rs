@@ -1091,3 +1091,15 @@ let tell : Eff [| writer : Writer | r |] () =
 "#,
 ()
 }
+
+test_expr! { issue_863,
+r"
+#[infix(right, 0)]
+let (<|) f x : (a -> b) -> a -> b = f x
+
+let g f x = x
+let f a =
+    g a <| f a
+{ f }
+"
+}

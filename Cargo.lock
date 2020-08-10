@@ -601,30 +601,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69323bff1fb41c635347b8ead484a5ca6c3f11914d784170b158d8449ab07f8e"
-dependencies = [
- "cfg-if",
- "crossbeam-channel",
- "crossbeam-deque",
- "crossbeam-epoch",
- "crossbeam-queue",
- "crossbeam-utils 0.7.2",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cced8691919c02aac3cb0a1bc2e9b73d89e832bf9a06fc579d4e71b68a2da061"
-dependencies = [
- "crossbeam-utils 0.7.2",
- "maybe-uninit",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1228,28 +1204,28 @@ dependencies = [
 
 [[package]]
 name = "gluon-salsa"
-version = "0.14.2"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82259f6f7d8f8cf33b4b40bbd3da8119a147827e6563c5a024034482f6e8d28f"
+checksum = "4644d498c04e71e60947f837bf9729379bd922e5b745c36bea5a4ce03e551fe5"
 dependencies = [
- "async-trait",
- "crossbeam",
- "futures 0.3.5",
+ "crossbeam-utils 0.7.2",
+ "futures-channel",
+ "futures-util",
  "gluon-salsa-macros",
  "indexmap",
  "lock_api 0.4.0",
  "log 0.4.8",
+ "oorandom",
  "parking_lot 0.11.0",
- "rand 0.7.3",
  "rustc-hash",
  "smallvec 1.4.0",
 ]
 
 [[package]]
 name = "gluon-salsa-macros"
-version = "0.14.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "118ca3427c8528856c15a83b574ee52a95ed2647e4c77cd0191485c2e014ed88"
+checksum = "807a2b17a92e21080379cf696063642c70caea95c04b547320d37fd6844b8e0f"
 dependencies = [
  "heck",
  "proc-macro2 1.0.18",
@@ -2700,7 +2676,7 @@ dependencies = [
  "rand_isaac",
  "rand_jitter",
  "rand_os",
- "rand_pcg 0.1.2",
+ "rand_pcg",
  "rand_xorshift 0.1.1",
  "winapi 0.3.9",
 ]
@@ -2716,7 +2692,6 @@ dependencies = [
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
  "rand_hc 0.2.0",
- "rand_pcg 0.2.1",
 ]
 
 [[package]]
@@ -2823,15 +2798,6 @@ checksum = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
 dependencies = [
  "autocfg 0.1.7",
  "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_pcg"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16abd0c1b639e9eb4d7c50c0b8100b0d0f849be2349829c740fe8e6eb4816429"
-dependencies = [
- "rand_core 0.5.1",
 ]
 
 [[package]]

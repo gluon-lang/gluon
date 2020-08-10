@@ -10,6 +10,21 @@ use gluon::{
 };
 
 // Benchmarks function calls
+
+fn identity(b: &mut Bencher) {
+    let vm = new_vm();
+    let text = r#"
+    let id x = x
+    id
+    "#;
+    vm.load_script("id", text).unwrap();
+    let mut id: FunctionRef<fn(i32) -> i32> = vm.get_global("id").unwrap();
+    b.iter(|| {
+        let result = id.call(20).unwrap();
+        black_box(result)
+    })
+}
+
 fn factorial(b: &mut Bencher) {
     let vm = new_vm();
     let text = r#"
@@ -81,6 +96,7 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
 }
 
 fn function_call_benchmark(c: &mut Criterion) {
+    c.bench_function("identity", identity);
     c.bench_function("factorial", factorial);
     c.bench_function("factorial tail call", factorial_tail_call);
     c.bench_function("gluon rust boundary overhead", gluon_rust_boundary_overhead);

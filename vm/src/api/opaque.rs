@@ -361,9 +361,7 @@ where
         V::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        V::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = V::EXTRA_ARGS;
 }
 
 impl<'s, 'value, 'vm, T, V> Pushable<'vm> for Opaque<T, V>
@@ -371,8 +369,8 @@ where
     T: Pushable<'vm>,
     V: ?Sized,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.vm_push(context)
     }
 }
 

@@ -512,7 +512,7 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(construct_gc!(ValueRepr::Thread(@&self.thread)));
         Ok(())
     }
@@ -692,7 +692,7 @@ impl RootedThread {
         // Enter the top level scope
         {
             let mut context = vm.context.lock().unwrap();
-            StackFrame::<State>::new_frame(&mut context.stack, 0, State::Unknown);
+            StackFrame::<State>::new_frame(&mut context.stack, 0, State::Unknown).unwrap();
         }
         vm
     }
@@ -758,7 +758,7 @@ impl Thread {
         // Enter the top level scope
         {
             let mut context = vm.owned_context();
-            StackFrame::<State>::new_frame(&mut context.stack, 0, State::Unknown);
+            StackFrame::<State>::new_frame(&mut context.stack, 0, State::Unknown).unwrap();
         }
         let ptr = {
             let mut context = self.context();
@@ -932,7 +932,7 @@ impl Thread {
         T: Pushable<'vm>,
     {
         let mut context = self.current_context();
-        v.push(&mut context)
+        v.vm_push(&mut context)
     }
 
     /// Removes the top value from the stack
@@ -1164,7 +1164,7 @@ impl ThreadInternal for Thread {
                         @closure: gc::Borrow::new(closure),
                         instruction_index: 0,
                     }),
-                );
+                )?;
                 let mut context = match context.execute(cx) {
                     Poll::Pending => {
                         fut = Some(Execute::new(self.root_thread()));
@@ -1198,7 +1198,9 @@ impl ThreadInternal for Thread {
                         .stack
                         .extend(&[Variants::int(0), value.clone(), Variants::int(0)]);
 
-                    context.borrow_mut().enter_scope(2, &State::Unknown, false);
+                    context
+                        .borrow_mut()
+                        .enter_scope(2, &State::Unknown, false)?;
                     context = match self.call_function(cx, context, 1) {
                         Poll::Pending => {
                             fut = Some(Execute::new(self.root_thread()));
@@ -1497,7 +1499,6 @@ pub struct Context {
     pub(crate) gc: Gc,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     hook: Hook,
-    max_stack_size: VmIndex,
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
@@ -1514,7 +1515,6 @@ impl Context {
                 flags: HookFlags::empty(),
                 previous_instruction_index: usize::max_value(),
             },
-            max_stack_size: VmIndex::max_value(),
             poll_fns: Vec::new(),
         }
     }
@@ -1590,7 +1590,7 @@ impl Context {
     }
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
-        self.max_stack_size = limit;
+        self.stack.set_max_stack_size(limit);
     }
 
     pub fn stacktrace(&self, frame_level: usize) -> crate::stack::Stacktrace {
@@ -1618,7 +1618,7 @@ impl Context {
                 context.stack().release_lock(lock);
                 let context =
                     mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(&mut context);
-                value.push(context)
+                value.vm_push(context)
             };
             Poll::Ready(result.map(|()| context.into_owned()))
         });
@@ -1813,33 +1813,20 @@ impl<'b> OwnedContext<'b> {
                     closure,
                     instruction_index,
                 }) => {
-                    let max_stack_size = context.max_stack_size;
                     let instruction_index = *instruction_index;
-                    let function_size = closure.function.max_stack_size;
 
-                    // Before entering a function check that the stack cannot exceed `max_stack_size`
-                    if instruction_index == 0
-                        && context.stack.stack().len() + function_size > max_stack_size
-                    {
-                        return Err(Error::StackOverflow(max_stack_size)).into();
-                    }
+                    debug!(
+                        "Continue with {}\nAt: {}/{}\n{:?}",
+                        closure.function.name,
+                        instruction_index,
+                        closure.function.instructions.len(),
+                        &context.stack[..]
+                    );
 
-                    if context.stack.stack().get_frames().len() == 0 {
-                        return Ok(Some(self)).into();
-                    } else {
-                        debug!(
-                            "Continue with {}\nAt: {}/{}\n{:?}",
-                            closure.function.name,
-                            instruction_index,
-                            closure.function.instructions.len(),
-                            &context.stack[..]
-                        );
-
-                        let closure_context = context.from_state();
-                        match ready!(closure_context.execute_())? {
-                            Some(new_context) => context = new_context,
-                            None => return Ok(None).into(),
-                        }
+                    let closure_context = context.from_state();
+                    match ready!(closure_context.execute_())? {
+                        Some(new_context) => context = new_context,
+                        None => return Ok(None).into(),
                     }
                 }
             };
@@ -1988,7 +1975,6 @@ impl<'b> OwnedContext<'b> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             hook: &mut context.hook,
-            max_stack_size: context.max_stack_size,
             poll_fns: &context.poll_fns,
         }
     }
@@ -2023,7 +2009,6 @@ pub struct ExecuteContext<'b, 'gc, S: StackState = ClosureState> {
     pub stack: StackFrame<'b, S>,
     pub gc: &'gc mut Gc,
     hook: &'b mut Hook,
-    max_stack_size: VmIndex,
     poll_fns: &'b [PollFn],
 }
 
@@ -2115,7 +2100,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
 
             debug_instruction(&self.stack, instruction_index, instr);
 
-            if self.hook.flags.contains(HookFlags::LINE_FLAG) {
+            if !self.hook.flags.is_empty() && self.hook.flags.contains(HookFlags::LINE_FLAG) {
                 ready!(self.run_hook(&function, instruction_index))?;
             }
 
@@ -2561,7 +2546,6 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc, State> {
             stack: self.stack.from_state(),
             gc: self.gc,
             hook: self.hook,
-            max_stack_size: self.max_stack_size,
             poll_fns: self.poll_fns,
         }
     }
@@ -2577,25 +2561,28 @@ where
             stack: self.stack.to_state(),
             gc: self.gc,
             hook: self.hook,
-            max_stack_size: self.max_stack_size,
             poll_fns: self.poll_fns,
         }
     }
 
-    fn enter_scope<T>(self, args: VmIndex, state: &T, excess: bool) -> ExecuteContext<'b, 'gc, T>
+    fn enter_scope<T>(
+        self,
+        args: VmIndex,
+        state: &T,
+        excess: bool,
+    ) -> Result<ExecuteContext<'b, 'gc, T>>
     where
         T: StackState,
     {
-        let stack = self.stack.enter_scope_excess(args, state.clone(), excess);
+        let stack = self.stack.enter_scope_excess(args, state.clone(), excess)?;
         self.hook.previous_instruction_index = usize::max_value();
-        ExecuteContext {
+        Ok(ExecuteContext {
             thread: self.thread,
             stack,
             gc: self.gc,
             hook: self.hook,
-            max_stack_size: self.max_stack_size,
             poll_fns: self.poll_fns,
-        }
+        })
     }
 
     fn exit_scope(
@@ -2616,7 +2603,6 @@ where
                     stack,
                     gc: self.gc,
                     hook: self.hook,
-                    max_stack_size: self.max_stack_size,
                     poll_fns: self.poll_fns,
                 })
             }
@@ -2625,7 +2611,6 @@ where
                 stack: StackFrame::current(stack),
                 gc: self.gc,
                 hook: self.hook,
-                max_stack_size: self.max_stack_size,
                 poll_fns: self.poll_fns,
             }),
         }
@@ -2635,28 +2620,30 @@ where
         self,
         closure: &GcPtr<ClosureData>,
         excess: bool,
-    ) -> ExecuteContext<'b, 'gc, State> {
+    ) -> Result<ExecuteContext<'b, 'gc, State>> {
         info!("Call {} {:?}", closure.function.name, &self.stack[..]);
-        self.enter_scope(
-            closure.function.args,
-            &*construct_gc!(ClosureState {
-                @closure,
-                instruction_index: 0,
-            }),
-            excess,
-        )
-        .to_state()
+        Ok(self
+            .enter_scope(
+                closure.function.args,
+                &*construct_gc!(ClosureState {
+                    @closure,
+                    instruction_index: 0,
+                }),
+                excess,
+            )?
+            .to_state())
     }
 
     fn enter_extern(
         self,
         ext: &GcPtr<ExternFunction>,
         excess: bool,
-    ) -> ExecuteContext<'b, 'gc, State> {
+    ) -> Result<ExecuteContext<'b, 'gc, State>> {
         assert!(self.stack.len() >= ext.args + 1);
         info!("Call {} {:?}", ext.id, &self.stack[..]);
-        self.enter_scope(ext.args, &*ExternState::new(ext), excess)
-            .to_state()
+        Ok(self
+            .enter_scope(ext.args, &*ExternState::new(ext), excess)?
+            .to_state())
     }
 
     fn call_function_with_upvars(
@@ -2664,14 +2651,14 @@ where
         args: VmIndex,
         required_args: VmIndex,
         callable: &Callable,
-        enter_scope: impl FnOnce(Self, bool) -> ExecuteContext<'b, 'gc, State>,
+        enter_scope: impl FnOnce(Self, bool) -> Result<ExecuteContext<'b, 'gc, State>>,
     ) -> Result<ExecuteContext<'b, 'gc, State>> {
         trace!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
             &(*self.stack)[(function_index + 1) as usize..]
         });
         match args.cmp(&required_args) {
-            Ordering::Equal => Ok(enter_scope(self, false)),
+            Ordering::Equal => enter_scope(self, false),
             Ordering::Less => {
                 let app = {
                     let fields = &self.stack[self.stack.len() - args..];
@@ -2707,7 +2694,7 @@ where
                     &(*self.stack)[..],
                     self.stack.stack().get_frames()
                 );
-                Ok(enter_scope(self, true))
+                enter_scope(self, true)
             }
         }
     }
@@ -2908,7 +2895,6 @@ impl<'vm> ActiveThread<'vm> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             hook: &mut context.hook,
-            max_stack_size: context.max_stack_size,
             poll_fns: &context.poll_fns,
         }
     }

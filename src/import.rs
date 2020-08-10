@@ -18,7 +18,7 @@ use {
         prelude::*,
     },
     itertools::Itertools,
-    salsa::{debug::DebugQueryTable, Database},
+    salsa::debug::DebugQueryTable,
 };
 
 use crate::base::{
@@ -40,7 +40,7 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::SalvageResult,
-    query::{Compilation, CompilationMut, CompilerDatabase},
+    query::{AsyncCompilation, Compilation, CompilerDatabase},
     IoError, ModuleCompiler, ThreadExt,
 };
 
@@ -83,7 +83,7 @@ include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 pub trait Importer: Any + Clone + Sync + Send {
     async fn import(
         &self,
-        compiler: &mut ModuleCompiler<'_>,
+        compiler: &mut ModuleCompiler<'_, '_>,
         vm: &Thread,
         modulename: &str,
     ) -> SalvageResult<ArcType, crate::Error>;
@@ -95,7 +95,7 @@ pub struct DefaultImporter;
 impl Importer for DefaultImporter {
     async fn import(
         &self,
-        compiler: &mut ModuleCompiler<'_>,
+        compiler: &mut ModuleCompiler<'_, '_>,
         _vm: &Thread,
         modulename: &str,
     ) -> SalvageResult<ArcType> {
@@ -115,9 +115,9 @@ impl Deref for DatabaseSnapshot {
     }
 }
 
-impl DerefMut for DatabaseSnapshot {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.snapshot.as_mut().unwrap()
+impl<'a> From<&'a mut DatabaseSnapshot> for salsa::OwnedDb<'a, dyn Compilation> {
+    fn from(db: &'a mut DatabaseSnapshot) -> Self {
+        salsa::cast_owned_db!(salsa::OwnedDb::<CompilerDatabase>::from(db.snapshot.as_mut().unwrap()) => &mut dyn Compilation)
     }
 }
 
@@ -132,9 +132,9 @@ impl Deref for DatabaseFork {
     }
 }
 
-impl DerefMut for DatabaseFork {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.fork.as_mut().unwrap()
+impl<'a> From<&'a mut DatabaseFork> for salsa::OwnedDb<'a, dyn Compilation> {
+    fn from(db: &'a mut DatabaseFork) -> Self {
+        salsa::cast_owned_db!(salsa::OwnedDb::<CompilerDatabase>::from(db.fork.as_mut().unwrap()) => &mut dyn Compilation)
     }
 }
 
@@ -177,16 +177,12 @@ pub(crate) trait ImportApi: Send + Sync {
     ) -> Result<Cow<'static, str>, Error>;
     async fn load_module(
         &self,
-        compiler: &mut ModuleCompiler<'_>,
+        compiler: &mut ModuleCompiler<'_, '_>,
         vm: &Thread,
         module_id: &Symbol,
     ) -> SalvageResult<ArcType>;
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
-    fn fork(
-        &mut self,
-        forker: salsa::ForkState<CompilerDatabase>,
-        thread: RootedThread,
-    ) -> DatabaseFork;
+    fn fork(&mut self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork;
 }
 
 #[async_trait]
@@ -204,7 +200,7 @@ where
     }
     async fn load_module(
         &self,
-        compiler: &mut ModuleCompiler<'_>,
+        compiler: &mut ModuleCompiler<'_, '_>,
         vm: &Thread,
         module_id: &Symbol,
     ) -> SalvageResult<ArcType> {
@@ -216,11 +212,7 @@ where
     fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
         Self::snapshot(self, thread)
     }
-    fn fork(
-        &mut self,
-        forker: salsa::ForkState<CompilerDatabase>,
-        thread: RootedThread,
-    ) -> DatabaseFork {
+    fn fork(&mut self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork {
         Self::fork(self, forker, thread)
     }
 }
@@ -283,14 +275,13 @@ impl<I> Import<I> {
         *self.paths.write().unwrap() = paths;
     }
 
-    pub fn modules(&self, compiler: &mut ModuleCompiler<'_>) -> Vec<Cow<'static, str>> {
+    pub fn modules(&self, compiler: &mut ModuleCompiler<'_, '_>) -> Vec<Cow<'static, str>> {
         STD_LIBS
             .iter()
             .map(|t| Cow::Borrowed(t.0))
             .chain(
-                compiler
-                    .database
-                    .query(crate::query::ExternLoaderQuery)
+                crate::query::ExternLoaderQuery
+                    .in_db(&*compiler.database)
                     .entries::<Vec<_>>()
                     .into_iter()
                     .map(|entry| Cow::Owned(entry.key)),
@@ -326,11 +317,7 @@ impl<I> Import<I> {
         }
     }
 
-    pub fn fork(
-        &self,
-        forker: salsa::ForkState<CompilerDatabase>,
-        thread: RootedThread,
-    ) -> DatabaseFork {
+    pub fn fork(&self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork {
         let fork = self.compiler.lock().unwrap().fork(forker, thread);
 
         DatabaseFork { fork: Some(fork) }
@@ -554,13 +541,14 @@ where
 
         info!("import! {}", modulename);
 
-        let mut db = try_future!(macros
+        let db = try_future!(macros
             .userdata
             .fork(macros.vm.root_thread())
             .downcast::<salsa::Snapshot<CompilerDatabase>>()
             .map_err(|_| MacroError::new(Error::String(
                 "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
             ))));
+        let mut db = DatabaseFork { fork: Some(*db) };
 
         let span = args[0].span;
 
@@ -571,10 +559,12 @@ where
             let (tx, rx) = tokio::sync::oneshot::channel();
             spawn
                 .spawn(Box::pin(async move {
-                    let result = db
-                        .import(modulename)
-                        .await
-                        .map_err(|err| MacroError::message(err.to_string()));
+                    let result = {
+                        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+                        db.import(modulename)
+                            .await
+                            .map_err(|err| MacroError::message(err.to_string()))
+                    };
                     drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
                     let _ = tx.send(result);
                 }))
@@ -593,6 +583,7 @@ where
         Box::pin(async move {
             Ok(From::from(move || {
                 async move {
+                    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
                     db.import(modulename)
                         .await
                         .map_err(|err| MacroError::message(err.to_string()))
