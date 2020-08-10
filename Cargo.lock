@@ -1165,6 +1165,7 @@ dependencies = [
  "either",
  "env_logger 0.7.1",
  "futures 0.3.5",
+ "gluon-salsa",
  "gluon_base",
  "gluon_check",
  "gluon_codegen",
@@ -1186,7 +1187,6 @@ dependencies = [
  "rand 0.7.3",
  "rand_xorshift 0.2.0",
  "regex 1.3.9",
- "salsa",
  "serde",
  "serde_derive",
  "serde_derive_state",
@@ -1200,6 +1200,37 @@ dependencies = [
  "tokio-native-tls",
  "tower-service",
  "walkdir",
+]
+
+[[package]]
+name = "gluon-salsa"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4644d498c04e71e60947f837bf9729379bd922e5b745c36bea5a4ce03e551fe5"
+dependencies = [
+ "crossbeam-utils 0.7.2",
+ "futures-channel",
+ "futures-util",
+ "gluon-salsa-macros",
+ "indexmap",
+ "lock_api 0.4.0",
+ "log 0.4.8",
+ "oorandom",
+ "parking_lot 0.11.0",
+ "rustc-hash",
+ "smallvec 1.4.0",
+]
+
+[[package]]
+name = "gluon-salsa-macros"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "807a2b17a92e21080379cf696063642c70caea95c04b547320d37fd6844b8e0f"
+dependencies = [
+ "heck",
+ "proc-macro2 1.0.18",
+ "quote 1.0.7",
+ "syn 1.0.33",
 ]
 
 [[package]]
@@ -2645,7 +2676,7 @@ dependencies = [
  "rand_isaac",
  "rand_jitter",
  "rand_os",
- "rand_pcg 0.1.2",
+ "rand_pcg",
  "rand_xorshift 0.1.1",
  "winapi 0.3.9",
 ]
@@ -2661,7 +2692,6 @@ dependencies = [
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
  "rand_hc 0.2.0",
- "rand_pcg 0.2.1",
 ]
 
 [[package]]
@@ -2768,15 +2798,6 @@ checksum = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
 dependencies = [
  "autocfg 0.1.7",
  "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_pcg"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16abd0c1b639e9eb4d7c50c0b8100b0d0f849be2349829c740fe8e6eb4816429"
-dependencies = [
- "rand_core 0.5.1",
 ]
 
 [[package]]
@@ -3049,33 +3070,6 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
-
-[[package]]
-name = "salsa"
-version = "0.15.0"
-dependencies = [
- "crossbeam-utils 0.7.2",
- "futures-channel",
- "futures-util",
- "indexmap",
- "lock_api 0.4.0",
- "log 0.4.8",
- "parking_lot 0.11.0",
- "rand 0.7.3",
- "rustc-hash",
- "salsa-macros",
- "smallvec 1.4.0",
-]
-
-[[package]]
-name = "salsa-macros"
-version = "0.15.0"
-dependencies = [
- "heck",
- "proc-macro2 1.0.18",
- "quote 1.0.7",
- "syn 1.0.33",
-]
 
 [[package]]
 name = "same-file"
