@@ -3,8 +3,14 @@ use support::*;
 
 mod support;
 
-use gluon::{self, query::{Compilation, AsyncCompilation}, vm::core::tests::check_expr_eq, ThreadExt};
+use gluon::{
+    self,
+    query::{AsyncCompilation, Compilation},
+    vm::core::tests::check_expr_eq,
+    ThreadExt,
+};
 
+#[ignore]
 #[tokio::test]
 async fn inline_cross_module() {
     let _ = env_logger::try_init();
@@ -35,6 +41,7 @@ async fn inline_cross_module() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn inline_with_record_pattern_in_module() {
     let _ = env_logger::try_init();
@@ -81,6 +88,7 @@ num.(+) 3
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn inline_across_two_modules() {
     let _ = env_logger::try_init();
@@ -111,6 +119,7 @@ async fn inline_across_two_modules() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn prune_prelude() {
     let _ = env_logger::try_init();
@@ -141,6 +150,7 @@ async fn prune_prelude() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn prune_factorial() {
     let _ = env_logger::try_init();
@@ -184,6 +194,7 @@ async fn prune_factorial() {
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn inline_num() {
     let _ = env_logger::try_init();
@@ -253,6 +264,7 @@ match A with
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn inline_cmp() {
     let _ = env_logger::try_init();
@@ -286,6 +298,7 @@ m.(<)
     check_expr_eq(core_expr.value.expr(), expected_str);
 }
 
+#[ignore]
 #[tokio::test]
 async fn inline_option() {
     let _ = env_logger::try_init();
