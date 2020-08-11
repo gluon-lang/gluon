@@ -45,7 +45,7 @@ fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
             seed,
         )))
     } else {
-        RuntimeResult::Panic("Expected xorshift seed to have 4 elements".to_string())
+        RuntimeResult::Panic("Expected xorshift seed to have 16 elements".to_string())
     }
 }
 
