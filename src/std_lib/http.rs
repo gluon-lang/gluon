@@ -72,13 +72,13 @@ impl VmType for Headers {
 }
 
 impl<'vm> Pushable<'vm> for Headers {
-    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
         Collect::new(
             self.0
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.as_bytes())),
         )
-        .push(context)
+        .vm_push(context)
     }
 }
 

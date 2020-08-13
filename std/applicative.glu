@@ -8,10 +8,10 @@ let { Functor, map } = import! std.functor
 ///
 /// The following laws should hold:
 ///
-/// * wrap id <*> v = v
-/// * wrap (<<) <*> u <*> v <*> w = u <*> (v <*> w)
-/// * wrap f <*> wrap x = wrap (f x)
-/// * u <*> wrap y = wrap (\g -> g x) <*> u
+/// * `wrap id <*> v = v`
+/// * `wrap (<<) <*> u <*> v <*> w = u <*> (v <*> w)`
+/// * `wrap f <*> wrap x = wrap (f x)`
+/// * `u <*> wrap y = wrap (\g -> g x) <*> u`
 #[implicit]
 type Applicative (f : Type -> Type) = {
     functor : Functor f,

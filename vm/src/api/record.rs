@@ -37,7 +37,7 @@ pub trait FieldValues: HList {
 }
 
 pub trait PushableFieldList<'vm>: HList {
-    fn push(
+    fn vm_push(
         self,
         context: &mut ActiveThread<'vm>,
         field_names: &mut Vec<InternedStr>,
@@ -49,7 +49,7 @@ pub trait GetableFieldList<'vm, 'value>: HList + Sized {
 }
 
 impl<'vm> PushableFieldList<'vm> for HNil {
-    fn push(self, _: &mut ActiveThread, _: &mut Vec<InternedStr>) -> Result<()> {
+    fn vm_push(self, _: &mut ActiveThread, _: &mut Vec<InternedStr>) -> Result<()> {
         Ok(())
     }
 }
@@ -166,15 +166,15 @@ impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HCons<(F, H)
 where
     T: PushableFieldList<'vm>,
 {
-    fn push(
+    fn vm_push(
         self,
         context: &mut ActiveThread<'vm>,
         field_names: &mut Vec<InternedStr>,
     ) -> Result<()> {
         let ((_, head), tail) = self.pluck();
         field_names.push(context.thread().global_env().intern(F::name())?);
-        head.push(context)?;
-        tail.push(context, field_names)
+        head.vm_push(context)?;
+        tail.vm_push(context, field_names)
     }
 }
 
@@ -205,9 +205,9 @@ impl<'vm, T, U> Pushable<'vm> for Record<T, U>
 where
     U: PushableFieldList<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut field_names = Vec::new();
-        self.fields.push(context, &mut field_names)?;
+        self.fields.vm_push(context, &mut field_names)?;
 
         let mut context = context.context();
 

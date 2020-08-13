@@ -1,12 +1,12 @@
 use std::{
     borrow::Cow,
     collections::hash_map,
-    ops::DerefMut,
+    ops::Deref,
     result::Result as StdResult,
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use salsa::Database;
+use salsa::{Database, OwnedDb};
 
 use {
     base::{
@@ -76,7 +76,7 @@ pub type UnrootedGlobal = vm::vm::Global<UnrootedValue>;
 pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 
 #[derive(Default)]
-pub(crate) struct State {
+pub struct State {
     pub(crate) code_map: CodeMap,
     pub(crate) inline_modules: FnvMap<String, Arc<Cow<'static, str>>>,
     pub(crate) index_map: FnvMap<String, BytePos>,
@@ -132,9 +132,9 @@ impl State {
     }
 }
 
-#[salsa::database(CompileStorage)]
+#[salsa::database(async CompileStorage)]
 pub struct CompilerDatabase {
-    runtime: salsa::Runtime<CompilerDatabase>,
+    storage: salsa::Storage<CompilerDatabase>,
     pub(crate) state: Arc<Mutex<State>>,
     // This is only set after calling snapshot on `Import`. `Import` itself can't contain a
     // `RootedThread` as that would create a cycle
@@ -144,19 +144,15 @@ pub struct CompilerDatabase {
 impl CompilerDatabase {
     pub fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<Self> {
         salsa::Snapshot::new(Self {
-            runtime: self.runtime.snapshot(self),
+            storage: self.storage.snapshot(),
             state: self.state.clone(),
             thread: Some(thread),
         })
     }
 
-    pub fn fork(
-        &self,
-        state: salsa::ForkState<Self>,
-        thread: RootedThread,
-    ) -> salsa::Snapshot<Self> {
+    pub fn fork(&self, state: salsa::ForkState, thread: RootedThread) -> salsa::Snapshot<Self> {
         salsa::Snapshot::new(Self {
-            runtime: self.runtime.fork(self, state),
+            storage: self.storage.fork(state),
             state: self.state.clone(),
             thread: Some(thread),
         })
@@ -164,8 +160,28 @@ impl CompilerDatabase {
 }
 
 impl crate::query::CompilationBase for CompilerDatabase {
-    fn compiler(&mut self) -> &mut Self {
+    fn compiler(&self) -> &Self {
         self
+    }
+
+    fn code_map(&self) -> CodeMap {
+        Self::code_map(self)
+    }
+
+    fn state(&self) -> MutexGuard<'_, State> {
+        Self::state(self)
+    }
+
+    fn get_filemap(&self, file: &str) -> Option<Arc<FileMap>> {
+        Self::get_filemap(self, file)
+    }
+
+    fn get_or_insert_filemap(&self, file: &str, source: &str) -> Arc<FileMap> {
+        Self::get_or_insert_filemap(self, file, source)
+    }
+
+    fn add_filemap(&self, file: &str, source: &str) -> Arc<FileMap> {
+        Self::add_filemap(self, file, source)
     }
 
     fn thread(&self) -> &Thread {
@@ -185,7 +201,9 @@ impl crate::query::CompilationBase for CompilerDatabase {
                     let entry_contents = Arc::make_mut(entry).to_mut();
                     entry_contents.clear();
                     entry_contents.push_str(contents);
-                    self.query_mut(ModuleTextQuery).invalidate(&module);
+                    ModuleTextQuery
+                        .in_db_mut(self as &mut dyn Compilation)
+                        .invalidate(&module);
                 } else {
                     return;
                 }
@@ -201,53 +219,50 @@ impl crate::query::CompilationBase for CompilerDatabase {
         &self,
         key: &str,
     ) -> Option<TypecheckValue<Arc<OwnedExpr<Symbol>>>> {
-        self.query(TypecheckedSourceModuleQuery)
+        TypecheckedSourceModuleQuery
+            .in_db(self)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
 
     fn peek_module_type(&self, key: &str) -> Option<ArcType> {
-        self.query(ModuleTypeQuery)
+        ModuleTypeQuery
+            .in_db(self)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
 
     fn peek_module_metadata(&self, key: &str) -> Option<Arc<Metadata>> {
-        self.query(ModuleMetadataQuery)
+        ModuleMetadataQuery
+            .in_db(self)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
 
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>> {
-        self.query(CoreExprQuery)
+        CoreExprQuery
+            .in_db(self)
             .peek(&(key.into(), None))
             .and_then(|r| r.ok())
     }
 
     fn peek_global(&self, key: &str) -> Option<DatabaseGlobal> {
-        self.query(GlobalInnerQuery)
+        GlobalInnerQuery
+            .in_db(self)
             .peek(&key.into())
             .and_then(|r| r.ok())
             .map(|global| unsafe { root_global_with(global, self.thread().root_thread()) })
     }
 }
 
-impl salsa::Database for CompilerDatabase {
-    fn salsa_runtime(&self) -> &salsa::Runtime<Self> {
-        &self.runtime
-    }
-
-    fn salsa_runtime_mut(&mut self) -> &mut salsa::Runtime<Self> {
-        &mut self.runtime
-    }
-}
+impl salsa::Database for CompilerDatabase {}
 
 impl salsa::ParallelDatabase for CompilerDatabase {
     fn snapshot(&self) -> salsa::Snapshot<Self> {
         panic!("Call CompilerDatabase::snapshot(&self, &Thread)")
     }
 
-    fn fork(&self, _state: salsa::ForkState<Self>) -> salsa::Snapshot<Self> {
+    fn fork(&self, _state: salsa::ForkState) -> salsa::Snapshot<Self> {
         panic!("Call CompilerDatabase::fork(&self, &Thread)")
     }
 }
@@ -256,14 +271,14 @@ impl CompilerDatabase {
     pub(crate) fn new_base(thread: Option<RootedThread>) -> CompilerDatabase {
         let mut compiler = CompilerDatabase {
             state: Default::default(),
-            runtime: Default::default(),
+            storage: Default::default(),
             thread,
         };
         compiler.set_compiler_settings(Default::default());
         compiler
     }
 
-    pub(crate) fn state(&self) -> MutexGuard<State> {
+    pub(crate) fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap()
     }
 
@@ -318,20 +333,25 @@ impl CompilerDatabase {
         )
     }
 
-    pub(crate) fn collect_garbage(&mut self) {
+    pub(crate) fn collect_garbage(&self) {
         let strategy = salsa::SweepStrategy::default()
             .discard_values()
             .sweep_all_revisions();
 
-        self.query(ModuleTextQuery).sweep(strategy);
-        self.query(TypecheckedSourceModuleQuery).sweep(strategy);
-        self.query(CoreExprQuery).sweep(strategy);
-        self.query(CompiledModuleQuery).sweep(strategy);
+        ModuleTextQuery.in_db(self).sweep(strategy);
+        TypecheckedSourceModuleQuery.in_db(self).sweep(strategy);
+        CoreExprQuery.in_db(self).sweep(strategy);
+        CompiledModuleQuery.in_db(self).sweep(strategy);
     }
 }
 
 pub trait CompilationBase: Send {
-    fn compiler(&mut self) -> &mut CompilerDatabase;
+    fn compiler(&self) -> &CompilerDatabase;
+    fn code_map(&self) -> CodeMap;
+    fn state(&self) -> MutexGuard<'_, State>;
+    fn get_filemap(&self, file: &str) -> Option<Arc<FileMap>>;
+    fn get_or_insert_filemap(&self, file: &str, source: &str) -> Arc<FileMap>;
+    fn add_filemap(&self, file: &str, source: &str) -> Arc<FileMap>;
     fn thread(&self) -> &Thread;
     fn add_module(&mut self, module: String, contents: &str);
 
@@ -414,7 +434,7 @@ pub trait Compilation: CompilationBase {
 }
 
 fn recover_cycle_typecheck<T>(
-    db: &mut dyn Compilation,
+    db: &dyn Compilation,
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
@@ -423,7 +443,7 @@ fn recover_cycle_typecheck<T>(
 }
 
 fn recover_cycle_expected_type<T>(
-    db: &mut dyn Compilation,
+    db: &dyn Compilation,
     cycle: &[String],
     module: &String,
     _: &Option<ArcType>,
@@ -432,13 +452,13 @@ fn recover_cycle_expected_type<T>(
 }
 
 fn recover_cycle<T>(
-    _db: &mut dyn Compilation,
+    _db: &dyn Compilation,
     cycle: &[String],
     module: &String,
 ) -> StdResult<T, Error> {
     let mut cycle: Vec<_> = cycle
         .iter()
-        .filter(|k| k.contains("CompileStorage(import("))
+        .filter(|k| k.starts_with("import("))
         .map(|k| {
             k.trim_matches(|c: char| c != '"')
                 .trim_matches('"')
@@ -454,10 +474,7 @@ fn recover_cycle<T>(
     .into())
 }
 
-fn get_extern_global(
-    db: &mut (impl Compilation + salsa::Database),
-    name: &str,
-) -> Option<DatabaseGlobal> {
+fn get_extern_global(db: &dyn Compilation, name: &str) -> Option<DatabaseGlobal> {
     if db.compiler().state().extern_globals.contains(name) {
         unsafe {
             Some(root_global_with(
@@ -470,11 +487,8 @@ fn get_extern_global(
     }
 }
 
-fn module_text(
-    db: &mut (impl Compilation + salsa::Database),
-    module: String,
-) -> StdResult<Arc<Cow<'static, str>>, Error> {
-    db.salsa_runtime_mut()
+fn module_text(db: &dyn Compilation, module: String) -> StdResult<Arc<Cow<'static, str>>, Error> {
+    db.salsa_runtime()
         .report_synthetic_read(salsa::Durability::LOW);
 
     let opt = { db.compiler().state().inline_modules.get(&module).cloned() };
@@ -496,16 +510,16 @@ fn module_text(
 }
 
 async fn typechecked_source_module(
-    db: &mut (impl Compilation + salsa::Database),
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     module: String,
     expected_type: Option<ArcType>,
 ) -> SalvageResult<TypecheckValue<Arc<OwnedExpr<Symbol>>>, Error> {
-    db.salsa_runtime_mut().report_untracked_read();
+    db.salsa_runtime().report_untracked_read();
 
     let text = db.module_text(module.clone())?;
 
     let thread = db.thread().root_thread();
-    let mut compiler = ModuleCompiler::new(db.compiler());
+    let mut compiler = ModuleCompiler::new(db);
     let value = text
         .typecheck_expected(
             &mut compiler,
@@ -521,11 +535,11 @@ async fn typechecked_source_module(
 }
 
 async fn module_type(
-    db: &mut (impl Compilation + salsa::Database),
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     name: String,
     expected_type: Option<ArcType>,
 ) -> SalvageResult<ArcType, Error> {
-    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+    if ExternLoaderQuery.in_db(&**db).peek(&name).is_some() {
         let global = db.extern_module(name).await?;
         return Ok(global.typ.clone());
     }
@@ -536,11 +550,11 @@ async fn module_type(
 }
 
 async fn module_metadata(
-    db: &mut (impl Compilation + salsa::Database),
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     name: String,
     expected_type: Option<ArcType>,
 ) -> SalvageResult<Arc<Metadata>, Error> {
-    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+    if ExternLoaderQuery.in_db(&**db).peek(&name).is_some() {
         let global = db.extern_module(name).await?;
         return Ok(global.metadata.clone());
     }
@@ -551,11 +565,11 @@ async fn module_metadata(
 }
 
 async fn core_expr(
-    db: &mut (impl Compilation + salsa::Database),
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<interpreter::Global<CoreExpr>, Error> {
-    db.salsa_runtime_mut().report_untracked_read();
+    db.salsa_runtime().report_untracked_read();
 
     let value = db
         .typechecked_source_module(module.clone(), expected_type.clone())
@@ -589,14 +603,14 @@ async fn core_expr(
 }
 
 async fn compiled_module(
-    db: &mut dyn Compilation,
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     module: String,
     expected_type: Option<ArcType>,
 ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error> {
     let core_expr = db.core_expr(module.clone(), expected_type).await?;
     let settings = db.compiler_settings();
 
-    let mut compiler = ModuleCompiler::new(db.compiler());
+    let mut compiler = ModuleCompiler::new(&mut *db);
 
     let source = compiler
         .get_filemap(&module)
@@ -630,18 +644,18 @@ async fn compiled_module(
 }
 
 async fn import(
-    db: &mut dyn Compilation,
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
     modulename: String,
 ) -> StdResult<TypedIdent<Symbol>, Error> {
     assert!(!modulename.starts_with('@'));
     let thread = db.thread().root_thread();
-    let compiler = db.compiler();
 
     let name = Symbol::from(format!("@{}", modulename));
     let result = crate::get_import(&thread)
-        .load_module(&mut ModuleCompiler::new(compiler), &thread, &name)
+        .load_module(&mut ModuleCompiler::new(&mut *db), &thread, &name)
         .await;
 
+    let compiler = db.compiler();
     compiler.collect_garbage();
 
     let typ = result?;
@@ -649,8 +663,11 @@ async fn import(
     Ok(TypedIdent { name, typ })
 }
 
-async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
-    if db.compiler().query(ExternLoaderQuery).peek(&name).is_some() {
+async fn global_inner(
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
+    name: String,
+) -> Result<UnrootedGlobal> {
+    if ExternLoaderQuery.in_db(db.compiler()).peek(&name).is_some() {
         let global = db.extern_module(name.clone()).await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_source_module later
@@ -712,7 +729,10 @@ async fn global_inner(db: &mut dyn Compilation, name: String) -> Result<Unrooted
     })
 }
 
-async fn extern_module(db: &mut dyn Compilation, name: String) -> Result<UnrootedGlobal> {
+async fn extern_module(
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
+    name: String,
+) -> Result<UnrootedGlobal> {
     let id = Symbol::from(format!("@{}", name));
     let loader = db.extern_loader(name);
 
@@ -734,7 +754,10 @@ async fn extern_module(db: &mut dyn Compilation, name: String) -> Result<Unroote
     })
 }
 
-async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal> {
+async fn global(
+    db: &mut OwnedDb<'_, dyn Compilation + '_>,
+    name: String,
+) -> Result<DatabaseGlobal> {
     db.global_inner(name)
         .await
         .map(|global| unsafe { root_global_with(global, db.thread().root_thread()) })
@@ -743,19 +766,19 @@ async fn global(db: &mut dyn Compilation, name: String) -> Result<DatabaseGlobal
 use std::cell::RefCell;
 pub struct Env<T>(RefCell<T>);
 
-pub(crate) fn env(env: &mut CompilerDatabase) -> Env<&'_ mut CompilerDatabase> {
-    Env(RefCell::new(env))
+pub(crate) fn env(env: &(dyn Compilation + '_)) -> Env<&'_ CompilerDatabase> {
+    Env(RefCell::new(env.compiler()))
 }
 pub(crate) fn snapshot_env<T>(env: T) -> Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     Env(RefCell::new(env))
 }
 
 impl<T> CompilerEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         if id.is_global() {
@@ -774,7 +797,7 @@ where
 
 impl<T> KindEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
         if id.is_global() {
@@ -798,7 +821,7 @@ where
 
 impl<T> TypeEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     type Type = ArcType;
 
@@ -836,7 +859,7 @@ where
 
 impl<T> PrimitiveEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn get_bool(&self) -> ArcType {
         self.0
@@ -849,7 +872,7 @@ where
 
 impl<T> MetadataEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn get_metadata(&self, id: &SymbolRef) -> Option<Arc<Metadata>> {
         if id.is_global() {
@@ -864,7 +887,7 @@ where
 
 impl<T> OptimizeEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn find_expr(&self, id: &Symbol) -> Option<interpreter::Global<CoreExpr>> {
         if id.is_global() {
@@ -879,19 +902,19 @@ where
 
 unsafe impl<T> Trace for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     impl_trace! { self, _gc, () }
 }
 
 impl<T> VmEnv for Env<T>
 where
-    T: DerefMut<Target = CompilerDatabase>,
+    T: Deref<Target = CompilerDatabase>,
 {
     fn get_global(&self, name: &str) -> Option<vm::vm::Global<RootedValue<RootedThread>>> {
         let module = Name::new(name.trim_start_matches('@'));
 
-        let mut env = self.0.borrow_mut();
+        let env = self.0.borrow_mut();
         env.get_extern_global(name)
             .or_else(|| env.peek_global(module.as_str().into()))
     }
@@ -925,13 +948,13 @@ fn get_scoped_global<'n, T>(
 use crate::base::resolve;
 trait Extract: Sized {
     // type Output;
-    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self>;
+    fn extract(&self, db: &CompilerDatabase, field_name: &str) -> Option<Self>;
     fn typ(&self) -> &ArcType;
     // fn output(&self) -> Self::Output;
 }
 
 impl Extract for ArcType {
-    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
+    fn extract(&self, db: &CompilerDatabase, field_name: &str) -> Option<Self> {
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, self);
         typ.row_iter()
             .find(|field| field.name.as_str() == field_name)
@@ -942,7 +965,7 @@ impl Extract for ArcType {
     }
 }
 impl Extract for (RootedValue<RootedThread>, ArcType) {
-    fn extract(&self, db: &mut CompilerDatabase, field_name: &str) -> Option<Self> {
+    fn extract(&self, db: &CompilerDatabase, field_name: &str) -> Option<Self> {
         let (value, typ) = self;
         let typ = resolve::remove_aliases_cow(&env(db), &mut NullInterner, typ);
         typ.row_iter()
@@ -962,7 +985,7 @@ impl Extract for (RootedValue<RootedThread>, ArcType) {
 }
 
 impl CompilerDatabase {
-    pub fn find_type_info(&mut self, name: &str) -> Result<Alias<Symbol, ArcType>> {
+    pub fn find_type_info(&self, name: &str) -> Result<Alias<Symbol, ArcType>> {
         let name = Name::new(name);
 
         let typ = self.get_binding_inner(name.module().as_str(), |self_, module| {
@@ -983,7 +1006,7 @@ impl CompilerDatabase {
             .ok_or_else(move || vm::Error::UndefinedField(typ, name.name().as_str().into()).into())
     }
 
-    pub fn get_binding(&mut self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
+    pub fn get_binding(&self, name: &str) -> Result<(RootedValue<RootedThread>, ArcType)> {
         self.get_binding_inner(name, |self_, module| {
             self_
                 .get_extern_global(module.as_str())
@@ -993,9 +1016,9 @@ impl CompilerDatabase {
     }
 
     fn get_binding_inner<T>(
-        &mut self,
+        &self,
         name: &str,
-        mut lookup: impl FnMut(&mut Self, &Name) -> Option<T>,
+        mut lookup: impl FnMut(&Self, &Name) -> Option<T>,
     ) -> Result<T>
     where
         T: Extract,
@@ -1030,12 +1053,12 @@ impl CompilerDatabase {
         Ok(value)
     }
 
-    pub fn get_metadata(&mut self, name_str: &str) -> Result<Arc<Metadata>> {
+    pub fn get_metadata(&self, name_str: &str) -> Result<Arc<Metadata>> {
         self.get_metadata_(name_str)
             .ok_or_else(|| vm::Error::MetadataDoesNotExist(name_str.into()).into())
     }
 
-    fn get_metadata_(&mut self, name_str: &str) -> Option<Arc<Metadata>> {
+    fn get_metadata_(&self, name_str: &str) -> Option<Arc<Metadata>> {
         let (remaining, metadata) = get_scoped_global(name_str, |module| {
             self.get_extern_global(module.as_str())
                 .map(|global| global.metadata)
@@ -1050,7 +1073,7 @@ impl CompilerDatabase {
         Some(metadata.clone())
     }
 
-    pub fn as_env(&mut self) -> Env<&mut Self> {
+    pub fn as_env(&self) -> Env<&Self> {
         env(self)
     }
 }

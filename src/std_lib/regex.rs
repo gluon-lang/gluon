@@ -2,7 +2,7 @@
 
 extern crate regex;
 
-use crate::vm::{self, api::Collect, thread::Thread, ExternModule};
+use crate::vm::{self, thread::Thread, ExternModule};
 
 #[derive(Debug, Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.regex.Regex")]
@@ -52,14 +52,12 @@ fn find<'a>(re: &Regex, text: &'a str) -> Option<Match<'a>> {
     re.find(text).map(Match::new)
 }
 
-fn captures<'a>(
-    re: &Regex,
-    text: &'a str,
-) -> Option<Collect<impl Iterator<Item = Option<Match<'a>>>>> {
+fn captures<'a>(re: &Regex, text: &'a str) -> Option<Vec<Option<Match<'a>>>> {
     let &Regex(ref re) = re;
     re.captures(text)
         .map(|c| (0..c.len()).map(move |i| c.get(i).map(Match::new)))
-        .map(Collect::new)
+        // FIXME Once rust stops ICEing .map(Collect::new)
+        .map(|i| i.collect())
 }
 
 fn error_to_string(err: &Error) -> String {

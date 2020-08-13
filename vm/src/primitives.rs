@@ -386,7 +386,7 @@ extern "C" fn discriminant_value(thread: &Thread) -> Status {
             _ => 0,
         }
     };
-    tag.push(&mut context).unwrap();
+    tag.vm_push(&mut context).unwrap();
     Status::Ok
 }
 

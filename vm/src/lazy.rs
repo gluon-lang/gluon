@@ -135,7 +135,7 @@ fn force(
                                 *lazy_lock = Lazy_::Value(value.get_variant().unrooted());
                             }
                         }
-                        value.push(&mut vm.current_context()).unwrap();
+                        value.vm_push(&mut vm.current_context()).unwrap();
                         RuntimeResult::Return(Pushed::default())
                     }
                     Err(err) => RuntimeResult::Panic(format!("{}", err).into()),

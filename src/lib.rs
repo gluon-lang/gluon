@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.16.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.17.0")] // # GLUON
 #![recursion_limit = "128"]
 #[cfg(test)]
 extern crate env_logger;
@@ -30,6 +30,8 @@ pub extern crate gluon_parser as parser;
 extern crate gluon_codegen;
 #[macro_use]
 pub extern crate gluon_vm as vm;
+
+pub use salsa;
 
 macro_rules! try_future {
     ($e:expr) => {
@@ -85,7 +87,7 @@ use crate::vm::{
 use crate::{
     compiler_pipeline::*,
     import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
-    query::{Compilation, CompilationBase, CompilationMut},
+    query::{AsyncCompilation, Compilation, CompilationBase},
 };
 
 quick_error! {
@@ -303,30 +305,30 @@ impl Default for Settings {
     }
 }
 
-pub struct ModuleCompiler<'a> {
-    pub database: &'a mut query::CompilerDatabase,
+pub struct ModuleCompiler<'a, 'b> {
+    pub database: salsa::OwnedDb<'a, dyn Compilation + 'b>,
     symbols: Symbols,
 }
 
-impl<'a> ModuleCompiler<'a> {
-    fn new(database: &'a mut query::CompilerDatabase) -> Self {
+impl<'a, 'b> ModuleCompiler<'a, 'b> {
+    fn new(database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>) -> Self {
         Self {
-            database,
+            database: database.into(),
             symbols: Symbols::default(),
         }
     }
 }
 
-impl<'a> std::ops::Deref for ModuleCompiler<'a> {
-    type Target = query::CompilerDatabase;
+impl<'a, 'b> std::ops::Deref for ModuleCompiler<'a, 'b> {
+    type Target = salsa::OwnedDb<'a, dyn Compilation + 'b>;
     fn deref(&self) -> &Self::Target {
-        self.database
+        &self.database
     }
 }
 
-impl<'a> std::ops::DerefMut for ModuleCompiler<'a> {
+impl std::ops::DerefMut for ModuleCompiler<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.database
+        &mut self.database
     }
 }
 
@@ -413,10 +415,10 @@ pub trait ThreadExt: Send + Sync {
     #[doc(hidden)]
     fn thread(&self) -> &Thread;
 
-    fn module_compiler<'a>(
+    fn module_compiler<'a, 'b>(
         &'a self,
-        database: &'a mut query::CompilerDatabase,
-    ) -> ModuleCompiler<'a> {
+        database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>,
+    ) -> ModuleCompiler<'a, 'b> {
         ModuleCompiler::new(database)
     }
 
@@ -488,6 +490,7 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(file.into(), expr_str.into());
         }
         let mut db = vm.get_database();
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
 
         let TypecheckValue { expr, typ, .. } = db
             .typechecked_source_module(file.into(), expected_type.cloned())
@@ -588,6 +591,8 @@ pub trait ThreadExt: Send + Sync {
         }
 
         let mut db = vm.get_database();
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+
         let TypecheckValue {
             expr,
             typ,
@@ -627,6 +632,8 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(module_name.clone(), input.into());
         }
         let mut db = vm.get_database();
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+
         db.import(module_name).await.map(|_| ())
     }
 
@@ -807,7 +814,7 @@ fn get_import(vm: &Thread) -> Arc<dyn import::ImportApi> {
         .unwrap_or_else(|| panic!("Missing import macro"))
 }
 
-impl<'a> ModuleCompiler<'a> {
+impl ModuleCompiler<'_, '_> {
     pub fn mut_symbols(&mut self) -> &mut Symbols {
         &mut self.symbols
     }
