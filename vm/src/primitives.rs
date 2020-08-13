@@ -171,9 +171,10 @@ mod int {
         if divisor != 0 {
             RuntimeResult::Return(dividend % divisor)
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 
@@ -181,9 +182,10 @@ mod int {
         if divisor != 0 {
             RuntimeResult::Return(dividend.rem_euclid(divisor))
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate euclidean remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate euclidean remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 
@@ -191,39 +193,52 @@ mod int {
         if divisor != 0 {
             RuntimeResult::Return(dividend.wrapping_rem(divisor))
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate wrapping remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate wrapping remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 
-    pub(crate) fn wrapping_rem_euclid(dividend: VmInt, divisor: VmInt) -> RuntimeResult<VmInt, String> {
+    pub(crate) fn wrapping_rem_euclid(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<VmInt, String> {
         if divisor != 0 {
             RuntimeResult::Return(dividend.wrapping_rem_euclid(divisor))
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate wrapping euclidean remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate wrapping euclidean remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 
-    pub(crate) fn overflowing_rem(dividend: VmInt, divisor: VmInt) -> RuntimeResult<(VmInt, bool), String> {
+    pub(crate) fn overflowing_rem(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<(VmInt, bool), String> {
         if divisor != 0 {
             RuntimeResult::Return(dividend.overflowing_rem(divisor))
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate overflowing remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate overflowing remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 
-    pub(crate) fn overflowing_rem_euclid(dividend: VmInt, divisor: VmInt) -> RuntimeResult<(VmInt, bool), String> {
+    pub(crate) fn overflowing_rem_euclid(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<(VmInt, bool), String> {
         if divisor != 0 {
             RuntimeResult::Return(dividend.overflowing_rem_euclid(divisor))
         } else {
-            RuntimeResult::Panic(
-                format!("attempted to calculate overflowing euclidean remainder of {} divided by 0", dividend)
-            )
+            RuntimeResult::Panic(format!(
+                "attempted to calculate overflowing euclidean remainder of {} divided by 0",
+                dividend
+            ))
         }
     }
 }
