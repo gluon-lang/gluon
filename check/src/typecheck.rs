@@ -1815,9 +1815,12 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 let types = types
                     .iter()
                     .map(|field| Field {
-                        name: field.name.clone(),
+                        name: field.name.value.clone(),
                         typ: if let Type::Hole = **field.typ.unresolved_type() {
-                            self.find_type_info_at(field.typ.unresolved_type().span(), &field.name)
+                            self.find_type_info_at(
+                                field.typ.unresolved_type().span(),
+                                &field.name.value,
+                            )
                         } else {
                             let alias_data =
                                 types::translate_alias(self, &field.typ, |self_, typ| {
@@ -2102,9 +2105,12 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     .value
                     .unresolved_type_mut()
                     .remove_single_forall();
-                if let Err(err) = check.kindcheck_type(typ) {
-                    self.errors
-                        .push(pos::spanned(err.span, TypeError::from(err.value).into()));
+                if let Err(errors) = check.kindcheck_type(typ) {
+                    self.errors.extend(
+                        errors
+                            .into_iter()
+                            .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
+                    );
                 }
                 check.exit_scope();
             }
@@ -2184,9 +2190,12 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             );
             check.kindcheck_type(typ)
         };
-        if let Err(err) = result {
-            self.errors
-                .push(pos::spanned(err.span, TypeError::from(err.value).into()));
+        if let Err(errors) = result {
+            self.errors.extend(
+                errors
+                    .into_iter()
+                    .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
+            );
         }
     }
 

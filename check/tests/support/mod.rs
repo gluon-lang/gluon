@@ -6,12 +6,13 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use self::{
-    base::{source,
+    base::{
         ast::{DisplayEnv, Expr, IdentEnv, KindedIdent, RootExpr, SpannedExpr},
         error::{Errors, InFile},
         kind::{ArcKind, Kind, KindEnv},
         metadata::{Metadata, MetadataEnv},
         pos::{BytePos, Spanned},
+        source,
         symbol::{Name, Symbol, SymbolData, SymbolModule, SymbolRef, Symbols},
         types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
     },
@@ -295,7 +296,7 @@ pub fn typ(s: &str) -> ArcType {
 
 pub fn typ_a<T>(s: &str, kind: ArcKind, args: Vec<T>) -> T
 where
-    T: TypeExt<Id = Symbol> + From<Type<Symbol, T>>,
+    T: TypeExt<Id = Symbol, SpannedId = Symbol> + From<Type<Symbol, T>>,
     T::Types: FromIterator<T> + Extend<T>,
 {
     assert!(s.len() != 0);

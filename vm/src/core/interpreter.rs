@@ -349,7 +349,7 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
                             // primitive function which can be impure
                             // FIXME Let primitive functions mark themselves as pure somehow
                             None => {
-                                if !id.name.as_ref().starts_with("#") {
+                                if !id.name.is_primitive() {
                                     self.0 = false;
                                 }
                             }
@@ -1048,7 +1048,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         match f2.bind {
             Binding::Expr(peek_f) => match peek_f.as_ref() {
                 Expr::Ident(ref id, ..) => {
-                    if id.name.as_ref().starts_with("#") && args.len() == 2 {
+                    if id.name.is_primitive() && args.len() == 2 {
                         let l = resolver.wrap(args.next().unwrap());
                         let r = resolver.wrap(args.next().unwrap());
                         self.reduce_primitive_binop(expr, id, l, r)
@@ -1371,7 +1371,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         macro_rules! binop {
             () => {{
-                let f: fn(_, _) -> _ = match id.name.as_ref().chars().last().unwrap() {
+                let f: fn(_, _) -> _ = match id.name.as_str().chars().last().unwrap() {
                     '+' => |l, r| l + r,
                     '-' => |l, r| l - r,
                     '*' => |l, r| l * r,

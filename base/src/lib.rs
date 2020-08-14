@@ -1,4 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/gluon_base/0.15.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_base/0.17.0")] // # GLUON
 #![allow(unknown_lints)]
 //! The base crate contains pervasive types used in the compiler such as type representations, the
 //! AST and some basic containers.
@@ -75,7 +75,7 @@ macro_rules! type_cache {
 
 #[macro_export]
 macro_rules! chain {
-    ($alloc: expr; $first: expr, $($rest: expr),+ $(,)?) => {{
+    ($alloc: expr, $first: expr, $($rest: expr),+ $(,)?) => {{
         let mut doc = ::pretty::DocBuilder($alloc, $first.into());
         $(
             doc = doc.append($rest);

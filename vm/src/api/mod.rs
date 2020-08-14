@@ -321,12 +321,10 @@ impl<T: VmType> VmType for Unrooted<T> {
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 impl<'vm, T: VmType> Pushable<'vm> for Unrooted<T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(self.0);
         Ok(())
     }
@@ -460,9 +458,7 @@ pub trait VmType {
     /// How many extra arguments a function returning this type requires.
     /// Used for abstract types which when used in return position should act like they still need
     /// more arguments before they are called
-    fn extra_args() -> VmIndex {
-        0
-    }
+    const EXTRA_ARGS: VmIndex = 0;
 }
 
 /// Trait which allows a possibly asynchronous rust value to be pushed to the virtual machine
@@ -512,7 +508,7 @@ where
         lock: Lock,
         _: VmIndex,
     ) -> Poll<Result<()>> {
-        let result = self.push(context);
+        let result = self.vm_push(context);
         context.stack().release_lock(lock);
         Poll::Ready(result)
     }
@@ -523,13 +519,13 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// Pushes `self` to `stack`. If the call is successful a single element should have been added
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()>;
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()>;
 
     fn status_push(self, context: &mut ActiveThread<'vm>) -> Status
     where
         Self: Sized,
     {
-        match self.push(context) {
+        match self.vm_push(context) {
             Ok(()) => Status::Ok,
             Err(err) => {
                 let mut context = context.context();
@@ -545,7 +541,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         Self: Sized,
     {
         let mut context = vm.current_context();
-        self.push(&mut context)?;
+        self.vm_push(&mut context)?;
         let value = context.pop().get_value().clone_unrooted();
         Ok(value)
     }
@@ -556,7 +552,7 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         T: VmRoot<'vm>,
     {
         let mut context = vm.current_context();
-        self.push(&mut context)?;
+        self.vm_push(&mut context)?;
         let variants = context.pop();
         Ok(vm.root_value(variants.clone()))
     }
@@ -585,14 +581,14 @@ where
     T: Pushable<'vm>,
     U: for<'value> Getable<'vm, 'value>,
 {
-    t.push(context)?;
+    t.vm_push(context)?;
     let thread = context.thread();
     let value = context.pop();
     Ok(U::from_value(thread, (*value).clone()))
 }
 
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut context = context.context();
         let data: Box<dyn vm::Userdata> = Box::new(self);
         let userdata = alloc!(context, Move(data))?;
@@ -617,9 +613,7 @@ impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 /// Wrapper which extracts a `Userdata` value from gluon
@@ -640,9 +634,7 @@ where
         T::make_forall_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
@@ -660,8 +652,8 @@ impl<'vm, T> Pushable<'vm> for UserdataValue<T>
 where
     T: vm::Userdata,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.vm_push(context)
     }
 }
 
@@ -783,17 +775,15 @@ where
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
 where
     T: Pushable<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.value.push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.value.vm_push(context)
     }
 }
 
@@ -823,7 +813,7 @@ impl VmType for () {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for () {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Int(0));
         Ok(())
     }
@@ -841,7 +831,7 @@ impl VmType for u8 {
 }
 impl<'vm> Pushable<'vm> for u8 {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Byte(self));
         Ok(())
     }
@@ -866,7 +856,7 @@ macro_rules! int_impls {
         }
         impl<'vm> Pushable<'vm> for $id {
             #[inline]
-            fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+            fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
                 context.push(ValueRepr::Int(self as VmInt));
                 Ok(())
             }
@@ -893,7 +883,7 @@ impl VmType for f64 {
 }
 impl<'vm> Pushable<'vm> for f64 {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Float(self));
         Ok(())
     }
@@ -915,7 +905,7 @@ impl VmType for f32 {
 }
 impl<'vm> Pushable<'vm> for f32 {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Float(self as f64));
         Ok(())
     }
@@ -944,7 +934,7 @@ impl VmType for bool {
 }
 impl<'vm> Pushable<'vm> for bool {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Tag(if self { 1 } else { 0 }));
         Ok(())
     }
@@ -972,7 +962,7 @@ impl VmType for Ordering {
 }
 impl<'vm> Pushable<'vm> for Ordering {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let tag = match self {
             Ordering::Less => 0,
             Ordering::Equal => 1,
@@ -1007,13 +997,13 @@ impl VmType for String {
     type Type = String;
 }
 impl<'vm, 's> Pushable<'vm> for &'s String {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&str as Pushable>::push(self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&str as Pushable>::vm_push(self, context)
     }
 }
 
 impl<'vm, 's> Pushable<'vm> for &'s str {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut context = context.context();
         let s = alloc!(context, self)?;
         context.stack.push(Variants::from(s));
@@ -1031,8 +1021,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for String {
     }
 }
 impl<'vm> Pushable<'vm> for String {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&str as Pushable>::push(&self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&str as Pushable>::vm_push(&self, context)
     }
 }
 
@@ -1041,7 +1031,7 @@ impl VmType for char {
 }
 impl<'vm> Pushable<'vm> for char {
     #[inline]
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(ValueRepr::Int(self as VmInt));
         Ok(())
     }
@@ -1073,16 +1063,16 @@ impl VmType for PathBuf {
 }
 
 impl<'vm, 's> Pushable<'vm> for &'s PathBuf {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&Path as Pushable>::push(self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::vm_push(self, context)
     }
 }
 
 impl<'vm, 's> Pushable<'vm> for &'s Path {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         self.to_str()
             .ok_or_else(|| Error::Message("Path's must be valid UTF-8".into()))?
-            .push(context)
+            .vm_push(context)
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for PathBuf {
@@ -1096,8 +1086,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for PathBuf {
     }
 }
 impl<'vm> Pushable<'vm> for PathBuf {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&Path as Pushable>::push(&self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::vm_push(&self, context)
     }
 }
 
@@ -1110,16 +1100,16 @@ impl VmType for OsString {
 }
 
 impl<'vm, 's> Pushable<'vm> for &'s OsString {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&OsStr as Pushable>::push(self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::vm_push(self, context)
     }
 }
 
 impl<'vm, 's> Pushable<'vm> for &'s OsStr {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         self.to_str()
             .ok_or_else(|| Error::Message("OsStr's must be valid UTF-8".into()))?
-            .push(context)
+            .vm_push(context)
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for OsString {
@@ -1133,8 +1123,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for OsString {
     }
 }
 impl<'vm> Pushable<'vm> for OsString {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&OsStr as Pushable>::push(&self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::vm_push(&self, context)
     }
 }
 
@@ -1150,8 +1140,8 @@ where
     for<'t> &'t T: Pushable<'vm>,
     T: VmType,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        <&T as Pushable>::push(&*self, context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&T as Pushable>::vm_push(&*self, context)
     }
 }
 
@@ -1160,7 +1150,7 @@ where
     T: Trace + Pushable<'vm> + 's,
     &'s [T]: DataDef<Value = ValueArray>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut context = context.context();
         let result = alloc!(context, self)?;
         context.stack.push(Variants::from(result));
@@ -1206,8 +1196,8 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
 where
     T: Pushable<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        Collect::new(self).push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        Collect::new(self).vm_push(context)
     }
 }
 
@@ -1284,7 +1274,7 @@ where
     V: for<'vm2> Pushable<'vm2> + VmType,
     V::Type: Sized,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         to_gluon_map(self, context)
     }
 }
@@ -1326,7 +1316,7 @@ where
         Ok::<_, Error>(map)
     })?;
 
-    map.push(context)
+    map.vm_push(context)
 }
 
 fn from_gluon_map<'vm2, 'value2, M, K2, V2>(map: &mut M, vm: &'vm2 Thread, value: Variants<'value2>)
@@ -1369,10 +1359,10 @@ where
 }
 
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
             Some(value) => {
-                value.push(context)?;
+                value.vm_push(context)?;
                 context.context().push_new_data(1, 1)?;
             }
             None => context.push(ValueRepr::Tag(0)),
@@ -1414,14 +1404,14 @@ where
 }
 
 impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let tag = match self {
             Ok(ok) => {
-                ok.push(context)?;
+                ok.vm_push(context)?;
                 1
             }
             Err(err) => {
-                err.push(context)?;
+                err.vm_push(context)?;
                 0
             }
         };
@@ -1470,9 +1460,7 @@ where
     fn make_type(vm: &Thread) -> ArcType {
         <F::Output>::make_type(vm)
     }
-    fn extra_args() -> VmIndex {
-        <F::Output>::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = F::Output::EXTRA_ARGS;
 }
 
 impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
@@ -1519,14 +1507,12 @@ impl<T: VmType, E> VmType for RuntimeResult<T, E> {
         T::make_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, E> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
-            RuntimeResult::Return(value) => value.push(context),
+            RuntimeResult::Return(value) => value.vm_push(context),
             RuntimeResult::Panic(err) => Err(Error::Message(format!("{}", err))),
         }
     }
@@ -1552,9 +1538,8 @@ where
         let alias = env.find_type_info("std.io.IO").unwrap();
         Type::app(alias.into_type(), collect![T::make_type(vm)])
     }
-    fn extra_args() -> VmIndex {
-        1
-    }
+
+    const EXTRA_ARGS: VmIndex = 1;
 }
 
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for IO<T> {
@@ -1566,16 +1551,16 @@ impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for IO<T> {
 }
 
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
-            IO::Value(value) => value.push(context),
+            IO::Value(value) => value.vm_push(context),
             IO::Exception(exc) => Err(Error::Message(exc)),
         }
     }
 }
 
 impl<'vm> Pushable<'vm> for Variants<'vm> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         context.push(self);
         Ok(())
     }
@@ -1585,7 +1570,7 @@ impl<'vm, T> Pushable<'vm> for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut context = context.context();
         let full_clone = !context.thread.can_share_values_with(context.gc, self.vm());
         let mut cloner = Cloner::new(context.thread, context.gc);
@@ -1638,8 +1623,8 @@ where
     T: AsRef<R>,
     for<'a> &'a R: Pushable<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.as_ref().push(context)
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.as_ref().vm_push(context)
     }
 }
 
@@ -1683,10 +1668,10 @@ macro_rules! define_tuple {
         impl<'vm, $($id),+> Pushable<'vm> for ($($id),+)
         where $($id: Pushable<'vm>),+
         {
-            fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+            fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
                 let ( $($id),+ ) = self;
                 $(
-                    $id.push(context)?;
+                    $id.vm_push(context)?;
                 )+
                 let len = count!($($id),+);
                 let thread = context.thread();
@@ -1750,13 +1735,11 @@ impl<T: VmType> VmType for Pushed<T> {
         T::make_forall_type(vm)
     }
 
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
+    const EXTRA_ARGS: VmIndex = T::EXTRA_ARGS;
 }
 
 impl<'vm, T: VmType> Pushable<'vm> for Pushed<T> {
-    fn push(self, _context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, _context: &mut ActiveThread<'vm>) -> Result<()> {
         Ok(())
     }
 }
@@ -1790,10 +1773,10 @@ where
     T: IntoIterator,
     T::Item: Pushable<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let mut len = 0;
         for v in self.0 {
-            v.push(context)?;
+            v.vm_push(context)?;
             len += 1;
         }
         let mut context = context.context();

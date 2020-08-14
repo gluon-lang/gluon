@@ -1,5 +1,4 @@
 extern crate env_logger;
-extern crate failure;
 extern crate opener;
 extern crate rayon;
 extern crate structopt;
@@ -17,7 +16,7 @@ fn main() {
     }
 }
 
-fn main_() -> Result<(), failure::Error> {
+fn main_() -> Result<(), anyhow::Error> {
     env_logger::init();
 
     let opt = gluon_doc::Opt::from_args();

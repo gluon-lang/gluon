@@ -1,6 +1,6 @@
 [package]
 name = "gluon"
-version = "0.15.1" # GLUON
+version = "0.17.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 keywords = ["script", "scripting", "language"]
 build = "build.rs"
@@ -26,12 +26,12 @@ name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.15.1" } # GLUON
-gluon_check = { path = "check", version = "0.15.1" } # GLUON
-gluon_parser = { path = "parser", version = "0.15.1" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.15.1" } # GLUON
-gluon_vm = { path = "vm", version = "0.15.1", default-features = false } # GLUON
-gluon_format = { path = "format", version = "0.15.1", default-features = false } # GLUON
+gluon_base = { path = "base", version = "0.17.0" } # GLUON
+gluon_check = { path = "check", version = "0.17.0" } # GLUON
+gluon_parser = { path = "parser", version = "0.17.0" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.17.0" } # GLUON
+gluon_vm = { path = "vm", version = "0.17.0", default-features = false } # GLUON
+gluon_format = { path = "format", version = "0.17.0", default-features = false } # GLUON
 
 async-trait = "0.1"
 log = "0.4"
@@ -39,17 +39,17 @@ quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.9"
-futures = { version = "0.3.1", features = ["thread-pool"] }
+futures = { version = "0.3.1", default-features = false }
 codespan = "0.9"
 codespan-reporting = "0.9"
-pin-project = "0.4"
-salsa = { version = "0.14.0", package = "gluon-salsa" }
+pin-project-lite = { version = "0.1", optional = true }
+salsa = { version = "0.15.2", package = "gluon-salsa" }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4", optional = true }
 serde_derive_state = { version = "0.4.7", optional = true }
 
-tokio = { version = "0.2", features = ["stream", "sync", "rt-core"] }
+tokio = { version = "0.2", features = ["stream", "sync", "rt-core"], optional = true }
 
 # Binding crates
 regex = { version = "1", optional = true }
@@ -58,7 +58,7 @@ tower-service = { version = "0.3", optional = true }
 http = { version = "0.2", optional = true }
 hyper = { version = "0.13", optional = true, features = ["stream"] }
 native-tls = { version = "0.2", optional = true }
-tokio-tls = { version = "0.3", optional = true }
+tokio-native-tls = { version = "0.1", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.5", optional = true }
@@ -68,7 +68,7 @@ rand = { version = "0.7", optional = true }
 rand_xorshift = { version = "0.2", optional = true }
 
 [build-dependencies]
-gluon_base = { path = "base", version = "0.15.1" } # GLUON
+gluon_base = { path = "base", version = "0.17.0" } # GLUON
 
 itertools = "0.9"
 little-skeptic = { version = "0.15.0", optional = true }
@@ -78,14 +78,14 @@ walkdir = "2"
 criterion = "0.3"
 collect-mac = "0.1.0"
 env_logger = "0.7"
-failure = "0.1"
-failure_derive = "0.1"
+anyhow = "1"
+thiserror = "1"
 insta = "0.16"
 pretty_assertions = "0.6"
 structopt = "0.3"
 tempfile = "3.0.4"
 tensile = { version = "0.6", features = ["tokio"] }
-tokio = { version = "0.2", features = ["macros", "rt-core", "rt-threaded"] }
+tokio = { version = "0.2", features = ["macros", "rt-core", "rt-threaded", "fs"] }
 walkdir = "2"
 
 serde = "1.0.0"
@@ -96,14 +96,15 @@ bincode = "1"
 
 pulldown-cmark = "0.7"
 
-gluon_completion = { path = "completion", version = "0.15.1" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.15.1" } # GLUON
+gluon_completion = { path = "completion", version = "0.17.0" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.17.0" } # GLUON
 
 [features]
-default = ["regex", "random"]
+default = ["async", "regex", "random"]
+async = ["tokio"]
 random = ["rand", "rand_xorshift"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-tls"]
+web = ["async", "hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-native-tls", "pin-project-lite"]
 
 docs_rs = ["serialization"]
 
@@ -144,8 +145,8 @@ path = "examples/lisp/main.rs"
 [package.metadata.docs.rs]
 features = ["docs_rs"]
 
-# [profile.bench]
-# debug = 2
-#
-# [profile.release]
-# debug = 2
+[profile.bench]
+debug = 2
+
+[profile.release]
+debug = 2

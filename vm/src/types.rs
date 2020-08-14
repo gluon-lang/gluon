@@ -258,7 +258,7 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_ref() == id),
+                Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_str() == id),
                 _ => None,
             })
             .next()

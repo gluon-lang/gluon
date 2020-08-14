@@ -92,7 +92,7 @@ pub fn generate<'ast>(
                         pos::spanned(
                             span,
                             Pattern::Constructor(
-                                TypedIdent::new(variant.name.clone()),
+                                TypedIdent::new(variant.name.value.clone()),
                                 arena.alloc_extend(
                                     pattern_args
                                         .into_iter()
@@ -143,7 +143,7 @@ pub fn generate<'ast>(
                         typ: Type::hole(),
                         fields: arena.alloc_extend(row_iter(row).zip(symbols).map(
                             |(field, bind)| PatternField::Value {
-                                name: pos::spanned(span, field.name.clone()),
+                                name: field.name.clone(),
                                 value: Some(pos::spanned(span, Pattern::Ident(bind))),
                             },
                         )),

@@ -1,6 +1,6 @@
 //! Module containing types and functions for mapping between byte indexes and line and column
 //! locations
-use std::{ops::Range, sync::Arc};
+use std::{fmt, ops::Range, sync::Arc};
 
 use itertools::Itertools;
 
@@ -10,10 +10,18 @@ use codespan_reporting::files::{Files, SimpleFile};
 
 pub type FileId = BytePos;
 
-#[derive(Debug)]
 pub struct FileMap {
     file: SimpleFile<String, String>,
     span_start: FileId,
+}
+
+impl fmt::Debug for FileMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileMap")
+            .field("file", &self.file.source())
+            .field("span", &self.span())
+            .finish()
+    }
 }
 
 impl FileMap {

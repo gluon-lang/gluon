@@ -1,19 +1,13 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url = "https://docs.rs/gluon_parser/0.15.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.17.0")] // # GLUON
 
-extern crate codespan;
-extern crate codespan_reporting;
-extern crate collect_mac;
 extern crate gluon_base as base;
-extern crate itertools;
 #[macro_use]
 extern crate lalrpop_util;
 #[macro_use]
 extern crate log;
-extern crate ordered_float;
-extern crate pretty;
 #[macro_use]
 extern crate quick_error;
 
@@ -27,7 +21,7 @@ use itertools::Either;
 
 use crate::base::{
     ast::{
-        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, SpannedExpr, SpannedPattern,
+        self, AstType, Do, Expr, IdentEnv, PatternField, RootExpr, Sp, SpannedExpr, SpannedPattern,
         TypedIdent, ValueBinding,
     },
     error::{AsDiagnostic, Errors},
@@ -254,8 +248,8 @@ pub enum FieldExpr<'ast, Id> {
 }
 
 pub enum Variant<'ast, Id> {
-    Gadt(Id, AstType<'ast, Id>),
-    Simple(Id, Vec<AstType<'ast, Id>>),
+    Gadt(Sp<Id>, AstType<'ast, Id>),
+    Simple(Sp<Id>, Vec<AstType<'ast, Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -344,9 +338,9 @@ impl_temp_vec! {
     ast::InnerAstType<'ast, Id> => types,
     AstType<'ast, Id> => type_ptrs,
     Generic<Id> => generics,
-    Field<Id, AstType<'ast, Id>> => type_fields,
-    Field<Id, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
-    Either<Field<Id, Alias<Id, AstType<'ast, Id>>>, Field<Id, AstType<'ast, Id>>> => either_type_fields,
+    Field<Spanned<Id, BytePos>, AstType<'ast, Id>> => type_fields,
+    Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>> => type_type_fields,
+    Either<Field<Spanned<Id, BytePos>, Alias<Id, AstType<'ast, Id>>>, Field<Spanned<Id, BytePos>, AstType<'ast, Id>>> => either_type_fields,
 }
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
@@ -422,33 +416,17 @@ where
     Id: Clone + AsRef<str> + std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let layout = Layout::new(Tokenizer::new(input));
-
-    let mut parse_errors = Errors::new();
-
-    let result = grammar::TopExprParser::new().parse(
-        &input,
-        type_cache,
-        arena,
-        symbols,
-        &mut parse_errors,
-        &mut TempVecs::new(),
-        layout,
-    );
-
-    match result {
-        Ok(expr) => {
-            if parse_errors.has_errors() {
-                Err((Some(expr), transform_errors(input.span(), parse_errors)))
-            } else {
-                Ok(expr)
-            }
-        }
-        Err(err) => {
-            parse_errors.push(err);
-            Err((None, transform_errors(input.span(), parse_errors)))
-        }
-    }
+    parse_with(input, &mut |parse_errors, layout| {
+        grammar::TopExprParser::new().parse(
+            &input,
+            type_cache,
+            arena,
+            symbols,
+            parse_errors,
+            &mut TempVecs::new(),
+            layout,
+        )
+    })
 }
 
 pub fn parse_expr<'ast>(
@@ -475,34 +453,65 @@ where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let layout = Layout::new(Tokenizer::new(input));
+    parse_with(input, &mut |parse_errors, layout| {
+        let type_cache = TypeCache::default();
+
+        grammar::ReplLineParser::new()
+            .parse(
+                &input,
+                &type_cache,
+                arena,
+                symbols,
+                parse_errors,
+                &mut TempVecs::new(),
+                layout,
+            )
+            .map(|o| o.map(|b| *b))
+    })
+    .map_err(|(opt, err)| (opt.and_then(|opt| opt), err))
+}
+
+fn parse_with<'ast, 'input, S, T>(
+    input: &'input S,
+    parse: &mut dyn FnMut(
+        ErrorEnv<'_, 'input>,
+        Layout<'input, &mut Tokenizer<'input>>,
+    ) -> Result<
+        T,
+        lalrpop_util::ParseError<BytePos, Token<&'input str>, Spanned<Error, BytePos>>,
+    >,
+) -> Result<T, (Option<T>, ParseErrors)>
+where
+    S: ?Sized + ParserSource,
+{
+    let mut tokenizer = Tokenizer::new(input);
+    let layout = Layout::new(&mut tokenizer);
 
     let mut parse_errors = Errors::new();
 
-    let type_cache = TypeCache::default();
+    let result = parse(&mut parse_errors, layout);
 
-    let result = grammar::ReplLineParser::new().parse(
-        &input,
-        &type_cache,
-        arena,
-        symbols,
-        &mut parse_errors,
-        &mut TempVecs::new(),
-        layout,
-    );
+    let mut all_errors = transform_errors(input.span(), parse_errors);
+
+    all_errors.extend(tokenizer.errors.drain(..).map(|sp_error| {
+        pos::spanned2(
+            sp_error.span.start().absolute,
+            sp_error.span.end().absolute,
+            sp_error.value.into(),
+        )
+    }));
 
     match result {
-        Ok(repl_line) => {
-            let repl_line = repl_line.map(|b| *b);
-            if parse_errors.has_errors() {
-                Err((repl_line, transform_errors(input.span(), parse_errors)))
+        Ok(value) => {
+            if all_errors.has_errors() {
+                Err((Some(value), all_errors))
             } else {
-                Ok(repl_line)
+                Ok(value)
             }
         }
         Err(err) => {
-            parse_errors.push(err);
-            Err((None, transform_errors(input.span(), parse_errors)))
+            all_errors.push(Error::from_lalrpop(input.span(), err));
+            Err((None, all_errors))
         }
     }
 }

@@ -227,9 +227,9 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
             }
             _ => gc::Borrow::from_static(State::Unknown),
         };
-        value_variant.clone().push(&mut context)?;
+        value_variant.clone().vm_push(&mut context)?;
         context.push(ValueRepr::Int(0));
-        context.context().stack.enter_scope(1, &*callable);
+        context.context().stack.enter_scope(1, &*callable)?;
     }
     Ok(thread)
 }
@@ -290,7 +290,7 @@ fn spawn_on<'vm>(
             + Send
             + 'static,
     {
-        extern "C" fn future_wrapper<F>(
+        fn future_wrapper<F>(
             data: &SpawnFuture<F>,
         ) -> impl Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
         where
@@ -309,7 +309,7 @@ fn spawn_on<'vm>(
                 + 'static,
             ]
         )
-        .push(context)
+        .vm_push(context)
         .unwrap();
     }
     use crate::value::PartialApplicationDataDef;
@@ -323,7 +323,7 @@ fn spawn_on<'vm>(
 
     push_future_wrapper(&mut context, &future);
 
-    SpawnFuture(future.shared()).push(&mut context).unwrap();
+    SpawnFuture(future.shared()).vm_push(&mut context).unwrap();
 
     let mut context = context.context();
     let callable = match context.stack[context.stack.len() - 2].get_repr() {

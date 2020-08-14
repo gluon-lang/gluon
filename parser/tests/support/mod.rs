@@ -7,13 +7,13 @@ use crate::base::{
         self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
         Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
         MutVisitor, Pattern, RootExpr, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
-        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,Sp,
     },
     error::Errors,
     kind::Kind,
     metadata::{BaseMetadata, Comment, CommentType, Metadata},
     mk_ast_arena,
-    pos::{self, BytePos, Span, Spanned},
+    pos::{self, BytePos, HasSpan, Span, Spanned},
     types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
 };
 use crate::parser::{
@@ -79,8 +79,8 @@ where
         s.span = (self.0)(s.span);
     }
 
-    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
-        s.span = (self.0)(s.span);
+    fn visit_ast_type(&mut self, s: &mut AstType<Self::Ident>) {
+        *s.span_mut() = (self.0)(s.span());
         walk_mut_ast_type(self, s);
     }
 }
@@ -220,6 +220,10 @@ pub fn binop<'ast>(
 
 pub fn int<'a>(i: i64) -> SpExpr<'a> {
     no_loc(Expr::Literal(Literal::Int(i)))
+}
+
+pub fn string<'a>(s: &str) -> SpExpr<'a> {
+    no_loc(Expr::Literal(Literal::String(s.into())))
 }
 
 pub fn let_<'ast>(
@@ -472,11 +476,15 @@ pub fn variant<'ast, Id>(
         Item = AstType<'ast, Id>,
         IntoIter = impl DoubleEndedIterator<Item = AstType<'ast, Id>>,
     >,
-) -> Field<Id, AstType<'ast, Id>>
+) -> Field<Sp<Id>, AstType<'ast, Id>>
 where
     Id: Clone + AsRef<str> + for<'a> From<&'a str>,
 {
-    Field::ctor_with(&mut arena, arg.into(), types)
+    Field::ctor_with(
+        &mut arena,
+        pos::spanned(Default::default(), arg.into()),
+        types,
+    )
 }
 
 pub fn alias_variant<'s, 'ast, Id>(
@@ -556,9 +564,13 @@ macro_rules! test_parse_error {
             let _ = ::env_logger::try_init();
             let text = $text;
             let result = parse(text);
-            assert!(result.is_err(), "{:#?}", result.unwrap());
+            assert!(
+                result.is_err(),
+                "Expected error but got expression: {:#?}",
+                result.unwrap()
+            );
             let (expr, err) = result.unwrap_err();
-            let expr = clear_span(expr.unwrap());
+            let expr = clear_span(expr.expect("Recovered expression"));
             mk_ast_arena!(arena);
             fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
                 f(a)

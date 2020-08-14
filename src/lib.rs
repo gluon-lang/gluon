@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.15.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.17.0")] // # GLUON
 #![recursion_limit = "128"]
 #[cfg(test)]
 extern crate env_logger;
@@ -30,6 +30,8 @@ pub extern crate gluon_parser as parser;
 extern crate gluon_codegen;
 #[macro_use]
 pub extern crate gluon_vm as vm;
+
+pub use salsa;
 
 macro_rules! try_future {
     ($e:expr) => {
@@ -85,7 +87,7 @@ use crate::vm::{
 use crate::{
     compiler_pipeline::*,
     import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
-    query::{Compilation, CompilationBase, CompilationMut},
+    query::{AsyncCompilation, Compilation, CompilationBase},
 };
 
 quick_error! {
@@ -303,30 +305,30 @@ impl Default for Settings {
     }
 }
 
-pub struct ModuleCompiler<'a> {
-    pub database: &'a mut query::CompilerDatabase,
+pub struct ModuleCompiler<'a, 'b> {
+    pub database: salsa::OwnedDb<'a, dyn Compilation + 'b>,
     symbols: Symbols,
 }
 
-impl<'a> ModuleCompiler<'a> {
-    fn new(database: &'a mut query::CompilerDatabase) -> Self {
+impl<'a, 'b> ModuleCompiler<'a, 'b> {
+    fn new(database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>) -> Self {
         Self {
-            database,
+            database: database.into(),
             symbols: Symbols::default(),
         }
     }
 }
 
-impl<'a> std::ops::Deref for ModuleCompiler<'a> {
-    type Target = query::CompilerDatabase;
+impl<'a, 'b> std::ops::Deref for ModuleCompiler<'a, 'b> {
+    type Target = salsa::OwnedDb<'a, dyn Compilation + 'b>;
     fn deref(&self) -> &Self::Target {
-        self.database
+        &self.database
     }
 }
 
-impl<'a> std::ops::DerefMut for ModuleCompiler<'a> {
+impl std::ops::DerefMut for ModuleCompiler<'_, '_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.database
+        &mut self.database
     }
 }
 
@@ -413,10 +415,10 @@ pub trait ThreadExt: Send + Sync {
     #[doc(hidden)]
     fn thread(&self) -> &Thread;
 
-    fn module_compiler<'a>(
+    fn module_compiler<'a, 'b>(
         &'a self,
-        database: &'a mut query::CompilerDatabase,
-    ) -> ModuleCompiler<'a> {
+        database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>,
+    ) -> ModuleCompiler<'a, 'b> {
         ModuleCompiler::new(database)
     }
 
@@ -427,8 +429,7 @@ pub trait ThreadExt: Send + Sync {
         file: &str,
         expr_str: &str,
     ) -> StdResult<OwnedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(type_cache, file, expr_str)
-            .map_err(|(_, err)| err)
+        Ok(self.parse_partial_expr(type_cache, file, expr_str)?)
     }
 
     /// Parse `input`, returning an expression if successful
@@ -456,16 +457,16 @@ pub trait ThreadExt: Send + Sync {
         expr: &mut OwnedExpr<Symbol>,
     ) -> Result<ArcType> {
         let vm = self.thread();
-        expr.typecheck_expected(
-            &mut ModuleCompiler::new(&mut vm.get_database()),
-            vm,
-            file,
-            expr_str,
-            None,
-        )
-        .await
-        .map(|result| result.typ)
-        .map_err(|t| t.1)
+        Ok(expr
+            .typecheck_expected(
+                &mut ModuleCompiler::new(&mut vm.get_database()),
+                vm,
+                file,
+                expr_str,
+                None,
+            )
+            .await
+            .map(|result| result.typ)?)
     }
 
     fn typecheck_str(
@@ -489,11 +490,11 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(file.into(), expr_str.into());
         }
         let mut db = vm.get_database();
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
 
         let TypecheckValue { expr, typ, .. } = db
             .typechecked_source_module(file.into(), expected_type.cloned())
-            .await
-            .map_err(|t| t.1)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(file.into(), None).await?;
@@ -590,6 +591,8 @@ pub trait ThreadExt: Send + Sync {
         }
 
         let mut db = vm.get_database();
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+
         let TypecheckValue {
             expr,
             typ,
@@ -597,8 +600,7 @@ pub trait ThreadExt: Send + Sync {
             ..
         } = db
             .typechecked_source_module(module_name.clone(), None)
-            .await
-            .map_err(|(_, err)| err)?;
+            .await?;
 
         // Ensure the type is stored in the database so we can collect typechecked_module later
         db.module_type(module_name.clone(), None).await?;
@@ -630,7 +632,9 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(module_name.clone(), input.into());
         }
         let mut db = vm.get_database();
-        db.global(module_name).await.map(|_| ())
+        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
+
+        db.import(module_name).await.map(|_| ())
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
@@ -650,9 +654,8 @@ pub trait ThreadExt: Send + Sync {
                 vm,
                 &module_name,
             )
-            .await
-            .map_err(|(_, err)| err.into())
-            .map(|_| ())
+            .await?;
+        Ok(())
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -759,13 +762,16 @@ pub trait ThreadExt: Send + Sync {
 
         let expr = match input.reparse_infix(compiler, thread, file, input).await {
             Ok(expr) => expr.expr,
-            Err((Some(expr), err)) => {
-                if has_format_disabling_errors(file, &err) {
-                    return Err(err);
+            Err(Salvage {
+                value: Some(expr),
+                error,
+            }) => {
+                if has_format_disabling_errors(file, &error) {
+                    return Err(error);
                 }
                 expr.expr
             }
-            Err((None, err)) => return Err(err),
+            Err(Salvage { value: None, error }) => return Err(error),
         };
 
         let file_map = db.get_filemap(file).unwrap();
@@ -808,7 +814,7 @@ fn get_import(vm: &Thread) -> Arc<dyn import::ImportApi> {
         .unwrap_or_else(|| panic!("Missing import macro"))
 }
 
-impl<'a> ModuleCompiler<'a> {
+impl ModuleCompiler<'_, '_> {
     pub fn mut_symbols(&mut self) -> &mut Symbols {
         &mut self.symbols
     }
@@ -888,18 +894,25 @@ impl VmBuilder {
     }
 
     pub async fn build_async(self) -> RootedThread {
-        struct TokioSpawn;
-        impl futures::task::Spawn for TokioSpawn {
-            fn spawn_obj(
-                &self,
-                future: futures::task::FutureObj<'static, ()>,
-            ) -> StdResult<(), futures::task::SpawnError> {
-                tokio::spawn(future);
-                Ok(())
+        #[allow(unused_mut, unused_assignments)]
+        let mut spawner = None;
+
+        #[cfg(feature = "tokio")]
+        {
+            struct TokioSpawn;
+            impl futures::task::Spawn for TokioSpawn {
+                fn spawn_obj(
+                    &self,
+                    future: futures::task::FutureObj<'static, ()>,
+                ) -> StdResult<(), futures::task::SpawnError> {
+                    tokio::spawn(future);
+                    Ok(())
+                }
             }
+            spawner = Some(Box::new(TokioSpawn) as Box<dyn futures::task::Spawn + Send + Sync>);
         }
 
-        self.build_inner(Some(Box::new(TokioSpawn))).await
+        self.build_inner(spawner).await
     }
 
     async fn build_inner(

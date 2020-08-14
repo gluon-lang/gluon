@@ -80,7 +80,10 @@ fn undefined_infix() {
         expr,
     ));
     match result {
-        Err((_, Error::Parse(err))) => {
+        Err(Salvage {
+            error: Error::Parse(err),
+            ..
+        }) => {
             let error = parser::Error::Infix(InfixError::UndefinedFixity("+".to_string()));
             let map = vm.get_database().get_filemap("test").unwrap();
             let span = map.span().subspan(9.into(), 12.into());

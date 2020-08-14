@@ -68,7 +68,10 @@ pub fn generate<'ast>(
                 let deserialize_variant = arena.app(
                     span,
                     symbols.simple_symbol("map"),
-                    vec![ident(span, variant.name.clone()), deserializer_ident()],
+                    vec![
+                        ident(variant.name.span, variant.name.value.clone()),
+                        deserializer_ident(),
+                    ],
                 );
                 Some(match acc {
                     Some(prev) => arena.infix(

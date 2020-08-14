@@ -317,7 +317,7 @@ where
     }
 }
 
-pub trait MacroUserdata: Send + Sync {
+pub trait MacroUserdata: Send {
     fn fork(&self, thread: RootedThread) -> Box<dyn Any>;
 }
 
@@ -379,7 +379,7 @@ impl MacroEnv {
     pub async fn run<'ast>(
         &self,
         vm: &Thread,
-        userdata: &(dyn MacroUserdata + '_),
+        userdata: &mut (dyn MacroUserdata + '_),
         spawn: Option<&(dyn Spawn + Send + Sync + '_)>,
         symbols: &mut Symbols,
         arena: ast::OwnedArena<'ast, Symbol>,
@@ -395,7 +395,7 @@ pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<dyn Any + Send>>,
     pub vm: &'a Thread,
     pub errors: Errors,
-    pub userdata: &'a (dyn MacroUserdata + 'a),
+    pub userdata: &'a mut (dyn MacroUserdata + 'a),
     pub spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
     macros: &'a MacroEnv,
 }
@@ -403,7 +403,7 @@ pub struct MacroExpander<'a> {
 impl<'a> MacroExpander<'a> {
     pub fn new(
         vm: &'a Thread,
-        userdata: &'a (dyn MacroUserdata + 'a),
+        userdata: &'a mut (dyn MacroUserdata + 'a),
         spawn: Option<&'a (dyn Spawn + Send + Sync + 'a)>,
     ) -> Self {
         MacroExpander {
@@ -416,12 +416,12 @@ impl<'a> MacroExpander<'a> {
         }
     }
 
-    pub fn fork(&self) -> MacroExpander<'a> {
+    pub fn fork(&self, userdata: &'a mut (dyn MacroUserdata + 'a)) -> MacroExpander<'a> {
         MacroExpander {
             vm: self.vm,
             state: FnvMap::default(),
             macros: self.macros,
-            userdata: self.userdata,
+            userdata,
             spawn: self.spawn,
             errors: Errors::new(),
         }
@@ -532,7 +532,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                 func,
                 args: _,
             } => match &func.value {
-                Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                Expr::Ident(ref id) if id.name.as_str().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,
@@ -540,7 +540,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                         ));
                     }
 
-                    let name = id.name.as_ref();
+                    let name = id.name.as_str();
                     match self.expander.macros.get(&name[..name.len() - 1]) {
                         // FIXME Avoid cloning args
                         Some(m) => Some(m.clone()),

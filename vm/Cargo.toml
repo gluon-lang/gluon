@@ -1,6 +1,6 @@
 [package]
 name = "gluon_vm"
-version = "0.15.1" # GLUON
+version = "0.17.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -24,21 +24,21 @@ codespan-reporting = "0.9"
 collect-mac = "0.1.0"
 downcast-rs = "1"
 difference = { version = "2", optional = true }
-crossbeam-utils = "0.6"
+crossbeam-utils = "0.7"
 frunk_core = "0.3"
 futures = { version = "0.3.1", features = ["compat", "async-await"] }
 itertools = "0.9"
 lalrpop-util = { version = "0.19", optional = true }
 log = "0.4"
-ordered-float = "1"
-parking_lot = "0.9"
-petgraph = "0.4"
+ordered-float = "2"
+parking_lot = "0.11"
+petgraph = "0.5"
 pretty = "0.10"
 quick-error = "1.1.0"
 regex = { version = "1", optional = true }
-smallvec = "0.6"
+smallvec = "1"
 slab = "0.4"
-typed-arena = "1.2.0"
+typed-arena = "2"
 
 serde = { version = "1.0.0", optional = true }
 serde_json = { version = "1.0.0", optional = true }
@@ -46,10 +46,10 @@ serde_state = { version = "0.4.0", optional = true }
 serde_derive = { version = "1.0.0", optional = true }
 serde_derive_state = { version = "0.4.8", optional = true }
 
-gluon_base = { path = "../base", version = "0.15.1" } # GLUON
-gluon_check = { path = "../check", version = "0.15.1" } # GLUON
-gluon_codegen = { path = "../codegen", version = "0.15.1" } # GLUON
-gluon_parser = { path = "../parser", version = "0.15.1", optional = true } # GLUON
+gluon_base = { path = "../base", version = "0.17.0" } # GLUON
+gluon_check = { path = "../check", version = "0.17.0" } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.17.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.17.0", optional = true } # GLUON
 
 [build-dependencies]
 lalrpop = { version = "0.19", features = ["lexer"], optional = true }
@@ -68,7 +68,7 @@ regex = "1"
 serde_json = "1.0.0"
 tokio = { version = "0.2", features = ["macros"] }
 
-gluon_parser = { path = "../parser", version = "0.15.1" } # GLUON
+gluon_parser = { path = "../parser", version = "0.17.0" } # GLUON
 
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "serde_json", "gluon_base/serialization", "codespan/serialization"]

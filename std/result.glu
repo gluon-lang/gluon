@@ -6,7 +6,7 @@ let { Show } = import! std.show
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
-let { Result } = import! std.types
+let { Result, Option } = import! std.types
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
 let { Bool } = import! std.bool
@@ -20,15 +20,30 @@ let unwrap_ok res : Result e a -> a =
     | Ok x -> x
     | Err _ -> error "Result was an Err"
 
+let unwrap_ok_or default res : a -> Result e a -> a =
+    match res with
+    | Ok x -> x
+    | Err _ -> default
+
 let unwrap_err res : Result e a -> e =
     match res with
     | Ok _ -> error "Result was an Ok"
+    | Err x -> x
+
+let unwrap_err_or default res : e -> Result e a -> e =
+    match res with
+    | Ok _ -> default
     | Err x -> x
 
 let map_err f res : (e -> f) -> Result e a -> Result f a =
     match res with
     | Ok a -> Ok a
     | Err e -> Err (f e)
+
+let to_option res : Result e a -> Option a =
+    match res with
+    | Ok x -> Some x
+    | Err _ -> None
 
 let eq : [Eq e] -> [Eq a] -> Eq (Result e a) = {
     (==) = \l r ->
@@ -103,9 +118,14 @@ let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
 
 {
     Result,
+
     unwrap_ok,
+    unwrap_ok_or,
     unwrap_err,
+    unwrap_err_or,
     map_err,
+    to_option,
+
     eq,
     ord,
     functor,

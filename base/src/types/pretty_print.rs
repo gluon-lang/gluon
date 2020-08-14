@@ -1,13 +1,14 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::marker::PhantomData;
+use std::{borrow::Cow, fmt, marker::PhantomData};
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
-use crate::ast::{is_operator_char, HasMetadata};
-use crate::metadata::{Comment, CommentType};
-use crate::pos::{BytePos, HasSpan, Span};
-use crate::source::Source;
+use crate::{
+    ast::{is_operator_char, HasMetadata},
+    metadata::{Comment, CommentType},
+    pos::{BytePos, HasSpan, Span},
+    source::Source,
+    types::AsId,
+};
 
 use crate::types::{pretty_print, TypePtr};
 
@@ -17,7 +18,7 @@ where
 {
     let name = name.into();
     if name.starts_with(is_operator_char) {
-        chain![arena; "(", name, ")"]
+        chain![arena, "(", name, ")"]
     } else {
         arena.text(name)
     }
@@ -35,7 +36,8 @@ pub fn doc_comment<'a, A>(
                     .lines()
                     .map(|line| arena.text("/// ").append(line).append(arena.hardline())),
             ),
-            CommentType::Block => chain![arena;
+            CommentType::Block => chain![
+                arena,
                 "/**",
                 arena.hardline(),
                 arena.concat(comment.content.lines().map(|line| {
@@ -43,11 +45,7 @@ pub fn doc_comment<'a, A>(
                     if line.is_empty() {
                         arena.hardline()
                     } else {
-                        chain![arena;
-                            " ",
-                            line,
-                            arena.hardline()
-                        ]
+                        chain![arena, " ", line, arena.hardline()]
                     }
                 })),
                 "*/",
@@ -130,6 +128,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     where
         T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
         I: AsRef<str>,
+        T::SpannedId: AsRef<str> + AsId<I>,
         A: Clone,
     {
         use super::top;
@@ -156,6 +155,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
     T: TypePtr<Id = I> + HasSpan + HasMetadata + 'a,
+    T::SpannedId: AsRef<str> + AsId<I>,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -182,7 +182,7 @@ pub struct Printer<'a, I: 'a, A: 'a> {
 }
 
 impl<'a, I, A> Printer<'a, I, A> {
-    pub fn new(arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Printer<'a, I, A>
+    pub fn new(arena: &'a Arena<'a, A>, source: &'a dyn Source) -> Self
     where
         I: AsRef<str>,
     {

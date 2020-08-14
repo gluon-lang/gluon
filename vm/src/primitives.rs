@@ -163,6 +163,86 @@ pub mod array {
     }
 }
 
+mod int {
+    use super::*;
+    use crate::types::VmInt;
+
+    pub(crate) fn rem(dividend: VmInt, divisor: VmInt) -> RuntimeResult<VmInt, String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend % divisor)
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+
+    pub(crate) fn rem_euclid(dividend: VmInt, divisor: VmInt) -> RuntimeResult<VmInt, String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend.rem_euclid(divisor))
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate euclidean remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+
+    pub(crate) fn wrapping_rem(dividend: VmInt, divisor: VmInt) -> RuntimeResult<VmInt, String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend.wrapping_rem(divisor))
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate wrapping remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+
+    pub(crate) fn wrapping_rem_euclid(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<VmInt, String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend.wrapping_rem_euclid(divisor))
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate wrapping euclidean remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+
+    pub(crate) fn overflowing_rem(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<(VmInt, bool), String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend.overflowing_rem(divisor))
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate overflowing remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+
+    pub(crate) fn overflowing_rem_euclid(
+        dividend: VmInt,
+        divisor: VmInt,
+    ) -> RuntimeResult<(VmInt, bool), String> {
+        if divisor != 0 {
+            RuntimeResult::Return(dividend.overflowing_rem_euclid(divisor))
+        } else {
+            RuntimeResult::Panic(format!(
+                "attempted to calculate overflowing euclidean remainder of {} divided by 0",
+                dividend
+            ))
+        }
+    }
+}
+
 mod string {
     use super::*;
     use crate::value::ValueStr;
@@ -321,7 +401,7 @@ extern "C" fn discriminant_value(thread: &Thread) -> Status {
             _ => 0,
         }
     };
-    tag.push(&mut context).unwrap();
+    tag.vm_push(&mut context).unwrap();
     Status::Ok
 }
 
@@ -432,6 +512,8 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
             is_sign_negative => primitive!(1, std::float::prim::is_sign_negative),
             mul_add => primitive!(3, std::float::prim::mul_add),
             recip => primitive!(1, std::float::prim::recip),
+            rem => primitive!(2, "std::float::prim::rem", |a: f64, b: f64| a % b),
+            rem_euclid => primitive!(2, std::float::prim::rem_euclid),
             powi => primitive!(2, std::float::prim::powi),
             powf => primitive!(2, std::float::prim::powf),
             sqrt => primitive!(1, std::float::prim::sqrt),
@@ -538,6 +620,10 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             to_le => primitive!(1, std::int::prim::to_le),
             pow => primitive!(2, std::int::prim::pow),
             abs => primitive!(1, std::int::prim::abs),
+            rem => primitive!(2, "std::int::prim::rem", int::rem),
+            rem_euclid => primitive!(2, "std::int::prim::rem_euclid", int::rem_euclid),
+            checked_rem => primitive!(2, std::int::prim::checked_rem),
+            checked_rem_euclid => primitive!(2, std::int::prim::checked_rem_euclid),
             saturating_add => primitive!(2, std::int::prim::saturating_add),
             saturating_sub => primitive!(2, std::int::prim::saturating_sub),
             saturating_mul => primitive!(2, std::int::prim::saturating_mul),
@@ -546,12 +632,16 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             wrapping_mul => primitive!(2, std::int::prim::wrapping_mul),
             wrapping_div => primitive!(2, std::int::prim::wrapping_div),
             wrapping_abs => primitive!(1, std::int::prim::wrapping_abs),
+            wrapping_rem => primitive!(2, "std::int::prim::wrapping_rem", int::wrapping_rem),
+            wrapping_rem_euclid => primitive!(2, "std::int::prim::wrapping_rem", int::wrapping_rem_euclid),
             wrapping_negate => primitive!(1, "std.int.prim.wrapping_negate", std::int::prim::wrapping_neg),
             overflowing_add => primitive!(2, std::int::prim::overflowing_add),
             overflowing_sub => primitive!(2, std::int::prim::overflowing_sub),
             overflowing_mul => primitive!(2, std::int::prim::overflowing_mul),
             overflowing_div => primitive!(2, std::int::prim::overflowing_div),
             overflowing_abs => primitive!(1, std::int::prim::overflowing_abs),
+            overflowing_rem => primitive!(2, "std::int::prim::overflowing_rem", int::overflowing_rem),
+            overflowing_rem_euclid => primitive!(2, "std::int::prim::overflowing_rem_euclid", int::overflowing_rem_euclid),
             overflowing_negate => primitive!(1, "std.int.prim.overflowing_negate", std::int::prim::overflowing_neg),
             signum => primitive!(1, std::int::prim::signum),
             is_positive => primitive!(1, std::int::prim::is_positive),

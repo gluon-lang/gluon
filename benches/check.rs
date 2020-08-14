@@ -15,7 +15,7 @@ fn typecheck_prelude(b: &mut Bencher) {
                 "std.prelude",
                 &text,
             ))
-            .unwrap_or_else(|(_, err)| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{}", err));
             expr
         },
         |expr| {
@@ -25,7 +25,7 @@ fn typecheck_prelude(b: &mut Bencher) {
                 "std.prelude",
                 &text,
             ));
-            if let Err((_, err)) = &result {
+            if let Err(err) = &result {
                 println!("{}", err);
                 assert!(false);
             }
@@ -47,7 +47,7 @@ fn typecheck_24(b: &mut Bencher) {
                 "examples.24",
                 &text,
             ))
-            .unwrap_or_else(|(_, err)| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{}", err))
         },
         |input| {
             let result = futures::executor::block_on(input.typecheck(
@@ -56,7 +56,7 @@ fn typecheck_24(b: &mut Bencher) {
                 "examples.24",
                 &text,
             ));
-            if let Err((_, err)) = &result {
+            if let Err(err) = &result {
                 println!("{}", err);
                 assert!(false);
             }
@@ -79,7 +79,7 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
                 &module_name,
                 &text,
             ))
-            .unwrap_or_else(|(_, err)| panic!("{}", err))
+            .unwrap_or_else(|err| panic!("{}", err))
         },
         |input| {
             let result = futures::executor::block_on(input.typecheck(
@@ -88,7 +88,7 @@ fn typecheck_file(b: &mut Bencher, file: &str) {
                 &module_name,
                 &text,
             ));
-            if let Err((_, err)) = &result {
+            if let Err(err) = &result {
                 println!("{}", err);
                 assert!(false);
             }

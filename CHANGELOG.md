@@ -1,3 +1,63 @@
+<a name="v0.17.0"></a>
+## v0.17.0 (2020-08-10)
+
+
+#### Bug Fixes
+
+*   Keep type field arguments on the same line as the name ([b1e40d37](https://github.com/gluon-lang/gluon/commit/b1e40d37f33d9d9815206d6a52cde49f47d99e16))
+* **std:**
+  *  fix formatting for std.monad ([df87ac30](https://github.com/gluon-lang/gluon/commit/df87ac300caa0c5d61d91d34c03b481f5ca70466))
+  *  fix imports for aforementioned utility functions ([da7d3f98](https://github.com/gluon-lang/gluon/commit/da7d3f98ce1ba47b5159f2a4a7119e6d7550dee9))
+
+#### Performance
+
+* **vm:**
+  *  Remove unnecessary check when calling closures ([9b8075e3](https://github.com/gluon-lang/gluon/commit/9b8075e36af04cf6cc0ba4241f82ff90d3eb437c))
+  *  Only check for stack overflow when entering a function ([a5a22968](https://github.com/gluon-lang/gluon/commit/a5a22968104d715254ad1be5b922f8f2c2addb92))
+
+#### Features
+
+*   Update salsa ([a60a444f](https://github.com/gluon-lang/gluon/commit/a60a444fcf912d9ac1b3b65630c4387fceaa7a9e))
+*   Report multiple kindcheck errors in the same type ([00eb1167](https://github.com/gluon-lang/gluon/commit/00eb1167b2211467ca8dddde0ffd240017f5b708))
+*   Record record fields as symbols ([b3b65c75](https://github.com/gluon-lang/gluon/commit/b3b65c757d09deb683429eaa5b20357c9e87e7f2))
+*   Add function arguments to all symbol queries ([1f063f9e](https://github.com/gluon-lang/gluon/commit/1f063f9e29f2fe38af0f67e5db9ccc2ffbb025e5))
+*   Recover on most tokenization errors ([18692100](https://github.com/gluon-lang/gluon/commit/186921004a01b398bec2ec7330a5e7475ff8a579))
+* **completion:**
+  *  Provide symbol information for enum definitions ([04a5b20c](https://github.com/gluon-lang/gluon/commit/04a5b20c0bf2ac182105180da0bf017d1c409f75))
+  *  Return the kind of type fields ([5f8d9d6f](https://github.com/gluon-lang/gluon/commit/5f8d9d6f2dcc74ff6c38aef0f3946fe9b220063a))
+* **parser:**  Recover on unterminated string literals ([b0422366](https://github.com/gluon-lang/gluon/commit/b0422366b81e4e56bd90e40a64b22e490f911735))
+* **std:**
+  *  add Kleisli composition operators ([a384e046](https://github.com/gluon-lang/gluon/commit/a384e04606c145be58a0d9cd79a899f5911e264d))
+  *  add utility functions to Option and Result ([bed70513](https://github.com/gluon-lang/gluon/commit/bed705135d389927c1e961f0f9248b040d22810f))
+
+
+
+<a name="v0.16.1"></a>
+### v0.16.1 (2020-07-05)
+
+
+#### Bug Fixes
+
+*   Gracefully error on concurrently loaded cyclic modules ([e6f1aa95](https://github.com/gluon-lang/gluon/commit/e6f1aa9555684b049f44f412d6f606fceda6cd7b))
+
+
+
+<a name="v0.16.0"></a>
+## v0.16.0 (2020-07-04)
+
+
+#### Features
+
+*   Make tokio an optional dependency ([c3450a99](https://github.com/gluon-lang/gluon/commit/c3450a99656f2c6298d7b937d976ac5d0e96f6c2), closes [#843](https://github.com/gluon-lang/gluon/issues/843))
+*   Update to codespan_reporting 0.9 ([a6f214ce](https://github.com/gluon-lang/gluon/commit/a6f214ce120c34f37d5b2169dba593f576f24265))
+
+#### Bug Fixes
+
+*   Handle errors when pushing a BTreeMap ([bd8ad34f](https://github.com/gluon-lang/gluon/commit/bd8ad34fbf294729442c0c8d0e8983903b59cbdf), closes [#847](https://github.com/gluon-lang/gluon/issues/847))
+*   Convert rust tuples such that they can be used polymorphically ([6c4d5731](https://github.com/gluon-lang/gluon/commit/6c4d5731cefff867f468c2982eb55df6cf69aa8f), closes [#848](https://github.com/gluon-lang/gluon/issues/848))
+
+
+
 <a name="v0.15.1"></a>
 ### v0.15.1 (2020-06-20)
 

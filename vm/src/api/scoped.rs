@@ -39,8 +39,8 @@ impl<'vm, 'a, 'b, T> Pushable<'vm> for &'b mut Ref<'a, T>
 where
     T: VmType + Userdata,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        Scoped::<T, _>::new(self.reference).push(context)?;
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        Scoped::<T, _>::new(self.reference).vm_push(context)?;
         let value = context.last().unwrap();
         self.gluon_reference = Some(RefGuard {
             gluon_reference: Opaque::from_value(context.thread().root_value(value)),
@@ -83,8 +83,8 @@ impl<'vm, 'a, 'b, T> Pushable<'vm> for &'b mut RefMut<'a, T>
 where
     T: VmType + Userdata,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        Scoped::<T, _>::new_mut(self.reference).push(context)?;
+    fn vm_push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        Scoped::<T, _>::new_mut(self.reference).vm_push(context)?;
         let value = context.last().unwrap();
         self.gluon_reference = Some(RefGuard {
             gluon_reference: Opaque::from_value(context.thread().root_value(value)),

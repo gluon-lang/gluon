@@ -1,5 +1,5 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.15.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.17.0")] // # GLUON
 
 use std::{slice, str};
 
@@ -155,7 +155,7 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    match s.push(&mut vm.current_context()) {
+    match s.vm_push(&mut vm.current_context()) {
         Ok(()) => Error::Ok,
         Err(_) => Error::Unknown,
     }
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
 #[no_mangle]
 pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
-    match s.push(&mut vm.current_context()) {
+    match s.vm_push(&mut vm.current_context()) {
         Ok(()) => Error::Ok,
         Err(_) => Error::Unknown,
     }
