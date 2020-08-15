@@ -19,7 +19,7 @@ Comma<Rule>: Vec<Rule> =
 
 Identifier: Symbol = {
     <r"@?[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(SymbolData::<&Name>::from(<>)),
-    <r"\(#?[A-Za-z_]+[+\-*/]\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
+    <r"\(#?[A-Za-z_]+[+\-*/<=]+\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
     <r"\([&\|=*><+]+\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
 };
 
@@ -42,9 +42,12 @@ Pattern: Pattern = {
     },
     <id: Identifier> <args: Identifier+> =>
         Pattern::Constructor(TypedIdent::new(id), args.into_iter().map(TypedIdent::new).collect()),
-    "{" <Comma<Field>> "}" => Pattern::Record(<>.into_iter()
-        .map(|(field, binding)| (TypedIdent::new(field), binding))
-        .collect()),
+    "{" <Comma<Field>> "}" => Pattern::Record{
+        typ: Type::hole(),
+        fields: <>.into_iter()
+            .map(|(field, binding)| (TypedIdent::new(field), binding))
+            .collect()
+    },
     <Literal> => Pattern::Literal(<>),
 };
 
@@ -118,7 +121,7 @@ ProjectionExpr: Expr<'a> = {
         projection.into_iter().fold(expr, |expr, field| {
             let f = TypedIdent::new(field);
             let alt = Alternative {
-                pattern: Pattern::Record(vec![(f.clone(), None)]),
+                pattern: Pattern::Record{ typ: Type::hole(), fields: vec![(f.clone(), None)] },
                 expr: allocator.arena.alloc(Expr::Ident(f.clone(), Default::default())),
             };
             Expr::Match(allocator.arena.alloc(expr), allocator.alternative_arena.alloc_extend(Some(alt)))

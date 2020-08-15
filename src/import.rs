@@ -104,40 +104,6 @@ impl Importer for DefaultImporter {
     }
 }
 
-pub struct DatabaseSnapshot {
-    snapshot: Option<salsa::Snapshot<CompilerDatabase>>,
-}
-
-impl Deref for DatabaseSnapshot {
-    type Target = CompilerDatabase;
-    fn deref(&self) -> &Self::Target {
-        self.snapshot.as_ref().unwrap()
-    }
-}
-
-impl<'a> From<&'a mut DatabaseSnapshot> for salsa::OwnedDb<'a, dyn Compilation> {
-    fn from(db: &'a mut DatabaseSnapshot) -> Self {
-        salsa::cast_owned_db!(salsa::OwnedDb::<CompilerDatabase>::from(db.snapshot.as_mut().unwrap()) => &mut dyn Compilation)
-    }
-}
-
-pub struct DatabaseFork {
-    fork: Option<salsa::Snapshot<CompilerDatabase>>,
-}
-
-impl Deref for DatabaseFork {
-    type Target = CompilerDatabase;
-    fn deref(&self) -> &Self::Target {
-        self.fork.as_ref().unwrap()
-    }
-}
-
-impl<'a> From<&'a mut DatabaseFork> for salsa::OwnedDb<'a, dyn Compilation> {
-    fn from(db: &'a mut DatabaseFork) -> Self {
-        salsa::cast_owned_db!(salsa::OwnedDb::<CompilerDatabase>::from(db.fork.as_mut().unwrap()) => &mut dyn Compilation)
-    }
-}
-
 pub struct DatabaseMut {
     // Only needed to ensure that the the `Compiler` the guard points to lives long enough
     _import: Arc<dyn Macro>,
@@ -181,8 +147,12 @@ pub(crate) trait ImportApi: Send + Sync {
         vm: &Thread,
         module_id: &Symbol,
     ) -> SalvageResult<ArcType>;
-    fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot;
-    fn fork(&mut self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork;
+    fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase>;
+    fn fork(
+        &mut self,
+        forker: salsa::ForkState,
+        thread: RootedThread,
+    ) -> salsa::Snapshot<CompilerDatabase>;
 }
 
 #[async_trait]
@@ -209,10 +179,14 @@ where
 
         self.importer.import(compiler, vm, &modulename).await
     }
-    fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
+    fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase> {
         Self::snapshot(self, thread)
     }
-    fn fork(&mut self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork {
+    fn fork(
+        &mut self,
+        forker: salsa::ForkState,
+        thread: RootedThread,
+    ) -> salsa::Snapshot<CompilerDatabase> {
         Self::fork(self, forker, thread)
     }
 }
@@ -309,18 +283,16 @@ impl<I> Import<I> {
         compiler
     }
 
-    pub fn snapshot(&self, thread: RootedThread) -> DatabaseSnapshot {
-        let snapshot = self.compiler.lock().unwrap().snapshot(thread);
-
-        DatabaseSnapshot {
-            snapshot: Some(snapshot),
-        }
+    pub fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase> {
+        self.compiler.lock().unwrap().snapshot(thread)
     }
 
-    pub fn fork(&self, forker: salsa::ForkState, thread: RootedThread) -> DatabaseFork {
-        let fork = self.compiler.lock().unwrap().fork(forker, thread);
-
-        DatabaseFork { fork: Some(fork) }
+    pub fn fork(
+        &mut self,
+        forker: salsa::ForkState,
+        thread: RootedThread,
+    ) -> salsa::Snapshot<CompilerDatabase> {
+        self.compiler.lock().unwrap().fork(forker, thread)
     }
 
     pub(crate) fn get_module_source(
@@ -489,7 +461,7 @@ where
             Some(Box::new(
                 arc_self.clone().downcast_arc::<Self>().ok().unwrap() as Arc<dyn ImportApi>,
             ))
-        } else if id == TypeId::of::<DatabaseSnapshot>() {
+        } else if id == TypeId::of::<salsa::Snapshot<CompilerDatabase>>() {
             Some(Box::new(self.snapshot(thread.root_thread())))
         } else if id == TypeId::of::<DatabaseMut>() {
             Some(Box::new(
@@ -541,14 +513,13 @@ where
 
         info!("import! {}", modulename);
 
-        let db = try_future!(macros
+        let mut db = try_future!(macros
             .userdata
             .fork(macros.vm.root_thread())
             .downcast::<salsa::Snapshot<CompilerDatabase>>()
             .map_err(|_| MacroError::new(Error::String(
                 "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
             ))));
-        let mut db = DatabaseFork { fork: Some(*db) };
 
         let span = args[0].span;
 
@@ -559,13 +530,20 @@ where
             let (tx, rx) = tokio::sync::oneshot::channel();
             spawn
                 .spawn(Box::pin(async move {
-                    let result = {
-                        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
-                        db.import(modulename)
-                            .await
-                            .map_err(|err| MacroError::message(err.to_string()))
-                    };
-                    drop(db); // Drop the database before sending the result, otherwise the forker may drop before the forked database
+                    let result = std::panic::AssertUnwindSafe(db.import(modulename))
+                        .catch_unwind()
+                        .await
+                        .map(|r| r.map_err(|err| MacroError::message(err.to_string())))
+                        .unwrap_or_else(|err| {
+                            Err(MacroError::message(
+                                err.downcast::<String>()
+                                    .map(|s| *s)
+                                    .or_else(|e| e.downcast::<&str>().map(|s| String::from(&s[..])))
+                                    .unwrap_or_else(|_| "Unknown panic".to_string()),
+                            ))
+                        });
+                    // Drop the database before sending the result, otherwise the forker may drop before the forked database
+                    drop(db);
                     let _ = tx.send(result);
                 }))
                 .unwrap();
@@ -583,11 +561,13 @@ where
         Box::pin(async move {
             Ok(From::from(move || {
                 async move {
-                    let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
-                    db.import(modulename)
+                    let result = db
+                        .import(modulename)
                         .await
                         .map_err(|err| MacroError::message(err.to_string()))
-                        .map(move |id| pos::spanned(span, Expr::Ident(id)))
+                        .map(move |id| pos::spanned(span, Expr::Ident(id)));
+                    drop(db);
+                    result
                 }
                 .boxed()
             }))

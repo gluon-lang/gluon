@@ -74,7 +74,7 @@ where
     T: Clone + 'a,
     R: std::iter::FromIterator<T>,
 {
-    merge_collect(&mut (), types, |_, (l, r)| f(l, r), |(l, _)| l.clone())
+    merge_collect(&mut (), types, |_, (l, r)| f(l, r), |_, (l, _)| l.clone())
 }
 
 pub struct MergeIter<'s, I, F, G, T, S>
@@ -95,13 +95,15 @@ where
     S: ?Sized,
     I: Iterator,
     F: FnMut(&mut S, I::Item) -> Option<U>,
-    G: FnMut(I::Item) -> U,
+    G: FnMut(&mut S, I::Item) -> U,
 {
     type Item = U;
     fn next(&mut self) -> Option<Self::Item> {
         if self.clone_types > 0 {
             self.clone_types -= 1;
-            self.clone_types_iter.next().map(&mut self.converter)
+            let converter = &mut self.converter;
+            let state = &mut self.state;
+            self.clone_types_iter.next().map(|e| converter(state, e))
         } else if let Some(typ) = self.next.take() {
             self.clone_types_iter.next();
             Some(typ)
@@ -135,7 +137,7 @@ where
     S: ?Sized,
     I: ExactSizeIterator,
     F: FnMut(&mut S, I::Item) -> Option<U>,
-    G: FnMut(I::Item) -> U,
+    G: FnMut(&mut S, I::Item) -> U,
 {
     fn len(&self) -> usize {
         self.clone_types_iter.len()
@@ -153,7 +155,7 @@ where
     I: IntoIterator,
     I::IntoIter: FusedIterator + Clone,
     F: FnMut(&mut S, I::Item) -> Option<U>,
-    G: FnMut(I::Item) -> U,
+    G: FnMut(&mut S, I::Item) -> U,
     R: std::iter::FromIterator<U>,
 {
     merge_iter(state, types, action, converter).map(|iter| iter.collect())
@@ -170,7 +172,7 @@ where
     I: IntoIterator,
     I::IntoIter: FusedIterator + Clone,
     F: FnMut(&mut S, I::Item) -> Option<U>,
-    G: FnMut(I::Item) -> U,
+    G: FnMut(&mut S, I::Item) -> U,
 {
     let mut types = types.into_iter();
     let clone_types_iter = types.clone();

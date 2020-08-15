@@ -12,13 +12,11 @@ use base::{
 use crate::core::{
     self,
     optimize::{walk_closures, walk_expr, walk_expr_alloc, SameLifetime, Visitor},
-    purity::PurityMap,
     Allocator, CExpr, Expr, LetBinding, Pattern,
 };
 
 pub fn dead_code_elimination<'a>(
     used_bindings: &FnvSet<&'a SymbolRef>,
-    pure_symbols: &PurityMap,
     allocator: &'a Allocator<'a>,
     expr: CExpr<'a>,
 ) -> CExpr<'a> {
@@ -26,7 +24,6 @@ pub fn dead_code_elimination<'a>(
     struct DeadCodeEliminator<'a, 'b> {
         allocator: &'a Allocator<'a>,
         used_bindings: &'b FnvSet<&'a SymbolRef>,
-        pure_symbols: &'b PurityMap,
     }
     impl DeadCodeEliminator<'_, '_> {
         fn is_used(&self, s: &Symbol) -> bool {
@@ -85,14 +82,11 @@ pub fn dead_code_elimination<'a>(
                 }
 
                 Expr::Match(_, alts) if alts.len() == 1 => match &alts[0].pattern {
-                    Pattern::Record(fields) => {
+                    Pattern::Record { fields, .. } => {
                         if fields
                             .iter()
                             .map(|(x, y)| y.as_ref().unwrap_or(&x.name))
-                            .any(|field_bind| {
-                                self.is_used(&field_bind)
-                                    || !self.pure_symbols.pure_load(&**field_bind)
-                            })
+                            .any(|field_bind| self.is_used(&field_bind))
                         {
                             walk_expr_alloc(self, expr)
                         } else {
@@ -116,7 +110,6 @@ pub fn dead_code_elimination<'a>(
     let mut free_vars = DeadCodeEliminator {
         allocator,
         used_bindings,
-        pure_symbols,
     };
     free_vars.visit_expr(expr).unwrap_or(expr)
 }
@@ -177,7 +170,7 @@ impl<'a> DepGraph<'a> {
                 let id_id = self.add_node(Scope::Symbol(&id.name));
                 self.graph.add_edge(id_id, scrutinee_id, ());
             }
-            Pattern::Record(fields) => {
+            Pattern::Record { fields, .. } => {
                 for field in fields {
                     let name = field.1.as_ref().unwrap_or(&field.0.name);
                     let id_id = self.add_node(Scope::Symbol(name));
@@ -359,9 +352,7 @@ mod tests {
         let mut dep_graph = crate::core::dead_code::DepGraph::default();
         let used_bindings = dep_graph.used_bindings(expr);
 
-        let pure_symbols = crate::core::purity::purity(expr);
-
-        super::dead_code_elimination(&used_bindings, &pure_symbols, allocator, expr)
+        super::dead_code_elimination(&used_bindings, allocator, expr)
     }
 
     #[test]
@@ -472,6 +463,33 @@ mod tests {
             | LT -> 1
             end
             "#;
+        check_optimization(initial_str, expected_str, dead_code_elimination);
+    }
+
+    #[test]
+    fn dont_eliminate_constructor_with_used_binding() {
+        let initial_str = r#"
+            rec let f y =
+                match y with
+                | Test a ->
+                    match a with
+                    | 1 -> 1
+                    | _ -> 2
+                    end
+                end
+            in f
+            "#;
+        let expected_str = r#"
+            rec let f y =
+                match y with
+                | Test a ->
+                    match a with
+                    | 1 -> 1
+                    | _ -> 2
+                    end
+                end
+            in f
+           "#;
         check_optimization(initial_str, expected_str, dead_code_elimination);
     }
 

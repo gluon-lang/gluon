@@ -61,10 +61,48 @@ pub struct Closure<'a> {
     pub expr: &'a Expr<'a>,
 }
 
+impl fmt::Display for Closure<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            ClosureRef {
+                id: &self.name,
+                args: &self.args,
+                body: self.expr
+            }
+        )
+    }
+}
+
+impl<'a> Closure<'a> {
+    pub fn as_ref(&'a self) -> ClosureRef<'a> {
+        ClosureRef {
+            id: &self.name,
+            args: &self.args,
+            body: &self.expr,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Named<'a> {
     Recursive(Vec<Closure<'a>>),
     Expr(&'a Expr<'a>),
+}
+
+impl fmt::Display for Named<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Recursive(cs) => {
+                for c in cs {
+                    writeln!(f, "{}", c)?;
+                }
+                Ok(())
+            }
+            Self::Expr(e) => write!(f, "{}", e),
+        }
+    }
 }
 
 impl<'a> Default for Named<'a> {
@@ -80,6 +118,16 @@ pub struct LetBinding<'a> {
     pub span_start: BytePos,
 }
 
+impl LetBinding<'_> {
+    pub fn bind_span(&self) -> Span<BytePos> {
+        Span::new(
+            self.span_start,
+            self.span_start
+                + codespan::ByteOffset::from(self.name.name.declared_name().len() as i64),
+        )
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Literal {
     Byte(u8),
@@ -92,7 +140,10 @@ pub enum Literal {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
-    Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
+    Record {
+        typ: ArcType,
+        fields: Vec<(TypedIdent<Symbol>, Option<Symbol>)>,
+    },
     Ident(TypedIdent<Symbol>),
     Literal(Literal),
 }
@@ -368,8 +419,7 @@ mod internal {
         where
             F: for<'a, 'b> FnOnce(
                 &(dyn Fn(CExpr<'a>) -> CoreExpr + 'b),
-                &(dyn Fn(&'a TypedIdent<Symbol>, &'a [TypedIdent<Symbol>], CExpr<'a>) -> CoreClosure
-                      + 'b),
+                &(dyn Fn(ClosureRef<'a>) -> CoreClosure + 'b),
                 CExpr<'a>,
             ) -> R,
         {
@@ -385,20 +435,20 @@ mod internal {
                         }
                     }
                 },
-                &|id, args, expr| {
+                &|closure| {
                     // The lifetime is the same as the one we had in `self` so it is the same
                     // expression or it points into an inner expression
                     unsafe {
                         CoreClosure {
                             allocator: allocator.clone(),
                             id: mem::transmute::<&TypedIdent<Symbol>, &'static TypedIdent<Symbol>>(
-                                id,
+                                closure.id,
                             ),
                             args: mem::transmute::<
                                 &[TypedIdent<Symbol>],
                                 &'static [TypedIdent<Symbol>],
-                            >(args),
-                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                            >(closure.args),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(closure.body),
                         }
                     }
                 },
@@ -511,8 +561,7 @@ mod internal {
         where
             F: for<'a, 'b> FnOnce(
                 &(dyn Fn(CExpr<'a>) -> CoreExpr + 'b),
-                &(dyn Fn(&'a TypedIdent<Symbol>, &'a [TypedIdent<Symbol>], CExpr<'a>) -> CoreClosure
-                      + 'b),
+                &(dyn Fn(ClosureRef<'a>) -> CoreClosure + 'b),
                 ClosureRef<'a>,
             ) -> R,
         {
@@ -528,20 +577,20 @@ mod internal {
                         }
                     }
                 },
-                &|id, args, expr| {
+                &|closure| {
                     // The lifetime is the same as the one we had in `self` so it is the same
                     // expression or it points into an inner expression
                     unsafe {
                         CoreClosure {
                             allocator: allocator.clone(),
                             id: mem::transmute::<&TypedIdent<Symbol>, &'static TypedIdent<Symbol>>(
-                                id,
+                                closure.id,
                             ),
                             args: mem::transmute::<
                                 &[TypedIdent<Symbol>],
                                 &'static [TypedIdent<Symbol>],
-                            >(args),
-                            expr: mem::transmute::<CExpr, CExpr<'static>>(expr),
+                            >(closure.args),
+                            expr: mem::transmute::<CExpr, CExpr<'static>>(closure.body),
                         }
                     }
                 },
@@ -605,6 +654,20 @@ impl<'a> Allocator<'a> {
             let_binding_arena: Arena::new(),
             _marker: ::std::marker::PhantomData,
         }
+    }
+
+    pub fn alloc<T>(&'a self, value: T) -> &'a T
+    where
+        T: ArenaAllocatable<'a>,
+    {
+        value.alloc_into(self)
+    }
+
+    pub fn alloc_iter<T>(&'a self, iter: impl IntoIterator<Item = T>) -> &'a [T]
+    where
+        T: ArenaAllocatable<'a>,
+    {
+        T::alloc_iter_into(iter, self)
     }
 }
 
@@ -1162,7 +1225,10 @@ impl<'a, 'e> Translator<'a, 'e> {
 
                 let lambda = self.new_lambda(
                     expr.span.start(),
-                    do_id.clone(),
+                    TypedIdent {
+                        name: Symbol::from(format!("do_{}", do_id.name.as_pretty_str())),
+                        typ: do_id.typ.clone(),
+                    },
                     vec![do_id],
                     core_body,
                     body.span,
@@ -1199,17 +1265,22 @@ impl<'a, 'e> Translator<'a, 'e> {
         projected_type: &ArcType,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
+        // Id should be distinct from the field so bindings aren't shadowed
+        let projection_id = Symbol::from(projection.as_str());
         let alt = Alternative {
-            pattern: Pattern::Record(vec![(
-                TypedIdent {
-                    name: projection.clone(),
-                    typ: projected_type.clone(),
-                },
-                None,
-            )]),
+            pattern: Pattern::Record {
+                typ: projected_expr.env_type_of(&self.env),
+                fields: vec![(
+                    TypedIdent {
+                        name: projection_id.clone(),
+                        typ: projected_type.clone(),
+                    },
+                    None,
+                )],
+            },
             expr: arena.alloc(Expr::Ident(
                 TypedIdent {
-                    name: projection.clone(),
+                    name: projection_id.clone(),
                     typ: projected_type.clone(),
                 },
                 span,
@@ -1389,7 +1460,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 expr: Named::Recursive(vec![Closure {
                     pos,
                     name: name.clone(),
-                    args: args,
+                    args,
                     expr: body,
                 }]),
                 span_start: span.start(),
@@ -1426,6 +1497,23 @@ impl<'a, 'e> Translator<'a, 'e> {
     }
 }
 
+impl Typed for Pattern {
+    type Ident = Symbol;
+
+    fn try_type_of(&self, env: &dyn TypeEnv<Type = ArcType>) -> Result<ArcType<Symbol>, String> {
+        use self::Pattern::*;
+        match self {
+            Constructor(id, _) | Ident(id) => {
+                let mut iter = id.typ.remove_forall().arg_iter();
+                for _ in &mut iter {}
+                Ok(iter.typ.clone())
+            }
+            Record { typ, .. } => Ok(typ.clone()),
+            Literal(lit) => lit.try_type_of(env),
+        }
+    }
+}
+
 impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
@@ -1450,15 +1538,13 @@ fn get_return_type(
     if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
-    let function_type = remove_aliases_cow(env, &mut NullInterner, alias_type);
+    let function_type = remove_aliases_cow(env, &mut NullInterner, alias_type.remove_forall());
 
     let ret = function_type
         .remove_forall()
         .as_function()
         .map(|t| Cow::Borrowed(t.1))
-        .unwrap_or_else(|| {
-            panic!("Unexpected type {} is not a function", function_type);
-        });
+        .ok_or_else(|| format!("Unexpected type {} is not a function", function_type))?;
 
     get_return_type(env, &ret, arg_count - 1)
 }
@@ -1568,7 +1654,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         // Core fields appear in the same order as the normal pattern so we can
                         // get the types from it cheaply
                         let core_fields = match &core_pattern {
-                            Pattern::Record(core_fields) => core_fields,
+                            Pattern::Record { fields, .. } => fields,
                             _ => unreachable!(),
                         };
                         ast::pattern_values(fields)
@@ -2052,6 +2138,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             }
         }
 
+        let mut match_type = None;
+
         for pattern in patterns {
             match *unwrap_as(&pattern.value) {
                 ast::Pattern::Constructor(ref id, ref patterns) => {
@@ -2109,6 +2197,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     ..
                 } => {
                     let typ = remove_aliases_cow(&self.0.env, &mut NullInterner, typ);
+                    match_type = Some(typ.clone());
 
                     for (i, (name, value)) in ast::pattern_values(fields).enumerate() {
                         if !add_duplicate_ident(
@@ -2146,7 +2235,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 }
                 p
             }
-            None => Pattern::Record(record_fields),
+            None => Pattern::Record {
+                typ: match_type.unwrap_or_default().into_owned(),
+                fields: record_fields,
+            },
         }
     }
 }
@@ -2179,7 +2271,7 @@ impl<'a> PatternIdentifiers<'a> {
             start: 0,
             end: match *pattern {
                 Pattern::Constructor(_, ref patterns) => patterns.len(),
-                Pattern::Record(ref fields) => fields.len(),
+                Pattern::Record { ref fields, .. } => fields.len(),
                 Pattern::Ident(_) | Pattern::Literal(_) => 0,
             },
         }
@@ -2200,7 +2292,7 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                     None
                 }
             }
-            Pattern::Record(ref fields) => {
+            Pattern::Record { ref fields, .. } => {
                 if self.start < fields.len() {
                     let field = &fields[self.start];
                     self.start += 1;
@@ -2234,7 +2326,7 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
                     None
                 }
             }
-            Pattern::Record(ref fields) => {
+            Pattern::Record { ref fields, .. } => {
                 if self.start != self.end {
                     self.end -= 1;
                     let field = &fields[self.end];
@@ -2359,16 +2451,17 @@ pub mod tests {
                         (&Pattern::Ident(ref l), &Pattern::Ident(ref r)) => {
                             check(map, &l.name, &r.name)
                         }
-                        (&Pattern::Record(ref l), &Pattern::Record(ref r)) => {
-                            l.iter().zip(r).all(|(l, r)| {
-                                check(map, &l.0.name, &r.0.name)
-                                    && match (&l.1, &r.1) {
-                                        (&Some(ref l), &Some(ref r)) => check(map, l, r),
-                                        (&None, &None) => true,
-                                        _ => false,
-                                    }
-                            })
-                        }
+                        (
+                            &Pattern::Record { fields: ref l, .. },
+                            &Pattern::Record { fields: ref r, .. },
+                        ) => l.iter().zip(r).all(|(l, r)| {
+                            check(map, &l.0.name, &r.0.name)
+                                && match (&l.1, &r.1) {
+                                    (&Some(ref l), &Some(ref r)) => check(map, l, r),
+                                    (&None, &None) => true,
+                                    _ => false,
+                                }
+                        }),
                         (&Pattern::Literal(ref l_literal), &Pattern::Literal(ref r_literal)) => {
                             l_literal == r_literal
                         }

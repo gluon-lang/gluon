@@ -1,3 +1,5 @@
+extern crate proc_macro;
+
 use proc_macro2::{Ident, Span, TokenStream};
 use syn::{self, Data, DeriveInput, Generics};
 
