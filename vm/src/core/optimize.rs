@@ -281,6 +281,8 @@ fn optimize_unnecessary_allocation<'a>(
     optimizer.visit_expr(expr).unwrap_or(expr)
 }
 
+const INLINE: bool = false;
+
 pub fn optimize<'a>(
     allocator: &'a Arc<Allocator<'a>>,
     env: &'a dyn OptimizeEnv<Type = ArcType>,
@@ -302,21 +304,29 @@ pub fn optimize<'a>(
         env.find_expr(symbol)
             .map(crate::core::interpreter::Binding::from)
     };
-    let inlined_global_bindings = Default::default();
-    let mut interpreter =
-        crate::core::interpreter::Compiler::new(allocator, &f, env, &inlined_global_bindings)
-            .costs(costs)
-            .pure_symbols(&pure_symbols)
-            .cyclic_bindings(cyclic_bindings);
-    let expr = interpreter.compile_expr(expr);
 
-    let mut dep_graph = dead_code::DepGraph::default();
-    let used_bindings = dep_graph.used_bindings(expr);
-    let expr = dead_code::dead_code_elimination(&used_bindings, allocator, expr);
+    if INLINE {
+        let inlined_global_bindings = Default::default();
+        let mut interpreter =
+            crate::core::interpreter::Compiler::new(allocator, &f, env, &inlined_global_bindings)
+                .costs(costs)
+                .pure_symbols(&pure_symbols)
+                .cyclic_bindings(cyclic_bindings);
+        let expr = interpreter.compile_expr(expr);
 
-    Global {
-        value: crate::core::freeze_expr(allocator, expr),
-        info: Arc::new(interpreter.optimizer_info(allocator)),
+        let mut dep_graph = dead_code::DepGraph::default();
+        let used_bindings = dep_graph.used_bindings(expr);
+        let expr = dead_code::dead_code_elimination(&used_bindings, allocator, expr);
+
+        Global {
+            value: crate::core::freeze_expr(allocator, expr),
+            info: Arc::new(interpreter.optimizer_info(allocator)),
+        }
+    } else {
+        Global {
+            value: crate::core::freeze_expr(allocator, expr),
+            info: Default::default(),
+        }
     }
 }
 

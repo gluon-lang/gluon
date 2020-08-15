@@ -24,7 +24,7 @@ let (/=) ?eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else T
 type Ord a = {
     eq : Eq a,
     /// Compares two values and returns wheter the first is less than, equal or greater than the second.
-    compare : a -> a -> Ordering,
+    compare : a -> a -> Ordering
 }
 
 let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
