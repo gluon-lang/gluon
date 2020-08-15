@@ -1,3 +1,20 @@
+<a name="v0.17.1"></a>
+### v0.17.1 (2020-08-15)
+
+
+#### Bug Fixes
+
+*   Disable inlining until it can be made sound ([97b63c42](https://github.com/gluon-lang/gluon/commit/97b63c42717d5080dd4ccfe5f7df26479124ef0f))
+*   Inline functions that are re-exports ([bcf87838](https://github.com/gluon-lang/gluon/commit/bcf878385c09291a4b9256688a6f76818039a888))
+
+#### Features
+
+* **opt:**
+  *  Constant fold through simple matches ([360c9d0a](https://github.com/gluon-lang/gluon/commit/360c9d0a93ffc6b624821d925303fb0441407850))
+  *  Inline functions with impure arguments ([669f959d](https://github.com/gluon-lang/gluon/commit/669f959d6b21c4d8792d6d13ce109166f1d212f1))
+
+
+
 <a name="v0.17.0"></a>
 ## v0.17.0 (2020-08-10)
 
