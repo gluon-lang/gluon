@@ -17,6 +17,7 @@ use gluon::{
     base::{
         ast::{Expr, Pattern, SpannedExpr},
         filename_to_module,
+        metadata::BaseMetadata,
         symbol::Symbol,
         types::{ArcType, Type},
     },
@@ -263,6 +264,18 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
     }
 
     struct DocVisitor(Vec<(String, String)>);
+
+    impl DocVisitor {
+        fn make_test_from_metadata(&mut self, name: &str, metadata: &BaseMetadata<'_>) {
+            if let Some(comment) = &metadata.comment() {
+                let source = make_test(&comment.content);
+                if !source.is_empty() {
+                    self.0.push((format!("{}", name), String::from(source)));
+                }
+            }
+        }
+    }
+
     impl Visitor<'_, '_> for DocVisitor {
         type Ident = Symbol;
 
@@ -282,19 +295,25 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                         }
                     }
                 }
+
                 Expr::TypeBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(ref comment) = bind.metadata.comment() {
-                            let source = make_test(&comment.content);
-                            if !source.is_empty() {
-                                self.0.push((
-                                    format!("{}", bind.name.value.declared_name()),
-                                    String::from(source),
-                                ));
-                            }
-                        }
+                        self.make_test_from_metadata(
+                            bind.name.value.declared_name(),
+                            &bind.metadata,
+                        );
                     }
                 }
+
+                Expr::Record { types, exprs, .. } => {
+                    for field in &**types {
+                        self.make_test_from_metadata(field.name.declared_name(), &field.metadata);
+                    }
+                    for field in &**exprs {
+                        self.make_test_from_metadata(field.name.declared_name(), &field.metadata);
+                    }
+                }
+
                 _ => (),
             }
             walk_expr(self, expr);
