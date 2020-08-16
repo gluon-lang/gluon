@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.17.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.17.1")] // # GLUON
 #![recursion_limit = "128"]
 #[cfg(test)]
 extern crate env_logger;
@@ -87,7 +87,7 @@ use crate::vm::{
 use crate::{
     compiler_pipeline::*,
     import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
-    query::{AsyncCompilation, Compilation, CompilationBase},
+    query::{AsyncCompilation, Compilation, CompilationBase, CompilerDatabase},
 };
 
 quick_error! {
@@ -305,15 +305,38 @@ impl Default for Settings {
     }
 }
 
+#[doc(hidden)]
+pub trait IntoDb<'a, 'b> {
+    fn into_db(self) -> salsa::OwnedDb<'a, dyn Compilation + 'b>;
+}
+
+impl<'a, 'b> IntoDb<'a, 'b> for &'a mut salsa::OwnedDb<'_, dyn Compilation + 'b> {
+    fn into_db(self) -> salsa::OwnedDb<'a, dyn Compilation + 'b> {
+        self.into()
+    }
+}
+
+impl<'a, 'b> IntoDb<'a, 'b> for salsa::OwnedDb<'a, dyn Compilation + 'b> {
+    fn into_db(self) -> salsa::OwnedDb<'a, dyn Compilation + 'b> {
+        self
+    }
+}
+
+impl<'a, 'b> IntoDb<'a, 'b> for &'a mut salsa::Snapshot<CompilerDatabase> {
+    fn into_db(self) -> salsa::OwnedDb<'a, dyn Compilation + 'b> {
+        salsa::cast_owned_db!(salsa::OwnedDb::<CompilerDatabase>::from(self) => &mut dyn Compilation)
+    }
+}
+
 pub struct ModuleCompiler<'a, 'b> {
     pub database: salsa::OwnedDb<'a, dyn Compilation + 'b>,
     symbols: Symbols,
 }
 
 impl<'a, 'b> ModuleCompiler<'a, 'b> {
-    fn new(database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>) -> Self {
+    fn new(database: impl IntoDb<'a, 'b>) -> Self {
         Self {
-            database: database.into(),
+            database: database.into_db(),
             symbols: Symbols::default(),
         }
     }
@@ -405,7 +428,7 @@ impl import::DatabaseMut {
 
 #[async_trait::async_trait]
 pub trait ThreadExt: Send + Sync {
-    fn get_database(&self) -> import::DatabaseSnapshot;
+    fn get_database(&self) -> salsa::Snapshot<CompilerDatabase>;
     fn get_database_mut(&self) -> import::DatabaseMut;
 
     fn run_io(&self, run: bool) {
@@ -415,10 +438,7 @@ pub trait ThreadExt: Send + Sync {
     #[doc(hidden)]
     fn thread(&self) -> &Thread;
 
-    fn module_compiler<'a, 'b>(
-        &'a self,
-        database: impl Into<salsa::OwnedDb<'a, dyn Compilation + 'b>>,
-    ) -> ModuleCompiler<'a, 'b> {
+    fn module_compiler<'a, 'b>(&'a self, database: impl IntoDb<'a, 'b>) -> ModuleCompiler<'a, 'b> {
         ModuleCompiler::new(database)
     }
 
@@ -490,7 +510,6 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(file.into(), expr_str.into());
         }
         let mut db = vm.get_database();
-        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
 
         let TypecheckValue { expr, typ, .. } = db
             .typechecked_source_module(file.into(), expected_type.cloned())
@@ -591,7 +610,6 @@ pub trait ThreadExt: Send + Sync {
         }
 
         let mut db = vm.get_database();
-        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
 
         let TypecheckValue {
             expr,
@@ -632,7 +650,6 @@ pub trait ThreadExt: Send + Sync {
             db.add_module(module_name.clone(), input.into());
         }
         let mut db = vm.get_database();
-        let mut db = salsa::OwnedDb::<dyn Compilation>::from(&mut db);
 
         db.import(module_name).await.map(|_| ())
     }
@@ -793,7 +810,7 @@ fn skip_implicit_prelude<'a, 'ast>(
 }
 
 impl ThreadExt for Thread {
-    fn get_database(&self) -> import::DatabaseSnapshot {
+    fn get_database(&self) -> salsa::Snapshot<CompilerDatabase> {
         self.global_env()
             .get_capability(self)
             .expect("Database is missing")

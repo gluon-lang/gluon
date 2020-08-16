@@ -17,6 +17,7 @@ use gluon::{
     base::{
         ast::{Expr, Pattern, SpannedExpr},
         filename_to_module,
+        metadata::BaseMetadata,
         symbol::Symbol,
         types::{ArcType, Type},
     },
@@ -182,9 +183,27 @@ impl TestCase {
     }
 }
 
+async fn catch_unwind_test(
+    name: String,
+    f: impl Future<Output = tensile::Test<Error>>,
+) -> tensile::Test<Error> {
+    std::panic::AssertUnwindSafe(f)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|err| {
+            let err = Error::from(
+                err.downcast::<String>()
+                    .map(|s| *s)
+                    .or_else(|e| e.downcast::<&str>().map(|s| String::from(&s[..])))
+                    .unwrap_or_else(|_| "Unknown panic".to_string()),
+            );
+            tensile::test(name, Err(err))
+        })
+}
+
 async fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
     let text = fs::read_to_string(filename).await?;
-    let (De(test), _) = vm.run_expr_async(&name, &text).await?;
+    let (De(test), _) = std::panic::AssertUnwindSafe(vm.run_expr_async(&name, &text)).await?;
     Ok(test)
 }
 
@@ -245,6 +264,18 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
     }
 
     struct DocVisitor(Vec<(String, String)>);
+
+    impl DocVisitor {
+        fn make_test_from_metadata(&mut self, name: &str, metadata: &BaseMetadata<'_>) {
+            if let Some(comment) = &metadata.comment() {
+                let source = make_test(&comment.content);
+                if !source.is_empty() {
+                    self.0.push((format!("{}", name), String::from(source)));
+                }
+            }
+        }
+    }
+
     impl Visitor<'_, '_> for DocVisitor {
         type Ident = Symbol;
 
@@ -264,19 +295,25 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                         }
                     }
                 }
+
                 Expr::TypeBindings(binds, _) => {
                     for bind in &**binds {
-                        if let Some(ref comment) = bind.metadata.comment() {
-                            let source = make_test(&comment.content);
-                            if !source.is_empty() {
-                                self.0.push((
-                                    format!("{}", bind.name.value.declared_name()),
-                                    String::from(source),
-                                ));
-                            }
-                        }
+                        self.make_test_from_metadata(
+                            bind.name.value.declared_name(),
+                            &bind.metadata,
+                        );
                     }
                 }
+
+                Expr::Record { types, exprs, .. } => {
+                    for field in &**types {
+                        self.make_test_from_metadata(field.name.declared_name(), &field.metadata);
+                    }
+                    for field in &**exprs {
+                        self.make_test_from_metadata(field.name.declared_name(), &field.metadata);
+                    }
+                }
+
                 _ => (),
             }
             walk_expr(self, expr);
@@ -306,7 +343,7 @@ async fn run_doc_tests<'t>(
         .into_iter()
         .map(move |(test_name, test_source)| {
             let mut convert_test_fn = convert_test_fn.clone();
-            async move {
+            catch_unwind_test(test_name.clone(), async move {
                 let vm = vm.new_thread().unwrap();
 
                 match vm
@@ -320,7 +357,7 @@ async fn run_doc_tests<'t>(
                         tensile::test(test_name, || Err(err.0.into()))
                     }
                 }
-            }
+            })
         })
         .collect::<stream::FuturesOrdered<_>>()
         .collect()
@@ -329,14 +366,19 @@ async fn run_doc_tests<'t>(
 
 async fn main_(options: &Opt) -> Result<(), Error> {
     let _ = ::env_logger::try_init();
-    let filter = if options.filter.len() > 1 {
-        options.filter.last()
-    } else {
-        None
-    };
+    let filter = options.filter.last();
 
     let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
     let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
+
+    let filter_fn = |filename: PathBuf| {
+        let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
+
+        match filter {
+            Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+            _ => Some((filename, name)),
+        }
+    };
 
     let vm = new_vm_async().await;
     vm.load_file_async("std/test.glu").await?;
@@ -356,19 +398,12 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
     let pool = TokioSpawn;
     let pass_tests_future = iter
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
-            pool.spawn_with_handle(async move {
+            pool.spawn_with_handle(catch_unwind_test(name.clone(), async move {
                 match make_test(&vm, &name, &filename).await {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
@@ -376,7 +411,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         tensile::test(name2, || Err(err.0))
                     }
                 }
-            })
+            }))
             .expect("Could not spawn test future")
         })
         .collect::<stream::FuturesOrdered<_>>()
@@ -385,14 +420,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
     let fail_tests = test_files("tests/fail")?
         .into_iter()
         .filter(|filename| !filename.to_string_lossy().contains("deps"))
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
@@ -410,17 +438,10 @@ async fn main_(options: &Opt) -> Result<(), Error> {
 
     let doc_tests_future = test_files("std")?
         .into_iter()
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
-
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
+        .filter_map(&filter_fn)
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
-            pool.spawn_with_handle(async move {
+            pool.spawn_with_handle(catch_unwind_test(name.clone(), async move {
                 match run_doc_tests(&vm, &name, &filename).await {
                     Ok(tests) => tensile::group(name.clone(), tests),
                     Err(err) => {
@@ -428,7 +449,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                         tensile::test(name.clone(), || Err(err.0))
                     }
                 }
-            })
+            }))
             .expect("Could not spawn test future")
         })
         .collect::<stream::FuturesOrdered<_>>()

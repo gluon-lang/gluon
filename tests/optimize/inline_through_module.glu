@@ -1,0 +1,9 @@
+//@NO-IMPLICIT-PRELUDE
+//! Definitions which gets implicit re-export in every file.
+
+let { Num, (+), (-), (*), (/)  } = import! tests.optimize.inline_through_module2
+
+{
+    Num,
+    (+), (-), (*), (/),
+}

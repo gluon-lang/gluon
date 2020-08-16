@@ -161,6 +161,15 @@ impl From<String> for Symbol {
     }
 }
 
+impl<N> From<SymbolData<N>> for Symbol
+where
+    N: Into<NameBuf>,
+{
+    fn from(name: SymbolData<N>) -> Symbol {
+        Symbol(Arc::new(SymbolInner::new(name)))
+    }
+}
+
 impl From<&'_ str> for Symbol {
     fn from(name: &str) -> Symbol {
         Symbol(Arc::new(SymbolInner::new(SymbolData::<NameBuf>::from(
@@ -281,6 +290,10 @@ impl Symbol {
                 .0
                 .location
                 .map_or_else(|| self.0.name.len(), |l| l as usize)]
+    }
+
+    pub fn as_data(&self) -> SymbolData<&Name> {
+        SymbolData::from(&self.0.name.0[..])
     }
 }
 

@@ -586,7 +586,7 @@ impl<'a> Compiler<'a> {
         let typ = expr.env_type_of(&self.globals);
 
         env.start_function(self, 0, id, typ);
-        debug!("COMPILING: {}", expr);
+        info!("COMPILING: {}", expr);
         self.compile(&expr, &mut env, true)?;
         let current_line = self.source.line_number_at_byte(expr.span().end());
         let FunctionEnv {
@@ -784,11 +784,11 @@ impl<'a> Compiler<'a> {
                 }
                 function.emit_call(args.len() as VmIndex, tail_position);
             }
-            Expr::Match(ref expr, ref alts) => {
-                self.compile(expr, function, false)?;
+            Expr::Match(ref scrutinee, ref alts) => {
+                self.compile(scrutinee, function, false)?;
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
-                let typ = expr.env_type_of(self);
+                let typ = alts[0].pattern.env_type_of(self);
                 let typ = resolve::remove_aliases_cow(self, &mut NullInterner, typ.remove_forall());
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
@@ -801,7 +801,7 @@ impl<'a> Compiler<'a> {
                                      expression:\n{}",
                                     typ,
                                     self.symbols.string(&id.name),
-                                    expr
+                                    scrutinee
                                 )
                             });
 
@@ -883,7 +883,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                         Pattern::Record { .. } => {
-                            let typ = &expr.env_type_of(self);
+                            let typ = &scrutinee.env_type_of(self);
                             self.compile_let_pattern(&alt.pattern, typ, function)?;
                         }
                         Pattern::Ident(ref id) => {
@@ -1033,7 +1033,7 @@ impl<'a> Compiler<'a> {
             Pattern::Ident(ref name) => {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
             }
-            Pattern::Record(ref fields) => {
+            Pattern::Record { ref fields, .. } => {
                 let typ = resolve::remove_aliases(
                     self,
                     &mut NullInterner,
@@ -1095,7 +1095,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                     }
-                    _ => ice!("Expected record, got {} at {:?}", typ, pattern),
+                    _ => ice!("Expected record, got {} at {}", typ, pattern),
                 }
             }
             Pattern::Constructor(..) => ice!("constructor pattern in let"),

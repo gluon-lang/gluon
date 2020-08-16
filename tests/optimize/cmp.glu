@@ -1,0 +1,17 @@
+let { Option, Ordering, Bool } = import! std.types
+
+#[infix(left, 4)]
+let (=?) opt y : Option b -> b -> b =
+    match opt with
+    | Some x -> x
+    | None -> y
+
+let mk_ord builder =
+    #[infix(left, 4)]
+    let (<) l r = True
+
+    {
+        (<) = builder.(<) =? (<),
+    }
+
+{ Option, mk_ord }

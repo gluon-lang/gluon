@@ -1581,6 +1581,49 @@ impl<'a, 'e> Unifier<State<'a>, RcType> for UnifierState<'a, Smaller> {
     }
 }
 
+pub fn instantiation<'a>(
+    env: &'a (dyn TypeEnv<Type = RcType> + 'a),
+    f: &mut dyn FnMut(&Symbol, &RcType),
+    l: &RcType,
+    r: &RcType,
+) {
+    let subs = Default::default();
+    let state = State::new(env, &subs);
+    let mut unifier = UnifierState {
+        unifier: Instantiation { consumer: f },
+        state,
+    };
+
+    unifier.try_match(l, r);
+}
+
+pub struct Instantiation<'a, 'b> {
+    consumer: &'a mut (dyn FnMut(&Symbol, &RcType) + 'b),
+}
+
+impl<'a> Unifier<State<'a>, RcType> for UnifierState<'a, Instantiation<'_, '_>> {
+    fn report_error(&mut self, _error: UnifyError<TypeError<Symbol, RcType>, RcType>) {}
+
+    fn try_match_res(
+        &mut self,
+        l: &RcType,
+        r: &RcType,
+    ) -> Result<Option<RcType>, UnifyError<TypeError<Symbol, RcType>, RcType>> {
+        match (&**l, &**r) {
+            (Type::Generic(l), _) => {
+                (self.unifier.consumer)(&l.id, r);
+                Ok(None)
+            }
+
+            _ => l.zip_match(r, self),
+        }
+    }
+
+    fn error_type(&self) -> RcType {
+        RcType::error_type(&self.state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,6 +10,6 @@ let empty_list : List Int =
 
 let test_list : TestEff r () =
     assert_eq (list.of []) empty_list *>
-        assert_eq (list.of [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
+        assert_eq (list.of [10, 20, 30]) (Cons 10 (Cons 20 (Cons 30 Nil)))
 
 test "list" <| \_ -> test_list

@@ -152,6 +152,14 @@ pub struct Opt {
     #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
 
+    #[structopt(
+        last = true,
+        name = "ARGS",
+        help = "Extra arguments passed to the gluon program"
+    )]
+    #[allow(dead_code)]
+    args: Vec<String>,
+
     #[structopt(subcommand)]
     subcommand_opt: Option<SubOpt>,
 }

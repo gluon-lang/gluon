@@ -36,7 +36,7 @@ use {
 
 use crate::{compiler_pipeline::*, import::PtrEq, Error, ModuleCompiler, Result, Settings};
 
-pub use {crate::import::DatabaseSnapshot, salsa};
+pub use salsa;
 
 #[derive(Debug, Trace)]
 #[gluon(crate_name = "gluon_vm")]
