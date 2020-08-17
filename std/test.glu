@@ -7,7 +7,7 @@ let float = import! std.float
 let int = import! std.int
 let list @ { List, ? } = import! std.list
 let { Foldable, foldl } = import! std.foldable
-let { Option } = import! std.option
+let { Option, ? } = import! std.option
 let { Result } = import! std.result
 let { Semigroup, (<>) } = import! std.semigroup
 let { error } = import! std.prim
@@ -55,6 +55,16 @@ let assert_gt l r : [Show a] -> [Ord a] -> a -> a -> Eff [| writer : Test | r |]
 let assert_gte l r : [Show a] -> [Ord a] -> a -> a -> Eff [| writer : Test | r |] () =
     if l >= r then wrap ()
     else tell (Cons ("Assertion failed: " <> show l <> " < " <> show r) Nil)
+
+let assert_some opt : Option a -> Eff [| writer : Test | r |] () =
+    match opt with
+    | Some _ -> wrap ()
+    | None -> tell (Cons ("Assertion failed: expected Some, found None") Nil)
+
+let assert_none opt : [Show a] -> Option a -> Eff [| writer : Test | r |] () =
+    match opt with
+    | Some x -> tell (Cons ("Assertion failed: expected None, found " <> show (Some x)) Nil)
+    | None -> wrap ()
 
 let assert_ok res : [Show e] -> Result e a -> Eff [| writer : Test | r |] () =
     match res with
@@ -108,6 +118,8 @@ rec let run_io test : TestEffIO r a -> IO () =
     assert_gt,
     assert_gte,
 
+    assert_some,
+    assert_none,
     assert_ok,
     assert_err,
     assert_success,
