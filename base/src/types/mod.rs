@@ -3230,7 +3230,7 @@ where
     type Context = NullInterner;
 
     fn context(&mut self) -> &mut Self::Context {
-        &mut NullInterner
+        NullInterner::new()
     }
 
     fn visit(&mut self, typ: &T) -> Option<T>
@@ -3816,13 +3816,15 @@ where
 
 pub type SharedInterner<Id, T> = TypeCache<Id, T>;
 
-pub struct NullInternerInner;
-// Workaround since &mut NullInterner does not get promoted to a `&'static mut NullInterner` but
-// `&mut []` does
-pub type NullInterner = [NullInternerInner; 0];
+#[derive(Default)]
+pub struct NullInterner;
 
-#[allow(non_upper_case_globals)]
-pub const NullInterner: NullInterner = [];
+impl NullInterner {
+    pub fn new() -> &'static mut NullInterner {
+        // SAFETY NullInterner is zero-sized
+        unsafe { &mut *(&mut NullInterner as *mut _) }
+    }
+}
 
 impl<Id, T> TypeContext<Id, T> for NullInterner
 where
@@ -4267,7 +4269,7 @@ where
     type Context = NullInterner;
 
     fn context(&mut self) -> &mut Self::Context {
-        &mut NullInterner
+        NullInterner::new()
     }
 
     fn visit(&mut self, typ: &T) -> Option<T>
@@ -4304,7 +4306,7 @@ where
     type Context = NullInterner;
 
     fn context(&mut self) -> &mut Self::Context {
-        &mut NullInterner
+        NullInterner::new()
     }
 
     fn visit(&mut self, typ: &T) -> Option<T>
