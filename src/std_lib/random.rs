@@ -15,6 +15,7 @@ use crate::vm::{
 
 #[derive(Clone, Debug, Userdata, Trace, VmType)]
 #[gluon(vm_type = "std.random.XorShiftRng")]
+#[gluon_userdata(clone)]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
