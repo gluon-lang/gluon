@@ -319,6 +319,12 @@ pub struct Spanned<T, Pos> {
     pub value: T,
 }
 
+impl<T, Pos> From<(T, Span<Pos>)> for Spanned<T, Pos> {
+    fn from((value, span): (T, Span<Pos>)) -> Self {
+        Spanned { span, value }
+    }
+}
+
 impl<T, Pos> From<T> for Spanned<T, Pos>
 where
     Pos: Default,

@@ -1117,9 +1117,9 @@ where
     pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        T::SpannedId: From<Id>,
+        T::SpannedId: From<(Id, Span<BytePos>)>,
         I: IntoIterator<Item = T>,
-        T: From<(Type<Id, T>, Flags)>,
+        T: From<(Type<Id, T>, Flags)> + HasSpan,
     {
         T::from(Type::tuple_(symbols, elems))
     }
@@ -1127,9 +1127,9 @@ where
     pub fn tuple_<S, I>(symbols: &mut S, elems: I) -> Type<Id, T>
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        T::SpannedId: From<Id>,
+        T::SpannedId: From<(Id, Span<BytePos>)>,
         I: IntoIterator<Item = T>,
-        T: From<(Type<Id, T>, Flags)>,
+        T: From<(Type<Id, T>, Flags)> + HasSpan,
     {
         NullInterner.tuple_(symbols, elems)
     }
@@ -3583,8 +3583,9 @@ where
     fn tuple<S, I>(&mut self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        T::SpannedId: From<Id>,
+        T::SpannedId: From<(Id, Span<BytePos>)>,
         I: IntoIterator<Item = T>,
+        T: HasSpan,
     {
         let t = self.tuple_(symbols, elems);
         self.intern(t)
@@ -3593,12 +3594,13 @@ where
     fn tuple_<S, I>(&mut self, symbols: &mut S, elems: I) -> Type<Id, T>
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        T::SpannedId: From<Id>,
+        T::SpannedId: From<(Id, Span<BytePos>)>,
+        T: HasSpan,
         I: IntoIterator<Item = T>,
     {
         let empty_row = self.empty_row();
         let elems = self.intern_fields(elems.into_iter().enumerate().map(|(i, typ)| Field {
-            name: symbols.from_str(&format!("_{}", i)).into(),
+            name: (symbols.from_str(&format!("_{}", i)), typ.span()).into(),
             typ,
         }));
         Type::Record(self.extend_row(elems, empty_row))
