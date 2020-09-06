@@ -1,8 +1,7 @@
 //! A `Duration` type for representing and working with spans of time
 // Documentation in this module is mostly modified from Rust's std::time crate.
 
-let { Ordering } = import! std.types
-let { Eq, Ord } = import! std.cmp
+let { Eq, Ord, Ordering } = import! std.cmp
 let { duration } = import! std.time.prim
 let { Duration } = duration
 
@@ -30,6 +29,8 @@ let ord : Ord Duration =
     /// # Examples
     ///
     /// ```
+    /// let { (|>) } = import! std.function
+    /// let { map } = import! std.functor
     /// let { ? } = import! std.effect
     /// let { assert_eq, ? } = import! std.test
     /// let { duration } = import! std.time
@@ -42,7 +43,7 @@ let ord : Ord Duration =
     ///           (duration.checked_add five_seconds five_seconds |> map duration.as_secs)
     /// ```
     Duration,
-    
+
     /// Creates a new `Duration` from the specified number of whole seconds and
     /// additional nanoseconds.
     ///
@@ -57,12 +58,16 @@ let ord : Ord Duration =
     /// # Examples
     ///
     /// ```
+    /// let { wrap } = import! std.applicative
+    /// let { ? } = import! std.effect
     /// let { duration } = import! std.time
     ///
     /// let five_and_a_half_seconds = duration.new 5 500000000
+    /// let one_tenth_of_a_second = duration.new 0 100000000
+    /// wrap ()
     /// ```
     new = duration.new,
-    
+
     /// Creates a new `Duration` from the specified number of whole seconds.
     ///
     /// # Panics
@@ -74,7 +79,7 @@ let ord : Ord Duration =
     /// ```
     /// let { ? } = import! std.effect
     /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { duration, ? } = import! std.time
     ///
     /// let five_seconds = duration.from_secs 5
     ///
@@ -94,7 +99,7 @@ let ord : Ord Duration =
     /// ```
     /// let { ? } = import! std.effect
     /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { duration, ? } = import! std.time
     ///
     /// let two_and_a_half_seconds = duration.from_millis 2500
     ///
@@ -254,7 +259,7 @@ let ord : Ord Duration =
     ///
     /// let dur = duration.new 3 141592653
     ///
-    /// seq assert_eq 3141 (duration.as_millis dur)
+    /// assert_eq 3141 (duration.as_millis dur)
     /// ```
     as_millis = duration.as_millis,
 
@@ -305,18 +310,20 @@ let ord : Ord Duration =
     ///
     /// ```
     /// let int = import! std.int
+    /// let { const } = import! std.function
     /// let { ? } = import! std.effect
-    /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { assert_eq, assert_none, ? } = import! std.test
+    /// let { duration, ? } = import! std.time
     ///
     /// let dur_x = duration.new 3 500000000
     /// let dur_y = duration.new 5 250000000
-    /// let dur_max = duration.new int.max_value 250000000
+    /// let dur_max = duration.new int.max_value int.max_value
+    ///
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
     ///
     /// seq assert_eq (Some (duration.new 8 750000000))
     ///               (duration.checked_add dur_x dur_y)
-    /// assert_eq None
-    ///           (duration.checked_add dur_max dur_y)
+    /// assert_none (duration.checked_add dur_max dur_max)
     /// ```
     checked_add = duration.checked_add,
 
@@ -326,17 +333,19 @@ let ord : Ord Duration =
     /// # Examples
     ///
     /// ```
+    /// let { const } = import! std.function
     /// let { ? } = import! std.effect
-    /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { assert_eq, assert_none, ? } = import! std.test
+    /// let { duration, ? } = import! std.time
+    ///
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
     ///
     /// let dur_small = duration.new 3 500000000
     /// let dur_big = duration.new 5 250000000
     ///
     /// seq assert_eq (Some (duration.new 1 750000000))
     ///               (duration.checked_sub dur_big dur_small)
-    /// assert_eq None
-    ///           (duration.checked_sub dur_small dur_big)
+    /// assert_none (duration.checked_sub dur_small dur_big)
     /// ```
     checked_sub = duration.checked_sub,
 
@@ -347,9 +356,12 @@ let ord : Ord Duration =
     ///
     /// ```
     /// let int = import! std.int
+    /// let { const } = import! std.function
     /// let { ? } = import! std.effect
-    /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { assert_eq, assert_none, ? } = import! std.test
+    /// let { duration, ? } = import! std.time
+    ///
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
     ///
     /// let dur = duration.new 3 500000000
     /// let dur_max = duration.new int.max_value 250000000
@@ -358,8 +370,7 @@ let ord : Ord Duration =
     ///               (duration.checked_mul dur 5)
     /// seq assert_eq None
     ///               (duration.checked_mul dur -5)
-    /// assert_eq None
-    ///           (duration.checked_mul dur_max 5)
+    /// assert_none (duration.checked_mul dur_max 5)
     /// ```
     checked_mul = duration.checked_mul,
 
@@ -369,16 +380,18 @@ let ord : Ord Duration =
     /// # Examples
     ///
     /// ```
+    /// let { const } = import! std.function
     /// let { ? } = import! std.effect
-    /// let { assert_eq, ? } = import! std.test
-    /// let { duration } = import! std.time
+    /// let { assert_eq, assert_none, ? } = import! std.test
+    /// let { duration, ? } = import! std.time
+    ///
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
     ///
     /// let dur = duration.new 3 500000000
     ///
     /// seq assert_eq (Some (duration.new 1 750000000))
     ///               (duration.checked_div dur 2)
-    /// assert_eq None
-    ///           (duration.checked_div dur 0)
+    /// assert_none (duration.checked_div dur 0)
     /// ```
     checked_div = duration.checked_div,
 

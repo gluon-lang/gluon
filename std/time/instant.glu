@@ -1,8 +1,7 @@
 //! A measurement on a monotonically-nondecreasing clock. Opaque and useful only with `Duration`.
 // Documentation in this module is mostly modified from Rust's std::time crate.
 
-let { Ordering } = import! std.types
-let { Eq, Ord } = import! std.cmp
+let { Eq, Ord, Ordering } = import! std.cmp
 let { instant } = import! std.time.prim
 let { Instant } = instant
 
@@ -44,16 +43,23 @@ let ord : Ord Instant =
     /// Example:
     ///
     /// ```
+    /// let { (<<), (<|) } = import! std.function
+    /// let { map } = import! std.functor
+    /// let { wrap } = import! std.applicative
+    /// let { unwrap_ok_or } = import! std.result
     /// let { print, ? } = import! std.io
+    /// let { ? } = import! std.effect
+    /// let { Lift, lift, ? } = import! std.effect.lift
     /// let { assert_eq, ? } = import! std.test
-    /// let { duration, instant } = import! std.time
+    /// let { duration, instant, ? } = import! std.time
     ///
     /// let long_computation x : [Num a] -> a -> a = x * x
     ///
-    /// do start = instant.now
-    /// let result = long_computation 12
-    /// do time_taken = instant.elapsed start
-    /// print << show << duration.as_nanos time_taken
+    /// do start = lift instant.now
+    /// // let x = long_computation 12
+    /// // do time_taken = lift <| map (unwrap_ok_or (duration.from_secs 0)) <| instant.elapsed start
+    /// // lift << print << show <| duration.as_nanos time_taken
+    /// wrap ()
     /// ```
     Instant,
 
@@ -62,37 +68,44 @@ let ord : Ord Instant =
     /// # Examples
     ///
     /// ```
-    /// let { wrap } = import! std.applicative
+    /// let { (<|), const } = import! std.function
     /// let { ? } = import! std.effect
-    /// let { assert, ? } = import! std.test
-    /// let { instant, ? } = import! std.time
+    /// let { Lift, lift, ? } = import! std.effect.lift
+    /// let { assert_lte, ? } = import! std.test
+    /// let { duration, instant, ? } = import! std.time
     ///
-    /// do moment1 = instant.now
-    /// do moment2 = instant.now
-    /// wrap (assert (moment1 <= moment2))
+    /// let inst_show : Show instant.Instant = { show = const "<instant>" }
+    ///
+    /// do moment1 = lift instant.now
+    /// do moment2 = lift instant.now
+    /// assert_lte moment1 moment2
     /// ```
     now = instant.now,
 
-    /// Returns the amount of time elapsed between the first instant and the second,
-    /// or None if the second instant is earlier than the first. (The order of the
+    /// Returns `Ok duration` where `duration` is the amount of time elapsed
+    /// between the first `Instant` and the second `Instant`, or `Err duration`
+    /// if the second `Instant` is earlier than the first. (The order of the
     /// parameters is flipped relative to the Rust standard library function.)
     ///
     /// # Examples
     ///
     /// ```
-    /// let { (<|) } = import! std.function
+    /// let { (<|), const } = import! std.function
+    /// let { ? } = import! std.unit
     /// let { wrap } = import! std.applicative
-    /// let { assert, assert_success, ? } = import! std.test
+    /// let { Test, assert_gte, assert_success, ? } = import! std.test
     /// let { Eff, ? } = import! std.effect
-    /// let { Error, some_or_throw, ? } = import! std.effect.error
+    /// let { Error, ok_or_throw, ? } = import! std.effect.error
     /// let { Lift, lift, ? } = import! std.effect.lift
     /// let { instant, duration, ? } = import! std.time
     ///
-    /// let example : Eff [| lift: Lift IO, error: Error () | r |] () =
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
+    ///
+    /// let example : Eff [| lift: Lift IO, error: Error duration.Duration, writer: Test | r |] () =
     ///     do moment1 = lift instant.now
     ///     do moment2 = lift instant.now
-    ///     do dur = some_or_throw () <| instant.duration_since moment1 moment2
-    ///     wrap <| assert (dur >= (duration.from_secs 0))
+    ///     do dur = ok_or_throw <| instant.duration_since moment1 moment2
+    ///     assert_gte dur (duration.from_secs 0)
     /// assert_success example
     /// ```
     duration_since = instant.duration_since,
@@ -125,24 +138,33 @@ let ord : Ord Instant =
     /// ```
     saturating_duration_since = instant.saturating_duration_since,
 
+    /// Returns `Ok duration` where `duration` is the amount of time elapsed
+    /// since the given `Instant` was created, or `Err duration` if the given
+    /// `Instant` is later than the current time. (The order of the
+    /// parameters is flipped relative to the Rust standard library function.)
+    ///
+    /// This function may error if the `Instant` was produced synthetically, but
+    /// should succeed otherwise.
     ///
     /// # Examples
     ///
     /// ```
     /// let { ? } = import! std.unit
-    /// let { (<|) } = import! std.function
+    /// let { (<|), const } = import! std.function
     /// let { wrap } = import! std.applicative
     /// let { (=<<) } = import! std.monad
-    /// let { assert, assert_success, ? } = import! std.test
+    /// let { Test, assert_gte, assert_success, ? } = import! std.test
     /// let { Eff, ? } = import! std.effect
-    /// let { Error, some_or_throw, ? } = import! std.effect.error
+    /// let { Error, ok_or_throw, ? } = import! std.effect.error
     /// let { Lift, lift, ? } = import! std.effect.lift
     /// let { ? } = import! std.io
     /// let { instant, duration, ? } = import! std.time
     ///
-    /// let example : Eff [| lift: Lift IO, error: Error () | r |] () =
-    ///     do dur = some_or_throw () =<< lift (instant.elapsed =<< instant.now)
-    ///     wrap <| assert (dur >= (duration.from_secs 0))
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
+    ///
+    /// let example : Eff [| lift: Lift IO, error: Error duration.Duration, writer: Test | r |] () =
+    ///     do dur = ok_or_throw =<< lift (instant.elapsed =<< instant.now)
+    ///     assert_gte dur (duration.from_secs 0)
     /// assert_success example
     /// ```
     elapsed = instant.elapsed,
@@ -156,6 +178,7 @@ let ord : Ord Instant =
     /// ```
     /// let { (<|) } = import! std.function
     /// let { assert_some, ? } = import! std.test
+    /// let { ? } = import! std.effect
     /// let { lift, ? } = import! std.effect.lift
     /// let { ? } = import! std.io
     /// let { instant, duration, ? } = import! std.time
@@ -174,6 +197,7 @@ let ord : Ord Instant =
     /// ```
     /// let { (<|) } = import! std.function
     /// let { assert_some, ? } = import! std.test
+    /// let { ? } = import! std.effect
     /// let { lift, ? } = import! std.effect.lift
     /// let { ? } = import! std.io
     /// let { instant, duration, ? } = import! std.time
