@@ -97,9 +97,34 @@ let ord : Ord Instant =
     /// ```
     duration_since = instant.duration_since,
 
-    /// Returns the amount of time elapsed since the given `Instant` was created
-    /// or None if the current time is earlier than the `Instant`, which can
-    /// happen if an `Instant` is produced synthetically.
+    /// Returns the amount of time elapsed between the first instant and the second,
+    /// or a duration of zero if the second instant is earlier than the first. (The order of the
+    /// parameters is flipped relative to the Rust standard library function.)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let { (<|), const } = import! std.function
+    /// let { wrap } = import! std.applicative
+    /// let { assert_eq, assert_gte, assert_success, ? } = import! std.test
+    /// let { Eff, ? } = import! std.effect
+    /// let { Error, some_or_throw, ? } = import! std.effect.error
+    /// let { Lift, lift, ? } = import! std.effect.lift
+    /// let { instant, duration, ? } = import! std.time
+    ///
+    /// let dur_show : Show duration.Duration = { show = const "<duration>" }
+    ///
+    /// do moment1 = lift instant.now
+    /// do moment2 = lift instant.now
+    /// seq assert_gte 
+    ///     (instant.saturating_duration_since moment1 moment2)
+    ///     (duration.from_secs 0)
+    /// assert_eq 
+    ///     (instant.saturating_duration_since moment2 moment1)
+    ///     (duration.from_secs 0)
+    /// ```
+    saturating_duration_since = instant.saturating_duration_since,
+
     ///
     /// # Examples
     ///
