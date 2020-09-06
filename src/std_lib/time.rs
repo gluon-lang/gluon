@@ -158,17 +158,25 @@ mod instant {
     }
 
     // Note: The parameters are reversed relative to the underlying standard library function
-    pub(crate) fn duration_since(earlier: &Instant, later: &Instant) -> Option<Duration> {
-        // Note: replace with checked_duration_since when it lands in Stable
-        if later.0 >= earlier.0 {
-            // should never panic
-            Some(Duration(later.0.duration_since(earlier.0)))
-        } else {
-            None
-        }
+    pub(crate) fn duration_since(earlier: &Instant, later: &Instant) -> Result<Duration, Duration> {
+        // Should never panic because either earlier <= later or later > earlier
+        later.0
+            .checked_duration_since(earlier.0)
+            .map(Duration)
+            .ok_or_else( ||
+                earlier.0
+                    .checked_duration_since(later.0)
+                    .map(Duration)
+                    .unwrap(),
+            )
     }
 
-    pub(crate) fn elapsed(earlier: &Instant) -> IO<Option<Duration>> {
+    // Note: The parameters are reversed relative to the underlying standard library function
+    pub(crate) fn saturating_duration_since(earlier: &Instant, later: &Instant) -> Duration {
+        Duration(later.0.saturating_duration_since(earlier.0))
+    }
+
+    pub(crate) fn elapsed(earlier: &Instant) -> IO<Result<Duration, Duration>> {
         IO::Value(duration_since(earlier, &Instant(time::Instant::now())))
     }
 
@@ -203,13 +211,31 @@ mod system_time {
         IO::Value(SystemTime(time::SystemTime::now()))
     }
 
+    // Note: The parameters are reversed relative to the underlying standard library function
     /// Returns `Ok(later - earlier)` if `later` is the same as or later than `earlier`.
     /// Returns `Err(earlier - later)` if `later` is earlier than `earlier`.
-    pub(crate) fn duration_since(later : &SystemTime, earlier : &SystemTime) -> Result<Duration, Duration> {
+    pub(crate) fn duration_since(
+        earlier: &SystemTime,
+        later: &SystemTime,
+    ) -> Result<Duration, Duration> {
         later.0
             .duration_since(earlier.0)
             .map(|x| Duration(x))
             .map_err(|e| Duration(e.duration()))
+    }
+
+    // Note: The parameters are reversed relative to the underlying standard library function
+    /// Returns `later - earlier` if `later` is the same as or later than `earlier`.
+    /// Returns `0` if `later` is earlier than `earlier`.
+    pub(crate) fn saturating_duration_since(
+        earlier: &SystemTime,
+        later: &SystemTime
+    ) -> Duration {
+        Duration(
+            later.0
+                .duration_since(earlier.0)
+                .unwrap_or(time::Duration::new(0, 0)),
+        )
     }
 
     pub(crate) fn elapsed(earlier: &SystemTime) -> IO<Result<Duration, Duration>> {
@@ -282,6 +308,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
                 now => primitive!(0, std::time::prim::instant::now),
                 duration_since => primitive!(2, std::time::prim::instant::duration_since),
+                saturating_duration_since => primitive!(2, std::time::prim::instant::saturating_duration_since),
                 elapsed => primitive!(1, std::time::prim::instant::elapsed),
 
                 checked_add => primitive!(2, std::time::prim::instant::checked_add),
@@ -297,6 +324,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
                 now => primitive!(0, std::time::prim::system_time::now),
                 duration_since => primitive!(2, std::time::prim::system_time::duration_since),
+                saturating_duration_since => primitive!(2, std::time::prim::system_time::saturating_duration_since),
                 elapsed => primitive!(1, std::time::prim::system_time::elapsed),
 
                 checked_add => primitive!(2, std::time::prim::system_time::checked_add),
