@@ -59,7 +59,6 @@ field_decl! { unwrap_b, value, key }
 
 // we define Either with type parameters, just like in Gluon
 #[derive(Getable, Pushable, VmType)]
-#[gluon(vm_type = "examples.either.Either")]
 enum Either<L, R> {
     Left(L),
     Right(R),
