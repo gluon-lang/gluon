@@ -39,19 +39,36 @@ code using the `api::typ::make_source` function.
 
 ### Using derive macros
 
-Add the `gluon_codegen` crate to your `Cargo.toml` and import it:
+Add the `gluon_codegen` crate to your `Cargo.toml` this lets you import and derive the
+`VmType`, `Getable`, `Pushable` and `Userdata` traits.
+
+`VmType`, `Getable` and `Pushable` can be implemented on any type which only consists of types which in turn implements
+these traits whereas `Userdata` can be derived for any type as long as it is `Debug + Send + Sync` and has a `'static`
+lifetime.
+
+Sometimes when deriving `VmType` you do not want to define a new type. In this case you can use the `vm_type` attribute
+to point to another, compatible type. See the marshalling example for the complete source for the examples below.
 
 ```rust,ignore
-#[macro_use]
-extern crate gluon_codegen;
+// Using `vm_type` to point to compatible type defined in gluon
+#[derive(Debug, PartialEq, VmType, Getable)]
+#[gluon(vm_type = "std.list.List")]
+enum List<T> {
+    Nil,
+    Cons(T, Box<List<T>>),
+}
+
+// Defines an opaque type with Userdata
+#[derive(Userdata, Trace, Clone, Debug, VmType)]
+// Lets gluon know that the value can be cloned which can be needed when transferring the value between threads
+#[gluon_userdata(clone)]
+// Refers to the `WindowHandle` type registered on the Rust side
+#[gluon(vm_type = "WindowHandle")]
+struct WindowHandle {
+    id: Arc<u64>,
+    metadata: Arc<str>,
+}
 ```
-
-`VmType`, `Getable` and `Pushable` can be derived for types that consist only of types that
-already implement the respective traits. In the case of `VmType` you also have to specify
-the Gluon type the Rust type maps to, using the `#[gluon(vm_type = "<gluon_type>")]` attribute.
-
-`Userdata` can be derived for any type as long as it is `Debug + Send + Sync` and has a `'static`
-lifetime.
 
 ### Implementing by hand
 
@@ -206,7 +223,6 @@ the Gluon side, you can use the [Opaque][] type together with the marker types i
 ```rust,ignore
 // we define Either with type parameters, just like in Gluon
 #[derive(Getable, Pushable, VmType)]
-#[gluon(vm_type = "examples.either.Either")]
 enum Either<L, R> {
     Left(L),
     Right(R),
