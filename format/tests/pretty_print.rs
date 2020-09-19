@@ -4,7 +4,7 @@ extern crate pretty_assertions;
 extern crate gluon_base as base;
 extern crate gluon_format as format;
 
-use difference::assert_diff;
+use {difference::assert_diff, expect_test::expect};
 
 use gluon::{RootedThread, ThreadExt, VmBuilder};
 
@@ -812,4 +812,27 @@ let assert_success : [Show e]
     run_error >> flat_map assert_ok
 ()
 "#
+}
+
+#[test]
+fn sequence() {
+    let expr = r#"
+// a
+io.print "Hello"
+// b
+io.print " "
+// c
+io.println "World"
+// d
+"#;
+    expect![[r#"
+
+        // a
+        io.print "Hello"
+        // b
+        io.print " "
+        // c
+        io.println "World"
+        // d
+    "#]].assert_eq(&format_expr(expr).unwrap());
 }

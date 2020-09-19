@@ -811,6 +811,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "expect-test"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceb96f3eaa0d4e8769c52dacfd4eb60183b817ed2f176171b3c691d5022b0f2e"
+dependencies = [
+ "difference",
+ "once_cell",
+]
+
+[[package]]
 name = "failure"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1292,6 +1302,7 @@ dependencies = [
  "codespan",
  "difference",
  "env_logger 0.7.1",
+ "expect-test",
  "futures 0.3.5",
  "gluon",
  "gluon_base",

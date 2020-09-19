@@ -334,9 +334,18 @@ do { y } = Some { y = "" }
 Some y
 ```
 
-### Seq expressions
+### Sequence expressions
 
-`seq` expressions work just like `do` expressions, only they do not have a binding.
+Sequence expressions work just like `do` expressions, only they do not have a binding.
+
+```f#,rust
+let io @ { ? } = import! std.io
+io.print "Hello"
+io.print " "
+io.println "world!"
+```
+
+For backwards compatibility it is also possible to write (`seq`) before each expression.
 
 ```f#,rust
 let io @ { ? } = import! std.io
