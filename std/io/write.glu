@@ -68,7 +68,7 @@ type Buffered w = { writer : w, buf : Reference (Array Byte), capacity : Int }
 /// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
 /// buffer capacity.
 let buffered_with_capacity capacity writer : [Write w] -> Int -> w -> Buffered w =
-    assert (capacity > 0)
+    let _ = assert (capacity > 0)
 
     {
         writer,
@@ -102,7 +102,7 @@ let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
 let write_buffered : [Write w] -> Write (Buffered w) =
     let buffered_write_slice buf_writer slice start end =
         let slice_len = end - start
-        assert (slice_len >= 0)
+        let _ = assert (slice_len >= 0)
 
         do _ =
             // if the new data would spill the buffer, flush it first

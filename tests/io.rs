@@ -35,9 +35,9 @@ fn read_file() {
         do bytes = io.read_file file 9
         let bytes = unwrap bytes
 
-        assert (array.len bytes == 9)
-        assert (array.index bytes 0 == 91b) // [
-        assert (array.index bytes 1 == 112b) // p
+        let _ = assert (array.len bytes == 9)
+        let _ = assert (array.index bytes 0 == 91b) // [
+        let _ = assert (array.index bytes 1 == 112b) // p
 
         wrap (array.index bytes 8)
         "#;
@@ -65,7 +65,7 @@ fn write_and_flush_file() {
         \path ->
             do file = open_file_with path [Write]
             do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
-            assert (bytes_written == 4)
+            let _ = assert (bytes_written == 4)
             flush_file file
     "#;
 
@@ -231,7 +231,7 @@ fn spawn_on_do_action_twice() {
 
         do child = thread.new_thread ()
         let action = thread.spawn_on child (\_ ->
-                counter <- (load counter + 1)
+                let _ = counter <- (load counter + 1)
                 wrap ())
         seq join action
         seq join action
@@ -261,7 +261,7 @@ fn spawn_on_force_action_twice() {
 
         do child = thread.new_thread ()
         do action = thread.spawn_on child (\_ ->
-                counter <- (load counter + 1)
+                let _ = counter <- (load counter + 1)
                 wrap ())
         seq action
         seq action

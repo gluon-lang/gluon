@@ -129,10 +129,10 @@ fn suggest_after_unrelated_type_error() {
     let result = suggest(
         r#"
 let record = { aa = 1, ab = 2, c = "" }
-1.0 #Int+ 2
+let _ = 1.0 #Int+ 2
 record.a
 "#,
-        BytePos::from(104),
+        BytePos::from(112),
     );
     let expected = Ok(vec!["aa".into(), "ab".into()]);
 
@@ -289,16 +289,16 @@ fn suggest_between_expressions() {
     let text = r#"
 let abc = 1
 let abb = 2
-test  test1
+let _ = test  test1
 ""  123
 "#;
-    let result = suggest(text, loc(text, 3, 5));
+    let result = suggest(text, loc(text, 3, 13));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 
     let result = suggest(text, loc(text, 4, 3));
-    let expected = Ok(vec!["abb".into(), "abc".into()]);
+    let expected = Ok(vec!["_".into(), "abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 }

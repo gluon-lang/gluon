@@ -23,7 +23,7 @@ test_check! {
 test_check_err! {
     not_variant_effect,
     r#"
-    convert_effect! ()
+    let _ = convert_effect! ()
     convert_effect! 1
     "#,
     TypeError::Message(_),

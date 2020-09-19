@@ -170,8 +170,8 @@ fn binop() {
     let text = r#"
 #[infix(left, 4)]
 let (++) l r =
-    l #Int+ 1
-    r #Float+ 1.0
+    let _ = l #Int+ 1
+    let _ = r #Float+ 1.0
     l
 1 ++ 2.0
 "#;

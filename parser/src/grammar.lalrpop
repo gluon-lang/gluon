@@ -106,6 +106,17 @@ CommaTemp<Rule>: TempVecStart<Rule> = {
 };
 
 #[inline]
+SepVec1<Rule, Separator>: TempVecStart<Rule> =
+    <start: Many1Vec<(<Rule> Separator)>?> <last: Rule> => {
+        let start = match start {
+            Some(start) => start,
+            None => temp_vecs.start(),
+        };
+        temp_vecs.select().push(last);
+        start
+    };
+
+#[inline]
 SepSlice1<Rule, Separator>: &'ast mut Slice<Rule> =
     <start: Many1Vec<(<Rule> Separator)>?> <last: Rule> => {
         match start {
@@ -617,7 +628,7 @@ Literal: Literal = {
 };
 
 Alternative: () = {
-    "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
+    "|" <pat: Sp<Pattern>> "->" <expr: SpBlockExpr> => {
         temp_vecs.select().push(
             Alternative {
                 pattern: pat,
@@ -903,9 +914,26 @@ DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
     },
 };
 
+#[inline]
+SpBlockExpr: SpannedExpr<'ast, Id> = {
+    Sp<BlockExpr> => super::shrink_hidden_spans(<>),
+};
+
 BlockExpr: Expr<'ast, Id> = {
-    "block open" <exprs: SepSlice1<SpExpr, "block separator">> "block close" => {
-        Expr::Block(exprs)
+    "block open" <exprs: SepVec1<SpExpr, "block separator">> "block close" => {
+        let mut iter = temp_vecs.drain(exprs).rev();
+        let last = iter.next().unwrap();
+        if iter.size_hint().0 == 0 {
+            Expr::Block(arena.alloc_extend(Some(last)))
+        } else {
+            iter.fold(last, |body, expr| {
+                pos::spanned2(
+                    expr.span.start(),
+                    body.span.end(),
+                    Expr::Do(arena.alloc(Do { id: None, bound: arena.alloc(expr), body: arena.alloc(body), flat_map_id: None })),
+                )
+            }).value
+        }
     },
 };
 

@@ -190,7 +190,7 @@ let commands : Commands =
                     *> array.traversable.traverse effect.applicative print_cmd (load commands)
                     *> wrap Continue,
         }]
-    commands <- cmds
+    let _ = commands <- cmds
     foldl
         (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
         empty

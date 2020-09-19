@@ -69,7 +69,7 @@ type Buffered r = { reader : r, buf : Reference (Array Byte), capacity : Int }
 /// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
 /// buffer capacity.
 let buffered_with_capacity capacity reader : [Read a] -> Int -> a -> Buffered a =
-    assert (capacity > 0)
+    let _ = assert (capacity > 0)
 
     {
         reader,

@@ -393,22 +393,6 @@ let traverse_with_key f m x : [Ord k]
 }
 
 #[test]
-fn comments_in_block_exprs() {
-    let expr = r#"
-// test
-test 123
-
-// test1
-
-// test1
-
-abc ""
-// test2
-"#;
-    assert_diff!(&format_expr(expr).unwrap(), expr, "\n", 0);
-}
-
-#[test]
 fn comments_between_lambda_and_let() {
     let expr = r#"
 \x ->
