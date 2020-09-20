@@ -152,7 +152,8 @@ where
                 self.stack.insert(id.name.clone(), id.typ.clone());
             }
             Pattern::Record { typ, fields, .. } => {
-                let unaliased = resolve::remove_aliases(&self.env, &mut NullInterner, typ.clone());
+                let unaliased =
+                    resolve::remove_aliases(&self.env, NullInterner::new(), typ.clone());
                 for field in &**fields {
                     match field {
                         PatternField::Type { name } => {
@@ -359,7 +360,7 @@ where
                     if ident.span.containment(self.pos) == Ordering::Equal {
                         let record_type = resolve::remove_aliases(
                             &crate::base::ast::EmptyEnv::default(),
-                            &mut NullInterner,
+                            NullInterner::new(),
                             record_type.clone(),
                         );
                         let either = record_type
@@ -1303,7 +1304,7 @@ impl SuggestionQuery {
                         Pattern::Constructor(ref id, _) | Pattern::Ident(ref id) => id.as_ref(),
                         Pattern::Record { ref fields, .. } => {
                             if let Ok(typ) = expr.try_type_of(&env) {
-                                let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
+                                let typ = resolve::remove_aliases(env, NullInterner::new(), typ);
                                 self.suggest_fields_of_type(&mut result, fields, "", &typ);
                             }
                             ""
@@ -1325,7 +1326,7 @@ impl SuggestionQuery {
                     Match::Expr(context) => match context.value {
                         Expr::Projection(ref expr, _, _) => {
                             if let Ok(typ) = expr.try_type_of(&env) {
-                                let typ = resolve::remove_aliases(&env, &mut NullInterner, typ);
+                                let typ = resolve::remove_aliases(&env, NullInterner::new(), typ);
                                 let id = ident.as_ref();
 
                                 let iter = typ
@@ -1368,7 +1369,7 @@ impl SuggestionQuery {
                             },
                         ..
                     }) => {
-                        let typ = resolve::remove_aliases_cow(env, &mut NullInterner, typ);
+                        let typ = resolve::remove_aliases_cow(env, NullInterner::new(), typ);
                         self.suggest_fields_of_type(
                             &mut result,
                             fields,
@@ -1409,7 +1410,7 @@ impl SuggestionQuery {
                 Match::Pattern(pattern) => match pattern.value {
                     Pattern::Record { ref fields, .. } => {
                         if let Ok(typ) = pattern.try_type_of(env) {
-                            let typ = resolve::remove_aliases(env, &mut NullInterner, typ);
+                            let typ = resolve::remove_aliases(env, NullInterner::new(), typ);
                             self.suggest_fields_of_type(&mut result, fields, "", &typ);
                         }
                     }

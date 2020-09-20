@@ -270,11 +270,14 @@ where
 }
 
 macro_rules! vm_function_impl {
-    ([$($f:tt)*] $($args:ident),*) => {
+    ([$($f:tt)*] $($args:ident),* -> $ret: ident, $ret_ty: ty) => {
 
-impl <'vm, $($args,)* R> VmFunction<'vm> for $($f)* ($($args),*) -> R
+impl <'vm, $($args,)* $ret> VmFunction<'vm> for $($f)* ($($args),*) -> $ret_ty
 where $($args: Getable<'vm, 'vm> + 'vm,)*
-      R: AsyncPushable<'vm> + VmType + 'vm
+      $ret: AsyncPushable<'vm> + VmType + 'vm,
+      $ret_ty: AsyncPushable<'vm> + VmType + 'vm,
+      $ret::Type: Sized,
+      <$ret_ty as VmType>::Type: Sized,
 {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
@@ -341,49 +344,76 @@ where
 }
 
 macro_rules! make_vm_function {
-    ($($args:ident),*) => (
-impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
+    ($($args:ident),*) => {
+        make_vm_function_inner!($($args),* -> R, R);
+    }
+}
+macro_rules! make_vm_function_inner {
+    ($($args:ident),* -> $ret: ident, $ret_ty: ty) => (
+impl <$($args: VmType,)* $ret: VmType> VmType for fn ($($args),*) -> $ret_ty
+where
+    <$ret_ty as VmType>::Type: Sized,
+    <$ret as VmType>::Type: Sized,
+{
     #[allow(non_snake_case)]
-    type Type = fn ($($args::Type),*) -> R::Type;
+    type Type = fn ($($args::Type),*) -> <$ret_ty as VmType>::Type;
 
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        vm.global_env().type_cache().function(args, make_type::<R>(vm))
+        vm.global_env().type_cache().function(args, make_type::<$ret_ty>(vm))
     }
 }
 
-vm_function_impl!([fn] $($args),*);
-vm_function_impl!([dyn Fn] $($args),*);
+vm_function_impl!([fn] $($args),* -> $ret, $ret_ty);
+vm_function_impl!([dyn Fn] $($args),* -> $ret, $ret_ty);
 
-impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
+impl <'vm, $($args,)* $ret: VmType> FunctionType for fn ($($args),*) -> $ret_ty
+where
+    $ret_ty: VmType,
+    <$ret_ty as VmType>::Type: Sized,
+    $ret::Type: Sized,
+{
     fn arguments() -> VmIndex {
-        count!($($args),*) + R::EXTRA_ARGS
+        count!($($args),*) + <$ret_ty as VmType>::EXTRA_ARGS
     }
 }
 
-impl <'s, $($args,)* R: VmType> FunctionType for dyn Fn($($args),*) -> R + 's {
+impl <'s, $($args,)* $ret: VmType> FunctionType for dyn Fn($($args),*) -> $ret_ty + 's
+where
+    $ret_ty: VmType,
+    <$ret_ty as VmType>::Type: Sized,
+    $ret::Type: Sized,
+{
     fn arguments() -> VmIndex {
-        count!($($args),*) + R::EXTRA_ARGS
+        count!($($args),*) + <$ret_ty as VmType>::EXTRA_ARGS
     }
 }
 
-impl <'s, $($args: VmType,)* R: VmType> VmType for dyn Fn($($args),*) -> R + 's {
-    type Type = fn ($($args::Type),*) -> R::Type;
+impl <'s, $($args: VmType,)* $ret: VmType> VmType for dyn Fn($($args),*) -> $ret_ty + 's
+where
+    $ret_ty: VmType,
+    <$ret_ty as VmType>::Type: Sized,
+    $ret::Type: Sized,
+{
+    type Type = fn ($($args::Type),*) -> <$ret_ty as VmType>::Type;
 
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
-        <fn ($($args),*) -> R>::make_type(vm)
+        <fn ($($args),*) -> $ret_ty>::make_type(vm)
     }
 }
 
-impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
-    where $($args: for<'vm> Pushable<'vm>,)*
-          T: VmRootInternal,
-          R: VmType + for<'x, 'value> Getable<'x, 'value>,
+impl<T, $($args,)* $ret> Function<T, fn($($args),*) -> $ret_ty>
+where
+    $($args: for<'vm> Pushable<'vm>,)*
+    T: VmRootInternal,
+    $ret: VmType + for<'x, 'value> Getable<'x, 'value>,
+    <$ret_ty as VmType>::Type: Sized,
+    $ret::Type: Sized,
 {
     #[allow(non_snake_case)]
-    pub fn call(&mut self $(, $args: $args)*) -> Result<R> {
+    pub fn call(&mut self $(, $args: $args)*) -> Result<$ret_ty> {
         block_on_sync(future::lazy(|cx| {
             match self.call_first(cx, $($args),*) {
                 Poll::Ready(r) => r,
@@ -393,17 +423,17 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 
     #[allow(non_snake_case)]
-    fn call_first(&self, cx: &mut task::Context<'_> $(, $args: $args)*) -> Poll<Result<R>> {
+    fn call_first(&self, cx: &mut task::Context<'_> $(, $args: $args)*) -> Poll<Result<$ret_ty>> {
         let vm = self.value.vm();
         let mut context = vm.current_context();
         context.push(self.value.get_variant());
         $(
             $args.vm_push(&mut context)?;
         )*
-        for _ in 0..R::EXTRA_ARGS {
+        for _ in 0..<$ret_ty as VmType>::EXTRA_ARGS {
             0.vm_push(&mut context).unwrap();
         }
-        let args = count!($($args),*) + R::EXTRA_ARGS;
+        let args = count!($($args),*) + <$ret_ty as VmType>::EXTRA_ARGS;
         let context =  ready!(vm.call_function(cx, context.into_owned(), args))?;
         let mut context = context.unwrap();
         let result = {
@@ -414,21 +444,24 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         Poll::Ready(result)
     }
 
-    fn return_value(vm: &Thread, value: Variants) -> Result<R> {
-        Ok(R::from_value(vm, value))
+    fn return_value(vm: &Thread, value: Variants) -> Result<$ret_ty> {
+        Ok(<$ret_ty>::from_value(vm, value))
     }
 }
 
-impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
-    where $($args: for<'vm> Pushable<'vm>,)*
-          T: VmRootInternal + Clone + Send,
-          R: VmType + for<'x, 'value> Getable<'x, 'value> + Send + Sync + 'static,
+impl<T, $($args,)* $ret> Function<T, fn($($args),*) -> $ret_ty>
+where
+    $($args: for<'vm> Pushable<'vm>,)*
+    T: VmRootInternal + Clone + Send,
+    $ret: VmType + for<'x, 'value> Getable<'x, 'value> + Send + Sync + 'static,
+    <$ret_ty as VmType>::Type: Sized,
+    $ret::Type: Sized,
 {
     #[allow(non_snake_case)]
     pub async fn call_async(
         &mut self
         $(, $args: $args)*
-        ) -> Result<R>
+        ) -> Result<$ret_ty>
     {
         use crate::thread::Execute;
         match future::lazy(|cx| self.call_first(cx, $($args),*)).await {
@@ -444,7 +477,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     )
 }
 
-make_vm_function!();
+make_vm_function_inner!( -> R, crate::api::IO<R>);
 make_vm_function!(A);
 make_vm_function!(A, B);
 make_vm_function!(A, B, C);
