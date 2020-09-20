@@ -85,6 +85,7 @@ async fn main_() -> Result<(), Error> {
             "fmt",
             files
                 .into_iter()
+                .chain(Some(PathBuf::from("../repl/src/repl.glu")))
                 .map(|file| {
                     let name = file.display().to_string();
                     tensile::test(name.clone(), move || test_format(&name))
