@@ -71,16 +71,16 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
         if n #Int== 0 then
             ()
         else
-            f n
-            f n
-            f n
-            f n
-            f n
-            f n
-            f n
-            f n
-            f n
-            f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
+            let _ = f n
             for (n #Int- 10) f
     for
     "#;
