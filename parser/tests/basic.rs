@@ -360,6 +360,14 @@ test_parse! {
     }
 }
 
+test_parse! {
+    raw_string_literal,
+    r##"  r"asdf" "##,
+    |_arena| {
+        string("asdf")
+    }
+}
+
 #[test]
 fn span_identifier() {
     let _ = ::env_logger::try_init();
