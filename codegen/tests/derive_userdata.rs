@@ -59,10 +59,10 @@ fn userdata() {
     let script = r#"
         let { assert } = import! std.test
         let { create_hwnd, id, metadata } = import! hwnd
-        
+
         let hwnd = create_hwnd 0 "Window1"
 
-        assert (id hwnd == 0)
+        let _ = assert (id hwnd == 0)
         assert (metadata hwnd == "Window1")
     "#;
 

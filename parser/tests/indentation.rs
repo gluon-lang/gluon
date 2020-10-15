@@ -1,4 +1,5 @@
-extern crate env_logger;
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
@@ -41,8 +42,7 @@ g ""
 
     match result {
         Ok(expr) => {
-            if let Expr::Block(ref exprs) = expr.expr().value {
-                assert_eq!(exprs.len(), 2);
+            if let Expr::Do(..) = expr.expr().value {
             } else {
                 assert!(false, "Expected block, found {:?}", expr);
             }
@@ -191,7 +191,7 @@ fn close_lambda_on_implicit_statement() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     match &result.as_ref().unwrap().expr().value {
-        Expr::Block(exprs) if exprs.len() == 2 => (),
+        Expr::Do(_) => (),
         expr => assert!(false, "{:?}", expr),
     }
 }
@@ -215,7 +215,7 @@ else
 
     if let Expr::LetBindings(_, ref expr) = result.as_ref().unwrap().expr().value {
         if let Expr::IfElse(_, _, ref if_false) = expr.value {
-            if let Expr::Block(_) = if_false.value {
+            if let Expr::Do(_) = if_false.value {
                 return;
             }
         }
@@ -257,8 +257,7 @@ match True with
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    if let Expr::Block(ref exprs) = result.as_ref().unwrap().expr().value {
-        assert_eq!(2, exprs.len());
+    if let Expr::Do(..) = result.as_ref().unwrap().expr().value {
         return;
     }
 

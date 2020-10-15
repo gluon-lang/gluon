@@ -12,11 +12,11 @@ let { ? } = import! std.effect
 
 let { sender, receiver } = channel 0
 
-send sender 0
-send sender 1
-send sender 2
+let _ = send sender 0
+let _ = send sender 1
+let _ = send sender 2
 
-let tests : TestEff r () = 
+let tests : TestEff r () =
     assert_eq (recv receiver) (Ok 0)
         *> assert_eq (recv receiver) (Ok 1)
         *> assert_eq (recv receiver) (Ok 2)

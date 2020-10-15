@@ -22,6 +22,7 @@ gluon_base = { path = "../base", version = "0.17.1" } # GLUON
 [dev-dependencies]
 difference = "2"
 env_logger = "0.7"
+expect-test = "1"
 futures = "0.3.1"
 pretty_assertions = "0.6"
 tokio = { version = "0.2", features = ["macros", "rt-core"] }

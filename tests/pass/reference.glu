@@ -5,12 +5,12 @@ let { Bool } = import! std.bool
 let { ref, (<-), load } = import! std.reference
 
 let ri = ref 0
-assert (0 == load ri)
-ri <- 2
-assert (2 == load ri)
-assert (2 == load ri)
-ri <- 10
-assert (10 == load ri)
+let _ = assert (0 == load ri)
+let _ = ri <- 2
+let _ = assert (2 == load ri)
+let _ = assert (2 == load ri)
+let _ = ri <- 10
+let _ = assert (10 == load ri)
 
 // Dummy test
 group "reference" []

@@ -91,8 +91,8 @@ fn equality_of_records_with_differing_fields() {
     let text = r#"
 let eq x y : a -> a -> () = ()
 let f v1 v2 =
-    v1.x
-    v2.y
+    let _ = v1.x
+    let _ = v2.y
     eq v1 v2
 ()
 "#;

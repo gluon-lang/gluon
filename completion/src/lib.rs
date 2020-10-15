@@ -566,8 +566,10 @@ where
                 _ => self.visit_expr(lhs),
             },
             Expr::LetBindings(ref bindings, ref expr) => {
-                for bind in bindings {
-                    self.on_found.on_pattern(&bind.name);
+                if bindings.is_recursive() {
+                    for bind in bindings {
+                        self.on_found.on_pattern(&bind.name);
+                    }
                 }
                 match self.select_spanned(bindings, |b| {
                     Span::new(b.name.span.start(), b.expr.span.end())
@@ -583,7 +585,14 @@ where
                             .chain(once(Variant::Expr(&bind.expr)));
                         self.visit_any(iter)
                     }
-                    _ => self.visit_expr(expr),
+                    _ => {
+                        if !bindings.is_recursive() {
+                            for bind in bindings {
+                                self.on_found.on_pattern(&bind.name);
+                            }
+                        }
+                        self.visit_expr(expr)
+                    }
                 }
             }
             Expr::TypeBindings(ref type_bindings, ref expr) => {

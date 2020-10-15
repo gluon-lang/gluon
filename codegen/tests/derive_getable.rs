@@ -59,9 +59,9 @@ fn enum_tuple_variants() {
         let { tuple_enum_to_str } = import! functions
         let { assert } = import! std.test
 
-        assert (tuple_enum_to_str Variant == "Variant")
-        assert (tuple_enum_to_str OtherVariant == "OtherVariant")
-        assert (tuple_enum_to_str (One 1) == "One(1)")
+        let _ = assert (tuple_enum_to_str Variant == "Variant")
+        let _ = assert (tuple_enum_to_str OtherVariant == "OtherVariant")
+        let _ = assert (tuple_enum_to_str (One 1) == "One(1)")
         assert (tuple_enum_to_str (LotsOfTupleThings 42 "Text" 0.0) == "LotsOfTupleThings(42, \"Text\", 0.0)")
     "#;
 
@@ -103,7 +103,7 @@ fn enum_struct_variants() {
         let { struct_enum_to_str } = import! functions
         let { assert } = import! std.test
 
-        assert (struct_enum_to_str (OneField { field = 1337 }) == "OneField { field: 1337 }")
+        let _ = assert (struct_enum_to_str (OneField { field = 1337 }) == "OneField { field: 1337 }")
         assert (struct_enum_to_str (TwoFields { name = "Pi", val = 3.14 }) == "TwoFields { name: \"Pi\", val: 3.14 }")
     "#;
 
@@ -158,11 +158,11 @@ fn enum_generic_variants() {
         let { assert } = import! std.test
 
         let l: Either Int Float  = Left 42
-        assert (left l == Some 42)
+        let _ = assert (left l == Some 42)
         let r: Either Int Float  = Right 0.0
-        assert (left r == None)
+        let _ = assert (left r == None)
 
-        assert (extract_str (Left "left") == "left")
+        let _ = assert (extract_str (Left "left") == "left")
         assert (extract_str (Right "right") == "right")
     "#;
 
@@ -193,7 +193,7 @@ fn derive_generates_same_type_as_gluon_define() {
 
         type Enum = | TestVariant | TestVariant2 Int
 
-        test TestVariant
+        let _ = test TestVariant
         test (TestVariant2 123)
     "#;
 

@@ -297,14 +297,14 @@ macro_rules! impl_temp_vec {
                 T::select(self)
             }
 
-            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl Iterator<Item = T> + 'a
+            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl DoubleEndedIterator<Item = T> + 'a
             where
                 T: TempVec<'ast, Id> + 'a,
             {
                 T::select(self).drain(start.0..)
             }
 
-            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl Iterator<Item = T> + 'a
+            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl DoubleEndedIterator<Item = T> + 'a
             where
                 T: TempVec<'ast, Id> + 'a,
             {

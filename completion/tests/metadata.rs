@@ -64,17 +64,17 @@ fn metadata_at_variable() {
 /// test
 let abc = 1
 let abb = 2
-abb
+let _ = abb
 abc
 "#;
-    let result = get_metadata(text, BytePos::from(37));
+    let result = get_metadata(text, BytePos::from(45));
 
     let expected = Some(Metadata {
         ..Metadata::default()
     });
     assert_eq!(result, expected);
 
-    let result = get_metadata(text, BytePos::from(41));
+    let result = get_metadata(text, BytePos::from(49));
 
     let expected = Some(Metadata {
         comment: Some(line_comment("test".to_string())),

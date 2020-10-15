@@ -49,7 +49,7 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
                 let a = load r.__ref
                 loop (f a)
             | Write a r ->
-                r.__ref <- a
+                let _ = r.__ref <- a
                 loop (f ())
             | Call g ->
                 loop (f (g ()))

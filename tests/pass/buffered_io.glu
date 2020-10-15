@@ -31,7 +31,7 @@ let read_cursor : Read Cursor =
         let start = load cursor.pos
         let end = min (array.len cursor.buf) (start + num_bytes)
         let read_bytes = array.slice cursor.buf start end
-        cursor.pos <- (start + array.len read_bytes)
+        let _ = cursor.pos <- (start + array.len read_bytes)
 
         if array.is_empty read_bytes then
             wrap None
@@ -48,7 +48,7 @@ let write_array_ref : Write (Reference (Array Byte)) = {
         let written = array.append (load array_ref) (array.slice buf start end)
         let _ = array_ref <- written
         wrap (end - start),
-        
+
     flush = \_ -> wrap ()
 }
 
@@ -68,7 +68,7 @@ let test_read = [
 
         do bytes = lift <| read reader 9000
         assert_eq (bytes) None,
-    
+
     test "read directly if buffer is empty" <| \_ ->
         let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 2
         do bytes = lift <| read reader 5
@@ -80,7 +80,7 @@ let test_read = [
         do bytes = lift <| read reader 4
         assert_eq bytes (Some [2b]),
 ]
-    
+
 let test_read_to_end = [
     test "read all in one go" <| \_ ->
         let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 5
@@ -109,7 +109,7 @@ let test_write_and_flush = [
         do _ = assert_eq (load written) []
         do _ = lift <| flush writer
         assert_eq (load written) [1b, 2b],
-    
+
     test "flush immediately if buffer is empty and new data wouldn't fit" <| \_ ->
         let written : Reference (Array Byte) = ref []
         let writer = written |> io_write.buffered_with_capacity 2
@@ -133,7 +133,7 @@ let test_write_and_flush = [
         do _ = lift <| flush writer
         assert_eq (load written) [1b, 2b, 3b],
 
-    test "flush buffer if new data doesn't fit, then buffer the data" <| \_ -> 
+    test "flush buffer if new data doesn't fit, then buffer the data" <| \_ ->
         let written : Reference (Array Byte) = ref []
         let writer = written |> io_write.buffered_with_capacity 5
 

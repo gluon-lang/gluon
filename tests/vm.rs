@@ -655,7 +655,7 @@ fn opaque_value_type_mismatch() {
 
     let expr = r#"
 let { sender, receiver } = channel 0
-send sender 1
+let _ = send sender 1
 sender
 "#;
     let result = vm.run_expr::<OpaqueValue<&Thread, Sender<f64>>>("<top>", expr);
