@@ -818,7 +818,7 @@ let assert_success : [Show e]
 fn sequence() {
     let expr = r#"
 // a
-io.print "Hello"
+seq io.print "Hello"
 // b
 io.print " "
 // c
@@ -828,11 +828,12 @@ io.println "World"
     expect![[r#"
 
         // a
-        io.print "Hello"
+        seq io.print "Hello"
         // b
         io.print " "
         // c
         io.println "World"
         // d
-    "#]].assert_eq(&format_expr(expr).unwrap());
+    "#]]
+    .assert_eq(&format_expr(expr).unwrap());
 }

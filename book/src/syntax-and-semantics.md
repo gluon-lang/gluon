@@ -340,19 +340,21 @@ Sequence expressions work just like `do` expressions, only they do not have a bi
 
 ```f#,rust
 let io @ { ? } = import! std.io
+seq io.print "Hello"
+seq io.print " "
+io.println "world!"
+```
+
+The `seq` keyword can also be omitted.
+
+```f#,rust
+let io @ { ? } = import! std.io
 io.print "Hello"
 io.print " "
 io.println "world!"
 ```
 
-For backwards compatibility it is also possible to write (`seq`) before each expression.
-
-```f#,rust
-let io @ { ? } = import! std.io
-seq io.print "Hello"
-seq io.print " "
-io.println "world!"
-```
+(In the future one of these ways are likely to be deprecated with only one way remaining, the formatter will be able to update the code in any case).
 
 ### Indentation
 
