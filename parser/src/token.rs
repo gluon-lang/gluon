@@ -581,12 +581,7 @@ impl<'input> Tokenizer<'input> {
             match self.bump() {
                 Some((_, b'"')) => {
                     let mut found_delimiters = 0;
-                    while let Some((_, ch)) = self.bump() {
-                        match ch {
-                            b'#' => found_delimiters += 1,
-                            b'"' => found_delimiters = 0,
-                            _ => break,
-                        }
+                    loop {
                         if found_delimiters == delimiters {
                             let end = self.next_loc();
                             let mut content_end = end;
@@ -595,6 +590,15 @@ impl<'input> Tokenizer<'input> {
 
                             let token = Token::StringLiteral(StringLiteral::Raw(string));
                             return Ok(pos::spanned2(start, end, token));
+                        }
+                        if let Some((_, ch)) = self.bump() {
+                            match ch {
+                                b'#' => found_delimiters += 1,
+                                b'"' => found_delimiters = 0,
+                                _ => break,
+                            }
+                        } else {
+                            break;
                         }
                     }
                 }
@@ -1053,7 +1057,7 @@ mod test {
     #[test]
     fn raw_string_literals() {
         test(
-            r#########"foo r#"bar" "# baz r##""## "#########,
+            r#########"foo r#"bar" "# baz r##""## r#"""#  "#########,
             vec![
                 (r####"~~~                      "####, Identifier("foo")),
                 (
@@ -1064,6 +1068,10 @@ mod test {
                 (
                     r#"                   ~~~~~~~     "#,
                     Token::StringLiteral(StringLiteral::Raw("")),
+                ),
+                (
+                    r#"                           ~~~~~~     "#,
+                    Token::StringLiteral(StringLiteral::Raw("\"")),
                 ),
             ],
         );
