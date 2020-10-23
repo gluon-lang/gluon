@@ -108,9 +108,10 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
-#[derive(Userdata, Trace, VmType)]
+#[derive(Userdata, Trace, VmType, Clone)]
 #[gluon(vm_type = "std.http.types.Body")]
 #[gluon(crate_name = "::vm")]
+#[gluon_userdata(clone)]
 #[gluon_trace(skip)]
 // Representation of a http body that is in the prograss of being read
 pub struct Body(
@@ -146,9 +147,10 @@ fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Bytes, [u
 }
 
 // A http body that is being written
-#[derive(Userdata, Trace, VmType)]
+#[derive(Userdata, Trace, VmType, Clone)]
 #[gluon(vm_type = "std.http.types.ResponseBody")]
 #[gluon(crate_name = "::vm")]
+#[gluon_userdata(clone)]
 #[gluon_trace(skip)]
 pub struct ResponseBody(Arc<Mutex<Option<hyper::body::Sender>>>);
 
@@ -194,10 +196,11 @@ fn write_response(response: &ResponseBody, bytes: &[u8]) -> impl Future<Output =
     })
 }
 
-#[derive(Debug, Userdata, Trace, VmType)]
+#[derive(Debug, Userdata, Trace, VmType, Clone)]
 #[gluon(vm_type = "std.http.types.Uri")]
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]
+#[gluon_userdata(clone)]
 struct Uri(http::Uri);
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
