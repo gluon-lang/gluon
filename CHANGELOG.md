@@ -1,3 +1,25 @@
+<a name="v0.17.2"></a>
+### v0.17.2 (2020-10-25)
+
+
+#### Features
+
+*   Allow the http module to be used without a tcp listener ([c45353d2](https://github.com/gluon-lang/gluon/commit/c45353d2ceb10d98dbeca7e7dce1f658b875eb3a))
+*   Format seq expressions without seq ([5c0cec2d](https://github.com/gluon-lang/gluon/commit/5c0cec2d29a0580a8e171e040f13427b282c4c1f))
+*   Compile block expressions as monadic sequences ([bce59737](https://github.com/gluon-lang/gluon/commit/bce5973719cdb24849671f5b11e980e5d9cefc31), closes [#884](https://github.com/gluon-lang/gluon/issues/884))
+* **std:**
+  *  add Option assertions to std.test ([28e5053f](https://github.com/gluon-lang/gluon/commit/28e5053f1e56f7304d8b94eead3174ccfa4077c6))
+  *  add modulo functions to int and float ([92f188ab](https://github.com/gluon-lang/gluon/commit/92f188ab24b599d0d0ef004c996f5fbefbfe1786))
+
+#### Bug Fixes
+
+*   Recognize raw string literals without any `#` ([4d66fbb3](https://github.com/gluon-lang/gluon/commit/4d66fbb37f5acae81c28fe3af715b8d1c04a2ab5), closes [#885](https://github.com/gluon-lang/gluon/issues/885))
+*   Prevent zero-argument functions from being created in Rust ([e91ea06d](https://github.com/gluon-lang/gluon/commit/e91ea06d447fea4f9e5699ada6f38e742526ebc7), closes [#873](https://github.com/gluon-lang/gluon/issues/873))
+*   Give tuple fields a span ([2a1c2c71](https://github.com/gluon-lang/gluon/commit/2a1c2c711408372eed71812696776ee93fde3c0a))
+*   xor_shift_new inconsistent description ([591b64b3](https://github.com/gluon-lang/gluon/commit/591b64b359d98948ca379fd2f17e8d34982d12b2))
+
+
+
 <a name="v0.17.1"></a>
 ### v0.17.1 (2020-08-15)
 

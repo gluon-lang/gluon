@@ -1,6 +1,6 @@
 [package]
 name = "gluon_format"
-version = "0.17.1" # GLUON
+version = "0.17.2" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -17,7 +17,7 @@ pretty = "0.10"
 itertools = "0.9"
 codespan = "0.9"
 
-gluon_base = { path = "../base", version = "0.17.1" } # GLUON
+gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 
 [dev-dependencies]
 difference = "2"
@@ -28,7 +28,7 @@ pretty_assertions = "0.6"
 tokio = { version = "0.2", features = ["macros", "rt-core"] }
 walkdir = "2"
 
-gluon_base = { path = "../base", version = "0.17.1" } # GLUON
+gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 gluon = { path = "..", version = ">=0.9" }
 
 tensile = { version = "0.6", features = ["tokio"] }
