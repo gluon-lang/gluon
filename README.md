@@ -6,17 +6,17 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 ## Features
 
-* **Statically typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
+* **Statically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
 
 * **Type inference** - Type inference ensures that types rarely have to be written explicitly giving all the benefits of static types with none of the typing.
 
 * **Simple embedding** - Marshalling values to and from gluon requires next to no boilerplate, allowing functions defined in [Rust][] to be [directly passed to gluon][easy_embed].
 
-* **UTF-8 by default** - Gluon supports unicode out of the box with utf-8 encoded strings and unicode codepoints as characters.
+* **UTF-8 by default** - Gluon supports Unicode out of the box with utf-8 encoded strings and Unicode codepoints as characters.
 
 * **Separate heaps** - Gluon is a garbage-collected language but uses a separate heap for each executing gluon thread. This keeps each heap small, reducing the overhead of the garbage collector.
 
-* **Thread safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
+* **Thread-safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
 [easy_embed]:https://gluon-lang.org/doc/crates_io/book/embedding-api.html
 [parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
@@ -60,17 +60,17 @@ factorial 10
 // * Only the following operators/functions are allowed: multiplication, division, addition, subtraction
 // * Division should use floating point or rational arithmetic, etc, to preserve remainders.
 // * Brackets are allowed, if using an infix expression evaluator.
-// * Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
-// * The order of the digits when given does not have to be preserved.
+// * Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 - when given 1, 2, 2, and 1 - is wrong).
+// * The order of the digits, when given, does not have to be preserved.
 //
 //
 // ## Notes
 //
 //     The type of expression evaluator used is not mandated. An RPN evaluator is equally acceptable for example.
-//     The task is not for the program to generate the expression, or test whether an expression is even possible.
+//     The task is not for the program to generate the expression or test whether an expression is even possible.
 
 
-// The `import!` macro are used to load and refer to other modules.
+// The `import!` macro is used to load and refer to other modules.
 // It gets replaced by the value returned by evaluating that module (cached of course, so that
 // multiple `import!`s to the same module only evaluates the module once)
 let io @ { ? } = import! std.io
@@ -83,7 +83,7 @@ let list @ { List, ? } = import! std.list
 let random = import! std.random
 let string = import! std.string
 
-// Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
+// Since imports in gluon return regular values we can load specific parts of a module using pattern matches.
 let char @ { ? } = import! std.char
 
 let { (<>) } = import! std.semigroup
@@ -228,7 +228,7 @@ cargo install gluon_repl
 
 ### REPL
 
-Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
+Gluon has a small executable that can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
 
 REPL features:
 * Evaluating expressions (expressions of type IO will be evaluated in the IO context).
@@ -307,7 +307,7 @@ gluon = "0.17.2"
 ```
 
 ### Other languages
-Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
+Currently, the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust API.
 
 [C api]: https://github.com/gluon-lang/gluon/blob/master/c-api/src/lib.rs
 
@@ -321,15 +321,15 @@ There are many ways to contribute to gluon. The two simplest ways are opening is
 ## Goals
 These goals may change or be refined over time as I experiment with what is possible with the language.
 
-* **Embeddable** - Similiar to [Lua][Lua] - it is meant to be included in another program which may use the virtual machine to extend its own functionality.
+* **Embeddable** - Similiar to [Lua][Lua] - it is meant to be included in another program that may use the virtual machine to extend its own functionality.
 
 * **Statically typed** - The language uses a [Hindley-Milner based type system][hm] with some extensions, allowing simple and general type inference.
 
 * **Tiny** - By being tiny, the language is easy to learn and has a small implementation footprint.
 
-* **Strict** - Strict languages are usually easier to reason about, especially considering that it is what most people are accustomed to. For cases where laziness is desired, an explict type is provided.
+* **Strict** - Strict languages are usually easier to reason about, especially considering that it is what most people are accustomed to. For cases where laziness is desired, an explicit type is provided.
 
-* **Modular** - The library is split into its parser, typechecker, and virtual machine + compiler. Each of these components can be used independently of each other, allowing applications to pick and choose exactly what they need.
+* **Modular** - The library is split into its parser, type checker, and virtual machine + compiler. Each of these components can be used independently of each other, allowing applications to pick and choose exactly what they need.
 
 [hm]:https://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system
 [prelude]:https://github.com/gluon-lang/gluon/blob/master/std/prelude.glu
