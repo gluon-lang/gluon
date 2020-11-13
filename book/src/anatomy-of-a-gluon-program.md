@@ -1,6 +1,6 @@
 # Anatomy of a gluon program
 
-Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is to low or to high. If the player guesses correctly the program will congratulate the player and exit.
+Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is too low or too high. If the player guesses correctly the program will congratulate the player and exit.
 
 As a base we can take the hello world example.
 
@@ -97,7 +97,7 @@ let guess_number _ : () -> IO () =
 guess_number ()
 ```
 
-Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is to high or to low. 
+Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is too high or too low. 
 
 ```f#,rust
 let io @ { ? } = import! std.io
