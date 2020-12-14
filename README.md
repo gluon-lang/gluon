@@ -60,17 +60,17 @@ factorial 10
 // * Only the following operators/functions are allowed: multiplication, division, addition, subtraction
 // * Division should use floating point or rational arithmetic, etc, to preserve remainders.
 // * Brackets are allowed, if using an infix expression evaluator.
-// * Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 - when given 1, 2, 2, and 1 - is wrong).
-// * The order of the digits, when given, does not have to be preserved.
+// * Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
+// * The order of the digits when given does not have to be preserved.
 //
 //
 // ## Notes
 //
 //     The type of expression evaluator used is not mandated. An RPN evaluator is equally acceptable for example.
-//     The task is not for the program to generate the expression or test whether an expression is even possible.
+//     The task is not for the program to generate the expression, or test whether an expression is even possible.
 
 
-// The `import!` macro is used to load and refer to other modules.
+// The `import!` macro are used to load and refer to other modules.
 // It gets replaced by the value returned by evaluating that module (cached of course, so that
 // multiple `import!`s to the same module only evaluates the module once)
 let io @ { ? } = import! std.io
@@ -83,7 +83,7 @@ let list @ { List, ? } = import! std.list
 let random = import! std.random
 let string = import! std.string
 
-// Since imports in gluon return regular values we can load specific parts of a module using pattern matches.
+// Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
 let char @ { ? } = import! std.char
 
 let { (<>) } = import! std.semigroup

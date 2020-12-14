@@ -245,9 +245,13 @@ pub trait Macro: Trace + DowncastArc + Send + Sync {
         None
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    /// Creating a symbol in `symbols` will put it in the same scope as the code surrounding the
+    /// expansion. If you want to create a unique symbol then call `Symbol::from` or create a new
+    /// `Symbols` table
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast>;
@@ -283,13 +287,14 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {
-        (**self).expand(env, arena, args)
+        (**self).expand(env, symbols, arena, args)
     }
 }
 
@@ -307,13 +312,14 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {
-        (**self).expand(env, arena, args)
+        (**self).expand(env, symbols, arena, args)
     }
 }
 
@@ -457,19 +463,20 @@ impl<'a> MacroExpander<'a> {
             exprs: Vec::new(),
         };
         visitor.visit_expr(expr);
-        let MacroVisitor { exprs, .. } = visitor;
-        self.expand(arena, exprs).await
+        let MacroVisitor { exprs, symbols, .. } = visitor;
+        self.expand(symbols, arena, exprs).await
     }
 
     async fn expand<'ast>(
         &mut self,
+        symbols: &mut Symbols,
         arena: &mut ast::OwnedArena<'ast, Symbol>,
         mut exprs: Vec<(&'_ mut SpannedExpr<'ast, Symbol>, Arc<dyn Macro>)>,
     ) {
         let mut futures = Vec::with_capacity(exprs.len());
         for (expr, mac) in exprs.drain(..) {
             let result = match &mut expr.value {
-                Expr::App { args, .. } => mac.expand(self, arena, args).await,
+                Expr::App { args, .. } => mac.expand(self, symbols, arena, args).await,
                 _ => unreachable!("{:?}", expr),
             };
             match result {
