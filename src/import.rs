@@ -25,7 +25,7 @@ use crate::base::{
     ast::{self, expr_to_path, Expr, Literal, SpannedExpr},
     filename_to_module, pos,
     source::FileId,
-    symbol::Symbol,
+    symbol::{Symbol, Symbols},
     types::ArcType,
 };
 
@@ -477,9 +477,10 @@ where
         }
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         macros: &'b mut MacroExpander<'a>,
+        _symbols: &'c mut Symbols,
         _arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {
