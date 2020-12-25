@@ -2733,7 +2733,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
     ) -> RcType {
         debug!("Refine {} : {}", expected, actual);
         types::walk_type(&actual, &mut |typ: &RcType| {
-            if let Type::Skolem(skolem) = &**typ {
+            if let Type::Skolem(skolem) = &**self.subs.real(typ) {
                 self.refined_variables.entry(skolem.id).or_insert(());
             }
         });
