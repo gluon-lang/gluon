@@ -1197,7 +1197,10 @@ impl<'a, 'e> Translator<'a, 'e> {
                     || self.dummy_symbol.clone(),
                     |pat| match pat.value {
                         ast::Pattern::Ident(ref id) => id.clone(),
-                        _ => self.dummy_symbol.clone(),
+                        _ => TypedIdent {
+                            name: Symbol::from("do_bind"),
+                            typ: pat.env_type_of(&self.env),
+                        },
                     },
                 );
 
@@ -2924,6 +2927,27 @@ pub mod tests {
                 end
             | _ -> 2
             end
+        "#;
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn do_expression_with_pattern() {
+        let expr_str = r#"
+            do { test } = record_action
+            wrap test
+        "#;
+
+        let expected_str = r#"
+            let bind_arg = record_action in
+            flat_map (
+                rec let f arg =
+                    match arg with
+                    | { test } -> wrap test
+                    end
+                in
+                f)
+                bind_arg
         "#;
         check_translation(expr_str, expected_str);
     }

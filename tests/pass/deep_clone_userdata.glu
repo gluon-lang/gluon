@@ -1,44 +1,55 @@
-let { run, assert, group, ? } = import! std.test
+let { run, assert, assert_eq, group, test, ? } = import! std.test
+let { lift } = import! std.effect.lift
+let { ? } = import! std.effect
 let { (<|) } = import! std.function
 let prelude = import! std.prelude
-let { (*>) } = import! std.applicative
+let { wrap, (*>) } = import! std.applicative
 let { Result } = import! std.result
 let { ref, load } = import! std.reference
 let { lazy, force } = import! std.lazy
 let { channel, send, recv } = import! std.channel
 let { resume, spawn } = import! std.thread
-
-
-let _ =
-    let { sender, receiver } = channel (lazy (\_ -> 0))
-
-    let thread = spawn (\_ ->
-            let _ = send sender (lazy (\_ -> 1))
-            let l = lazy (\_ -> 2)
-            let _ = force l
-            let _ = send sender l
-            ())
-
-    let _ = resume thread
-    let _ =
-        match recv receiver with
-        | Ok x -> assert (force x == 1)
-        | Err e -> error "Receive 1 error"
-    match recv receiver with
-    | Ok x -> assert (force x == 2)
-    | Err e -> error "Receive 2 error"
-
-let _ =
-    let { sender, receiver } = channel (ref 0)
-
-    let thread = spawn (\_ ->
-            let _ = send sender (ref 3)
-            ())
-
-    let _ = resume thread
-    match recv receiver with
-    | Ok x -> assert (load x == 3)
-    | Err e -> error "Receive 3 error"
+let { ? } = import! std.io
 
 // Dummy test
-group "deep_clone_userdata" []
+group "deep_clone_userdata" [
+    test "1" <| \_ ->
+        do { sender, receiver } = lift <| channel (lazy (\_ -> 0))
+
+        do thread = lift <| spawn (
+                seq send sender (lazy (\_ -> 1))
+                let l = lazy (\_ -> 2)
+                let _ = force l
+                send sender l
+                wrap ())
+
+        lift <| resume thread
+        do x = lift <| recv receiver
+        match x with
+        | Ok x -> assert_eq (force x) 1
+        | Err e -> error "Receive 1 error"
+        do x = lift <| recv receiver
+        match x with
+        | Ok x -> assert_eq (force x) 2
+        | Err e -> error "Receive 2 error",
+
+    test "2" <| \_ ->
+        do r = lift <| ref 0
+        do { sender, receiver } = lift <| channel r
+
+        do thread = lift <| spawn (
+                do r = ref 3
+                send sender r
+                wrap ())
+
+        do r = lift <| resume thread
+        match r with
+        | Ok () -> wrap ()
+        | Err e -> error e
+        do r = lift <| recv receiver
+        match r with
+        | Ok x ->
+            do x = lift <| load x
+            assert_eq x 3
+        | Err e -> error "Receive 3 error"
+]

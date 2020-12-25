@@ -693,6 +693,7 @@ test
         *e.expr(),
         no_loc(Expr::Do(arena.alloc(Do {
             id: None,
+            typ: None,
             bound: arena.alloc(Spanned {
                 span: Span::new(BytePos::from(0), BytePos::from(0)),
                 value: Expr::Projection(arena.alloc(id("test")), intern(""), Type::hole()),

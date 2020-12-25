@@ -281,6 +281,7 @@ pub fn do_2<'ast>(
 ) -> SpExpr<'ast> {
     no_loc(Expr::Do(arena.alloc(Do {
         id,
+        typ: None,
         bound: arena.alloc(e),
         body: arena.alloc(b),
         flat_map_id: None,

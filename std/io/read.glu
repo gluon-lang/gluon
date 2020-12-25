@@ -1,7 +1,8 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functions and types for working with `Read`ers.
 
-let { IO, wrap, flat_map, default_buf_len } = import! std.io.prim
+let io @ { IO, wrap, flat_map, default_buf_len } = import! std.io.prim
+let { show } = import! std.show
 let { Option, Bool } = import! std.types
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (>), (<=), (>=), min } = import! std.cmp
@@ -68,49 +69,51 @@ type Buffered r = { reader : r, buf : Reference (Array Byte), capacity : Int }
 
 /// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
 /// buffer capacity.
-let buffered_with_capacity capacity reader : [Read a] -> Int -> a -> Buffered a =
+let buffered_with_capacity capacity reader : [Read a] -> Int -> a -> IO (Buffered a) =
     let _ = assert (capacity > 0)
 
-    {
-        reader,
-        buf = ref [],
-        capacity,
-    }
+    do buf = ref []
+    wrap
+        {
+            reader,
+            buf,
+            capacity,
+        }
 
 /// Wraps `reader` in a `Buffered` reader to provide buffering.
-let buffered reader : [Read a] -> a -> Buffered a =
+let buffered reader : [Read a] -> a -> IO (Buffered a) =
     buffered_with_capacity default_buf_len reader
 
 let read_buffered : [Read r] -> Read (Buffered r) =
     let read_from_buf buf_reader num_bytes =
-        let buf = load buf_reader.buf
+        do buf = load buf_reader.buf
         let num_bytes = min (array.len buf) num_bytes
 
         let read_buf = array.slice buf 0 num_bytes
         let rest_buf = array.slice buf num_bytes (array.len buf)
 
-        let _ = buf_reader.buf <- rest_buf
-        Some read_buf
+        buf_reader.buf <- rest_buf
+        wrap (Some read_buf)
 
     let buffered_read buf_reader num_bytes =
-        let buf = load buf_reader.buf
+        do buf = load buf_reader.buf
 
         if num_bytes <= 0 then wrap (Some [])
-        else if not (array.is_empty buf) then wrap (read_from_buf buf_reader num_bytes)
+        else if not (array.is_empty buf) then read_from_buf buf_reader num_bytes
         else if num_bytes >= buf_reader.capacity then read buf_reader.reader num_bytes
         else
             do new_buf = read buf_reader.reader buf_reader.capacity
 
             match new_buf with
             | Some new_buf ->
-                let _ = buf_reader.buf <- new_buf
-                wrap (read_from_buf buf_reader num_bytes)
+                buf_reader.buf <- new_buf
+                read_from_buf buf_reader num_bytes
             | None -> wrap None
 
     let buffered_read_to_end buf_reader =
         do rest = read_to_end buf_reader.reader
-        let buf = load buf_reader.buf
-        let _ = buf_reader.buf <- []
+        do buf = load buf_reader.buf
+        buf_reader.buf <- []
 
         wrap (array.append buf rest)
 
@@ -122,7 +125,7 @@ let read_buffered : [Read r] -> Read (Buffered r) =
 let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
     {
         dispose = (\buf_reader ->
-            let _ = buf_reader.buf <- []
+            buf_reader.buf <- []
             dispose buf_reader.reader),
         is_disposed = \buf_reader -> is_disposed buf_reader.reader,
     }

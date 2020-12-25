@@ -366,17 +366,22 @@ async fn run_doc_tests<'t>(
 
 async fn main_(options: &Opt) -> Result<(), Error> {
     let _ = ::env_logger::try_init();
-    let filter = options.filter.last();
 
-    let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
-    let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
+    let file_filters = options
+        .filter
+        .iter()
+        .filter(|f| f.starts_with("@"))
+        .map(|f| f.trim_start_matches('@'))
+        .collect::<Vec<_>>();
+    let filter = options.filter.iter().find(|f| !f.starts_with("@"));
 
     let filter_fn = |filename: PathBuf| {
         let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
-        match filter {
-            Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-            _ => Some((filename, name)),
+        if file_filters.is_empty() || file_filters.iter().any(|filter| name.contains(&filter[..])) {
+            Some((filename, name))
+        } else {
+            None
         }
     };
 

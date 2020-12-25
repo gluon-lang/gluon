@@ -872,7 +872,7 @@ pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
 let { IO, Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
-let { (+), (-), (*), (/), negate, (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
+let { (+), (-), (*), (/), negate, (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map, (<|) } = __implicit_prelude
 
 let { ? } = import! std.bool
 
@@ -1001,6 +1001,13 @@ impl VmBuilder {
             "std.path.prim",
             crate::vm::primitives::load_path,
             vec!["std.path.types".into()],
+        );
+
+        add_extern_module_with_deps(
+            &vm,
+            "std.st.reference.prim",
+            crate::vm::reference::st::load,
+            vec!["std.reference".into()],
         );
 
         let deps: &[(_, fn(&Thread) -> _)] = &[

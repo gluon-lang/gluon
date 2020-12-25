@@ -491,21 +491,29 @@ impl<'a> MacroExpander<'a> {
             }
         }
 
+        // Index each expansion future so we can keep any returned errors in a consistent order
         let mut stream = futures
             .into_iter()
+            .enumerate()
+            .map(|(index, future)| future.map(move |x| (index, x)))
             .collect::<futures::stream::FuturesUnordered<_>>();
-        while let Some((expr, result)) = stream.next().await {
+        let mut unordered_errors = Vec::new();
+        while let Some((index, (expr, result))) = stream.next().await {
             let expr = { expr };
             let new_expr = match result {
                 Ok(replacement) => replacement.value,
                 Err(Salvage { error, value }) => {
-                    self.errors.push(pos::spanned(expr.span, error));
+                    unordered_errors.push((index, pos::spanned(expr.span, error)));
                     value.map_or_else(|| Expr::Error(None), |e| e.value)
                 }
             };
 
             replace_expr(arena, expr, new_expr);
         }
+
+        unordered_errors.sort_by_key(|&(index, _)| index);
+        self.errors
+            .extend(unordered_errors.into_iter().map(|(_, err)| err));
     }
 }
 

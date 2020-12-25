@@ -8,7 +8,7 @@ let { Result } = import! std.result
 let string = import! std.string
 let thread = import! std.thread
 let array @ { ? } = import! std.array
-let { ref, load, (<-) } = import! std.reference
+let { ref, load, (<-) } = import! std.effect.reference
 let rustyline @ { Editor } = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim @ { Color, Settings } = import! repl.prim
@@ -33,7 +33,7 @@ type Cmd = {
     name : String,
     alias : String,
     info : String,
-    action : String -> Eff (ReplEffect r) ReplAction
+    action : forall r . String -> Eff (ReplEffect r) ReplAction
 }
 type Commands = Map String Cmd
 in
@@ -73,13 +73,13 @@ let run_file filename : String -> Eff (ReplEffect r) () =
     | Ok _ -> io.println ""
     | Err x -> io.println x
 
-let commands : Commands =
+let commands : Eff [| lift : Lift IO |] Commands =
     let print_result result =
         match result with
         | Ok x -> io.println x
         | Err x -> io.println x
 
-    let commands = ref []
+    do commands = ref []
     let cmds : Array Cmd =
         [{
             name = "quit",
@@ -184,15 +184,17 @@ let commands : Commands =
                 let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
                     io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
 
-                print_header
-                    *> array.traversable.traverse effect.applicative print_cmd (load commands)
+                do commands = load commands
+                print_header *> array.traversable.traverse effect.applicative print_cmd commands
                     *> wrap Continue,
         }]
-    let _ = commands <- cmds
-    foldl
-        (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
-        empty
-        cmds
+    commands <- cmds
+    let c : Commands =
+        foldl
+            (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
+            empty
+            cmds
+    wrap c
 
 let { Parser, parse, ? } = import! std.parser
 
@@ -255,6 +257,7 @@ let loop _ : () -> Eff (ReplEffect r) () =
 let run settings : Settings -> Eff [| lift : Lift IO |] () =
     io.println "gluon (:h for help, :q to quit)"
     do editor = lift <| rustyline.new_editor ()
+    do commands = commands
     let repl = { commands, editor }
     run_reader repl (eval_state settings (loop ()))
 
