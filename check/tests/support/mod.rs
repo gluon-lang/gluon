@@ -439,13 +439,18 @@ macro_rules! test_check {
 }
 
 macro_rules! test_check_err {
-    ($name:ident, $source:expr, $($id: pat),+) => {
+    ($name:ident, $source:expr, $($id: pat),+ $(,)? $(=> $ty: expr)?) => {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
             let text = $source;
-            let result = support::typecheck(text);
+            let (expr, result) = support::typecheck_expr(text);
             assert_err!([$source] result, $($id),+);
+            $(
+                use crate::base::ast::Typed;
+                assert_eq!(expr.expr().env_type_of(&crate::base::ast::EmptyEnv::default()).to_string(), $ty);
+            )?
+            let _ = expr;
         }
     };
 }

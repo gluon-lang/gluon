@@ -1,3 +1,5 @@
+use expect_test::expect;
+
 use gluon::{
     base, check::typecheck::TypeError, compiler_pipeline::*, parser, vm::Error as VMError, Error,
     ThreadExt,
@@ -94,4 +96,43 @@ fn undefined_infix() {
         }
         _ => panic!(),
     }
+}
+
+#[test]
+fn module_imports_provide_a_type_despite_internal_errors() {
+    let _ = ::env_logger::try_init();
+    let vm = support::make_vm();
+    let text = r#"
+        type Test = ()
+        let error : () = ""
+        { Test }
+        "#;
+    let _ = vm.load_script("test", text);
+    let result = vm.run_expr::<f64>(
+        "test2",
+        r#"
+        let { Test } = import! test
+        3.14
+        "#,
+    );
+    expect![[r#"
+        error: error: Expected the following types to be equal
+        Expected: ()
+        Found: String
+        1 errors were found during unification:
+        Types do not match:
+            Expected: ()
+            Found: String
+          ┌─ test:3:26
+          │
+        3 │         let error : () = ""
+          │                          ^^
+
+
+          ┌─ test2:2:24
+          │
+        2 │         let { Test } = import! test
+          │                        ^^^^^^^^^^^^
+
+    "#]].assert_eq(&result.unwrap_err().to_string());
 }

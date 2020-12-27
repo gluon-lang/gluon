@@ -9,7 +9,6 @@
 
 use std::{
     borrow::{Borrow, BorrowMut, Cow},
-    fmt,
     result::Result as StdResult,
     sync::Arc,
 };
@@ -44,58 +43,9 @@ use crate::{
 pub type BoxFuture<'vm, T, E> =
     std::pin::Pin<Box<dyn futures::Future<Output = StdResult<T, E>> + Send + 'vm>>;
 
-pub type SalvageResult<T, E = Error> = StdResult<T, Salvage<T, E>>;
+pub type SalvageResult<T, E = Error> = crate::base::error::SalvageResult<T, E>;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Salvage<T, E> {
-    pub value: Option<T>,
-    pub error: E,
-}
-
-impl<T, E> fmt::Display for Salvage<T, E>
-where
-    E: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.error)
-    }
-}
-
-impl<T, E> Salvage<T, E> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Salvage<U, E> {
-        Salvage {
-            value: self.value.map(f),
-            error: self.error,
-        }
-    }
-
-    pub fn get_value(self) -> std::result::Result<T, E> {
-        self.value.ok_or(self.error)
-    }
-
-    pub fn err_into<F>(self) -> Salvage<T, F>
-    where
-        F: From<E>,
-    {
-        let Salvage { value, error } = self;
-        Salvage {
-            value,
-            error: error.into(),
-        }
-    }
-}
-
-impl<T, E> From<E> for Salvage<T, E> {
-    fn from(error: E) -> Self {
-        Salvage { value: None, error }
-    }
-}
-
-impl<T, E> From<Salvage<T, InFile<E>>> for InFile<E> {
-    fn from(s: Salvage<T, InFile<E>>) -> Self {
-        s.error
-    }
-}
+pub use crate::base::error::Salvage;
 
 impl<T> From<Salvage<T, Error>> for Error {
     fn from(s: Salvage<T, Error>) -> Self {
@@ -648,19 +598,20 @@ where
         ) {
             Ok(typ) => typ,
             Err(error) => {
+                let typ = expr
+                    .borrow_mut()
+                    .expr()
+                    .try_type_of(&env(&*compiler.database))
+                    .unwrap_or_else(|_| thread.global_env().type_cache().error());
                 return Err(Salvage {
                     value: Some(TypecheckValue {
-                        typ: expr
-                            .borrow_mut()
-                            .expr()
-                            .try_type_of(&env(&*compiler.database))
-                            .unwrap_or_else(|_| thread.global_env().type_cache().error()),
+                        typ,
                         expr,
                         metadata_map,
                         metadata,
                     }),
                     error,
-                })
+                });
             }
         };
 
