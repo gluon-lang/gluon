@@ -889,18 +889,30 @@ Expr: Expr<'ast, Id> = {
 
 DoExpression: Expr<'ast, Id> = {
     "do" <bind: DoBinding> <body: SpExpr> => {
-        let bind = *bind;
-        Expr::Do(arena.alloc(Do { id: Some(bind.0), bound: arena.alloc(bind.1), body: arena.alloc(body), flat_map_id: None }))
+        let (id, typ, bound) = *bind;
+        Expr::Do(arena.alloc(Do {
+            id: Some(id),
+            typ,
+            bound: arena.alloc(bound),
+            body: arena.alloc(body),
+            flat_map_id: None,
+        }))
     },
 
     "seq" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(arena.alloc(Do { id: None, bound: arena.alloc(bound), body: arena.alloc(body), flat_map_id: None }))
+        Expr::Do(arena.alloc(Do {
+            id: None,
+            typ: None,
+            bound: arena.alloc(bound),
+            body: arena.alloc(body),
+            flat_map_id: None,
+        }))
     },
 };
 
 
-DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
-    <id: Sp<Pattern>> "=" <bound: SpExpr> "in" => Box::new((id, bound)),
+DoBinding: Box<(SpannedPattern<'ast, Id>, Option<AstType<'ast, Id>>, SpannedExpr<'ast, Id>)> = {
+    <id: Sp<Pattern>> <typ: (":" <Type>)?>  "=" <bound: SpExpr> "in" => Box::new((id, typ, bound)),
 
     // Error recovery
 
@@ -910,7 +922,7 @@ DoBinding: Box<(SpannedPattern<'ast, Id>, SpannedExpr<'ast, Id>)> = {
             token: (span.start(), Token::In, span.end()),
             expected: ["="].iter().map(|s| s.to_string()).collect(),
         });
-        Box::new((id, pos::spanned(span, Expr::Error(None))))
+        Box::new((id, None, pos::spanned(span, Expr::Error(None))))
     },
 };
 
@@ -930,7 +942,7 @@ BlockExpr: Expr<'ast, Id> = {
                 pos::spanned2(
                     expr.span.start(),
                     body.span.end(),
-                    Expr::Do(arena.alloc(Do { id: None, bound: arena.alloc(expr), body: arena.alloc(body), flat_map_id: None })),
+                    Expr::Do(arena.alloc(Do { id: None, typ: None, bound: arena.alloc(expr), body: arena.alloc(body), flat_map_id: None })),
                 )
             }).value
         }

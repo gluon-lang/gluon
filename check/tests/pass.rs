@@ -1172,3 +1172,16 @@ viewl
     "#,
     "forall a . test.FingerTree a -> test.View a"
 }
+
+test_check! {
+    do_type_signature,
+    r#"
+type List a = | Cons a (List a) | Nil
+
+let flat_map f x : (a -> List b) -> List a -> List b = Nil
+
+do writer : String = Nil
+Cons 0 Nil
+    "#,
+    "test.List Int"
+}

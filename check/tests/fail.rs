@@ -769,3 +769,16 @@ match Test 0 with
 "#,
 PatternError { .. }
 }
+
+test_check_err! {
+    do_type_signature_error,
+    r#"
+type List a = | Cons a (List a) | Nil
+
+let flat_map f x : (a -> List b) -> List a -> List b = Nil
+
+do writer : Int = Cons "" Nil
+Cons "" Nil
+    "#,
+Unification { .. }
+}

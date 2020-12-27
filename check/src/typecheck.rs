@@ -1172,6 +1172,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             }
             Expr::Do(Do {
                 ref mut id,
+                ref mut typ,
                 ref mut bound,
                 ref mut body,
                 ref mut flat_map_id,
@@ -1222,10 +1223,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     _ => flat_map_type.clone(),
                 };
 
-                let id_var = self.subs.new_var();
+                let id_type = self.resolve_type_signature(typ.as_mut());
                 let arg1 = self
                     .subs
-                    .function(Some(id_var.clone()), self.subs.new_var());
+                    .function(Some(id_type.concrete.clone()), self.subs.new_var());
                 let arg2 = self.subs.new_var();
 
                 let ret = expected_type
@@ -1241,7 +1242,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 self.unify_span(do_span, &flat_map_type, func_type);
 
                 if let Some(ref mut id) = *id {
-                    self.typecheck_pattern(id, ModType::wobbly(id_var.clone()), id_var);
+                    self.typecheck_pattern(id, id_type.clone(), id_type.concrete);
                 }
 
                 let body_type = self.typecheck(body, ret.as_ref());
@@ -1890,6 +1891,25 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         }
     }
 
+    fn resolve_type_signature(
+        &mut self,
+        mut signature: Option<&mut AstType<'_, Symbol>>,
+    ) -> ModType {
+        let mut mod_type = if let Some(ref mut typ) = signature {
+            self.kindcheck(typ);
+            let rc_type = self.translate_ast_type(typ);
+
+            ModType::rigid(rc_type)
+        } else {
+            ModType::wobbly(self.subs.hole())
+        };
+
+        if let Some(typ) = self.create_unifiable_signature(&mod_type) {
+            mod_type.concrete = typ;
+        }
+        mod_type
+    }
+
     fn typecheck_let_bindings(&mut self, bindings: &mut ValueBindings<'ast, Symbol>) {
         self.enter_scope();
         self.environment.skolem_variables.enter_scope();
@@ -1902,19 +1922,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         if is_recursive {
             for (i, bind) in bindings.iter_mut().enumerate() {
                 let typ = {
-                    if let Some(ref mut typ) = bind.typ {
-                        self.kindcheck(typ);
-                        let rc_type = self.translate_ast_type(typ);
-
-                        resolved_types.push(ModType::rigid(rc_type));
-                    } else {
-                        resolved_types.push(ModType::wobbly(self.subs.hole()));
-                    }
-
-                    let typ = self.create_unifiable_signature(&resolved_types[i]);
-                    if let Some(typ) = typ {
-                        resolved_types[i].concrete = typ;
-                    }
+                    resolved_types.push(self.resolve_type_signature(bind.typ.as_mut()));
 
                     resolved_types[i].concrete.clone()
                 };

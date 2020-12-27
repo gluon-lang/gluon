@@ -1183,6 +1183,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 ref bound,
                 ref body,
                 ref flat_map_id,
+                ..
             }) => {
                 let flat_map_id = flat_map_id
                     .as_ref()
@@ -2371,7 +2372,7 @@ pub mod tests {
     use codespan_reporting::files::Files;
 
     use crate::base::{
-        ast,
+        ast, pos,
         source::Source,
         symbol::{Symbol, SymbolModule, Symbols},
         types::TypeCache,
@@ -2393,6 +2394,27 @@ pub mod tests {
             )
             .unwrap(),
         );
+
+        struct Visitor<'ast>(&'ast ast::Arena<'ast, Symbol>);
+
+        impl<'ast> ast::MutVisitor<'_, 'ast> for Visitor<'ast> {
+            type Ident = Symbol;
+            fn visit_expr(&mut self, expr: &mut SpannedExpr<'ast, Symbol>) {
+                match &mut expr.value {
+                    ast::Expr::Do(d) => {
+                        d.flat_map_id = Some(self.0.alloc(pos::spanned(
+                            expr.span,
+                            ast::Expr::Ident(TypedIdent::new(Symbol::from("flat_map"))),
+                        )))
+                    }
+                    _ => (),
+                }
+                ast::walk_mut_expr(self, expr);
+            }
+        }
+
+        ast::MutVisitor::visit_expr(&mut Visitor(&arena), expr);
+
         ast::RootExpr::new(arena.clone(), expr)
     }
 
