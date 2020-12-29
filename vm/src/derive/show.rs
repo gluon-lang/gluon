@@ -204,7 +204,14 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: pos::spanned(span, show_record_expr),
         metadata: Default::default(),
-        typ: Some(binding_type(arena, symbols, "Show", self_type(), bind)),
+        typ: Some(binding_type(
+            arena,
+            symbols,
+            span,
+            "Show",
+            self_type(),
+            bind,
+        )),
         resolved_type: Type::hole(),
     })
 }
