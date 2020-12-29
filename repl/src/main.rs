@@ -183,10 +183,7 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-async fn format(file: &str, file_map: Arc<source::FileMap>, opt: &Opt) -> Result<String> {
-    let thread = new_vm_async().await;
-    thread.get_database_mut().use_standard_lib(!opt.no_std);
-
+async fn format(thread: &Thread, file: &str, file_map: Arc<source::FileMap>) -> Result<String> {
     Ok(thread
         .format_expr_async(
             &mut gluon_format::Formatter::default(),
@@ -196,7 +193,7 @@ async fn format(file: &str, file_map: Arc<source::FileMap>, opt: &Opt) -> Result
         .await?)
 }
 
-async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
+async fn fmt_file(thread: &Thread, name: &Path) -> Result<()> {
     use std::fs::File;
     use std::io::Read;
 
@@ -209,7 +206,7 @@ async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     let module_name = filename_to_module(&name.display().to_string());
     let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
-    let formatted = format(&module_name, file_map.clone(), opt).await?;
+    let formatted = format(thread, &module_name, file_map.clone()).await?;
 
     // Avoid touching the .glu file if it did not change
     if file_map.src() != formatted {
@@ -225,7 +222,7 @@ async fn fmt_file(name: &Path, opt: &Opt) -> Result<()> {
     Ok(())
 }
 
-async fn fmt_stdio(opt: &Opt) -> Result<()> {
+async fn fmt_stdio(thread: &Thread) -> Result<()> {
     use std::io::{stdin, stdout, Read};
 
     let mut buffer = String::new();
@@ -234,7 +231,7 @@ async fn fmt_stdio(opt: &Opt) -> Result<()> {
     let mut code_map = source::CodeMap::new();
     let file_map = code_map.add_filemap("STDIN".into(), buffer);
 
-    let formatted = format("STDIN", file_map, opt).await?;
+    let formatted = format(&thread, "STDIN", file_map).await?;
     stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }
@@ -243,6 +240,8 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
+            let thread = new_vm_async().await;
+            thread.get_database_mut().use_standard_lib(!opt.no_std);
             if !fmt_opt.input.is_empty() {
                 let mut gluon_files = fmt_opt
                     .input
@@ -265,10 +264,10 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
                 gluon_files.dedup();
 
                 for file in gluon_files {
-                    fmt_file(&file, opt).await?;
+                    fmt_file(&thread, &file).await?;
                 }
             } else {
-                fmt_stdio(opt).await?;
+                fmt_stdio(&thread).await?;
             }
         }
         Some(SubOpt::Doc(ref doc_opt)) => {
