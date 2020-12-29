@@ -32,14 +32,14 @@ use crate::base::{
 use crate::vm::{
     self,
     gc::Trace,
-    macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
+    macros::{Error as MacroError, LazyMacroResult, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread},
     vm::VmEnv,
     ExternLoader, ExternModule,
 };
 
 use crate::{
-    compiler_pipeline::SalvageResult,
+    compiler_pipeline::{Salvage, SalvageResult},
     query::{AsyncCompilation, Compilation, CompilerDatabase},
     IoError, ModuleCompiler, ThreadExt,
 };
@@ -99,7 +99,17 @@ impl Importer for DefaultImporter {
         _vm: &Thread,
         modulename: &str,
     ) -> SalvageResult<ArcType> {
-        let value = compiler.database.global(modulename.to_string()).await?;
+        let result = compiler.database.global(modulename.to_string()).await;
+        // Forcibly load module_type so we can salvage a type for the error if necessary
+        let _ = compiler
+            .database
+            .module_type(modulename.to_string(), None)
+            .await;
+
+        let value = result.map_err(|error| {
+            let value = compiler.database.peek_module_type(modulename);
+            Salvage { value, error }
+        })?;
         Ok(value.typ)
     }
 }
@@ -534,14 +544,18 @@ where
                     let result = std::panic::AssertUnwindSafe(db.import(modulename))
                         .catch_unwind()
                         .await
-                        .map(|r| r.map_err(|err| MacroError::message(err.to_string())))
+                        .map(|r| {
+                            r.map_err(|salvage| {
+                                salvage.map_err(|err| MacroError::message(err.to_string()))
+                            })
+                        })
                         .unwrap_or_else(|err| {
-                            Err(MacroError::message(
+                            Err(Salvage::from(MacroError::message(
                                 err.downcast::<String>()
                                     .map(|s| *s)
                                     .or_else(|e| e.downcast::<&str>().map(|s| String::from(&s[..])))
                                     .unwrap_or_else(|_| "Unknown panic".to_string()),
-                            ))
+                            )))
                         });
                     // Drop the database before sending the result, otherwise the forker may drop before the forked database
                     drop(db);
@@ -549,23 +563,35 @@ where
                 }))
                 .unwrap();
             return Box::pin(async move {
-                Ok(From::from(move || {
-                    rx.map(move |r| {
-                        r.unwrap_or_else(|err| Err(MacroError::new(Error::String(err.to_string()))))
-                            .map(move |id| pos::spanned(span, Expr::Ident(id)).into())
-                    })
+                Ok(LazyMacroResult::from(move || {
+                    async move {
+                        rx.await
+                            .unwrap_or_else(|err| {
+                                Err(Salvage::from(MacroError::new(Error::String(
+                                    err.to_string(),
+                                ))))
+                            })
+                            .map(|id| pos::spanned(span, Expr::Ident(id)))
+                            .map_err(|salvage| {
+                                salvage.map(|id| pos::spanned(span, Expr::Ident(id)))
+                            })
+                    }
                     .boxed()
                 }))
             });
         }
 
         Box::pin(async move {
-            Ok(From::from(move || {
+            Ok(LazyMacroResult::from(move || {
                 async move {
                     let result = db
                         .import(modulename)
                         .await
-                        .map_err(|err| MacroError::message(err.to_string()))
+                        .map_err(|salvage| {
+                            salvage
+                                .map(|id| pos::spanned(span, Expr::Ident(id)))
+                                .map_err(|err| MacroError::message(err.to_string()))
+                        })
                         .map(move |id| pos::spanned(span, Expr::Ident(id)));
                     drop(db);
                     result

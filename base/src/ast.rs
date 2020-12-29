@@ -418,6 +418,7 @@ pub struct ExprField<'ast, Id, E> {
 #[derive(Eq, PartialEq, Debug, AstClone)]
 pub struct Do<'ast, Id> {
     pub id: Option<SpannedPattern<'ast, Id>>,
+    pub typ: Option<AstType<'ast, Id>>,
     pub bound: &'ast mut SpannedExpr<'ast, Id>,
     pub body: &'ast mut SpannedExpr<'ast, Id>,
     pub flat_map_id: Option<&'ast mut SpannedExpr<'ast, Id>>,
@@ -872,12 +873,16 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
 
         Expr::Do(Do {
             ref $($mut)* id,
+            ref $($mut)* typ,
             ref $($mut)* bound,
             ref $($mut)* body,
             ref $($mut)* flat_map_id,
         }) => {
             if let Some(id) = id {
                 v.visit_pattern(id);
+            }
+            if let Some(ast_type) = typ {
+                v.visit_ast_type(ast_type)
             }
             v.visit_expr(bound);
             v.visit_expr(body);

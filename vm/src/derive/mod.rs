@@ -286,13 +286,14 @@ fn is_self_type(self_: &Symbol, typ: &AstType<Symbol>) -> bool {
 fn binding_type<'ast>(
     arena: ast::ArenaRef<'_, 'ast, Symbol>,
     symbols: &mut Symbols,
+    span: Span<BytePos>,
     derive_type_name: &str,
     self_type: AstType<'ast, Symbol>,
     bind: &TypeBinding<'ast, Symbol>,
 ) -> AstType<'ast, Symbol> {
     let derive_symbol = symbols.simple_symbol(derive_type_name);
     let derive_type = move || arena.clone().ident(KindedIdent::new(derive_symbol.clone()));
-    arena.clone().function_implicit(
+    let mut typ = arena.clone().function_implicit(
         bind.alias.value.params().iter().cloned().map(|g| {
             TypeContext::app(
                 &mut arena.clone(),
@@ -305,5 +306,11 @@ fn binding_type<'ast>(
             derive_type(),
             arena.clone().alloc_extend(Some(self_type)),
         ),
-    )
+    );
+
+    crate::base::types::walk_type_mut(&mut typ, &mut |typ: &mut AstType<_>| {
+        *typ.span_mut() = span;
+    });
+
+    typ
 }

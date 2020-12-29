@@ -1017,7 +1017,7 @@ let { (>>=) } = import! std.monad
 let { id } = import! std.function
 do t = thread.new_thread ()
 
-thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (\_ -> wrap "abc") >>= id)
+thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (wrap "abc") >>= id)
 "#,
 IO::Value((123, "abc".to_string()))
 }

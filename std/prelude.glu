@@ -20,6 +20,7 @@ let { Array } = import! std.array
 let { (++) } = import! std.string
 let { error } = import! std.prim
 let { flat_map } = import! std.monad
+let { (<|) } = import! std.function
 
 {
     IO,
@@ -76,4 +77,6 @@ let { flat_map } = import! std.monad
     error,
 
     flat_map,
+
+    (<|),
 }

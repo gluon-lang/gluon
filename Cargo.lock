@@ -1104,6 +1104,7 @@ dependencies = [
  "criterion",
  "either",
  "env_logger 0.7.1",
+ "expect-test",
  "futures 0.3.5",
  "gluon-salsa",
  "gluon_base",

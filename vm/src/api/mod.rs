@@ -265,7 +265,7 @@ impl VmType for Hole {
 }
 
 /// Type representing gluon's IO type
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum IO<T> {
     Value(T),
     Exception(String),
@@ -277,9 +277,9 @@ impl<T> IO<T> {
     }
 }
 
-impl<T> Into<StdResult<T, String>> for IO<T> {
-    fn into(self) -> StdResult<T, String> {
-        match self {
+impl<T> From<IO<T>> for StdResult<T, String> {
+    fn from(io: IO<T>) -> StdResult<T, String> {
+        match io {
             IO::Value(x) => Ok(x),
             IO::Exception(x) => Err(x),
         }

@@ -149,7 +149,7 @@ pub type ChannelRecord<S, R> = record_type!(sender => S, receiver => R);
 
 /// FIXME The dummy `a` argument should not be needed to ensure that the channel can only be used
 /// with a single type
-fn channel(WithVM { vm, .. }: WithVM<Generic<A>>) -> ChannelRecord<Sender<A>, Receiver<A>> {
+fn channel(WithVM { vm, .. }: WithVM<Generic<A>>) -> IO<ChannelRecord<Sender<A>, Receiver<A>>> {
     let sender = Sender {
         thread: unsafe { GcPtr::from_raw(vm) },
         queue: Arc::new(Mutex::new(VecDeque::new())),
@@ -159,33 +159,34 @@ fn channel(WithVM { vm, .. }: WithVM<Generic<A>>) -> ChannelRecord<Sender<A>, Re
         queue: sender.queue.clone(),
         _element_type: PhantomData,
     };
-    record_no_decl!(sender => sender, receiver => receiver)
+    IO::Value(record_no_decl!(sender => sender, receiver => receiver))
 }
 
-fn recv(receiver: &Receiver<A>) -> Result<Unrooted<A>, ()> {
-    receiver.try_recv().map_err(|_| ()).map(Unrooted::from)
+fn recv(receiver: &Receiver<A>) -> IO<Result<Unrooted<A>, ()>> {
+    IO::Value(receiver.try_recv().map_err(|_| ()).map(Unrooted::from))
 }
 
-fn send(sender: &Sender<A>, value: Generic<A>) -> Result<(), ()> {
-    let value = sender
+fn send(sender: &Sender<A>, value: Generic<A>) -> IO<Result<(), ()>> {
+    let value = match sender
         .thread
         .deep_clone_value(&sender.thread, value.get_value())
-        .map_err(|_| ())?;
-    Ok(sender.send(value.get_value()))
+    {
+        Ok(value) => value,
+        Err(_) => return IO::Value(Err(())),
+    };
+    IO::Value(Ok(sender.send(value.get_value())))
 }
 
-async fn resume(child: RootedThread) -> RuntimeResult<Result<(), String>, String> {
+async fn resume(child: RootedThread) -> IO<Result<(), String>> {
     let result = future::lazy(|cx| child.resume(cx)).await;
     match result {
-        Poll::Pending => RuntimeResult::Return(Ok(())),
+        Poll::Pending => IO::Value(Ok(())),
         Poll::Ready(result) => match result {
-            Ok(_) => RuntimeResult::Return(Ok(())),
-            Err(Error::Dead) => {
-                RuntimeResult::Return(Err("Attempted to resume a dead thread".into()))
-            }
+            Ok(_) => IO::Value(Ok(())),
+            Err(Error::Dead) => IO::Value(Err("Attempted to resume a dead thread".into())),
             Err(err) => {
                 let fmt = format!("{}", err);
-                RuntimeResult::Panic(fmt)
+                IO::Exception(fmt)
             }
         },
     }
@@ -205,36 +206,67 @@ async fn yield_(_: ()) {
     .await
 }
 
-fn spawn<'vm>(
-    value: WithVM<'vm, Function<&'vm Thread, fn(())>>,
-) -> RuntimeResult<RootedThread, Error> {
+fn spawn<'vm>(value: WithVM<'vm, Function<&'vm Thread, IO<()>>>) -> IO<RootedThread> {
     spawn_(value).into()
 }
-fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
+fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, IO<()>>>) -> VmResult<RootedThread> {
     let thread = value.vm.new_thread()?;
     {
         let mut context = thread.current_context();
         let value_variant = value.value.get_variant();
-        let callable = match value_variant.get_repr() {
+        let (callable, args) = match value_variant.get_repr() {
             ValueRepr::Closure(closure) => {
-                construct_gc!(State::Closure(@ construct_gc!(ClosureState {
-                    @ closure,
-                    instruction_index: 0,
-                })))
+                value_variant.clone().vm_push(&mut context)?;
+                (
+                    construct_gc!(State::Closure(@ construct_gc!(ClosureState {
+                        @ closure,
+                        instruction_index: 0,
+                    }))),
+                    &[][..],
+                )
             }
             ValueRepr::Function(function) => {
-                construct_gc!(State::Extern(@ ExternState::new(function)))
+                value_variant.clone().vm_push(&mut context)?;
+                (
+                    construct_gc!(State::Extern(@ ExternState::new(function))),
+                    &[][..],
+                )
             }
-            _ => gc::Borrow::from_static(State::Unknown),
+            ValueRepr::PartialApplication(function) => (
+                match &function.function {
+                    Callable::Closure(closure) => {
+                        context.push(construct_gc!(ValueRepr::Closure(@closure)));
+                        construct_gc!(State::Closure(@ construct_gc!(ClosureState {
+                            @ closure,
+                            instruction_index: 0,
+                        })))
+                    }
+
+                    Callable::Extern(function) => {
+                        context.push(construct_gc!(ValueRepr::Function(@function)));
+                        construct_gc!(State::Extern(@ ExternState::new(function)))
+                    }
+                },
+                &function.args[..],
+            ),
+            _ => {
+                value_variant.clone().vm_push(&mut context)?;
+                (gc::Borrow::from_static(State::Unknown), &[][..])
+            }
         };
-        value_variant.clone().vm_push(&mut context)?;
+        for a in args {
+            context.push(a);
+        }
         context.push(ValueRepr::Int(0));
-        context.context().stack.enter_scope(1, &*callable)?;
+        context
+            .context()
+            .stack
+            .enter_scope(1 + args.len() as u32, &*callable)?;
     }
     Ok(thread)
 }
 
-type Action<T> = fn(()) -> OpaqueValue<RootedThread, IO<Pushed<T>>>;
+type Action<T> = fn() -> IO<OpaqueValue<RootedThread, Pushed<T>>>;
 
 #[cfg(target_arch = "wasm32")]
 fn spawn_on<'vm>(
@@ -286,17 +318,13 @@ fn spawn_on<'vm>(
 
     fn push_future_wrapper<G>(context: &mut ActiveThread, _: &G)
     where
-        G: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
-            + Send
-            + 'static,
+        G: Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + Send + 'static,
     {
         fn future_wrapper<F>(
             data: &SpawnFuture<F>,
-        ) -> impl Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
+        ) -> impl Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>>
         where
-            F: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
-                + Send
-                + 'static,
+            F: Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + Send + 'static,
         {
             let future = data.0.clone();
             future
@@ -304,7 +332,7 @@ fn spawn_on<'vm>(
 
         primitive!(1, "unknown", async fn future_wrapper::<G>,
             [G]
-            [G: Future<Output = RuntimeResult<OpaqueValue<RootedThread, IO<Pushed<A>>>, Error>>
+            [G: Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>, >>
                 + Send
                 + 'static,
             ]
@@ -317,7 +345,12 @@ fn spawn_on<'vm>(
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action<A>>::from_value(&thread, action.get_variant());
 
-    let future = async move { action.call_async(()).map(RuntimeResult::from).await };
+    let future = async move {
+        match action.call_async().await {
+            Ok(io) => io,
+            Err(err) => IO::Exception(err.to_string()),
+        }
+    };
 
     let mut context = vm.current_context();
 

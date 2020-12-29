@@ -17,7 +17,7 @@ use gluon_codegen::Trace;
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr},
-    error::{AsDiagnostic, Errors as BaseErrors},
+    error::{AsDiagnostic, Errors as BaseErrors, Salvage, SalvageResult},
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
@@ -34,20 +34,22 @@ pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 
 pub type MacroResult<'ast> = Result<SpannedExpr<'ast, Symbol>, Error>;
+pub type SalvageMacroResult<'ast> = SalvageResult<SpannedExpr<'ast, Symbol>, Error>;
 
 pub enum LazyMacroResult<'ast> {
     Done(SpannedExpr<'ast, Symbol>),
     Lazy(
         Box<
-            dyn for<'a> FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>>
-                + Send
+            dyn for<'a> FnOnce() -> Pin<
+                    Box<dyn Future<Output = SalvageMacroResult<'ast>> + Send + 'ast>,
+                > + Send
                 + 'ast,
         >,
     ),
 }
 
 impl<'ast> LazyMacroResult<'ast> {
-    async fn compute(self) -> MacroResult<'ast> {
+    async fn compute(self) -> SalvageMacroResult<'ast> {
         match self {
             Self::Done(r) => Ok(r),
             Self::Lazy(f) => f().await,
@@ -63,8 +65,9 @@ impl<'ast> From<SpannedExpr<'ast, Symbol>> for LazyMacroResult<'ast> {
 
 impl<'ast, F> From<F> for LazyMacroResult<'ast>
 where
-    for<'a> F:
-        FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>> + Send + 'ast,
+    for<'a> F: FnOnce() -> Pin<Box<dyn Future<Output = SalvageMacroResult<'ast>> + Send + 'ast>>
+        + Send
+        + 'ast,
 {
     fn from(r: F) -> Self {
         Self::Lazy(Box::new(r))
@@ -488,21 +491,29 @@ impl<'a> MacroExpander<'a> {
             }
         }
 
+        // Index each expansion future so we can keep any returned errors in a consistent order
         let mut stream = futures
             .into_iter()
+            .enumerate()
+            .map(|(index, future)| future.map(move |x| (index, x)))
             .collect::<futures::stream::FuturesUnordered<_>>();
-        while let Some((expr, result)) = stream.next().await {
+        let mut unordered_errors = Vec::new();
+        while let Some((index, (expr, result))) = stream.next().await {
             let expr = { expr };
             let new_expr = match result {
                 Ok(replacement) => replacement.value,
-                Err(err) => {
-                    self.errors.push(pos::spanned(expr.span, err));
-                    Expr::Error(None)
+                Err(Salvage { error, value }) => {
+                    unordered_errors.push((index, pos::spanned(expr.span, error)));
+                    value.map_or_else(|| Expr::Error(None), |e| e.value)
                 }
             };
 
             replace_expr(arena, expr, new_expr);
         }
+
+        unordered_errors.sort_by_key(|&(index, _)| index);
+        self.errors
+            .extend(unordered_errors.into_iter().map(|(_, err)| err));
     }
 }
 

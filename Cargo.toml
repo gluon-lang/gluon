@@ -75,10 +75,11 @@ little-skeptic = { version = "0.15.0", optional = true }
 walkdir = "2"
 
 [dev-dependencies]
+anyhow = "1"
 criterion = "0.3"
 collect-mac = "0.1.0"
 env_logger = "0.7"
-anyhow = "1"
+expect-test = "1"
 thiserror = "1"
 insta = "0.16"
 pretty_assertions = "0.6"

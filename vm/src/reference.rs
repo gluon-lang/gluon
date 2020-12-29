@@ -1,7 +1,7 @@
 use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
-    api::{generic::A, Generic, RuntimeResult, Unrooted, Userdata, WithVM},
+    api::{generic::A, Generic, Unrooted, Userdata, WithVM, IO},
     gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::ThreadInternal,
     value::{Cloner, Value},
@@ -50,30 +50,30 @@ unsafe impl<T> Trace for Reference<T> {
     impl_trace_fields! { self, gc; value }
 }
 
-fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
+fn set(r: &Reference<A>, a: Generic<A>) -> IO<()> {
     match r.thread.deep_clone_value(&r.thread, a.get_value()) {
         // SAFETY Rooted when stored in the reference
         Ok(a) => unsafe {
             *r.value.lock().unwrap() = a.get_value().clone_unrooted();
-            RuntimeResult::Return(())
+            IO::Value(())
         },
-        Err(err) => RuntimeResult::Panic(format!("{}", err)),
+        Err(err) => IO::Exception(format!("{}", err)),
     }
 }
 
-fn get(r: &Reference<A>) -> Unrooted<A> {
+fn get(r: &Reference<A>) -> IO<Unrooted<A>> {
     // SAFETY The returned, unrooted value gets pushed immediately to the stack
-    unsafe { Unrooted::from(r.value.lock().unwrap().clone_unrooted()) }
+    IO::Value(unsafe { Unrooted::from(r.value.lock().unwrap().clone_unrooted()) })
 }
 
-fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
+fn make_ref(a: WithVM<Generic<A>>) -> IO<Reference<A>> {
     // SAFETY The returned, unrooted value gets pushed immediately to the stack
     unsafe {
-        Reference {
+        IO::Value(Reference {
             value: Mutex::new(a.value.get_value().clone_unrooted()),
             thread: GcPtr::from_raw(a.vm),
             _marker: PhantomData,
-        }
+        })
     }
 }
 
@@ -94,4 +94,57 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             (ref_ "ref") =>  primitive!(1, "std.reference.prim.ref", std::reference::prim::make_ref),
         },
     )
+}
+
+pub mod st {
+    use super::*;
+
+    use crate::api::RuntimeResult;
+
+    fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
+        match r.thread.deep_clone_value(&r.thread, a.get_value()) {
+            // SAFETY Rooted when stored in the reference
+            Ok(a) => unsafe {
+                *r.value.lock().unwrap() = a.get_value().clone_unrooted();
+                RuntimeResult::Return(())
+            },
+            Err(err) => RuntimeResult::Panic(format!("{}", err)),
+        }
+    }
+
+    fn get(r: &Reference<A>) -> Unrooted<A> {
+        // SAFETY The returned, unrooted value gets pushed immediately to the stack
+        unsafe { Unrooted::from(r.value.lock().unwrap().clone_unrooted()) }
+    }
+
+    fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
+        // SAFETY The returned, unrooted value gets pushed immediately to the stack
+        unsafe {
+            Reference {
+                value: Mutex::new(a.value.get_value().clone_unrooted()),
+                thread: GcPtr::from_raw(a.vm),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    mod std {
+        pub mod st {
+            pub mod reference {
+                pub use crate::reference::st as prim;
+            }
+        }
+    }
+
+    pub fn load(vm: &Thread) -> Result<ExternModule> {
+        ExternModule::new(
+            vm,
+            record! {
+                type Reference a => Reference<A>,
+                (store "<-") => primitive!(2, "std.st.reference.prim.(<-)", std::st::reference::prim::set),
+                load => primitive!(1, "std.st.reference.prim.load", std::st::reference::prim::get),
+                (ref_ "ref") =>  primitive!(1, "std.st.reference.prim.ref", std::st::reference::prim::make_ref),
+            },
+        )
+    }
 }

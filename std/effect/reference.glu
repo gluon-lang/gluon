@@ -1,0 +1,11 @@
+let { lift } = import! std.effect.lift
+let m = lift_io! lift (import! std.reference)
+
+#[infix(right, 9)]
+let (<-) = m.(<-)
+
+{
+    (<-),
+    ..
+    m
+}

@@ -5,9 +5,7 @@ let io_prim @ { IO, File } = import! std.io.prim
 let { Read } = import! std.io.read
 let { Write } = import! std.io.write
 let { Disposable } = import! std.disposable
-let { Functor } = import! std.functor
-let { Applicative } = import! std.applicative
-let { Monad } = import! std.monad
+let { functor, applicative, monad } = import! std.io.base
 
 /// Opens the file at `path` in read-only mode. Fails if the file does not
 /// exist.
@@ -20,21 +18,6 @@ let open_file path : String -> IO File =
 let create_file path : String -> IO File =
     let { OpenOptions } = io_prim
     io_prim.open_file_with path [Create, Write, Truncate]
-
-let functor : Functor IO = {
-    map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x)),
-}
-
-let applicative : Applicative IO =
-    let wrap = io_prim.wrap
-    let apply f x = io_prim.flat_map (\g -> io_prim.flat_map (\y -> wrap (g y)) x) f
-
-    { functor, apply, wrap }
-
-let monad : Monad IO = {
-    applicative = applicative,
-    flat_map = io_prim.flat_map,
-}
 
 let read : Read File = {
     read = io_prim.read_file,
