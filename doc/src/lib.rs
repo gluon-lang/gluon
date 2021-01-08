@@ -721,7 +721,10 @@ const LONG_VERSION: &str = concat!(
 #[derive(Parser)]
 #[command(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {
-    #[arg(long = "open", help = "Opens the documentation after it has been generated")]
+    #[arg(
+        long = "open",
+        help = "Opens the documentation after it has been generated"
+    )]
     pub open: bool,
     #[arg(long = "jobs", help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
