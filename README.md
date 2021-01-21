@@ -1,6 +1,6 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](http://gluon-lang.org/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
+[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](https://gluon-lang.org/doc/crates_io/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
@@ -288,9 +288,9 @@ nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
 
 ## Documentation
 
-[The Gluon Book](http://gluon-lang.org/book/index.html)
+[The Gluon Book](https://gluon-lang.org/doc/crates_io/book/index.html)
 
-[Gluon Standard Library API Reference](http://gluon-lang.org/doc/nightly/std/index.html)
+[Gluon Standard Library API Reference](https://gluon-lang.org/doc/crates_io/std/std.html)
 
 [Rust API Docs](https://docs.rs/gluon/*/gluon/index.html)
 
