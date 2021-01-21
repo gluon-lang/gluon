@@ -288,9 +288,9 @@ nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
 
 ## Documentation
 
-[The Gluon Book](http://gluon-lang.org/book/index.html)
+[The Gluon Book](https://gluon-lang.org/doc/crates_io/book/index.html)
 
-[Gluon Standard Library API Reference](http://gluon-lang.org/doc/nightly/std/index.html)
+[Gluon Standard Library API Reference](https://gluon-lang.org/doc/crates_io/std/std.html)
 
 [Rust API Docs](https://docs.rs/gluon/*/gluon/index.html)
 
