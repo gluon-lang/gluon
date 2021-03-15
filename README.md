@@ -274,7 +274,7 @@ The [gluon extension][] for Visual Studio Code provides syntax highlighting and 
 The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
 
 #### Example configuration (autozimu/LanguageClient-neovim)
-```
+```vim
 let g:LanguageClient_serverCommands = {
     \ 'gluon': ['gluon_language-server'],
     \ }
