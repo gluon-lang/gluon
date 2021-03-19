@@ -27,7 +27,7 @@ gluon_codegen = { path = "../codegen", version = "0.17.2" } # GLUON
 gluon_format = { version = "0.17.2", path = "../format" } # GLUON
 gluon_doc = { version = "0.17.2", path = "../doc" } # GLUON
 
-app_dirs = "1.0.0"
+app_dirs = { package = "app_dirs2", version = "2.3" }
 anyhow = "1"
 futures = "0.3"
 tokio = { version = "0.2", features = ["rt-threaded", "rt-core", "macros", "signal"] }
