@@ -1,9 +1,13 @@
 //! Time-related functionality
-let duration = import! std.time.duration
-let instant = import! std.time.instant
-let system_time = import! std.time.system_time
+let duration @ { Duration } = import! std.time.duration
+let instant @ { Instant } = import! std.time.instant
+let system_time @ { SystemTime } = import! std.time.system_time
 
 {
+    Duration,
+    Instant,
+    SystemTime,
+
     duration,
     instant,
     system_time,
