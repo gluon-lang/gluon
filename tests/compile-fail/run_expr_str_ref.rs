@@ -6,5 +6,5 @@ fn main() {
     let vm = new_vm();
 
     let _ = vm.run_expr::<&str>("", r#" "test" "#);
-    //~^ the trait bound `for<'value> &str: gluon::gluon_vm::api::Getable<'_, 'value>` is not satisfied [E0277]
+    //~^ the trait bound `for<'value> &str: Getable<'_, 'value>` is not satisfied [E0277]
 }

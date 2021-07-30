@@ -6,8 +6,8 @@ use crate::base::{
     ast::{
         self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
         Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
-        MutVisitor, Pattern, RootExpr, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
-        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,Sp,
+        MutVisitor, Pattern, RootExpr, Sp, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
+        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
     },
     error::Errors,
     kind::Kind,
@@ -281,6 +281,7 @@ pub fn do_2<'ast>(
 ) -> SpExpr<'ast> {
     no_loc(Expr::Do(arena.alloc(Do {
         id,
+        typ: None,
         bound: arena.alloc(e),
         body: arena.alloc(b),
         flat_map_id: None,
@@ -548,6 +549,7 @@ macro_rules! test_parse {
             let text = $text;
             let e = parse_clear_span!(text);
             mk_ast_arena!(arena);
+            let _: &Arena<String> = &*arena;
             fn call<A, R>(a: A, f: impl FnOnce(A) -> R) -> R {
                 f(a)
             }

@@ -35,9 +35,9 @@ fn read_file() {
         do bytes = io.read_file file 9
         let bytes = unwrap bytes
 
-        assert (array.len bytes == 9)
-        assert (array.index bytes 0 == 91b) // [
-        assert (array.index bytes 1 == 112b) // p
+        let _ = assert (array.len bytes == 9)
+        let _ = assert (array.index bytes 0 == 91b) // [
+        let _ = assert (array.index bytes 1 == 112b) // p
 
         wrap (array.index bytes 8)
         "#;
@@ -65,7 +65,7 @@ fn write_and_flush_file() {
         \path ->
             do file = open_file_with path [Write]
             do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
-            assert (bytes_written == 4)
+            let _ = assert (bytes_written == 4)
             flush_file file
     "#;
 
@@ -159,7 +159,7 @@ fn spawn_on_twice() {
         let thread = import! std.thread
 
         do child = thread.new_thread ()
-        do action = thread.spawn_on child (\_ -> wrap "abc")
+        do action = thread.spawn_on child (wrap "abc")
         action
     "#;
 
@@ -196,7 +196,7 @@ fn spawn_on_runexpr() {
         let thread = import! std.thread
 
         do child = thread.new_thread ()
-        do action = thread.spawn_on child (\_ -> io.run_expr "123")
+        do action = thread.spawn_on child (io.run_expr "123")
         do x = action
         seq io.println x.value
         wrap x.value
@@ -222,20 +222,18 @@ fn spawn_on_do_action_twice() {
 
     let text = r#"
         let { ? } = import! std.io
-        let { ref, (<-), load } = import! std.reference
+        let { ref, modify, load } = import! std.reference
         let thread = import! std.thread
         let { wrap } = import! std.applicative
         let { join } = import! std.monad
 
-        let counter = ref 0
+        do counter = ref 0
 
         do child = thread.new_thread ()
-        let action = thread.spawn_on child (\_ ->
-                counter <- (load counter + 1)
-                wrap ())
+        let action = thread.spawn_on child (modify counter (\x -> x + 1))
         seq join action
         seq join action
-        wrap (load counter)
+        load counter
     "#;
 
     let mut runtime = Runtime::new().unwrap();
@@ -253,19 +251,17 @@ fn spawn_on_force_action_twice() {
 
     let text = r#"
         let { ? } = import! std.io
-        let { ref, (<-), load } = import! std.reference
+        let { ref, modify, load } = import! std.reference
         let thread = import! std.thread
         let { wrap } = import! std.applicative
 
-        let counter = ref 0
+        do counter = ref 0
 
         do child = thread.new_thread ()
-        do action = thread.spawn_on child (\_ ->
-                counter <- (load counter + 1)
-                wrap ())
+        do action = thread.spawn_on child (modify counter (\x -> x + 1))
         seq action
         seq action
-        wrap (load counter)
+        load counter
     "#;
 
     let mut runtime = Runtime::new().unwrap();
@@ -290,8 +286,7 @@ fn spawn_on_runexpr_in_catch() {
 
         let action =
             do eval_thread = thread.new_thread ()
-            let f _ = io.run_expr "123"
-            do a = thread.spawn_on eval_thread f
+            do a = thread.spawn_on eval_thread (io.run_expr "123")
             do result = a
             wrap result.value
         (io.catch action wrap >>= io.println) *> wrap "123"

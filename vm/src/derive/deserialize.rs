@@ -153,6 +153,7 @@ pub fn generate<'ast>(
         typ: Some(binding_type(
             arena,
             symbols,
+            span,
             "Deserialize",
             self_type(),
             bind,

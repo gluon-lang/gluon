@@ -33,7 +33,7 @@ for PROJECT in "${PROJECTS[@]}"
 do
     PROJECT_PATH=$(echo "$PROJECT" | sed 's/gluon_//' | sed 's/gluon/./')
 
-    if ! (cd "${PROJECT_PATH}" && retry cargo publish "$@"); then
+    if ! (sync_publish "${PROJECT_PATH}" -f "$@"); then
         exit 1
     fi
 done

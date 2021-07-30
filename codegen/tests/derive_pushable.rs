@@ -62,14 +62,14 @@ fn normal_struct() {
         let { new_struct } = import! functions
         let { assert } = import! std.test
         let { index, len } = import! std.array
-        
+
         let { string, number, vec } = new_struct ()
 
-        assert (string == "hello")
-        assert (number == 1)
-        assert (len vec == 3)
-        assert (index vec 0 == 1.0)
-        assert (index vec 1 == 2.0)
+        let _ = assert (string == "hello")
+        let _ = assert (number == 1)
+        let _ = assert (len vec == 3)
+        let _ = assert (index vec 0 == 1.0)
+        let _ = assert (index vec 1 == 2.0)
         assert (index vec 2 == 3.0)
     "#;
 
@@ -121,12 +121,12 @@ fn generic_struct() {
 
         let { generic, other } = new_generic_struct "hi rust"
 
-        assert (generic == "hi rust")
-        assert (other == 2012)
+        let _ = assert (generic == "hi rust")
+        let _ = assert (other == 2012)
 
         let { generic, other } = new_generic_struct 3.14
 
-        assert (generic == 3.14)
+        let _ = assert (generic == 3.14)
         assert (other == 2012)
     "#;
 
@@ -177,7 +177,7 @@ fn lifetime_struct() {
 
         let { string, other } = new_lifetime_struct ()
 
-        assert (string == "I'm borrowed")
+        let _ = assert (string == "I'm borrowed")
         assert (other == 6.6)
     "#;
 
@@ -231,18 +231,18 @@ fn normal_enum() {
                 match enum with
                 | Nothing -> 0
                 | Tuple x y ->
-                    assert (x == 1920)
-                    assert (y == 1080)
+                    let _ = assert (x == 1920)
+                    let _ = assert (y == 1080)
                     1
                 | Struct { key, value } ->
-                    assert (key == "under the doormat")
-                    assert (value == "lots of gold")
+                    let _ = assert (key == "under the doormat")
+                    let _ = assert (value == "lots of gold")
                     2
-            
+
             assert (tag == actual_tag)
-        
-        assert_enum (new_enum 0) 0
-        assert_enum (new_enum 1) 1
+
+        let _ = assert_enum (new_enum 0) 0
+        let _ = assert_enum (new_enum 1) 1
         assert_enum (new_enum 2) 2
     "#;
 

@@ -5,6 +5,7 @@
 let { assert_eq }  = import! std.test
 let { wrap, (<*) } = import! std.applicative
 let { (<|), (|>) } = import! std.function
+let { (=<<) } = import! std.monad
 let { ? } = import! std.io
 let io_read @ { Read, default_read_to_end, read, read_to_end, ? } = import! std.io.read
 let io_write @ { Write, write_slice, write, write_all, flush, ? } = import! std.io.write
@@ -21,14 +22,16 @@ type Cursor = {
     buf : Array Byte
 }
 
-let cursor buf : Array Byte -> Cursor = {
-    pos = ref 0,
-    buf,
-}
+let cursor buf : Array Byte -> IO Cursor =
+    do pos = ref 0
+    wrap {
+        pos,
+        buf,
+    }
 
 let read_cursor : Read Cursor =
     let read cursor num_bytes : Cursor -> Int -> IO (Option (Array Byte)) =
-        let start = load cursor.pos
+        do start = load cursor.pos
         let end = min (array.len cursor.buf) (start + num_bytes)
         let read_bytes = array.slice cursor.buf start end
         cursor.pos <- (start + array.len read_bytes)
@@ -45,17 +48,20 @@ let read_cursor : Read Cursor =
 
 let write_array_ref : Write (Reference (Array Byte)) = {
     write_slice = \array_ref buf start end ->
-        let written = array.append (load array_ref) (array.slice buf start end)
-        let _ = array_ref <- written
+        do array_buf = load array_ref
+        let written = array.append array_buf (array.slice buf start end)
+        array_ref <- written
         wrap (end - start),
-        
+
     flush = \_ -> wrap ()
 }
 
 
 let test_read = [
     test "basic" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 4
+        do reader = lift (
+            do c = cursor [1b, 2b, 3b, 4b, 5b]
+            io_read.buffered_with_capacity 4 c)
 
         do bytes = lift <| read reader 2
         do _ = assert_eq bytes (Some [1b, 2b])
@@ -68,32 +74,32 @@ let test_read = [
 
         do bytes = lift <| read reader 9000
         assert_eq (bytes) None,
-    
+
     test "read directly if buffer is empty" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 2
+        do reader =  lift <| io_read.buffered_with_capacity 2 =<< cursor [1b, 2b, 3b, 4b, 5b]
         do bytes = lift <| read reader 5
         assert_eq bytes (Some [1b, 2b, 3b, 4b, 5b]),
 
     test "read rest of buffer if it still holds data" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 2
+        do reader = lift <| io_read.buffered_with_capacity 2 =<< cursor [1b, 2b, 3b, 4b, 5b]
         do _ = lift <| read reader 1
         do bytes = lift <| read reader 4
         assert_eq bytes (Some [2b]),
 ]
-    
+
 let test_read_to_end = [
     test "read all in one go" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 5
+        do reader = lift <| io_read.buffered_with_capacity 5 =<< cursor [1b, 2b, 3b, 4b, 5b]
         do bytes = lift <| read_to_end reader
         assert_eq (bytes) [1b, 2b, 3b, 4b, 5b],
 
     test "read with small buffer" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 1
+        do reader = lift <| io_read.buffered_with_capacity 1 =<< cursor [1b, 2b, 3b, 4b, 5b]
         do bytes = lift <| read_to_end reader
         assert_eq (bytes) [1b, 2b, 3b, 4b, 5b],
 
     test "read with part of buffer already read" <| \_ ->
-        let reader = cursor [1b, 2b, 3b, 4b, 5b] |> io_read.buffered_with_capacity 2
+        do reader = lift <| io_read.buffered_with_capacity 2 =<< cursor [1b, 2b, 3b, 4b, 5b]
         do _ = lift <| read reader 1
         do bytes = lift <| read_to_end reader
         assert_eq bytes [2b, 3b, 4b, 5b],
@@ -101,93 +107,108 @@ let test_read_to_end = [
 
 let test_write_and_flush = [
     test "buffer all data if it fits" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 5
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift <| io_write.buffered_with_capacity 5 written
 
         do bytes_written = lift <| write writer [1b, 2b]
         do _ = assert_eq bytes_written 2
-        do _ = assert_eq (load written) []
+        do w = lift <| load written
+        do _ = assert_eq w []
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b],
-    
+        do w = lift <| load written
+        assert_eq w [1b, 2b],
+
     test "flush immediately if buffer is empty and new data wouldn't fit" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 2
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift <| io_write.buffered_with_capacity 2 written
 
         do bytes_written = lift <| write writer [1b, 2b, 3b]
         do _ = assert_eq bytes_written 3
-        do _ = assert_eq (load written) [1b, 2b, 3b]
+        do w = lift <| load written
+        do _ = assert_eq w [1b, 2b, 3b]
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b],
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b],
 
     test "flush buffer and then write new data if it wouldn't fit the buffer" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 2
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift <| io_write.buffered_with_capacity 2 written
 
         do bytes_written = lift <| write writer [1b]
         do _ = assert_eq (bytes_written) 1
-        do _ = assert_eq (load written) []
+        do w = lift <| load written
+        do _ = assert_eq w []
         do bytes_written = lift <| write writer [2b, 3b]
         do _ = assert_eq (bytes_written) 2
-        do _ = assert_eq (load written) [1b, 2b, 3b]
+        do w = lift <| load written
+        do _ = assert_eq w [1b, 2b, 3b]
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b],
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b],
 
-    test "flush buffer if new data doesn't fit, then buffer the data" <| \_ -> 
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 5
+    test "flush buffer if new data doesn't fit, then buffer the data" <| \_ ->
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift <| io_write.buffered_with_capacity 5 written
 
         do bytes_written = lift <| write writer [1b, 2b, 3b]
         do _ = assert_eq (bytes_written) 3
-        do _ = assert_eq (load written) []
+        do w = lift <| load written
+        do _ = assert_eq w []
         do bytes_written = lift <| write writer [4b, 5b, 6b]
         do _ = assert_eq (bytes_written) 3
-        do _ = assert_eq (load written) [1b, 2b, 3b]
+        do w = lift <| load written
+        do _ = assert_eq w [1b, 2b, 3b]
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b, 4b, 5b, 6b]
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b, 4b, 5b, 6b]
 ]
 
 let test_write_slice = [
     test "empty slice" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 5
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift <| io_write.buffered_with_capacity 5 written
         do bytes_written = lift <| write_slice writer [1b, 2b, 3b, 4b] 0 0
         do _ = assert_eq (bytes_written) 0
         do _ = lift <| flush writer
-        assert_eq (load written) [],
+        do w = lift <| load written
+        assert_eq w [],
 
     test "slice partial" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 5
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift (written |> io_write.buffered_with_capacity 5)
         do bytes_written = lift <| write_slice writer [1b, 2b, 3b, 4b] 1 3
         do _ = assert_eq (bytes_written) 2
         do _ = lift <| flush writer
-        assert_eq (load written) [2b, 3b],
+        do w = lift <| load written
+        assert_eq w [2b, 3b],
 
     test "slice everything" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 5
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift (written |> io_write.buffered_with_capacity 5)
         do bytes_written = lift <| write_slice writer [1b, 2b, 3b, 4b] 0 4
         do _ = assert_eq (bytes_written) 4
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b, 4b],
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b, 4b],
 ]
 
 let test_write_all = [
     test "basic" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 1
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift (written |> io_write.buffered_with_capacity 1)
         do _ = lift <| write_all writer [1b, 2b, 3b, 4b]
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b, 4b],
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b, 4b],
 
     test "write the data that's already buffered too" <| \_ ->
-        let written : Reference (Array Byte) = ref []
-        let writer = written |> io_write.buffered_with_capacity 2
+        do written : Reference (Array Byte) = lift <| ref []
+        do writer = lift (written |> io_write.buffered_with_capacity 2)
         do _ = lift <| write writer [1b]
         do _ = lift <| write_all writer [2b, 3b, 4b]
         do _ = lift <| flush writer
-        assert_eq (load written) [1b, 2b, 3b, 4b],
+        do w = lift <| load written
+        assert_eq w [1b, 2b, 3b, 4b],
 ]
 
 group "buffered_io" [

@@ -222,7 +222,14 @@ pub fn generate<'ast>(
         args: &mut [],
         expr: serializer_record_expr,
         metadata: Default::default(),
-        typ: Some(binding_type(arena, symbols, "Serialize", self_type(), bind)),
+        typ: Some(binding_type(
+            arena,
+            symbols,
+            span,
+            "Serialize",
+            self_type(),
+            bind,
+        )),
         resolved_type: Type::hole(),
     })
 }

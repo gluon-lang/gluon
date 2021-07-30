@@ -18,7 +18,7 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2020-07-26
+  - rust: nightly-2020-09-12
     #  - rust: beta
   - rust: stable
     env: ARCH=i686
@@ -29,7 +29,7 @@ matrix:
       - PUBLISH=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly-2020-03-12
+  - rust: nightly-2020-09-12
     env: WASM=1
 
     # Only for deployment

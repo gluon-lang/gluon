@@ -1,22 +1,22 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](http://gluon-lang.org/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
+[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](https://gluon-lang.org/doc/crates_io/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
 ## Features
 
-* **Statically typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
+* **Statically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
 
 * **Type inference** - Type inference ensures that types rarely have to be written explicitly giving all the benefits of static types with none of the typing.
 
 * **Simple embedding** - Marshalling values to and from gluon requires next to no boilerplate, allowing functions defined in [Rust][] to be [directly passed to gluon][easy_embed].
 
-* **UTF-8 by default** - Gluon supports unicode out of the box with utf-8 encoded strings and unicode codepoints as characters.
+* **UTF-8 by default** - Gluon supports Unicode out of the box with utf-8 encoded strings and Unicode codepoints as characters.
 
 * **Separate heaps** - Gluon is a garbage-collected language but uses a separate heap for each executing gluon thread. This keeps each heap small, reducing the overhead of the garbage collector.
 
-* **Thread safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
+* **Thread-safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
 [easy_embed]:https://gluon-lang.org/doc/crates_io/book/embedding-api.html
 [parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
@@ -228,7 +228,7 @@ cargo install gluon_repl
 
 ### REPL
 
-Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
+Gluon has a small executable that can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
 
 REPL features:
 * Evaluating expressions (expressions of type IO will be evaluated in the IO context).
@@ -274,7 +274,7 @@ The [gluon extension][] for Visual Studio Code provides syntax highlighting and 
 The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
 
 #### Example configuration (autozimu/LanguageClient-neovim)
-```
+```vim
 let g:LanguageClient_serverCommands = {
     \ 'gluon': ['gluon_language-server'],
     \ }
@@ -288,9 +288,9 @@ nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
 
 ## Documentation
 
-[The Gluon Book](http://gluon-lang.org/book/index.html)
+[The Gluon Book](https://gluon-lang.org/doc/crates_io/book/index.html)
 
-[Gluon Standard Library API Reference](http://gluon-lang.org/doc/nightly/std/index.html)
+[Gluon Standard Library API Reference](https://gluon-lang.org/doc/crates_io/std/std.html)
 
 [Rust API Docs](https://docs.rs/gluon/*/gluon/index.html)
 
@@ -303,11 +303,11 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.17.1"
+gluon = "0.17.2"
 ```
 
 ### Other languages
-Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
+Currently, the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust API.
 
 [C api]: https://github.com/gluon-lang/gluon/blob/master/c-api/src/lib.rs
 
@@ -321,15 +321,15 @@ There are many ways to contribute to gluon. The two simplest ways are opening is
 ## Goals
 These goals may change or be refined over time as I experiment with what is possible with the language.
 
-* **Embeddable** - Similiar to [Lua][Lua] - it is meant to be included in another program which may use the virtual machine to extend its own functionality.
+* **Embeddable** - Similiar to [Lua][Lua] - it is meant to be included in another program that may use the virtual machine to extend its own functionality.
 
 * **Statically typed** - The language uses a [Hindley-Milner based type system][hm] with some extensions, allowing simple and general type inference.
 
 * **Tiny** - By being tiny, the language is easy to learn and has a small implementation footprint.
 
-* **Strict** - Strict languages are usually easier to reason about, especially considering that it is what most people are accustomed to. For cases where laziness is desired, an explict type is provided.
+* **Strict** - Strict languages are usually easier to reason about, especially considering that it is what most people are accustomed to. For cases where laziness is desired, an explicit type is provided.
 
-* **Modular** - The library is split into its parser, typechecker, and virtual machine + compiler. Each of these components can be used independently of each other, allowing applications to pick and choose exactly what they need.
+* **Modular** - The library is split into its parser, type checker, and virtual machine + compiler. Each of these components can be used independently of each other, allowing applications to pick and choose exactly what they need.
 
 [hm]:https://en.wikipedia.org/wiki/Hindley%E2%80%93Milner_type_system
 [prelude]:https://github.com/gluon-lang/gluon/blob/master/std/prelude.glu

@@ -67,22 +67,24 @@ type Buffered w = { writer : w, buf : Reference (Array Byte), capacity : Int }
 
 /// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
 /// buffer capacity.
-let buffered_with_capacity capacity writer : [Write w] -> Int -> w -> Buffered w =
-    assert (capacity > 0)
+let buffered_with_capacity capacity writer : [Write w] -> Int -> w -> IO (Buffered w) =
+    let _ = assert (capacity > 0)
+    do buf = ref []
 
-    {
-        writer,
-        buf = ref [],
-        capacity,
-    }
+    wrap
+        {
+            writer,
+            buf,
+            capacity,
+        }
 
 /// Wraps `writer` in a `Buffered` writer to provide buffering.
-let buffered writer : [Write w] -> w -> Buffered w =
+let buffered writer : [Write w] -> w -> IO (Buffered w) =
     buffered_with_capacity default_buf_len writer
 
 /// Flushes the buffer of `buf_writer`. If an EOF is encountered, the call will fail.
 let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
-    let buf = load buf_writer.buf
+    do buf = load buf_writer.buf
 
     if array.is_empty buf then wrap ()
     else
@@ -96,18 +98,18 @@ let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
                 else write_buf (bytes_written + written)
 
         do _ = write_buf 0
-        let _ = buf_writer.buf <- []
+        buf_writer.buf <- []
         wrap ()
 
 let write_buffered : [Write w] -> Write (Buffered w) =
     let buffered_write_slice buf_writer slice start end =
         let slice_len = end - start
-        assert (slice_len >= 0)
+        let _ = assert (slice_len >= 0)
 
         do _ =
+            do buf = load buf_writer.buf
             // if the new data would spill the buffer, flush it first
-            if array.len (load buf_writer.buf) + slice_len >= buf_writer.capacity then
-                flush_buffer buf_writer
+            if array.len buf + slice_len >= buf_writer.capacity then flush_buffer buf_writer
             else wrap ()
 
         // if the slice is larger than the max buffer length write it directly;
@@ -116,8 +118,8 @@ let write_buffered : [Write w] -> Write (Buffered w) =
         // necessary
         if slice_len >= buf_writer.capacity then write_slice buf_writer.writer slice start end
         else
-            let _ =
-                buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
+            do buf = load buf_writer.buf
+            buf_writer.buf <- array.append buf (array.slice slice start end)
             wrap slice_len
 
     let buffered_flush buf_writer =

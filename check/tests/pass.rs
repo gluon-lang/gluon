@@ -1135,3 +1135,53 @@ match writer with
     "#,
     "test.List String"
 }
+
+test_check! {
+    issue_842,
+    r#"
+type Digit a =
+    | One a
+    | Two a a
+
+type Node b =
+    | Node2 b b
+
+type FingerTree c =
+    | Empty
+    | Single c
+    | Deep (Digit c) (FingerTree (Node c)) (Digit c)
+
+type View d =
+    | Nil
+    | View d (FingerTree d)
+
+rec
+let viewl xs : FingerTree e -> View e =
+    match xs with
+    | Empty -> Nil
+    | Single x -> View x Empty
+    | Deep (One a) deeper suffix ->
+        match viewl deeper with
+        | View (Node2 b c) rest -> View a (Deep (Two b c) rest suffix)
+        | Nil ->
+            match suffix with
+            | One w -> View a (Single w)
+in
+
+viewl
+    "#,
+    "forall a . test.FingerTree a -> test.View a"
+}
+
+test_check! {
+    do_type_signature,
+    r#"
+type List a = | Cons a (List a) | Nil
+
+let flat_map f x : (a -> List b) -> List a -> List b = Nil
+
+do writer : String = Nil
+Cons 0 Nil
+    "#,
+    "test.List Int"
+}

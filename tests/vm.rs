@@ -655,7 +655,7 @@ fn opaque_value_type_mismatch() {
 
     let expr = r#"
 let { sender, receiver } = channel 0
-send sender 1
+let _ = send sender 1
 sender
 "#;
     let result = vm.run_expr::<OpaqueValue<&Thread, Sender<f64>>>("<top>", expr);
@@ -1017,7 +1017,7 @@ let { (>>=) } = import! std.monad
 let { id } = import! std.function
 do t = thread.new_thread ()
 
-thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (\_ -> wrap "abc") >>= id)
+thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (wrap "abc") >>= id)
 "#,
 IO::Value((123, "abc".to_string()))
 }

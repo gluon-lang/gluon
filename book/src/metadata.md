@@ -83,8 +83,8 @@ type Tree a = | Tip a | Branch (Tree a) (Tree a)
 
 let tree = Branch (Tip 1) (Branch (Tip 2) (Tip 3))
 
-show tree
-tree == Tip 1
+let tree_str = show tree // "Branch (Tip 1) (Branch (Tip 2) (Tip 3))"
+tree == Tip 1 // False
 ```
 
 ### #[doc(hidden)]

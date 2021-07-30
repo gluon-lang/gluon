@@ -1,5 +1,5 @@
 //! Crate which contain the virtual machine which executes gluon programs
-#![doc(html_root_url = "https://docs.rs/gluon_vm/0.17.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_vm/0.17.2")] // # GLUON
 #![recursion_limit = "1024"]
 
 #[macro_use]

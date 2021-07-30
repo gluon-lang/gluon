@@ -51,7 +51,13 @@ pub fn split_for_impl<'a>(
     let (_, ty_generics, where_clause) = generics.split_for_impl();
     let ty_generics = ty_generics.clone();
     let where_clause = where_clause
-        .map(|clause| quote! { #clause, })
+        .map(|clause| {
+            if clause.predicates.empty_or_trailing() {
+                quote! { #clause }
+            } else {
+                quote! { #clause, }
+            }
+        })
         .unwrap_or(quote! { where });
 
     // generate the generic params for the impl block

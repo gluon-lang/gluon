@@ -8,7 +8,7 @@ If, on the other hand, you are familiar with functional languages you will be ri
 
 ### Identifiers and Literals
 
-The simplest syntactical elements in Gluon are identifiers and literals and none of them should be especially surprising if you are experienced in programming. 
+The simplest syntactical elements in Gluon are identifiers and literals and none of them should be especially surprising if you are experienced in programming.
 
 Identifiers are a sequence of alphanumeric characters including underscore ("\_") which are required to start with either a letter or an underscore. Literals come in four different forms - integer, float, string and character literals.
 
@@ -37,7 +37,7 @@ r###" "## "###
 
 ### Comments
 
-Comments should be immediately familiar if you are accustomed to C-like languages. 
+Comments should be immediately familiar if you are accustomed to C-like languages.
 
 `//` starts a line comment which is ended by a newline
 
@@ -206,7 +206,9 @@ Here, we write out a pattern for each of the variant's constructors and the valu
 ```f#,rust
 match { x = 1.0, pi = 3.14 } with
 | { x = y, pi } -> y + pi
+```
 
+```f#,rust
 // Patterns can be nested as well
 match { x = Some (Some 123) } with
 | { x = Some None } -> 0
@@ -270,6 +272,9 @@ While we have seen that functions can be defined in let expressions it is often 
 ```f#,rust
 // \(<identifier)* -> <expr>
 \x y -> x + y - 10
+```
+
+```f#,rust
 // Equivalent to
 let f x y = x + y - 10 in f
 ```
@@ -329,9 +334,9 @@ do { y } = Some { y = "" }
 Some y
 ```
 
-### Seq expressions
+### Sequence expressions
 
-`seq` expressions work just like `do` expressions, only they do not have a binding.
+Sequence expressions work just like `do` expressions, only they do not have a binding.
 
 ```f#,rust
 let io @ { ? } = import! std.io
@@ -339,6 +344,17 @@ seq io.print "Hello"
 seq io.print " "
 io.println "world!"
 ```
+
+The `seq` keyword can also be omitted.
+
+```f#,rust
+let io @ { ? } = import! std.io
+io.print "Hello"
+io.print " "
+io.println "world!"
+```
+
+(In the future one of these ways are likely to be deprecated with only one way remaining, the formatter will be able to update the code in any case).
 
 ### Indentation
 
@@ -386,7 +402,7 @@ module.id module.pi
 
 ## Typesystem
 
-In gluon, identifiers starting with an uppercase letter is a type whereas identifiers starting with a lowercase letter are type variables. 
+In gluon, identifiers starting with an uppercase letter is a type whereas identifiers starting with a lowercase letter are type variables.
 
 ### Function types
 

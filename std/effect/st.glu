@@ -4,16 +4,16 @@ let { Eff, inject_rest, ? } = import! std.effect
 let { map } = import! std.functor
 let { wrap } = import! std.applicative
 let { (<<) } = import! std.function
-let { Reference, ref, (<-), load } = import! std.reference
+let reference @ { Reference, ref, load } = import! std.st.reference.prim
 
-type STRef s a = { __ref : Reference a }
+type STRef s a = Reference a
+
+#[infix(right, 9)]
+let (<-) = reference.(<-)
 
 /// The `State` effect enables the use of mutable state. By branding the state with `s` the mutable
 /// values are prevented from escaping the monad.
 type State s r a =
-    | New : forall b . b -> State s r (STRef s b)
-    | Read : STRef s a -> State s r a
-    | Write : forall b . b -> STRef s b -> State s r ()
     | Call : forall b . (() -> b) -> State s r b
     .. r
 
@@ -24,17 +24,19 @@ let extract_state x : forall s . [| st : State s | r |] a -> State s r a = conve
 let send_state f : forall s . State s r a -> Eff [| st : State s | r |] a =
     Impure (convert_effect! st f) Pure
 
-/// Creates a new mutable reference that contains `a`.
-let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
-
 let make_call = Call
 
+/// Creates a new mutable reference that contains `a`.
+let new_ref a : forall s . a -> Eff [| st : State s | r |] (STRef s a) =
+    send_state (Call (\_ -> ref a))
+
 /// Reads the values stored in the reference.
-let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |] a = send_state (Read ref)
+let read_ref ref : forall s . STRef s a -> Eff [| st : State s | r |] a =
+    send_state (Call (\_ -> load ref))
 
 /// Writes a new value into the reference.
 let write_ref a ref : forall s . a -> STRef s a -> Eff [| st : State s | r |] () =
-    send_state (Write a ref)
+    send_state (Call (\_ -> ref <- a))
 
 /// Eliminates the `State` effect
 let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a =
@@ -43,14 +45,6 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
         | Pure value -> wrap value
         | Impure e f ->
             match extract_state e with
-            | New a ->
-                loop (f { __ref = ref a })
-            | Read r ->
-                let a = load r.__ref
-                loop (f a)
-            | Write a r ->
-                r.__ref <- a
-                loop (f ())
             | Call g ->
                 loop (f (g ()))
             | rest ->

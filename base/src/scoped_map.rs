@@ -161,14 +161,8 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     /// Returns the number of elements in the container.
-    /// Shadowed elements are not counted
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    /// Returns the number of elements in the container.
     /// Shadowed elements are counted
-    pub fn full_len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.map.values().map(|v| v.len()).sum()
     }
 

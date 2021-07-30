@@ -17,7 +17,7 @@ use gluon_codegen::Trace;
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr},
-    error::{AsDiagnostic, Errors as BaseErrors},
+    error::{AsDiagnostic, Errors as BaseErrors, Salvage, SalvageResult},
     fnv::FnvMap,
     pos,
     pos::{BytePos, Spanned},
@@ -34,20 +34,22 @@ pub type SpannedError = Spanned<Error, BytePos>;
 pub type Errors = BaseErrors<SpannedError>;
 
 pub type MacroResult<'ast> = Result<SpannedExpr<'ast, Symbol>, Error>;
+pub type SalvageMacroResult<'ast> = SalvageResult<SpannedExpr<'ast, Symbol>, Error>;
 
 pub enum LazyMacroResult<'ast> {
     Done(SpannedExpr<'ast, Symbol>),
     Lazy(
         Box<
-            dyn for<'a> FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>>
-                + Send
+            dyn for<'a> FnOnce() -> Pin<
+                    Box<dyn Future<Output = SalvageMacroResult<'ast>> + Send + 'ast>,
+                > + Send
                 + 'ast,
         >,
     ),
 }
 
 impl<'ast> LazyMacroResult<'ast> {
-    async fn compute(self) -> MacroResult<'ast> {
+    async fn compute(self) -> SalvageMacroResult<'ast> {
         match self {
             Self::Done(r) => Ok(r),
             Self::Lazy(f) => f().await,
@@ -63,8 +65,9 @@ impl<'ast> From<SpannedExpr<'ast, Symbol>> for LazyMacroResult<'ast> {
 
 impl<'ast, F> From<F> for LazyMacroResult<'ast>
 where
-    for<'a> F:
-        FnOnce() -> Pin<Box<dyn Future<Output = MacroResult<'ast>> + Send + 'ast>> + Send + 'ast,
+    for<'a> F: FnOnce() -> Pin<Box<dyn Future<Output = SalvageMacroResult<'ast>> + Send + 'ast>>
+        + Send
+        + 'ast,
 {
     fn from(r: F) -> Self {
         Self::Lazy(Box::new(r))
@@ -245,9 +248,13 @@ pub trait Macro: Trace + DowncastArc + Send + Sync {
         None
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    /// Creating a symbol in `symbols` will put it in the same scope as the code surrounding the
+    /// expansion. If you want to create a unique symbol then call `Symbol::from` or create a new
+    /// `Symbols` table
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast>;
@@ -283,13 +290,14 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {
-        (**self).expand(env, arena, args)
+        (**self).expand(env, symbols, arena, args)
     }
 }
 
@@ -307,13 +315,14 @@ where
         (**self).get_capability_impl(thread, arc_self, id)
     }
 
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {
-        (**self).expand(env, arena, args)
+        (**self).expand(env, symbols, arena, args)
     }
 }
 
@@ -457,19 +466,20 @@ impl<'a> MacroExpander<'a> {
             exprs: Vec::new(),
         };
         visitor.visit_expr(expr);
-        let MacroVisitor { exprs, .. } = visitor;
-        self.expand(arena, exprs).await
+        let MacroVisitor { exprs, symbols, .. } = visitor;
+        self.expand(symbols, arena, exprs).await
     }
 
     async fn expand<'ast>(
         &mut self,
+        symbols: &mut Symbols,
         arena: &mut ast::OwnedArena<'ast, Symbol>,
         mut exprs: Vec<(&'_ mut SpannedExpr<'ast, Symbol>, Arc<dyn Macro>)>,
     ) {
         let mut futures = Vec::with_capacity(exprs.len());
         for (expr, mac) in exprs.drain(..) {
             let result = match &mut expr.value {
-                Expr::App { args, .. } => mac.expand(self, arena, args).await,
+                Expr::App { args, .. } => mac.expand(self, symbols, arena, args).await,
                 _ => unreachable!("{:?}", expr),
             };
             match result {
@@ -481,21 +491,29 @@ impl<'a> MacroExpander<'a> {
             }
         }
 
+        // Index each expansion future so we can keep any returned errors in a consistent order
         let mut stream = futures
             .into_iter()
+            .enumerate()
+            .map(|(index, future)| future.map(move |x| (index, x)))
             .collect::<futures::stream::FuturesUnordered<_>>();
-        while let Some((expr, result)) = stream.next().await {
+        let mut unordered_errors = Vec::new();
+        while let Some((index, (expr, result))) = stream.next().await {
             let expr = { expr };
             let new_expr = match result {
                 Ok(replacement) => replacement.value,
-                Err(err) => {
-                    self.errors.push(pos::spanned(expr.span, err));
-                    Expr::Error(None)
+                Err(Salvage { error, value }) => {
+                    unordered_errors.push((index, pos::spanned(expr.span, error)));
+                    value.map_or_else(|| Expr::Error(None), |e| e.value)
                 }
             };
 
             replace_expr(arena, expr, new_expr);
         }
+
+        unordered_errors.sort_by_key(|&(index, _)| index);
+        self.errors
+            .extend(unordered_errors.into_iter().map(|(_, err)| err));
     }
 }
 

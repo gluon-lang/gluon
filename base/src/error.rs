@@ -374,3 +374,63 @@ impl AsDiagnostic for Box<dyn ::std::error::Error + Send + Sync> {
         Diagnostic::error().with_message(self.to_string())
     }
 }
+
+pub type SalvageResult<T, E> = std::result::Result<T, Salvage<T, E>>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Salvage<T, E> {
+    pub value: Option<T>,
+    pub error: E,
+}
+
+impl<T, E> fmt::Display for Salvage<T, E>
+where
+    E: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
+impl<T, E> Salvage<T, E> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Salvage<U, E> {
+        Salvage {
+            value: self.value.map(f),
+            error: self.error,
+        }
+    }
+
+    pub fn map_err<U>(self, f: impl FnOnce(E) -> U) -> Salvage<T, U> {
+        Salvage {
+            value: self.value,
+            error: f(self.error),
+        }
+    }
+
+    pub fn get_value(self) -> std::result::Result<T, E> {
+        self.value.ok_or(self.error)
+    }
+
+    pub fn err_into<F>(self) -> Salvage<T, F>
+    where
+        F: From<E>,
+    {
+        let Salvage { value, error } = self;
+        Salvage {
+            value,
+            error: error.into(),
+        }
+    }
+}
+
+impl<T, E> From<E> for Salvage<T, E> {
+    fn from(error: E) -> Self {
+        Salvage { value: None, error }
+    }
+}
+
+impl<T, E> From<Salvage<T, InFile<E>>> for InFile<E> {
+    fn from(s: Salvage<T, InFile<E>>) -> Self {
+        s.error
+    }
+}

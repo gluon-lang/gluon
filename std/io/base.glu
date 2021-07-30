@@ -1,0 +1,23 @@
+let { Functor } = import! std.functor
+let { Applicative } = import! std.applicative
+let { Monad } = import! std.monad
+
+let io_prim @ { IO } = import! std.io.prim
+
+
+let functor : Functor IO = {
+    map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x)),
+}
+
+let applicative : Applicative IO =
+    let wrap = io_prim.wrap
+    let apply f x = io_prim.flat_map (\g -> io_prim.flat_map (\y -> wrap (g y)) x) f
+
+    { functor, apply, wrap }
+
+let monad : Monad IO = {
+    applicative = applicative,
+    flat_map = io_prim.flat_map,
+}
+
+{ IO, functor, applicative, monad }

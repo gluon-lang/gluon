@@ -1,6 +1,6 @@
 [package]
 name = "gluon_doc"
-version = "0.17.1" # GLUON
+version = "0.17.2" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -32,8 +32,8 @@ serde = "1.0.0"
 serde_derive = "1.0.0"
 serde_json = "1.0.0"
 
-gluon = { version = "0.17.1", default-features = false, path = ".." } # GLUON
-completion = { package = "gluon_completion", version = "0.17.1", path = "../completion" } # GLUON
+gluon = { version = "0.17.2", default-features = false, path = ".." } # GLUON
+completion = { package = "gluon_completion", version = "0.17.2", path = "../completion" } # GLUON
 
 
 [dev-dependencies]

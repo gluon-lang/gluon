@@ -8,7 +8,7 @@ let { Result } = import! std.result
 let string = import! std.string
 let thread = import! std.thread
 let array @ { ? } = import! std.array
-let { ref, load, (<-) } = import! std.reference
+let { ref, load, (<-) } = import! std.effect.reference
 let rustyline @ { Editor } = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim @ { Color, Settings } = import! repl.prim
@@ -33,7 +33,7 @@ type Cmd = {
     name : String,
     alias : String,
     info : String,
-    action : String -> Eff (ReplEffect r) ReplAction
+    action : forall r . String -> Eff (ReplEffect r) ReplAction
 }
 type Commands = Map String Cmd
 in
@@ -73,13 +73,13 @@ let run_file filename : String -> Eff (ReplEffect r) () =
     | Ok _ -> io.println ""
     | Err x -> io.println x
 
-let commands : Commands =
+let commands : Eff [| lift : Lift IO |] Commands =
     let print_result result =
         match result with
         | Ok x -> io.println x
         | Err x -> io.println x
 
-    let commands = ref []
+    do commands = ref []
     let cmds : Array Cmd =
         [{
             name = "quit",
@@ -136,16 +136,15 @@ let commands : Commands =
             alias = "p",
             info = "Sets the prompt",
             action = \prompt ->
-                seq
-                    modify
-                        (\settings ->
-                            // TODO Should be able infer this before the `..` splatting
-                            let settings : Settings = settings
-                            {
-                                prompt,
-                                ..
-                                settings
-                            })
+                modify
+                    (\settings ->
+                        // TODO Should be able infer this before the `..` splatting
+                        let settings : Settings = settings
+                        {
+                            prompt,
+                            ..
+                            settings
+                        })
                 wrap Continue,
         },
         {
@@ -153,19 +152,18 @@ let commands : Commands =
             alias = "c",
             info = "Sets whether to use color in the repl: auto, always, always-ansi, never",
             action = \color ->
-                seq
-                    match repl_prim.parse_color color with
-                    | Ok color ->
-                        modify
-                            (\settings ->
-                                // TODO Should be able infer this before the `..` splatting
-                                let settings : Settings = settings
-                                {
-                                    color,
-                                    ..
-                                    settings
-                                })
-                    | Err msg -> io.println msg
+                match repl_prim.parse_color color with
+                | Ok color ->
+                    modify
+                        (\settings ->
+                            // TODO Should be able infer this before the `..` splatting
+                            let settings : Settings = settings
+                            {
+                                color,
+                                ..
+                                settings
+                            })
+                | Err msg -> io.println msg
                 wrap Continue,
         },
         {
@@ -186,15 +184,17 @@ let commands : Commands =
                 let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
                     io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
 
-                print_header
-                    *> array.traversable.traverse effect.applicative print_cmd (load commands)
+                do commands = load commands
+                print_header *> array.traversable.traverse effect.applicative print_cmd commands
                     *> wrap Continue,
         }]
     commands <- cmds
-    foldl
-        (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
-        empty
-        cmds
+    let c : Commands =
+        foldl
+            (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
+            empty
+            cmds
+    wrap c
 
 let { Parser, parse, ? } = import! std.parser
 
@@ -214,7 +214,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)
 
-    seq token ':'
+    token ':'
     do cmd = word
     do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
@@ -251,12 +251,13 @@ let loop _ : () -> Eff (ReplEffect r) () =
         match continue with
         | Continue -> loop ()
         | Quit ->
-            seq lift <| rustyline.save_history repl.editor
+            lift <| rustyline.save_history repl.editor
             wrap ()
 
 let run settings : Settings -> Eff [| lift : Lift IO |] () =
-    seq io.println "gluon (:h for help, :q to quit)"
+    io.println "gluon (:h for help, :q to quit)"
     do editor = lift <| rustyline.new_editor ()
+    do commands = commands
     let repl = { commands, editor }
     run_reader repl (eval_state settings (loop ()))
 

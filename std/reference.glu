@@ -1,11 +1,20 @@
 //! A mutable reference type
 
 let reference @ { Reference } = import! std.reference.prim
+let { flat_map } = import! std.monad
+
+let { IO, ? } = import! std.io.base
+
 #[infix(right, 9)]
 let (<-) = reference.(<-)
+
+let modify r f : Reference a -> (a -> a) -> IO () =
+    do x = reference.load r
+    r <- f x
 {
     Reference,
     (<-),
+    modify,
     ..
     reference
 }

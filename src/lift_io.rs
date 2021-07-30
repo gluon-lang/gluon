@@ -22,9 +22,10 @@ use {
 pub(crate) struct LiftIo;
 
 impl Macro for LiftIo {
-    fn expand<'r, 'a: 'r, 'b: 'r, 'ast: 'r>(
+    fn expand<'r, 'a: 'r, 'b: 'r, 'c: 'r, 'ast: 'r>(
         &self,
         env: &'b mut MacroExpander<'a>,
+        _symbols: &'c mut Symbols,
         arena: &'b mut ast::OwnedArena<'ast, Symbol>,
         args: &'b mut [SpannedExpr<'ast, Symbol>],
     ) -> MacroFuture<'r, 'ast> {

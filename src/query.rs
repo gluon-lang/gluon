@@ -222,21 +222,30 @@ impl crate::query::CompilationBase for CompilerDatabase {
         TypecheckedSourceModuleQuery
             .in_db(self)
             .peek(&(key.into(), None))
-            .and_then(|r| r.ok())
+            .and_then(|r| match r {
+                Ok(t) => Some(t),
+                Err(salvage) => salvage.value,
+            })
     }
 
     fn peek_module_type(&self, key: &str) -> Option<ArcType> {
         ModuleTypeQuery
             .in_db(self)
             .peek(&(key.into(), None))
-            .and_then(|r| r.ok())
+            .and_then(|r| match r {
+                Ok(t) => Some(t),
+                Err(salvage) => salvage.value,
+            })
     }
 
     fn peek_module_metadata(&self, key: &str) -> Option<Arc<Metadata>> {
         ModuleMetadataQuery
             .in_db(self)
             .peek(&(key.into(), None))
-            .and_then(|r| r.ok())
+            .and_then(|r| match r {
+                Ok(t) => Some(t),
+                Err(salvage) => salvage.value,
+            })
     }
 
     fn peek_core_expr(&self, key: &str) -> Option<interpreter::Global<CoreExpr>> {
@@ -421,8 +430,8 @@ pub trait Compilation: CompilationBase {
         expected_type: Option<ArcType>,
     ) -> StdResult<OpaqueValue<RootedThread, GcPtr<ClosureData>>, Error>;
 
-    #[salsa::cycle(recover_cycle)]
-    async fn import(&self, module: String) -> StdResult<TypedIdent<Symbol>, Error>;
+    #[salsa::cycle(recover_cycle_salvage)]
+    async fn import(&self, module: String) -> SalvageResult<TypedIdent<Symbol>, Error>;
 
     #[doc(hidden)]
     #[salsa::cycle(recover_cycle)]
@@ -472,6 +481,31 @@ fn recover_cycle<T>(
         cycle,
     ))
     .into())
+}
+
+fn recover_cycle_salvage<T>(
+    _db: &dyn Compilation,
+    cycle: &[String],
+    module: &String,
+) -> SalvageResult<T, Error> {
+    let mut cycle: Vec<_> = cycle
+        .iter()
+        .filter(|k| k.starts_with("import("))
+        .map(|k| {
+            k.trim_matches(|c: char| c != '"')
+                .trim_matches('"')
+                .trim_start_matches('@')
+                .to_string()
+        })
+        .collect();
+    cycle.pop();
+    Err(
+        Error::from(macros::Error::new(crate::import::Error::CyclicDependency(
+            module.to_string(),
+            cycle,
+        )))
+        .into(),
+    )
 }
 
 fn get_extern_global(db: &dyn Compilation, name: &str) -> Option<DatabaseGlobal> {
@@ -646,7 +680,7 @@ async fn compiled_module(
 async fn import(
     db: &mut OwnedDb<'_, dyn Compilation + '_>,
     modulename: String,
-) -> StdResult<TypedIdent<Symbol>, Error> {
+) -> SalvageResult<TypedIdent<Symbol>, Error> {
     assert!(!modulename.starts_with('@'));
     let thread = db.thread().root_thread();
 
@@ -658,7 +692,12 @@ async fn import(
     let compiler = db.compiler();
     compiler.collect_garbage();
 
-    let typ = result?;
+    let typ = result.map_err(|salvage| {
+        salvage.map(|typ| TypedIdent {
+            name: name.clone(),
+            typ,
+        })
+    })?;
 
     Ok(TypedIdent { name, typ })
 }

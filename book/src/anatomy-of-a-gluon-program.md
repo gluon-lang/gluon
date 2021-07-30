@@ -1,6 +1,6 @@
 # Anatomy of a gluon program
 
-Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is to low or to high. If the player guesses correctly the program will congratulate the player and exit.
+Let's look at a slightly larger program by writing a guessing game. In this game the player will guess at a random number between 1 and 100 and the program will say whether each guess is too low or too high. If the player guesses correctly the program will congratulate the player and exit.
 
 As a base we can take the hello world example.
 
@@ -21,11 +21,11 @@ io.println line
 
 There are two new concepts in play here, [implicit arguments](./syntax-and-semantics.html#implicit-arguments) and [do expressions](./syntax-and-semantics.html#do-expressions).
 
-`do expressions` are similar to `let expressions` in that they let us us bind the result of an expression to a name which we can use later. Where they differ is that, rather binding the result of evaluating the expression itself, they expect the right hand side to be a monadic action such as `IO` and the value bound is the result of evaluating the action, which in this case is the `String` that that were input.
+`do expressions` are similar to `let expressions` in that they let us bind the result of an expression to a name which we can use later. Where they differ is that, rather binding the result of evaluating the expression itself, they expect the right hand side to be a monadic action such as `IO` and the value bound is the result of evaluating the action, which in this case is the `String` that were input.
 
 (As was alluded to in the previous paragraph `IO` is a `Monad`, a rather complex concept which I won't go into here as it is enough for our purposes to only consider the "IO monad" as something that describes how `IO` actions are run in sequence.)
 
-`do expressions` don't just magically work with `IO` actions which is where `implicit arguments` come in, it lets us use the compiler to to implicitly insert certain function arguments by looking at the inferred types. This can be thought as a way to get something similar to `traits` in Rust but with a bit extra flexibility by requiring a bit of explicitness to let the compiler know what it can use as an implicit argument. Which is why we needed to add the `{ ? }` record pattern match, the `?` lets the compiler know that it should choose from the fields of the record when looking for an implicit argument.  In this case the compiler sees that we use `IO` in the `do expression` and implicitly inserts an implicit [`Monad IO`][] value found in `std.io`, letting the `do expression` know how to sequence these two actions.
+`do expressions` don't just magically work with `IO` actions which is where `implicit arguments` come in, it lets us use the compiler to implicitly insert certain function arguments by looking at the inferred types. This can be thought as a way to get something similar to `traits` in Rust but with a bit extra flexibility by requiring a bit of explicitness to let the compiler know what it can use as an implicit argument. Which is why we needed to add the `{ ? }` record pattern match, the `?` lets the compiler know that it should choose from the fields of the record when looking for an implicit argument.  In this case the compiler sees that we use `IO` in the `do expression` and implicitly inserts an implicit [`Monad IO`][] value found in `std.io`, letting the `do expression` know how to sequence these two actions.
 
 [`Monad IO`]:https://gluon-lang.org/doc/nightly/std/io.html#value.monad
 
@@ -43,7 +43,7 @@ io.println (show target_number)
 
 The program should now output a random number between 1 and 100 on every run! We aren't checking if that number matches the input from the user yet however so lets do that next.
 
-To check that the input is actually a number and retrieve retrieve it as such we can use the [`std.int.parse`][] function. We also need to trim whitespace from the line we read as it contains a trailing newline.
+To check that the input is actually a number and retrieve it as such we can use the [`std.int.parse`][] function. We also need to trim whitespace from the line we read as it contains a trailing newline.
 
 ```f#,rust
 let io @ { ? } = import! std.io
@@ -97,7 +97,7 @@ let guess_number _ : () -> IO () =
 guess_number ()
 ```
 
-Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is to high or to low. 
+Now there is at least a way to guess again on the same number! It is still a rather tedious game though as the only hint we get is that the number is between 1 and 100 so lets add the last part of letting the program tell whether the guess is too high or too low. 
 
 ```f#,rust
 let io @ { ? } = import! std.io

@@ -59,7 +59,6 @@ field_decl! { unwrap_b, value, key }
 
 // we define Either with type parameters, just like in Gluon
 #[derive(Getable, Pushable, VmType)]
-#[gluon(vm_type = "examples.either.Either")]
 enum Either<L, R> {
     Left(L),
     Right(R),
@@ -312,8 +311,8 @@ fn marshal_wrapper(thread: &Thread) -> Result<()> {
         let actual = { name = "Bob", age = 11, data = True }
         let expected = roundtrip actual
 
-        assert (actual.name == expected.name)
-        assert (actual.age == expected.age)
+        let _  = assert (actual.name == expected.name)
+        let _  = assert (actual.age == expected.age)
         assert (actual.data == expected.data)
     "#;
 
@@ -370,8 +369,8 @@ fn marshal_userdata(thread: &Thread) -> Result<()> {
         let { assert } = import! std.test
         let { WindowHandle, create_hwnd, id, metadata } = import! hwnd
         let hwnd : WindowHandle = create_hwnd 0 "Window1"
-        assert (id hwnd == 0)
-        assert (metadata hwnd == "Window1")
+        let _  = assert (id hwnd == 0)
+        let _  = assert (metadata hwnd == "Window1")
         hwnd
     "#;
 

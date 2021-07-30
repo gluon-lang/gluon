@@ -281,8 +281,6 @@ fn optimize_unnecessary_allocation<'a>(
     optimizer.visit_expr(expr).unwrap_or(expr)
 }
 
-const INLINE: bool = false;
-
 pub fn optimize<'a>(
     allocator: &'a Arc<Allocator<'a>>,
     env: &'a dyn OptimizeEnv<Type = ArcType>,
@@ -305,6 +303,7 @@ pub fn optimize<'a>(
             .map(crate::core::interpreter::Binding::from)
     };
 
+    const INLINE: bool = false;
     if INLINE {
         let inlined_global_bindings = Default::default();
         let mut interpreter =

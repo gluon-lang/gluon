@@ -1,7 +1,7 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url = "https://docs.rs/gluon_parser/0.17.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.17.2")] // # GLUON
 
 extern crate gluon_base as base;
 #[macro_use]
@@ -297,14 +297,14 @@ macro_rules! impl_temp_vec {
                 T::select(self)
             }
 
-            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl Iterator<Item = T> + 'a
+            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl DoubleEndedIterator<Item = T> + 'a
             where
                 T: TempVec<'ast, Id> + 'a,
             {
                 T::select(self).drain(start.0..)
             }
 
-            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl Iterator<Item = T> + 'a
+            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl DoubleEndedIterator<Item = T> + 'a
             where
                 T: TempVec<'ast, Id> + 'a,
             {
