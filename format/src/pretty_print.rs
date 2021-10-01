@@ -171,15 +171,10 @@ where
 
             Expr::Array(ref array) => arena
                 .text("[")
-                .append(
-                    arena.concat(
-                        array
-                            .exprs
-                            .iter()
-                            .map(|elem| pretty(elem))
-                            .intersperse(arena.text(",").append(arena.line())),
-                    ),
-                )
+                .append(arena.concat(Itertools::intersperse(
+                    array.exprs.iter().map(|elem| pretty(elem)),
+                    arena.text(",").append(arena.line()),
+                )))
                 .append("]")
                 .group(),
 
@@ -333,24 +328,23 @@ where
                 arena,
                 chain![arena, "match ", pretty(expr), " with"].group(),
                 arena.hardline(),
-                arena.concat(
-                    alts.iter()
-                        .map(|alt| {
-                            chain![
-                                arena,
-                                "| ",
-                                self.pretty_pattern(&alt.pattern),
-                                " ->",
-                                self.hang(
-                                    arena.nil(),
-                                    (self.space_before(alt.expr.span.start()), true),
-                                    &alt.expr
-                                )
-                                .group()
-                            ]
-                        })
-                        .intersperse(arena.hardline())
-                )
+                arena.concat(Itertools::intersperse(
+                    alts.iter().map(|alt| {
+                        chain![
+                            arena,
+                            "| ",
+                            self.pretty_pattern(&alt.pattern),
+                            " ->",
+                            self.hang(
+                                arena.nil(),
+                                (self.space_before(alt.expr.span.start()), true),
+                                &alt.expr
+                            )
+                            .group()
+                        ]
+                    }),
+                    arena.hardline()
+                ))
             ],
 
             Expr::Projection(ref expr, ref field, _) => chain![

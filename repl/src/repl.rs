@@ -195,6 +195,8 @@ impl rustyline::validate::Validator for Completer {
 }
 
 impl rustyline::hint::Hinter for Completer {
+    type Hint = String;
+
     fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
         self.hinter.hint(line, pos, ctx)
     }

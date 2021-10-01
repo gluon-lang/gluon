@@ -90,12 +90,12 @@ pub struct Opt {
 
 fn main() {
     let options = Opt::from_args();
-    let mut runtime = {
-        let mut builder = tokio::runtime::Builder::new();
+    let runtime = {
+        let mut builder = tokio::runtime::Builder::new_multi_thread();
         if let Some(jobs) = options.jobs {
-            builder.core_threads(jobs);
+            builder.worker_threads(jobs);
         }
-        builder.threaded_scheduler().build().unwrap()
+        builder.build().unwrap()
     };
     runtime.block_on(async move {
         if let Err(err) = main_(&options).await {

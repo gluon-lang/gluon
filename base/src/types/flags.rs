@@ -74,7 +74,7 @@ where
                 typ.add_flags(flags);
 
                 let mut unbound_generic = false;
-                &mut FlagsVisitor(Flags::HAS_GENERICS, |typ: &T| match &**typ {
+                FlagsVisitor(Flags::HAS_GENERICS, |typ: &T| match &**typ {
                     Type::Generic(gen) => {
                         unbound_generic |= params.iter().all(|param| param.id != gen.id)
                     }

@@ -720,7 +720,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     "<",
                     arena.text(closure.function.name.declared_name().to_string()),
                     arena
-                        .concat(
+                        .concat(Itertools::intersperse(
                             variant_iter(&closure.upvars)
                                 .zip(&closure.function.debug_info.upvars)
                                 .map(|(field, info)| {
@@ -732,9 +732,9 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                         arena.space(),
                                         self.p(&info.typ, Top).pretty(field)
                                     ]
-                                })
-                                .intersperse(arena.text(","))
-                        )
+                                }),
+                            arena.text(",")
+                        ))
                         .nest(INDENT),
                     ">"
                 ],
@@ -743,17 +743,15 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 arena,
                 "[",
                 arena
-                    .concat(
-                        array
-                            .iter()
-                            .map(|field| {
-                                match **self.typ {
-                                    Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
-                                    _ => arena.text(format!("{:?}", field)),
-                                }
-                            })
-                            .intersperse(arena.text(",").append(arena.space()))
-                    )
+                    .concat(Itertools::intersperse(
+                        array.iter().map(|field| {
+                            match **self.typ {
+                                Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
+                                _ => arena.text(format!("{:?}", field)),
+                            }
+                        }),
+                        arena.text(",").append(arena.space())
+                    ))
                     .nest(INDENT),
                 "]"
             ],
@@ -807,7 +805,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
         match **typ {
             Type::Record(ref row) => {
                 let mut is_empty = true;
-                let fields_doc = arena.concat(
+                let fields_doc = arena.concat(Itertools::intersperse(
                     fields
                         .into_iter()
                         .zip(row.row_iter())
@@ -826,9 +824,9 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                 .nest(INDENT)
                             ]
                             .group()
-                        })
-                        .intersperse(arena.space()),
-                );
+                        }),
+                    arena.space(),
+                ));
                 chain![
                     arena,
                     "{",
@@ -865,16 +863,14 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 arena,
                 "{",
                 arena
-                    .concat(
-                        fields
-                            .into_iter()
-                            .map(|field| {
-                                arena
-                                    .space()
-                                    .append(self.p(&Type::hole(), Top).pretty(field))
-                            })
-                            .intersperse(arena.text(","))
-                    )
+                    .concat(Itertools::intersperse(
+                        fields.into_iter().map(|field| {
+                            arena
+                                .space()
+                                .append(self.p(&Type::hole(), Top).pretty(field))
+                        }),
+                        arena.text(",")
+                    ))
                     .nest(INDENT),
                 arena.space(),
                 "}"

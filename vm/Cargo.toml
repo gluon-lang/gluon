@@ -17,34 +17,34 @@ documentation = "https://docs.rs/gluon"
 travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
-async-trait = "0.1"
-bitflags = "1.0.0"
-codespan = "0.9"
-codespan-reporting = "0.9"
+async-trait = "0.1.51"
+bitflags = "1.3.2"
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
 collect-mac = "0.1.0"
-downcast-rs = "1"
-difference = { version = "2", optional = true }
-crossbeam-utils = "0.7"
-frunk_core = "0.3"
-futures = { version = "0.3.1", features = ["compat", "async-await"] }
-itertools = "0.9"
-lalrpop-util = { version = "0.19", optional = true }
-log = "0.4"
-ordered-float = "2"
-parking_lot = "0.11"
-petgraph = "0.5"
-pretty = "0.10"
-quick-error = "1.1.0"
-regex = { version = "1", optional = true }
-smallvec = "1"
-slab = "0.4"
-typed-arena = "2"
+downcast-rs = "1.2.0"
+difference = { version = "2.0.0", optional = true }
+crossbeam-utils = "0.8.5"
+frunk_core = "0.4.0"
+futures = { version = "0.3.17", features = ["compat", "async-await"] }
+itertools = "0.10.1"
+lalrpop-util = { version = "0.19.6", optional = true }
+log = "0.4.14"
+ordered-float = "2.8.0"
+parking_lot = "0.11.2"
+petgraph = "0.6.0"
+pretty = "0.10.0"
+quick-error = "2.0.1"
+regex = { version = "1.5.4", optional = true }
+smallvec = "1.7.0"
+slab = "0.4.4"
+typed-arena = "2.0.1"
 
-serde = { version = "1.0.0", optional = true }
-serde_json = { version = "1.0.0", optional = true }
-serde_state = { version = "0.4.0", optional = true }
-serde_derive = { version = "1.0.0", optional = true }
-serde_derive_state = { version = "0.4.8", optional = true }
+serde = { version = "1.0.130", optional = true }
+serde_json = { version = "1.0.68", optional = true }
+serde_state = { version = "0.4.8", optional = true }
+serde_derive = { version = "1.0.130", optional = true }
+serde_derive_state = { version = "0.4.10", optional = true }
 
 gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 gluon_check = { path = "../check", version = "0.17.2" } # GLUON
@@ -52,21 +52,21 @@ gluon_codegen = { path = "../codegen", version = "0.17.2" } # GLUON
 gluon_parser = { path = "../parser", version = "0.17.2", optional = true } # GLUON
 
 [build-dependencies]
-lalrpop = { version = "0.19", features = ["lexer"], optional = true }
+lalrpop = { version = "0.19.6", features = ["lexer"], optional = true }
 
 [dev-dependencies]
-difference = "2"
-env_logger = "0.7"
-pretty_assertions = "0.6"
+difference = "2.0.0"
+env_logger = "0.9.0"
+pretty_assertions = "1.0.0"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)
 gluon = { path = "..", version = ">=0.9" }
 
-lalrpop-util = "0.19"
-regex = "1"
-serde_json = "1.0.0"
-tokio = { version = "0.2", features = ["macros"] }
+lalrpop-util = "0.19.6"
+regex = "1.5.4"
+serde_json = "1.0.68"
+tokio = { version = "1.12.0", features = ["macros"] }
 
 gluon_parser = { path = "../parser", version = "0.17.2" } # GLUON
 

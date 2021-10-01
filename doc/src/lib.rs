@@ -304,7 +304,7 @@ fn module_link(current_module: &str, param: &str) -> String {
     )
 }
 
-fn handlebars() -> Result<Handlebars> {
+fn handlebars() -> Result<Handlebars<'static>> {
     let mut reg = Handlebars::new();
 
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;

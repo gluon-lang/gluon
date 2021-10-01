@@ -80,23 +80,20 @@ impl<'a> Expr<'a> {
                     chain![
                         arena,
                         arena.space(),
-                        arena.concat(
-                            record
-                                .row_iter()
-                                .zip(args)
-                                .map(|(field, arg)| {
-                                    chain![
-                                        arena,
-                                        field.name.as_str(),
-                                        " =",
-                                        chain![arena, arena.space(), arg.pretty(arena, Prec::Top)]
-                                            .nest(INDENT),
-                                        ","
-                                    ]
-                                    .group()
-                                })
-                                .intersperse(arena.space())
-                        )
+                        arena.concat(Itertools::intersperse(
+                            record.row_iter().zip(args).map(|(field, arg)| {
+                                chain![
+                                    arena,
+                                    field.name.as_str(),
+                                    " =",
+                                    chain![arena, arena.space(), arg.pretty(arena, Prec::Top)]
+                                        .nest(INDENT),
+                                    ","
+                                ]
+                                .group()
+                            }),
+                            arena.space()
+                        ))
                     ]
                     .nest(INDENT),
                     arena.space(),
@@ -218,13 +215,10 @@ impl<'a> Expr<'a> {
                         ]
                     }
                     (Pattern::Record { .. }, _) => {
-                        let doc = chain![arena,
+                        let doc = chain![
+                            arena,
                             "let ",
-                            chain![arena,
-                                alt.pattern.pretty(arena),
-                                arena.space(),
-                                "="
-                            ].group(),
+                            chain![arena, alt.pattern.pretty(arena), arena.space(), "="].group(),
                             expr.pretty(arena, Prec::Top).nest(INDENT),
                             arena.hardline(),
                             "in",
@@ -261,21 +255,20 @@ impl<'a> Expr<'a> {
                         expr.pretty(arena, Prec::Top).nest(INDENT),
                         " with",
                         arena.hardline(),
-                        arena.concat(
-                            alts.iter()
-                                .map(|alt| {
-                                    chain![
-                                        arena,
-                                        "| ",
-                                        alt.pattern.pretty(arena),
-                                        " ->",
-                                        arena.space(),
-                                        alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
-                                    ]
-                                    .nest(INDENT)
-                                })
-                                .intersperse(arena.hardline())
-                        ),
+                        arena.concat(Itertools::intersperse(
+                            alts.iter().map(|alt| {
+                                chain![
+                                    arena,
+                                    "| ",
+                                    alt.pattern.pretty(arena),
+                                    " ->",
+                                    arena.space(),
+                                    alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
+                                ]
+                                .nest(INDENT)
+                            }),
+                            arena.hardline()
+                        )),
                         arena.hardline(),
                         "end"
                     ]
@@ -316,24 +309,22 @@ impl Pattern {
                 arena,
                 "{",
                 arena
-                    .concat(
-                        fields
-                            .iter()
-                            .map(|&(ref field, ref value)| {
-                                chain![
-                                    arena,
-                                    arena.space(),
-                                    ident(arena, &field.name),
-                                    match *value {
-                                        Some(ref value) => {
-                                            chain![arena, "=", arena.space(), ident(arena, value)]
-                                        }
-                                        None => arena.nil(),
+                    .concat(Itertools::intersperse(
+                        fields.iter().map(|&(ref field, ref value)| {
+                            chain![
+                                arena,
+                                arena.space(),
+                                ident(arena, &field.name),
+                                match *value {
+                                    Some(ref value) => {
+                                        chain![arena, "=", arena.space(), ident(arena, value)]
                                     }
-                                ]
-                            })
-                            .intersperse(arena.text(","))
-                    )
+                                    None => arena.nil(),
+                                }
+                            ]
+                        }),
+                        arena.text(",")
+                    ))
                     .nest(INDENT),
                 arena.space(),
                 "}"

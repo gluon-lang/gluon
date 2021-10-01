@@ -10,11 +10,9 @@ quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
         UndefinedType(id: Symbol) {
-            description("undefined type")
             display("Type `{}` does not exist.", id)
         }
         SelfRecursiveAlias(id: Symbol) {
-            description("undefined type")
             display("Tried to remove self recursive alias `{}`.", id)
         }
     }

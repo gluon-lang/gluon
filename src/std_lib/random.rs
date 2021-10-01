@@ -31,7 +31,7 @@ fn next_float(_: ()) -> IO<f64> {
 }
 
 fn gen_int_range(low: VmInt, high: VmInt) -> IO<VmInt> {
-    IO::Value(rand::thread_rng().gen_range(low, high))
+    IO::Value(rand::thread_rng().gen_range(low..high))
 }
 
 type RngNext<G> = record_type! {

@@ -810,10 +810,8 @@ impl<'de, 'gc> DeserializeState<'de, DeSeed<'gc>> for ExternFunction {
         let partial = ExternFunction_::deserialize(deserializer)?;
         // Wrap any operators with parens so that they are acceptable for `get_global`
         let mut escaped_id = Cow::Borrowed("");
-        let iter = partial
-            .id
-            .split(|c: char| c == '.')
-            .map(|s| {
+        let iter = Itertools::intersperse(
+            partial.id.split(|c: char| c == '.').map(|s| {
                 if s.chars()
                     .next()
                     .map_or(false, crate::base::ast::is_operator_char)
@@ -822,8 +820,9 @@ impl<'de, 'gc> DeserializeState<'de, DeSeed<'gc>> for ExternFunction {
                 } else {
                     Cow::Borrowed(s)
                 }
-            })
-            .intersperse(Cow::Borrowed("."));
+            }),
+            Cow::Borrowed("."),
+        );
         for s in iter {
             escaped_id += s;
         }

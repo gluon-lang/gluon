@@ -17,30 +17,30 @@ travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 collect-mac = "0.1.0"
-ena = "0.14"
-log = "0.4"
-itertools = "0.9"
-pretty = "0.10"
-smallvec = "1"
-rpds = "0.7"
-quick-error = "1"
+ena = "0.14.0"
+log = "0.4.14"
+itertools = "0.10.1"
+pretty = "0.10.0"
+smallvec = "1.7.0"
+rpds = "0.10.0"
+quick-error = "2.0.1"
 
-codespan = "0.9"
-codespan-reporting = "0.9"
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
 
-strsim = "0.10"
+strsim = "0.10.0"
 
 gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 gluon_codegen = { path = "../codegen", version = "0.17.2" } # GLUON
 
 [dev-dependencies]
-env_logger = "0.7"
-insta = "0.16"
+env_logger = "0.9.0"
+insta = "1.8.0"
 
 gluon_parser = { path = "../parser", version = "0.17.2" } # GLUON
 gluon_format = { path = "../format", version = ">=0.9" }
 
 collect-mac = "0.1.0"
-difference = "2"
-pretty_assertions = "0.6"
+difference = "2.0.0"
+pretty_assertions = "1.0.0"
 

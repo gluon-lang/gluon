@@ -4,7 +4,6 @@
 use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
-use std::io;
 use std::iter::{Extend, FromIterator};
 use std::ops::{Index, IndexMut};
 use std::slice;
@@ -230,7 +229,7 @@ impl<E: fmt::Display> InFile<E> {
         self.error
     }
 
-    pub fn emit_string(&self) -> io::Result<String>
+    pub fn emit_string(&self) -> crate::source::Result<String>
     where
         E: AsDiagnostic,
     {
@@ -244,7 +243,7 @@ impl<E: fmt::Display> InFile<E> {
     pub fn emit(
         &self,
         writer: &mut dyn ::codespan_reporting::term::termcolor::WriteColor,
-    ) -> io::Result<()>
+    ) -> crate::source::Result<()>
     where
         E: AsDiagnostic,
     {
