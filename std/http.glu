@@ -28,7 +28,7 @@ let {
     HttpEffect,
     HttpState,
     Uri,
-    Body,
+    Body
 } =
     import! std.http.types
 let http_prim = lift_io! lift (import! std.http.prim)
