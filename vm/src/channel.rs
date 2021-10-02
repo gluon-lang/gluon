@@ -439,6 +439,7 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            type Thread => Thread,
             resume => primitive!(1, async fn std::thread::prim::resume),
             (yield_ "yield") => primitive!(1, "std.thread.prim.yield", async fn std::thread::prim::yield_),
             spawn => primitive!(1, std::thread::prim::spawn),

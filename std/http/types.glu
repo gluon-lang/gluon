@@ -26,4 +26,5 @@ type HttpEffect r a = [| alt : Alt, state : State HttpState, lift : Lift IO | r 
     HttpEffect,
     HttpState,
     Uri,
+    Body,
 }

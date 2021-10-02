@@ -54,6 +54,7 @@ let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a
 
 {
     State,
+    STRef,
 
     send_state,
 

@@ -102,6 +102,7 @@ let serialize_value : Serialize Value = { serialize = Ok }
     Value,
     ValueSerializer,
     Serialize,
+    Error,
 
     serialize,
 

@@ -27,7 +27,8 @@ let {
     ResponseBody,
     HttpEffect,
     HttpState,
-    Uri
+    Uri,
+    Body,
 } =
     import! std.http.types
 let http_prim = lift_io! lift (import! std.http.prim)
@@ -143,6 +144,8 @@ let default_listen_settings = { port = 80, tls_cert = None }
     StatusCode,
     Response,
     HttpEffect,
+    HttpState,
+    Body,
 
     alternative,
 

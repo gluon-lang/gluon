@@ -142,6 +142,7 @@ let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w)
 
 {
     Write,
+    Buffered,
 
     write_slice,
     write,
