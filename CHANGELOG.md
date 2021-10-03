@@ -1,3 +1,8 @@
+<a name="v0.18.1"></a>
+## v0.18.1 (2021-10-03)
+
+*   Fix compilation of `gluon` with the `tokio` feature enabled
+
 <a name="v0.18.0"></a>
 ## v0.18.0 (2021-10-03)
 
@@ -1092,7 +1097,7 @@ Type errors should now be formatted much better and have more precise types.
 <a name="v0.4.0"></a>
 ## v0.4.0 (2017-05-16)
 
-Version 0.4.0 is a primarily a bug fix release with only a single significant feature as the upcoming features are all still WIP. 
+Version 0.4.0 is a primarily a bug fix release with only a single significant feature as the upcoming features are all still WIP.
 
 #### Features
 

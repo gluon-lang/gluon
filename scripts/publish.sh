@@ -33,7 +33,8 @@ for PROJECT in "${PROJECTS[@]}"
 do
     PROJECT_PATH=$(echo "$PROJECT" | sed 's/gluon_//' | sed 's/gluon/./')
 
-    if ! (sync_publish "${PROJECT_PATH}" -f "$@"); then
+    if ! (./scripts/sync_publish.sh "$(pwd)/${PROJECT_PATH}" -f "$@"); then
+        echo "Failed to publish $PROJECT_PATH"
         exit 1
     fi
 done
