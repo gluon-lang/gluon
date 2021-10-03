@@ -316,8 +316,18 @@ fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     )?)
 }
 
-fn new_editor(vm: WithVM<()>) -> IO<Editor> {
-    let mut editor = rustyline::Editor::new();
+fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
+    let mut editor = rustyline::Editor::with_config(
+        rustyline::config::Config::builder()
+            .color_mode(match vm.value.0 {
+                crate::Color::Auto => rustyline::config::ColorMode::Enabled,
+                crate::Color::Always | crate::Color::AlwaysAnsi => {
+                    rustyline::config::ColorMode::Forced
+                }
+                crate::Color::Never => rustyline::config::ColorMode::Disabled,
+            })
+            .build(),
+    );
 
     let history_result =
         app_dir_root().and_then(|path| Ok(editor.load_history(&*path.join("history"))?));

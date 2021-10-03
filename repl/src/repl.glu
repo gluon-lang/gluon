@@ -256,7 +256,7 @@ let loop _ : () -> Eff (ReplEffect r) () =
 
 let run settings : Settings -> Eff [| lift : Lift IO |] () =
     io.println "gluon (:h for help, :q to quit)"
-    do editor = lift <| rustyline.new_editor ()
+    do editor = lift <| rustyline.new_editor settings.color
     do commands = commands
     let repl = { commands, editor }
     run_reader repl (eval_state settings (loop ()))
