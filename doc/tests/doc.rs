@@ -84,7 +84,10 @@ fn check_links() {
     let out = fs::canonicalize(out).unwrap();
     let errors = cargo_deadlinks::unavailable_urls(
         &out,
-        &cargo_deadlinks::CheckContext { check_http: true },
+        &cargo_deadlinks::CheckContext {
+            check_http: cargo_deadlinks::HttpCheck::Enabled,
+            ..Default::default()
+        },
     )
     .collect::<Vec<_>>();
 

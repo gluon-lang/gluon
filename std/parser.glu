@@ -271,6 +271,7 @@ let parse p input : Parser a -> String -> Result String a =
     Error,
     ParseResult,
     Parser,
+    OffsetString,
 
     functor,
     applicative,

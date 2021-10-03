@@ -285,15 +285,17 @@ async fn listen_(
 
         let http = hyper::server::conn::Http::new();
 
-        let mut tcp_listener = tokio::net::TcpListener::bind(&addr)
+        let tcp_listener = tokio::net::TcpListener::bind(&addr)
             .map_err(|err| vm::Error::Message(err.to_string()))
             .await?;
-        let incoming = tcp_listener.incoming().err_into().and_then(|stream| {
-            acceptor.accept(stream).map_err(|err| {
-                info!("Unable to accept TLS connection: {}", err);
-                Box::new(err) as Box<dyn ::std::error::Error + Send + Sync>
-            })
-        });
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(tcp_listener)
+            .err_into()
+            .and_then(|stream| {
+                acceptor.accept(stream).map_err(|err| {
+                    info!("Unable to accept TLS connection: {}", err);
+                    Box::new(err) as Box<dyn ::std::error::Error + Send + Sync>
+                })
+            });
 
         pin_project! {
             struct Acceptor<S> {

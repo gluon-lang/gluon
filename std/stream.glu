@@ -170,6 +170,7 @@ let functor : Functor Stream =
 
 {
     Stream,
+    Stream_,
 
     empty,
     from,

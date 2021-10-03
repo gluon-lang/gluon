@@ -6,7 +6,9 @@ use itertools::Itertools;
 
 use crate::pos::{ByteOffset, BytePos, Column, Line, Location, RawIndex, Span};
 
-use codespan_reporting::files::{Files, SimpleFile};
+use codespan_reporting::files::{Error, Files, SimpleFile};
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 pub type FileId = BytePos;
 
@@ -102,6 +104,10 @@ impl CodeMap {
         self.files.get(i)
     }
 
+    fn get_codespan(&self, file_id: FileId) -> Result<&Arc<FileMap>> {
+        self.get(file_id).ok_or(Error::FileMissing)
+    }
+
     pub fn update(&mut self, index: BytePos, src: String) -> Option<Arc<FileMap>> {
         self.find_index(index).map(|i| {
             let min = if i == 0 {
@@ -177,19 +183,19 @@ impl<'a> Files<'a> for FileMap {
     type Name = String;
     type Source = &'a str;
 
-    fn name(&self, _file_id: Self::FileId) -> Option<Self::Name> {
-        Some(self.file.name().clone())
+    fn name(&self, _file_id: Self::FileId) -> Result<Self::Name> {
+        Ok(self.file.name().clone())
     }
 
-    fn source(&self, _file_id: Self::FileId) -> Option<&str> {
-        Some(self.file.source())
+    fn source(&self, _file_id: Self::FileId) -> Result<&str> {
+        Ok(self.file.source())
     }
 
-    fn line_index(&self, file_id: Self::FileId, byte_index: usize) -> Option<usize> {
+    fn line_index(&self, file_id: Self::FileId, byte_index: usize) -> Result<usize> {
         self.file.line_index(file_id, byte_index)
     }
 
-    fn line_range(&self, file_id: Self::FileId, line_index: usize) -> Option<Range<usize>> {
+    fn line_range(&self, file_id: Self::FileId, line_index: usize) -> Result<Range<usize>> {
         self.file.line_range(file_id, line_index)
     }
 }
@@ -199,20 +205,20 @@ impl<'a> Files<'a> for CodeMap {
     type Name = String;
     type Source = &'a str;
 
-    fn name(&self, file_id: FileId) -> Option<Self::Name> {
-        Some(self.get(file_id)?.name().to_owned())
+    fn name(&self, file_id: FileId) -> Result<Self::Name> {
+        Ok(self.get_codespan(file_id)?.name().to_owned())
     }
 
-    fn source(&self, file_id: FileId) -> Option<&str> {
-        Some(self.get(file_id)?.source())
+    fn source(&self, file_id: FileId) -> Result<&str> {
+        Ok(self.get_codespan(file_id)?.source())
     }
 
-    fn line_index(&self, file_id: FileId, byte_index: usize) -> Option<usize> {
-        self.get(file_id)?.line_index((), byte_index)
+    fn line_index(&self, file_id: FileId, byte_index: usize) -> Result<usize> {
+        self.get_codespan(file_id)?.line_index((), byte_index)
     }
 
-    fn line_range(&self, file_id: FileId, line_index: usize) -> Option<Range<usize>> {
-        self.get(file_id)?.line_range((), line_index)
+    fn line_range(&self, file_id: FileId, line_index: usize) -> Result<Range<usize>> {
+        self.get_codespan(file_id)?.line_range((), line_index)
     }
 }
 
@@ -260,22 +266,25 @@ impl Source for FileMap {
     }
 
     fn byte_index(&self, line: Line, column: Column) -> Option<BytePos> {
-        let range = self.line_range((), line.to_usize())?;
+        let range = self.line_range((), line.to_usize()).ok()?;
         Some(self.from_usize(range.start + column.to_usize()))
     }
 
     fn line_number_at_byte(&self, pos: BytePos) -> Option<Line> {
         self.line_index((), self.to_usize(pos)?)
+            .ok()
             .map(|l| Line(l as u32))
     }
 
     /// Returns the line and column location of `byte`
     fn location(&self, byte: BytePos) -> Option<Location> {
-        Files::location(self, (), self.to_usize(byte)?).map(|loc| Location {
-            line: Line(loc.line_number as u32 - 1),
-            column: Column(loc.column_number as u32 - 1),
-            absolute: byte,
-        })
+        Files::location(self, (), self.to_usize(byte)?)
+            .ok()
+            .map(|loc| Location {
+                line: Line(loc.line_number as u32 - 1),
+                column: Column(loc.column_number as u32 - 1),
+                absolute: byte,
+            })
     }
 
     /// Returns the starting position of any comments and whitespace before `end`

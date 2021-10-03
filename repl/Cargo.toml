@@ -27,33 +27,33 @@ gluon_codegen = { path = "../codegen", version = "0.17.2" } # GLUON
 gluon_format = { version = "0.17.2", path = "../format" } # GLUON
 gluon_doc = { version = "0.17.2", path = "../doc" } # GLUON
 
-app_dirs = { package = "app_dirs2", version = "2.3" }
-anyhow = "1"
-futures = "0.3"
-tokio = { version = "0.2", features = ["rt-threaded", "rt-core", "macros", "signal"] }
-clap = "2.22.0"
-structopt = "0.3"
-log = "0.4"
-env_logger = { version = "0.7", optional = true }
-lazy_static = "1"
+app_dirs = { package = "app_dirs2", version = "2.3.2" }
+anyhow = "1.0.44"
+futures = "0.3.17"
+tokio = { version = "1.12.0", features = ["rt-multi-thread", "macros", "signal"] }
+clap = "2.33.3"
+structopt = "0.3.23"
+log = "0.4.14"
+env_logger = { version = "0.9.0", optional = true }
+lazy_static = "1.4.0"
 rustyline = "=6.0.0"
-walkdir = "2"
-codespan = "0.9"
-codespan-reporting = "0.9"
-quick-error = "1.0.0"
+walkdir = "2.3.2"
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
+quick-error = "2.0.1"
 
-serde = "1"
-serde_derive = "1"
+serde = "1.0.130"
+serde_derive = "1.0.130"
 
 [target.'cfg(not(windows))'.dependencies]
-ansi_term = "0.12"
+ansi_term = "0.12.1"
 
 [dev-dependencies]
-pretty_assertions = "0.6"
-tokio = { version = "0.2" }
+pretty_assertions = "1.0.0"
+tokio = "1.12.0"
 
 [target.'cfg(unix)'.dev-dependencies]
-rexpect = "0.3.0"
+rexpect = "0.4.0"
 
 [features]
 default = ["env_logger"]

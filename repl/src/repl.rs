@@ -26,7 +26,7 @@ use crate::vm::{
 
 use gluon::{
     compiler_pipeline::{Executable, ExecuteValue},
-    import::add_extern_module,
+    import::add_extern_module_with_deps,
     query::CompilerDatabase,
     Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
@@ -314,8 +314,18 @@ fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     )?)
 }
 
-fn new_editor(vm: WithVM<()>) -> IO<Editor> {
-    let mut editor = rustyline::Editor::new();
+fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
+    let mut editor = rustyline::Editor::with_config(
+        rustyline::config::Config::builder()
+            .color_mode(match vm.value.0 {
+                crate::Color::Auto => rustyline::config::ColorMode::Enabled,
+                crate::Color::Always | crate::Color::AlwaysAnsi => {
+                    rustyline::config::ColorMode::Forced
+                }
+                crate::Color::Never => rustyline::config::ColorMode::Disabled,
+            })
+            .build(),
+    );
 
     let history_result =
         app_dir_root().and_then(|path| Ok(editor.load_history(&*path.join("history"))?));
@@ -654,8 +664,13 @@ async fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
     vm.load_script_async("rustyline_types", &rustyline_types_source)
         .await?;
 
-    add_extern_module(vm, "repl.prim", load_repl);
-    add_extern_module(vm, "rustyline", load_rustyline);
+    add_extern_module_with_deps(
+        vm,
+        "repl.prim",
+        load_repl,
+        vec!["std.types".into(), "rustyline_types".into()],
+    );
+    add_extern_module_with_deps(vm, "rustyline", load_rustyline, vec!["repl.prim".into()]);
 
     const REPL_SOURCE: &'static str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));

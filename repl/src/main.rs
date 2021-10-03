@@ -293,7 +293,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
     Ok(())
 }
 
-#[tokio::main(basic_scheduler)]
+#[tokio::main]
 async fn main() {
     init_env_logger();
 

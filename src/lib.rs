@@ -250,7 +250,7 @@ impl From<Errors<Error>> for Error {
 }
 
 impl Error {
-    pub fn emit_string(&self) -> ::std::io::Result<String> {
+    pub fn emit_string(&self) -> base::source::Result<String> {
         let mut output = Vec::new();
         self.emit(&mut codespan_reporting::term::termcolor::NoColor::new(
             &mut output,
@@ -261,21 +261,21 @@ impl Error {
     pub fn emit(
         &self,
         writer: &mut dyn codespan_reporting::term::termcolor::WriteColor,
-    ) -> ::std::io::Result<()> {
+    ) -> base::source::Result<()> {
         match self {
-            Error::Parse(err) => err.emit(writer),
-            Error::Typecheck(err) => err.emit(writer),
-            Error::IO(err) => write!(writer, "{}", err),
-            Error::VM(err) => write!(writer, "{}", err),
-            Error::Macro(err) => err.emit(writer),
-            Error::Other(err) => write!(writer, "{}", err),
+            Error::Parse(err) => err.emit(writer)?,
+            Error::Typecheck(err) => err.emit(writer)?,
+            Error::IO(err) => write!(writer, "{}", err)?,
+            Error::VM(err) => write!(writer, "{}", err)?,
+            Error::Macro(err) => err.emit(writer)?,
+            Error::Other(err) => write!(writer, "{}", err)?,
             Error::Multiple(errors) => {
                 for err in errors {
                     err.emit(writer)?;
                 }
-                Ok(())
             }
         }
+        Ok(())
     }
 }
 

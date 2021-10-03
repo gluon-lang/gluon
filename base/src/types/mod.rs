@@ -2787,11 +2787,10 @@ where
             Type::Ident(ref id) => {
                 printer.symbol_with(&id.name, Name::new(id.as_ref()).name().as_str())
             }
-            Type::Projection(ref ids) => arena.concat(
-                ids.iter()
-                    .map(|id| printer.symbol(id))
-                    .intersperse(arena.text(".")),
-            ),
+            Type::Projection(ref ids) => arena.concat(Itertools::intersperse(
+                ids.iter().map(|id| printer.symbol(id)),
+                arena.text("."),
+            )),
             Type::Alias(ref alias) => printer.symbol(&alias.name),
         }
     }

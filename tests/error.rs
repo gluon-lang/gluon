@@ -40,6 +40,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
                     }
                     _ => false,
                 }),
+                "{}",
                 errors_string
             );
         }
@@ -134,5 +135,6 @@ fn module_imports_provide_a_type_despite_internal_errors() {
         2 │         let { Test } = import! test
           │                        ^^^^^^^^^^^^
 
-    "#]].assert_eq(&result.unwrap_err().to_string());
+    "#]]
+    .assert_eq(&result.unwrap_err().to_string());
 }

@@ -19,23 +19,23 @@ travis-ci = { repository = "gluon-lang/gluon" }
 
 [dependencies]
 collect-mac = "0.1.0"
-itertools = "0.9"
-quick-error = "1.0.0"
-lalrpop-util = "0.19"
-log = "0.4"
+itertools = "0.10.1"
+quick-error = "2.0.1"
+lalrpop-util = "0.19.6"
+log = "0.4.14"
 gluon_base = { path = "../base", version = "0.17.2" } # GLUON
-ordered-float = "2"
-codespan = "0.9"
-codespan-reporting = "0.9"
+ordered-float = "2.8.0"
+codespan = "0.11.1"
+codespan-reporting = "0.11.1"
 
 [dev-dependencies]
-criterion = "0.3"
-env_logger = "0.7"
-difference = "2"
-pretty_assertions = "0.6"
+criterion = "0.3.5"
+env_logger = "0.9.0"
+difference = "2.0.0"
+pretty_assertions = "1.0.0"
 
 [build-dependencies]
-lalrpop = "0.19"
+lalrpop = "0.19.6"
 
 [[bench]]
 name = "parser"

@@ -973,7 +973,6 @@ impl<'vm> Pushable<'vm> for Ordering {
     }
 }
 impl<'vm, 'value> Getable<'vm, 'value> for Ordering {
-    #[inline]
     impl_getable_simple!();
 
     fn from_value(_: &'vm Thread, value: Variants<'value>) -> Ordering {

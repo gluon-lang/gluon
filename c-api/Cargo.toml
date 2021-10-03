@@ -20,10 +20,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 gluon = { version = "0.17.2", path = ".." } # GLUON
-futures = "0.3"
+futures = "0.3.17"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libc = "0.2.14"
+libc = "0.2.103"
 
 [features]
 test = ["gluon/test"]

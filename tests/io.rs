@@ -163,7 +163,7 @@ fn spawn_on_twice() {
         action
     "#;
 
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let vm = make_vm();
     vm.get_database_mut().run_io(true);
     let (result, _) = runtime
@@ -202,7 +202,7 @@ fn spawn_on_runexpr() {
         wrap x.value
     "#;
 
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let vm = make_vm();
     vm.get_database_mut().run_io(true);
     let (result, _) = runtime
@@ -236,7 +236,7 @@ fn spawn_on_do_action_twice() {
         load counter
     "#;
 
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let vm = make_vm();
     vm.get_database_mut().run_io(true);
     let (result, _) = runtime
@@ -264,7 +264,7 @@ fn spawn_on_force_action_twice() {
         load counter
     "#;
 
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let vm = make_vm();
     vm.get_database_mut().run_io(true);
     let (result, _) = runtime
@@ -292,7 +292,7 @@ fn spawn_on_runexpr_in_catch() {
         (io.catch action wrap >>= io.println) *> wrap "123"
     "#;
 
-    let mut runtime = Runtime::new().unwrap();
+    let runtime = Runtime::new().unwrap();
     let vm = make_vm();
     vm.get_database_mut().run_io(true);
     let (result, _) = runtime

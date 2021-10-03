@@ -12,26 +12,26 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
-log = "0.4"
-pretty = "0.10"
-itertools = "0.9"
-codespan = "0.9"
+log = "0.4.14"
+pretty = "0.10.0"
+itertools = "0.10.1"
+codespan = "0.11.1"
 
 gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 
 [dev-dependencies]
-difference = "2"
-env_logger = "0.7"
-expect-test = "1"
-futures = "0.3.1"
-pretty_assertions = "0.6"
-tokio = { version = "0.2", features = ["macros", "rt-core"] }
-walkdir = "2"
+difference = "2.0.0"
+env_logger = "0.9.0"
+expect-test = "1.1.0"
+futures = "0.3.17"
+pretty_assertions = "1.0.0"
+tokio = { version = "1.12.0", features = ["macros"] }
+walkdir = "2.3.2"
 
 gluon_base = { path = "../base", version = "0.17.2" } # GLUON
 gluon = { path = "..", version = ">=0.9" }
 
-tensile = { version = "0.6", features = ["tokio"] }
+tensile = { version = "0.7", features = ["tokio"] }
 
 [features]
 test = []
