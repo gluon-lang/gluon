@@ -14,7 +14,7 @@ TMP_DIR=/tmp/test1
 DIR="$1"
 FORCE="$2"
 
-NAME=$(grep '^name' "$DIR/Cargo.toml" | sed 's/name = "\([^"]*\)"/\1/')
+NAME=$(grep '^name' "$DIR/Cargo.toml" | head -n 1 | sed 's/name = "\([^"]*\)"/\1/')
 cd "$DIR"
 
 VERSION=$(cargo metadata --format-version 1 2>/dev/null | jq -r '.packages[] | select(.name=="'$NAME'").version')
