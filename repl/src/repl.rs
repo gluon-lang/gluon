@@ -26,7 +26,7 @@ use crate::vm::{
 
 use gluon::{
     compiler_pipeline::{Executable, ExecuteValue},
-    import::add_extern_module,
+    import::add_extern_module_with_deps,
     query::CompilerDatabase,
     Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
@@ -656,8 +656,13 @@ async fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
     vm.load_script_async("rustyline_types", &rustyline_types_source)
         .await?;
 
-    add_extern_module(vm, "repl.prim", load_repl);
-    add_extern_module(vm, "rustyline", load_rustyline);
+    add_extern_module_with_deps(
+        vm,
+        "repl.prim",
+        load_repl,
+        vec!["std.types".into(), "rustyline_types".into()],
+    );
+    add_extern_module_with_deps(vm, "rustyline", load_rustyline, vec!["repl.prim".into()]);
 
     const REPL_SOURCE: &'static str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));
