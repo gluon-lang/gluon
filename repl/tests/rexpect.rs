@@ -74,6 +74,7 @@ fn prompt() {
 }
 
 #[test]
+#[ignore]
 fn quit() {
     let mut repl = REPL::new();
     repl.quit();
