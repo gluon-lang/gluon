@@ -1,0 +1,53 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches:
+    - master
+jobs:
+  test:
+    name: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [stable]
+        include:
+        - build: stable
+          os: ubuntu-18.04
+          rust: stable
+    env:
+      CRATE_NAME: gluon
+      CARGO_INCREMENTAL: 0 # Incremental compilation is slower and bloats the travis cache
+      RUST_BACKTRACE: 1
+      RUSTC_WRAPPER: sccache
+      SCCACHE_CACHE_SIZE: 500M
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - run: export PATH="$HOME/bin:$PATH"
+    - run: mkdir -p $HOME/bin
+    - run: ./scripts/install_sccache.sh $TARGET
+    - run: sh scripts/install_cross.sh
+    - run: source ~/.cargo/env || true
+    - run: ./scripts/install_mdbook.sh $TARGET
+    - run:
+      - >
+          if [ ! -z $TRAVIS_TAG ]; then
+              echo "Disabling tests for tagged builds as they timeout otherwise"
+          elif [ ! -z $DISABLE_TESTS ]; then
+              return
+          elif [[ -z ${WASM+set} ]]; then
+              mdbook build book
+              ./scripts/travis.sh
+              if ! git diff-index HEAD --; then
+                  echo "Detected changes in the source after running tests"
+                  exit 1
+              fi
+          else
+              rustup target add wasm32-unknown-unknown
+              cargo check --target wasm32-unknown-unknown -p gluon_c-api
+          fi
