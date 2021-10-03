@@ -57,7 +57,7 @@ regex = { version = "1.5.4", optional = true }
 # web
 tower-service = { version = "0.3.1", optional = true }
 http = { version = "0.2.5", optional = true }
-hyper = { version = "0.14.13", optional = true, features = ["stream", "server", "http1", "tcp"] }
+hyper = { version = "0.14.13", optional = true, features = ["stream", "client", "server", "http1", "tcp"] }
 native-tls = { version = "0.2.8", optional = true }
 tokio-native-tls = { version = "0.3.0", optional = true }
 
