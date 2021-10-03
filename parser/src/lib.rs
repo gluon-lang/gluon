@@ -1,7 +1,7 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url = "https://docs.rs/gluon_parser/0.17.2")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.18.0")] // # GLUON
 
 extern crate gluon_base as base;
 #[macro_use]

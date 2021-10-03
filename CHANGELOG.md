@@ -1,3 +1,40 @@
+<a name="v0.18.0"></a>
+## v0.18.0 (2021-10-03)
+
+
+#### Performance
+
+*   Avoid recreating the vm for each formatted file ([0335733e](https://github.com/gluon-lang/gluon/commit/0335733e7f4b5b0588b6adbdde32765126e6b12f))
+
+#### Breaking Changes
+
+*   Make channels and reference require IO ([c9041898](https://github.com/gluon-lang/gluon/commit/c904189834a2548af1781f68d2e35b5b9e3ac2c8), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+#### Features
+
+*   Make channels and reference require IO ([c9041898](https://github.com/gluon-lang/gluon/commit/c904189834a2548af1781f68d2e35b5b9e3ac2c8), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Allow specifying type signatures in do bindings ([fac08dcf](https://github.com/gluon-lang/gluon/commit/fac08dcff7a019440dd8d0a886abdb18baa58198))
+*   Allow macros to refer to symbols in scope at the expansion site ([1a5489c6](https://github.com/gluon-lang/gluon/commit/1a5489c61db82af64104e01e359217154efd0d24), closes [#895](https://github.com/gluon-lang/gluon/issues/895))
+*   Allow the http module to be used without a tcp listener ([c45353d2](https://github.com/gluon-lang/gluon/commit/c45353d2ceb10d98dbeca7e7dce1f658b875eb3a))
+*   Format seq expressions without seq ([5c0cec2d](https://github.com/gluon-lang/gluon/commit/5c0cec2d29a0580a8e171e040f13427b282c4c1f))
+*   Compile block expressions as monadic sequences ([bce59737](https://github.com/gluon-lang/gluon/commit/bce5973719cdb24849671f5b11e980e5d9cefc31), closes [#884](https://github.com/gluon-lang/gluon/issues/884))
+* **std:**
+  *  add Option assertions to std.test ([28e5053f](https://github.com/gluon-lang/gluon/commit/28e5053f1e56f7304d8b94eead3174ccfa4077c6))
+  *  add modulo functions to int and float ([92f188ab](https://github.com/gluon-lang/gluon/commit/92f188ab24b599d0d0ef004c996f5fbefbfe1786))
+
+#### Bug Fixes
+
+*   Allow the repl to compile concurrently ([2118f4d2](https://github.com/gluon-lang/gluon/commit/2118f4d2816ba400dd2024356cd05a40d6cf2366))
+*   Don't use the empty span in derive macros ([d05f1ca8](https://github.com/gluon-lang/gluon/commit/d05f1ca86bff843baf26dc15b6ee9820c35d4b94))
+*   Provide the type of imported modules with errors ([d3bfc598](https://github.com/gluon-lang/gluon/commit/d3bfc598d6aecad942e1d5ab44e49e5616a90b28))
+*   Don't refine already refined skolems ([f39b3965](https://github.com/gluon-lang/gluon/commit/f39b39658d9b01c7e503a1a519ce5f134127b1bd), closes [#842](https://github.com/gluon-lang/gluon/issues/842))
+*   Recognize raw string literals without any `#` ([4d66fbb3](https://github.com/gluon-lang/gluon/commit/4d66fbb37f5acae81c28fe3af715b8d1c04a2ab5), closes [#885](https://github.com/gluon-lang/gluon/issues/885))
+*   Prevent zero-argument functions from being created in Rust ([e91ea06d](https://github.com/gluon-lang/gluon/commit/e91ea06d447fea4f9e5699ada6f38e742526ebc7), closes [#873](https://github.com/gluon-lang/gluon/issues/873))
+*   Give tuple fields a span ([2a1c2c71](https://github.com/gluon-lang/gluon/commit/2a1c2c711408372eed71812696776ee93fde3c0a))
+*   xor_shift_new inconsistent description ([591b64b3](https://github.com/gluon-lang/gluon/commit/591b64b359d98948ca379fd2f17e8d34982d12b2))
+
+
+
 <a name="v0.17.2"></a>
 ### v0.17.2 (2020-10-25)
 
