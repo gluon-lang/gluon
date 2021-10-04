@@ -20,6 +20,12 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
+    - name: Use cache
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/bin
+        key: ${{ runner.os }}-${{ matrix.rust }}
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
@@ -27,12 +33,15 @@ jobs:
     - uses: Swatinem/rust-cache@v1
     - run: echo "$HOME/bin" >> $GITHUB_PATH
     - run: mkdir -p $HOME/bin
-    - run: ./scripts/install_sccache.sh $TARGET
-    - run: sh scripts/install_cross.sh
-    - run: source ~/.cargo/env || true
-    - run: ./scripts/install_mdbook.sh $TARGET
+    - name: Setup tools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+          ./scripts/install_sccache.sh $TARGET
+          sh scripts/install_cross.sh
+          source ~/.cargo/env || true
+          ./scripts/install_mdbook.sh $TARGET
     - name: Run tests
-      run: >
+      run: |
           if [ ! -z $DISABLE_TESTS ]; then
               return
           elif [[ -z ${WASM+set} ]]; then
