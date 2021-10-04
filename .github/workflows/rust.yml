@@ -7,14 +7,10 @@ on:
 jobs:
   test:
     name: test
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        build: [stable]
-        include:
-        - build: stable
-          os: ubuntu-latest
-          rust: stable
+        rust: [stable, nightly]
     env:
       CRATE_NAME: gluon
       CARGO_INCREMENTAL: 0 # Incremental compilation is slower and bloats the cache
