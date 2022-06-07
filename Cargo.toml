@@ -53,7 +53,7 @@ tokio = { version = "1.12.0", features = ["sync", "rt"], optional = true }
 tokio-stream = { version = "0.1", features = ["net"], optional = true }
 
 # Binding crates
-regex = { version = "1.5.4", optional = true }
+regex = { version = "1.5.5", optional = true }
 # web
 tower-service = { version = "0.3.1", optional = true }
 http = { version = "0.2.5", optional = true }
