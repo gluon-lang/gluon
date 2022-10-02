@@ -805,7 +805,7 @@ async fn global(
 use std::cell::RefCell;
 pub struct Env<T>(RefCell<T>);
 
-pub(crate) fn env(env: &(dyn Compilation + '_)) -> Env<&'_ CompilerDatabase> {
+pub(crate) fn env(env: &(dyn Compilation)) -> Env<&CompilerDatabase> {
     Env(RefCell::new(env.compiler()))
 }
 pub(crate) fn snapshot_env<T>(env: T) -> Env<T>
