@@ -30,7 +30,7 @@ gluon_doc = { version = "0.18.0", path = "../doc" } # GLUON
 app_dirs = { package = "app_dirs2", version = "2.3.2" }
 anyhow = "1.0.44"
 futures = "0.3.17"
-tokio = { version = "1.12.0", features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1.16.1", features = ["rt-multi-thread", "macros", "signal"] }
 clap = "2.33.3"
 structopt = "0.3.23"
 log = "0.4.14"
@@ -50,7 +50,7 @@ ansi_term = "0.12.1"
 
 [dev-dependencies]
 pretty_assertions = "1.0.0"
-tokio = "1.12.0"
+tokio = "1.16.1"
 
 [target.'cfg(unix)'.dev-dependencies]
 rexpect = "0.4.0"
