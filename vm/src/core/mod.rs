@@ -599,39 +599,35 @@ mod internal {
         }
     }
 
-    pub fn freeze_expr<'a>(allocator: &'a Arc<Allocator<'a>>, expr: CExpr<'a>) -> CoreExpr {
-        unsafe {
-            // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
-            // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
-            // long as the `CoreExpr` making it safe again
-            CoreExpr::new(
-                FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
-                    allocator.clone(),
-                )),
-                mem::transmute::<CExpr, CExpr<'static>>(expr),
-            )
-        }
+    pub unsafe fn freeze_expr<'a>(allocator: &'a Arc<Allocator<'a>>, expr: CExpr<'a>) -> CoreExpr {     
+        // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
+        // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
+        // long as the `CoreExpr` making it safe again
+        CoreExpr::new(
+            FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
+                allocator.clone(),
+            )),
+            mem::transmute::<CExpr, CExpr<'static>>(expr),
+        )     
     }
 
-    pub fn freeze_closure<'a>(
+    pub unsafe fn freeze_closure<'a>(
         allocator: &'a Arc<Allocator<'a>>,
         id: &'a TypedIdent<Symbol>,
         args: &'a [TypedIdent<Symbol>],
         expr: CExpr<'a>,
     ) -> CoreClosure {
-        unsafe {
-            // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
-            // `CoreClosure`. After we have it in `CoreClusre` the expression is then guaranteed to live as
-            // long as the `CoreClosure` making it safe again
-            CoreClosure::new(
-                FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
-                    allocator.clone(),
-                )),
-                mem::transmute::<&TypedIdent<Symbol>, &TypedIdent<Symbol>>(id),
-                mem::transmute::<&[TypedIdent<Symbol>], &[TypedIdent<Symbol>]>(args),
-                mem::transmute::<CExpr, CExpr<'static>>(expr),
-            )
-        }
+        // Here we temporarily forget the lifetime of `allocator` so it can be moved into a
+        // `CoreClosure`. After we have it in `CoreClusre` the expression is then guaranteed to live as
+        // long as the `CoreClosure` making it safe again
+        CoreClosure::new(
+            FrozenAllocator(mem::transmute::<Arc<Allocator>, Arc<Allocator<'static>>>(
+                allocator.clone(),
+            )),
+            mem::transmute::<&TypedIdent<Symbol>, &TypedIdent<Symbol>>(id),
+            mem::transmute::<&[TypedIdent<Symbol>], &[TypedIdent<Symbol>]>(args),
+            mem::transmute::<CExpr, CExpr<'static>>(expr),
+        )
     }
 
     fn assert_sync<T: Sync>() {}
