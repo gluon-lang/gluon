@@ -790,7 +790,7 @@ pub fn translate(
     expr: &SpannedExpr<'_, Symbol>,
 ) -> CoreExpr {
     with_translator(env, |translator| {
-        freeze_expr(&translator.allocator, translator.translate_alloc(expr))
+        unsafe { freeze_expr(&translator.allocator, translator.translate_alloc(expr)) }
     })
 }
 
