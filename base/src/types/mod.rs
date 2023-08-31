@@ -4626,7 +4626,7 @@ mod tests {
 
     #[cfg(target_pointer_width = "64")]
     // Safeguard against accidentally growing Type as it is a core type
-    const _: [(); 8 * 6] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
+    const _: [(); 8 * 5] = [(); std::mem::size_of::<Type<Symbol, ArcType>>()];
 
     #[test]
     fn walk_move_types_test() {
