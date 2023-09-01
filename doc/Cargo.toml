@@ -12,29 +12,29 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
-clap = "2.33.3"
-env_logger = "0.9.0"
-anyhow = "1.0.44"
-futures = "0.3.17"
-handlebars = "4.1.3"
-itertools = "0.10.1"
+clap = "2.34.0"
+env_logger = "0.9.3"
+anyhow = "1.0.75"
+futures = "0.3.28"
+handlebars = "4.3.7"
+itertools = "0.10.5"
 lazy_static = "1.4.0"
-log = "0.4.14"
-opener = "0.5.0"
+log = "0.4.20"
+opener = "0.5.2"
 pretty = "0.10.0"
 pulldown-cmark = "0.8.0"
-rayon = "1.5.1"
-regex = "1.5.5"
-structopt = "0.3.23"
-walkdir = "2.3.2"
+rayon = "1.7.0"
+regex = "1.9.4"
+structopt = "0.3.26"
+walkdir = "2.3.3"
 
-serde = "1.0.130"
-serde_derive = "1.0.130"
-serde_json = "1.0.68"
+serde = "1.0.188"
+serde_derive = "1.0.188"
+serde_json = "1.0.105"
 
 gluon = { version = "0.18.0", default-features = false, path = ".." } # GLUON
 completion = { package = "gluon_completion", version = "0.18.0", path = "../completion" } # GLUON
 
 
 [dev-dependencies]
-cargo-deadlinks = "0.8.0"
+cargo-deadlinks = "0.8.1"
