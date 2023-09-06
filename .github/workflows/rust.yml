@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, nightly]
+        rust: [nightly]  # This should be reverted back to [stable, nightly] when 1.74 is made the rustc stable version
     env:
       CRATE_NAME: gluon
       CARGO_INCREMENTAL: 0 # Incremental compilation is slower and bloats the cache
