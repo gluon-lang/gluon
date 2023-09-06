@@ -8,7 +8,7 @@ environment:
     CARGO_HTTP_CHECK_REVOKE: false
   matrix:
     - TARGET: x86_64-pc-windows-msvc
-      CHANNEL: stable
+      CHANNEL: nightly
 
 # Install Rust and Cargo
 # (Based on from https://github.com/rust-lang/libc/blob/master/appveyor.yml)
@@ -53,10 +53,10 @@ deploy:
   auth_token:
     secure: 0fkZyK+5fQgQVFWFTVCFwrZJDp8aAaMJorsgNZd8YF0aasbd7hWC8EUVCL5YSNuc
   provider: GitHub
-  # deploy when a new tag is pushed and only on the stable channel
+  # deploy when a new tag is pushed and only on the nightly channel
   on:
     # channel to use to produce the release artifacts
-    CHANNEL: stable
+    CHANNEL: nightly
     appveyor_repo_tag: true
 
 branches:
