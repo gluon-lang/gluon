@@ -20,7 +20,7 @@ matrix:
   include:
   - rust: nightly-2020-09-12
     #  - rust: beta
-  - rust: stable
+    #  - rust: stable Removed # This should be uncommented when 1.74 is made the rustc stable version
     env: ARCH=i686
 
   - rust: stable
