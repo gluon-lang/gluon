@@ -1,10 +1,8 @@
 set -ex
 
 main() {
-    # clean tmp of any stored artifacts
-    rm -r /tmp/*
-    # clean cargo of any stored artifacts
-    cargo clean
+    # This is necissary as shown in https://github.com/rust-lang/rust/issues/61925
+    export RUSTC_WRAPPER=sccache
     # At this point cargo should be installed
     cargo install cross
 }
