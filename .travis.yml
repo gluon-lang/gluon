@@ -18,18 +18,18 @@ branches:
 
 matrix:
   include:
-  - rust: nightly
+  - rust: nightly-2023-09-05
     #  - rust: beta
     #  - rust: stable Removed # This should be uncommented when 1.74 is made the rustc stable version
     env: ARCH=i686
 
-  - rust: nightly # Change back to rust: stable when 1.74 is made the rustc stable version
+  - rust: nightly-2023-09-05 # Change back to rust: stable when 1.74 is made the rustc stable version
     env:
       - DEPLOY=1
       - PUBLISH=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly
+  - rust: nightly-2023-09-05
     env: WASM=1
 
     # Only for deployment
