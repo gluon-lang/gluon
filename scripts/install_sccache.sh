@@ -25,15 +25,20 @@ function cleanup {
 # register the cleanup function to be called on the EXIT signal
 trap cleanup EXIT
 
+# Sample links
+# https://github.com/mozilla/sccache/releases/download/v0.5.4/sccache-dist-v0.5.4-x86_64-unknown-linux-musl.tar.gz
+# https://github.com/mozilla/sccache/releases/download/v0.5.4/sccache-v0.5.4-aarch64-apple-darwin.tar.gz
+
+VERSION="v0.5.4"
 
 if [[ $1 == *"apple"* ]]; then
     TARGET=$1
+    SCCACHE_VERSION="sccache-${VERSION}-aarch64-${TARGET}-darwin"
 else
     TARGET='x86_64-unknown-linux-musl'
+    SCCACHE_VERSION="sccache-dist-${VERSION}-${TARGET}"
 fi
 
-VERSION="0.2.10"
-SCCACHE_VERSION="sccache-${VERSION}-${TARGET}"
 pushd ${WORK_DIR}
 
 curl -L "https://github.com/mozilla/sccache/releases/download/${VERSION}/$SCCACHE_VERSION.tar.gz" | tar -xvz
