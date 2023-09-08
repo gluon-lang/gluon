@@ -42,7 +42,7 @@ fi
 pushd ${WORK_DIR}
 
 curl -L "https://github.com/mozilla/sccache/releases/download/${VERSION}/$SCCACHE_VERSION.tar.gz" | tar -xvz
-mv $SCCACHE_VERSION/sccache* .
+mv $SCCACHE_VERSION/sccache* ./sccache
 # it is sccache-dist on linux and sccache on mac
 chmod +x ./sccache
 mv ./sccache $HOME/bin/
