@@ -14,9 +14,6 @@ documentation = "https://docs.rs/gluon"
 
 build = "build.rs"
 
-[badges]
-travis-ci = { repository = "gluon-lang/gluon" }
-
 [dependencies]
 collect-mac = "0.1.0"
 itertools = "0.10.5"

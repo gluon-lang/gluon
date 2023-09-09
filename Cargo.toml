@@ -15,9 +15,6 @@ homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
-[badges]
-travis-ci = { repository = "gluon-lang/gluon" }
-
 [workspace]
 members = ["c-api", "repl", "completion", "format", "doc", "codegen"]
 

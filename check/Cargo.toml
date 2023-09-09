@@ -12,9 +12,6 @@ homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
-[badges]
-travis-ci = { repository = "gluon-lang/gluon" }
-
 [dependencies]
 collect-mac = "0.1.0"
 ena = "0.14.2"

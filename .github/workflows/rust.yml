@@ -45,7 +45,7 @@ jobs:
               return
           elif [[ -z ${WASM+set} ]]; then
               mdbook build book
-              ./scripts/travis.sh
+              ./scripts/ci.sh
               if ! git diff-index HEAD --; then
                   echo "Detected changes in the source after running tests"
                   exit 1

@@ -3,8 +3,6 @@ set -ex
 
 export RUST_BACKTRACE=1
 
-# Split the tests into two on travis so to avoid timing out
-
 declare -a PROJECTS=(
     gluon_codegen
     gluon_base
