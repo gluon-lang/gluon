@@ -6,6 +6,8 @@ set -ex
 ls /home/travis/.rustup/toolchains/nightly-2023-09-05-x86_64-unknown-linux-gnu/bin/*
 /home/travis/.rustup/toolchains/nightly-2023-09-05-x86_64-unknown-linux-gnu/bin/rustc --version
 
+
+
 if [[ $1 == *"apple"* ]]; then
     exit 0
 else

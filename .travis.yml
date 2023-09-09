@@ -69,6 +69,7 @@ env:
     - RUSTC_WRAPPER=sccache
     # A clean build seems to create ~300M
     - SCCACHE_CACHE_SIZE=500M
+    - RUST_LOG=debug sccache ...
 script:
 - >
     if [ ! -z $TRAVIS_TAG ]; then
