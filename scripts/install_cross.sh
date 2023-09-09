@@ -8,8 +8,6 @@ main() {
 
     CROSS_VERSION='cross-x86_64-unknown-linux-musl'
 
-    pushd ${WORK_DIR}
-
     curl -L "https://github.com/cross-rs/cross/releases/download/${VERSION}/$CROSS_VERSION.tar.gz" | tar -xvz
     mv $CROSS_VERSION/cross .
     mv $CROSS_VERSION/cross-util .
