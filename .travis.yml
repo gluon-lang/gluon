@@ -56,8 +56,8 @@ before_install:
 install:
   - export PATH="$HOME/bin:$PATH"
   - mkdir -p $HOME/bin
-  - sh scripts/install_cross.sh
   - ./scripts/install_sccache.sh $TARGET
+  - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
   - ./scripts/install_mdbook.sh $TARGET
 
