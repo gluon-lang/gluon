@@ -135,7 +135,8 @@ fi
 
 say_err "Installing to: $dest"
 #https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz
-url="$url/releases/download/$tag/$crate-$target.tar.gz"
+#https://github.com/cross-rs/cross/releases/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz
+url="$url/download/$tag/$crate-$target.tar.gz"
 
 echo $url
 
