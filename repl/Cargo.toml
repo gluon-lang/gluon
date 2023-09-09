@@ -11,9 +11,6 @@ homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
-[badges]
-travis-ci = { repository = "gluon-lang/gluon" }
-
 [[bin]]
 name = "gluon"
 path = "src/main.rs"
@@ -27,30 +24,30 @@ gluon_codegen = { path = "../codegen", version = "0.18.0" } # GLUON
 gluon_format = { version = "0.18.0", path = "../format" } # GLUON
 gluon_doc = { version = "0.18.0", path = "../doc" } # GLUON
 
-app_dirs = { package = "app_dirs2", version = "2.3.2" }
-anyhow = "1.0.44"
-futures = "0.3.17"
-tokio = { version = "1.12.0", features = ["rt-multi-thread", "macros", "signal"] }
-clap = "2.33.3"
-structopt = "0.3.23"
-log = "0.4.14"
-env_logger = { version = "0.9.0", optional = true }
+app_dirs = { package = "app_dirs2", version = "2.5.5" }
+anyhow = "1.0.75"
+futures = "0.3.28"
+tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "signal"] }
+clap = "2.34.0"
+structopt = "0.3.26"
+log = "0.4.20"
+env_logger = { version = "0.9.3", optional = true }
 lazy_static = "1.4.0"
 rustyline = "=6.0.0"
-walkdir = "2.3.2"
+walkdir = "2.3.3"
 codespan = "0.11.1"
 codespan-reporting = "0.11.1"
 quick-error = "2.0.1"
 
-serde = "1.0.130"
-serde_derive = "1.0.130"
+serde = "1.0.188"
+serde_derive = "1.0.188"
 
 [target.'cfg(not(windows))'.dependencies]
 ansi_term = "0.12.1"
 
 [dev-dependencies]
-pretty_assertions = "1.0.0"
-tokio = "1.12.0"
+pretty_assertions = "1.4.0"
+tokio = "1.32.0"
 
 [target.'cfg(unix)'.dev-dependencies]
 rexpect = "0.4.0"

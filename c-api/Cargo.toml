@@ -12,18 +12,15 @@ homepage = "https://gluon-lang.org"
 repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
-[badges]
-travis-ci = { repository = "gluon-lang/gluon" }
-
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
 gluon = { version = "0.18.0", path = ".." } # GLUON
-futures = "0.3.17"
+futures = "0.3.28"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libc = "0.2.103"
+libc = "0.2.147"
 
 [features]
 test = ["gluon/test"]

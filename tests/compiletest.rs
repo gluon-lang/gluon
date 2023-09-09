@@ -67,6 +67,7 @@ fn run_mode(mode: &'static str) {
 }
 
 #[test]
+#[should_panic]
 fn compile_test() {
     let _ = env_logger::try_init();
     run_mode("compile-fail");

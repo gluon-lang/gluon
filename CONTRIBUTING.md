@@ -22,7 +22,7 @@ Gluon can build with version 1.9.0 of Rust or later but we recommend version 1.1
 
 To build and run all(*) tests for Gluon you can call `cargo test --features test --all`. Instead of `--all` you can pass the `-p <crate name>` and `--test <test module>` flags to compile a specific crate and/or test module. For instance, `cargo test --features test -p gluon_parser --test basic` to run the tests in [parsers/tests/basic.rs](https://github.com/gluon-lang/gluon/blob/master/parser/tests/basic.rs).
 
-(*) You can see what Travis CI actually builds and tests in [scripts/travis.sh](https://github.com/gluon-lang/gluon/blob/master/scripts/travis.sh). Most of the time you should not need to worry about these additional tests and can just rely on travis running them.
+(*) You can see what Github actions actually builds and tests in [scripts/ci.sh](https://github.com/gluon-lang/gluon/blob/master/scripts/ci.sh). Most of the time you should not need to worry about these additional tests and can just rely on CI running them.
 
 ## Pull requests
 

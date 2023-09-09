@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: [stable, nightly]
+        rust: [nightly]  # This should be reverted back to [stable, nightly] when 1.74 is made the rustc stable version
     env:
       CRATE_NAME: gluon
       CARGO_INCREMENTAL: 0 # Incremental compilation is slower and bloats the cache
       RUST_BACKTRACE: 1
-      RUSTC_WRAPPER: sccache
+      # RUSTC_WRAPPER: sccache
       SCCACHE_CACHE_SIZE: 500M
     steps:
     - name: Checkout repository
@@ -30,13 +30,13 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
     - run: echo "$HOME/bin" >> $GITHUB_PATH
     - run: mkdir -p $HOME/bin
     - name: Setup tools
       if: steps.cache.outputs.cache-hit != 'true'
       run: |
-          ./scripts/install_sccache.sh $TARGET
+          # ./scripts/install_sccache.sh $TARGET
           source ~/.cargo/env || true
           ./scripts/install_mdbook.sh $TARGET
     - name: Run tests
@@ -45,7 +45,7 @@ jobs:
               return
           elif [[ -z ${WASM+set} ]]; then
               mdbook build book
-              ./scripts/travis.sh
+              ./scripts/ci.sh
               if ! git diff-index HEAD --; then
                   echo "Detected changes in the source after running tests"
                   exit 1

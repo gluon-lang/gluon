@@ -12,17 +12,17 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
-either = "1.6.1"
-itertools = "0.10.1"
-walkdir = "2.3.2"
+either = "1.9.0"
+itertools = "0.10.5"
+walkdir = "2.3.3"
 codespan = "0.11.1"
 
 gluon_base = { path = "../base", version = "0.18.0" } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
-env_logger = "0.9.0"
-pretty_assertions = "1.0.0"
+env_logger = "0.9.3"
+pretty_assertions = "1.4.0"
 quick-error = "2.0.1"
 
 gluon_check = { path = "../check", version = "0.18.0" } # GLUON

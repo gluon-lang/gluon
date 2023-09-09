@@ -1,12 +1,12 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](https://gluon-lang.org/doc/crates_io/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
+[![Build Status](https://github.com/gluon-lang/gluon/actions/workflows/rust.yml/badge.svg)](https://github.com/gluon-lang/gluon/actions) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](https://gluon-lang.org/doc/crates_io/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
-
+I
 ## Features
 
-* **Statically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
+* **Seatically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
 
 * **Type inference** - Type inference ensures that types rarely have to be written explicitly giving all the benefits of static types with none of the typing.
 
@@ -261,7 +261,7 @@ Gluon has a [language server](https://github.com/gluon-lang/gluon_language-serve
 
 ### Visual Studio Code Extension
 
-The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
+The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server))
 
 ![example](http://i.imgur.com/44bH0ww.gif)
 
@@ -271,7 +271,7 @@ The [gluon extension][] for Visual Studio Code provides syntax highlighting and 
 
 [vim-gluon](https://github.com/gluon-lang/vim-gluon) provides syntax highlighting and indentation.
 
-The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
+The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp.
 
 #### Example configuration (autozimu/LanguageClient-neovim)
 ```vim
