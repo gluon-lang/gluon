@@ -400,7 +400,7 @@ impl<T> Buffer<T> {
         // SAFETY This effectively works as a RefCell since the mutable reference is limited to
         // this module
         unsafe {
-            let mut values = self.values.unsafe_get_mut();
+            let values = self.values.unsafe_get_mut();
             let cap = match values.current().map(|vec| (vec.len(), vec.capacity())) {
                 Some((len, capacity)) => {
                     if len == capacity {

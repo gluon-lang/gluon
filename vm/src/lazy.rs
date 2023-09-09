@@ -166,7 +166,7 @@ fn force(
                             let lazy_lock = lazy.value.lock().unwrap();
                             match *lazy_lock {
                                 Lazy_::Value(ref value) => {
-                                    vm.current_context().push(value.clone());
+                                    vm.current_context().push(value);
                                     Pushed::default()
                                 }
                                 _ => unreachable!(),
@@ -176,7 +176,7 @@ fn force(
                 ))
             }
             Lazy_::Value(ref value) => {
-                vm.current_context().push(value.clone());
+                vm.current_context().push(value);
                 Either::Left(future::ready(RuntimeResult::Return(Pushed::default())))
             }
             _ => unreachable!(),

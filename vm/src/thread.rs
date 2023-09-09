@@ -574,18 +574,18 @@ impl<'de, 'gc> serde::de::DeserializeState<'de, crate::serialization::DeSeed<'gc
 
 impl Drop for Thread {
     fn drop(&mut self) {
-        // The child threads need to refer to `self` so drop the gc (and thus the child threads)
-        // first so that `self` is valid while dropping them
-        let context = self.context.get_mut().unwrap_or_else(|err| {
-            // Ignore poisoning since we don't need to interact with the Gc values, only
-            // drop them
-            err.into_inner()
-        });
-        let mut gc_to_drop =
-            ::std::mem::replace(&mut context.gc, Gc::new(Generation::default(), 0));
-        // Make sure that the RefMut is dropped before the Gc itself as the RwLock is dropped
+        // Make sure that context reference is dropped before the Gc itself as the RwLock is dropped
         // when the Gc is dropped
-        drop(context);
+        let mut gc_to_drop = {
+            // The child threads need to refer to `self` so drop the gc (and thus the child threads)
+            // first so that `self` is valid while dropping them
+            let context = self.context.get_mut().unwrap_or_else(|err| {
+                // Ignore poisoning since we don't need to interact with the Gc values, only
+                // drop them
+                err.into_inner()
+            });
+            ::std::mem::replace(&mut context.gc, Gc::new(Generation::default(), 0))
+        };
 
         // SAFETY GcPtr's may not leak outside of the `Thread` so we can safely clear it when
         // droppting the thread
@@ -2574,7 +2574,7 @@ where
     where
         T: StackState,
     {
-        let stack = self.stack.enter_scope_excess(args, state.clone(), excess)?;
+        let stack = self.stack.enter_scope_excess(args, state, excess)?;
         self.hook.previous_instruction_index = usize::max_value();
         Ok(ExecuteContext {
             thread: self.thread,
