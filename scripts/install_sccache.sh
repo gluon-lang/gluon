@@ -29,7 +29,7 @@ trap cleanup EXIT
 # https://github.com/mozilla/sccache/releases/download/v0.5.4/sccache-dist-v0.5.4-x86_64-unknown-linux-musl.tar.gz
 # https://github.com/mozilla/sccache/releases/download/v0.5.4/sccache-v0.5.4-aarch64-apple-darwin.tar.gz
 
-VERSION="v0.5.4"
+VERSION="v0.5.0"
 
 if [[ $1 == *"apple"* ]]; then
     TARGET=$1
