@@ -9,8 +9,6 @@ main() {
                        | grep -E '^v[0.1.0-9.]+$' \
                        | sort --version-sort \
                        | tail -n1)
-    ls -l .
-    ls ./scripts/*
     sh ./scripts/install.sh -- \
         --force \
         --git cross-rs/cross \

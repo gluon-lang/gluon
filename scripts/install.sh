@@ -134,8 +134,8 @@ if [ -z $dest ]; then
 fi
 
 say_err "Installing to: $dest"
-
-url="$url/download/$tag/$target.tar.gz"
+#https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-musl.tar.gz
+url="$url/releases/download/$tag/$crate-$target.tar.gz"
 
 td=$(mktemp -d || mktemp -d -t tmp)
 curl -sL $url | tar -C $td -xz
