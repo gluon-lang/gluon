@@ -1,3 +1,8 @@
+<a name="v0.18.2"></a>
+## v0.18.2 (2023-09-19)
+
+*   Fix compilation on newer rust versions
+
 <a name="v0.18.1"></a>
 ## v0.18.1 (2021-10-03)
 
