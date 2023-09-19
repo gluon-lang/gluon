@@ -1,4 +1,5 @@
 #!/bin/bash
+set -ex
 
 VERSION=$(echo $1 | sed 's/v//')
 shift
