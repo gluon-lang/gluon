@@ -6,7 +6,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 I
 ## Features
 
-* **Seatically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
+* **Statically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
 
 * **Type inference** - Type inference ensures that types rarely have to be written explicitly giving all the benefits of static types with none of the typing.
 
