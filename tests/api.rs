@@ -16,7 +16,6 @@ use gluon::{
     query::Compilation,
     vm::{
         api::{
-            de::De,
             scoped::{Ref, RefMut},
             FunctionRef, FutureResult, Hole, OpaqueValue, OwnedFunction, RuntimeResult, VmType, IO,
         },
@@ -299,47 +298,6 @@ fn tuples_start_at_0() {
 }
 
 #[test]
-fn use_type_from_type_field() {
-    let _ = ::env_logger::try_init();
-    let vm = make_vm();
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    enum Test {
-        A(i32),
-        B(String),
-        C,
-    }
-    impl VmType for Test {
-        type Type = Self;
-        fn make_type(vm: &Thread) -> ArcType {
-            if let Some(typ) = vm.get_type::<Self>() {
-                return typ;
-            }
-
-            let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
-            vm.register_type_as(
-                name.clone(),
-                Alias::new(name, Vec::new(), typ),
-                ::std::any::TypeId::of::<Self>(),
-            )
-            .unwrap()
-        }
-    }
-
-    add_extern_module(&vm, "test_types", |vm| {
-        ExternModule::new(vm, record! { type Test => Test })
-    });
-    let text = r#"
-        let { Test } = import! test_types
-        B "abc"
-    "#;
-    let (De(actual), _) = vm
-        .run_expr::<De<Test>>("test", text)
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(actual, Test::B("abc".to_string()));
-}
-
-#[test]
 fn use_rust_created_tuple_as_polymorphic() {
     let _ = ::env_logger::try_init();
     let test = r"\x -> x._0";
@@ -366,41 +324,6 @@ fn use_rust_created_record_as_polymorphic() {
     let mut f: FunctionRef<fn(Test) -> VmInt> = vm.get_global("test").unwrap();
     let result = f.call(record_no_decl! { x => 1 }).unwrap();
     assert_eq!(result, 1);
-}
-
-#[test]
-fn return_btreemap() {
-    let _ = ::env_logger::try_init();
-
-    let vm = make_vm();
-
-    add_extern_module_with_deps(
-        &vm,
-        "test",
-        |vm| {
-            ExternModule::new(
-                vm,
-                primitive!(1, "test", |()| {
-                    vec![("a".to_string(), 1), ("b".to_string(), 2)]
-                        .into_iter()
-                        .collect::<BTreeMap<_, _>>()
-                }),
-            )
-        },
-        vec!["std.map".into(), "std.json.de".into()],
-    );
-
-    vm.run_expr::<()>("", "let _ = import! test in ()")
-        .unwrap_or_else(|err| panic!("{}", err));
-    let (result, _) = vm
-        .run_expr::<BTreeMap<_, _>>("", "(import! test) ()")
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(
-        result,
-        vec![("a".to_string(), 1), ("b".to_string(), 2)]
-            .into_iter()
-            .collect::<BTreeMap<_, _>>()
-    );
 }
 
 #[test]
@@ -776,4 +699,87 @@ fn clone_userdata() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(*result, Test(123));
+}
+
+#[cfg(feature = "serialization")]
+mod serialization {
+    use super::*;
+
+    use gluon::vm::api::de::De;
+
+    #[test]
+    fn use_type_from_type_field() {
+        let _ = ::env_logger::try_init();
+        let vm = make_vm();
+
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        enum Test {
+            A(i32),
+            B(String),
+            C,
+        }
+        impl VmType for Test {
+            type Type = Self;
+            fn make_type(vm: &Thread) -> ArcType {
+                if let Some(typ) = vm.get_type::<Self>() {
+                    return typ;
+                }
+
+                let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
+                vm.register_type_as(
+                    name.clone(),
+                    Alias::new(name, Vec::new(), typ),
+                    ::std::any::TypeId::of::<Self>(),
+                )
+                .unwrap()
+            }
+        }
+
+        add_extern_module(&vm, "test_types", |vm| {
+            ExternModule::new(vm, record! { type Test => Test })
+        });
+        let text = r#"
+        let { Test } = import! test_types
+        B "abc"
+    "#;
+        let (De(actual), _) = vm
+            .run_expr::<De<Test>>("test", text)
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(actual, Test::B("abc".to_string()));
+    }
+
+    #[test]
+    fn return_btreemap() {
+        let _ = ::env_logger::try_init();
+
+        let vm = make_vm();
+
+        add_extern_module_with_deps(
+            &vm,
+            "test",
+            |vm| {
+                ExternModule::new(
+                    vm,
+                    primitive!(1, "test", |()| {
+                        vec![("a".to_string(), 1), ("b".to_string(), 2)]
+                            .into_iter()
+                            .collect::<BTreeMap<_, _>>()
+                    }),
+                )
+            },
+            vec!["std.map".into(), "std.json.de".into()],
+        );
+
+        vm.run_expr::<()>("", "let _ = import! test in ()")
+            .unwrap_or_else(|err| panic!("{}", err));
+        let (result, _) = vm
+            .run_expr::<BTreeMap<_, _>>("", "(import! test) ()")
+            .unwrap_or_else(|err| panic!("{}", err));
+        assert_eq!(
+            result,
+            vec![("a".to_string(), 1), ("b".to_string(), 2)]
+                .into_iter()
+                .collect::<BTreeMap<_, _>>()
+        );
+    }
 }
