@@ -690,15 +690,15 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         key,
                         match value.as_ref().map(|b| &b.bind) {
                             Some(Binding::Expr(Reduced::Local(expr))) => Binding::Expr(
-                                Reduced::Local(crate::core::freeze_expr(allocator, expr)),
+                                Reduced::Local(unsafe { crate::core::freeze_expr(allocator, expr) }),
                             ),
                             Some(Binding::Closure(Reduced::Local(ClosureRef {
                                 id,
                                 args,
                                 body,
-                            }))) => Binding::Closure(Reduced::Local(crate::core::freeze_closure(
+                            }))) => Binding::Closure(Reduced::Local(unsafe { crate::core::freeze_closure(
                                 allocator, id, args, body,
-                            ))),
+                            ) })),
                             Some(Binding::Expr(Reduced::Global(global))) => {
                                 Binding::Expr(Reduced::Global(global.clone()))
                             }
