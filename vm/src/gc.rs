@@ -161,14 +161,14 @@ impl<'s, T: Copy> WriteOnly<'s, [T]> {
 
 impl<'s> WriteOnly<'s, str> {
     pub fn write_str(self, s: &str) -> &'s mut str {
-        unsafe {
-            let ptr: &mut [u8] = mem::transmute::<*mut str, &mut [u8]>(self.0);
+        
+            let ptr: &mut [u8] = unsafe { mem::transmute::<*mut str, &mut [u8]>(self.0) };
             assert!(s.len() == ptr.len());
             for (to, from) in ptr.iter_mut().zip(s.as_bytes()) {
                 *to = *from;
             }
-            &mut *self.0
-        }
+            unsafe { &mut *self.0 }
+        
     }
 }
 
@@ -353,10 +353,10 @@ unsafe impl Send for AllocPtr {}
 impl AllocPtr {
     fn new<T>(type_info: *const TypeInfo, value_size: usize) -> AllocPtr {
         fn new(type_info: *const TypeInfo, value_size: usize) -> AllocPtr {
-            unsafe {
+            
                 let alloc_size = GcHeader::value_offset() + value_size;
-                let ptr = allocate(alloc_size) as *mut GcHeader;
-                ptr::write(
+                let ptr = unsafe { allocate(alloc_size) as *mut GcHeader };
+                unsafe { ptr::write(
                     ptr,
                     GcHeader {
                         next: None,
@@ -364,9 +364,9 @@ impl AllocPtr {
                         value_size: value_size,
                         marked: Cell::new(false),
                     },
-                );
+                ) };
                 AllocPtr { ptr }
-            }
+            
         }
         debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
         new(type_info, value_size)
@@ -385,14 +385,14 @@ impl fmt::Debug for AllocPtr {
 
 impl Drop for AllocPtr {
     fn drop(&mut self) {
+        // Avoid stack overflow by looping through all next pointers instead of doing it
+        // recursively
+        let mut current = self.next.take();
+        while let Some(mut next) = current {
+            current = next.next.take();
+        }
+        let size = self.size();
         unsafe {
-            // Avoid stack overflow by looping through all next pointers instead of doing it
-            // recursively
-            let mut current = self.next.take();
-            while let Some(mut next) = current {
-                current = next.next.take();
-            }
-            let size = self.size();
             ((*self.type_info).drop)(self.value());
             ptr::read(&*self.ptr);
             deallocate(self.ptr as *mut u8, size);
@@ -415,8 +415,8 @@ impl DerefMut for AllocPtr {
 
 impl GcHeader {
     fn value(&mut self) -> *mut () {
+        let ptr: *mut GcHeader = self;
         unsafe {
-            let ptr: *mut GcHeader = self;
             (ptr as *mut u8).offset(GcHeader::value_offset() as isize) as *mut ()
         }
     }
@@ -711,8 +711,8 @@ impl<T: ?Sized> GcPtr<T> {
     }
 
     fn header(&self) -> &GcHeader {
+        let p = self.0.as_ptr() as *mut u8;
         unsafe {
-            let p = self.0.as_ptr() as *mut u8;
             let header = p.offset(-(GcHeader::value_offset() as isize));
             &*(header as *const GcHeader)
         }
