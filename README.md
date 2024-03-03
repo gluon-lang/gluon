@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/gluon-lang/gluon/actions/workflows/rust.yml/badge.svg)](https://github.com/gluon-lang/gluon/actions) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](https://gluon-lang.org/doc/crates_io/book/index.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
-I
+
 ## Features
 
 * **Statically-typed** - Static typing makes it easier to write safe and efficient interfaces between gluon and the host application.
