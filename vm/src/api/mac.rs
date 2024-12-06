@@ -177,7 +177,7 @@ macro_rules! field_decl_inner {
         record_field_inner_struct!{ $field $($suffix)* }
         impl $crate::api::record::Field for last_ident!($field $($suffix)*) {
             fn name() -> &'static str {
-                stringify_inner!($field $( :: $suffix)* )
+                ::std::concat!(::std::stringify!($field), $("::", ::std::stringify!($suffix)),*)
             }
             fn args() -> &'static [&'static str] {
                 &[$(stringify_inner!($args)),*]
