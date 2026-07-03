@@ -13,7 +13,7 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 clap = "2.34.0"
-env_logger = "0.9.3"
+env_logger.workspace = true
 anyhow = "1.0.75"
 futures = "0.3.28"
 handlebars = "4.3.7"

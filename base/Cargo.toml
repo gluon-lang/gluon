@@ -41,7 +41,7 @@ serde_derive_state = { version = "0.4.10", optional = true }
 compiletest_rs = { version = "0.11", optional = true }
 
 [dev-dependencies]
-env_logger = "0.9.3"
+env_logger.workspace = true
 pretty_assertions = "1.4.0"
 
 [features]

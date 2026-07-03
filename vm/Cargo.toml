@@ -53,7 +53,7 @@ lalrpop = { version = "0.19.12", features = ["lexer"], optional = true }
 
 [dev-dependencies]
 difference = "2.0.0"
-env_logger = "0.9.3"
+env_logger.workspace = true
 pretty_assertions = "1.4.0"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon

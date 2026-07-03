@@ -31,7 +31,7 @@ tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros", "signal"]
 clap = "2.34.0"
 structopt = "0.3.26"
 log = "0.4.20"
-env_logger = { version = "0.9.3", optional = true }
+env_logger = { workspace = true, optional = true }
 lazy_static = "1.4.0"
 rustyline = "=6.0.0"
 walkdir = "2.3.3"
