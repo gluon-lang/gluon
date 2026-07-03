@@ -586,7 +586,10 @@ impl<'ast, Id> Expr<'ast, Id> {
     pub fn field_iter<'a>(
         &'a self,
     ) -> impl Iterator<
-        Item = Either<&'a ExprField<'a, Id, ArcType<Id>>, &'a ExprField<'a, Id, SpannedExpr<'ast, Id>>>,
+        Item = Either<
+            &'a ExprField<'a, Id, ArcType<Id>>,
+            &'a ExprField<'a, Id, SpannedExpr<'ast, Id>>,
+        >,
     > + 'a {
         let (types, exprs) = match *self {
             Expr::Record {
@@ -1325,7 +1328,7 @@ macro_rules! mk_ast_arena {
         // unify the lifetimes of two macro calls by binding the lifetime to
         // drop scope
         if false {
-            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
+            struct Guard<'tag>(#[allow(dead_code)] &'tag $crate::ast::InvariantLifetime<'tag>);
             impl<'tag> ::core::ops::Drop for Guard<'tag> {
                 fn drop(&mut self) {}
             }

@@ -202,6 +202,7 @@ fn derive_generates_same_type_as_gluon_define() {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Getable)]
 struct LifetimeStruct<'a> {
     _str: &'a str,

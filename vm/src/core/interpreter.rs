@@ -126,6 +126,7 @@ pub type GlobalBinding = Binding<Global<CoreExpr>, Global<CoreClosure>>;
 
 trait Resolver<'l, 'a> {
     fn produce(&self, expr: CExpr<'a>) -> CExpr<'l>;
+    #[allow(dead_code)]
     fn produce_slice(&self, expr: &'a [Expr<'a>]) -> &'l [Expr<'l>];
     fn produce_alts(&self, expr: &'a [Alternative<'a>]) -> &'l [Alternative<'l>];
     fn wrap(&self, expr: CExpr<'a>) -> ReducedExpr<'l>;

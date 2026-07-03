@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, TokenStream};
 use syn::{self, Data, DeriveInput, Fields, GenericParam, Generics};
 
 use crate::{

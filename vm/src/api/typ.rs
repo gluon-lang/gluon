@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[derive(Deserialize)]
-    struct MyArray(Vec<f64>);
+    struct MyArray(#[allow(dead_code)] Vec<f64>);
 
     #[test]
     fn vec_type() {

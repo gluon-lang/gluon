@@ -30,7 +30,7 @@ impl From<EqFloat> for f64 {
 
 impl EqFloat {
     fn key(&self) -> u64 {
-        unsafe { f64::to_bits(self.0) }
+        f64::to_bits(self.0)
     }
 }
 

@@ -1,8 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-#[cfg(feature = "serde_derive")]
-use serde_derive::{Deserialize, Serialize};
-
 use crate::base::{
     ast::{
         self, Argument, AstType, Expr, HasMetadata, Pattern, PatternField, SpannedExpr,
@@ -22,7 +19,6 @@ struct Environment<'b> {
 trait ArcMetadata: Into<Arc<Metadata>> {
     fn into_owned(self) -> Metadata;
     fn definition(&self) -> Option<&Symbol>;
-    fn has_data(&self) -> bool;
 }
 
 impl ArcMetadata for Arc<Metadata> {
@@ -32,9 +28,6 @@ impl ArcMetadata for Arc<Metadata> {
     fn definition(&self) -> Option<&Symbol> {
         self.definition.as_ref()
     }
-    fn has_data(&self) -> bool {
-        Metadata::has_data(self)
-    }
 }
 
 impl ArcMetadata for Metadata {
@@ -43,9 +36,6 @@ impl ArcMetadata for Metadata {
     }
     fn definition(&self) -> Option<&Symbol> {
         self.definition.as_ref()
-    }
-    fn has_data(&self) -> bool {
-        Metadata::has_data(self)
     }
 }
 
@@ -60,12 +50,6 @@ impl ArcMetadata for MaybeMetadata {
         match self {
             MaybeMetadata::Empty => None,
             MaybeMetadata::Data(d) => d.definition(),
-        }
-    }
-    fn has_data(&self) -> bool {
-        match self {
-            MaybeMetadata::Empty => false,
-            MaybeMetadata::Data(d) => d.has_data(),
         }
     }
 }

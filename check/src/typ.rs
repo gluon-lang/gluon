@@ -6,7 +6,7 @@ mod tests {
 
     use crate::base::{
         symbol::Symbol,
-        types::{Generic, Type},
+        types::{Generic, Type, TypePtr as _},
     };
 
     #[test]

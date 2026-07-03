@@ -363,7 +363,7 @@ mod internal {
     };
 
     #[derive(Clone)]
-    pub struct FrozenAllocator(Arc<Allocator<'static>>);
+    pub struct FrozenAllocator(#[allow(dead_code)] Arc<Allocator<'static>>);
 
     // `Allocator` is not `Sync` due to the `RefCell` it contains. But since we do not allow
     // `Allocator` to be accessed there is not way to interact with it and we can safely allow

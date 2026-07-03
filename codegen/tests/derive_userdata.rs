@@ -71,6 +71,7 @@ fn userdata() {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Userdata, Trace, Debug, VmType)]
 #[gluon(vm_type = "Empty")]
 struct Empty;

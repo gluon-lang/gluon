@@ -238,6 +238,21 @@ fn listen(
     listen_(settings, vm, value).map(IO::from)
 }
 
+impl tower_service::Service<hyper::Request<hyper::Body>> for Handler {
+    type Response = hyper::Response<hyper::Body>;
+    type Error = Error;
+    type Future = BoxFuture<'static, Result<http::Response<hyper::Body>, Error>>;
+
+    fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Ok(()).into()
+    }
+
+    fn call(&mut self, request: hyper::Request<hyper::Body>) -> Self::Future {
+        let (parts, body) = request.into_parts();
+        self.handle(parts.method, parts.uri, body)
+    }
+}
+
 async fn listen_(
     settings: Settings,
     thread: RootedThread,
@@ -247,21 +262,6 @@ async fn listen_(
         Ok(thread) => thread,
         Err(err) => return Err(err),
     };
-
-    impl tower_service::Service<hyper::Request<hyper::Body>> for Handler {
-        type Response = hyper::Response<hyper::Body>;
-        type Error = Error;
-        type Future = BoxFuture<'static, Result<http::Response<hyper::Body>, Error>>;
-
-        fn poll_ready(&mut self, _cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Ok(()).into()
-        }
-
-        fn call(&mut self, request: hyper::Request<hyper::Body>) -> Self::Future {
-            let (parts, body) = request.into_parts();
-            self.handle(parts.method, parts.uri, body)
-        }
-    }
 
     let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
 

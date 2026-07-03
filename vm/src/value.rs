@@ -47,7 +47,7 @@ pub trait Userdata: Downcast + Trace + fmt::Debug + Send + Sync {
 
 impl PartialEq for dyn Userdata {
     fn eq(&self, other: &dyn Userdata) -> bool {
-        self as *const _ == other as *const _
+        std::ptr::addr_eq(self as *const _, other as *const _)
     }
 }
 

@@ -158,6 +158,7 @@ pub(crate) trait ImportApi: Send + Sync {
         module_id: &Symbol,
     ) -> SalvageResult<ArcType>;
     fn snapshot(&self, thread: RootedThread) -> salsa::Snapshot<CompilerDatabase>;
+    #[allow(dead_code)]
     fn fork(
         &mut self,
         forker: salsa::ForkState,
