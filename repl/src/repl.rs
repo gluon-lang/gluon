@@ -195,7 +195,9 @@ impl rustyline::validate::Validator for Completer {
 }
 
 impl rustyline::hint::Hinter for Completer {
-    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<String> {
         self.hinter.hint(line, pos, ctx)
     }
 }
@@ -234,8 +236,8 @@ impl rustyline::highlight::Highlighter for Completer {
         self.highlighter.highlight_candidate(candidate, completion)
     }
 
-    fn highlight_char(&self, line: &str, pos: usize) -> bool {
-        self.highlighter.highlight_char(line, pos)
+    fn highlight_char(&self, line: &str, pos: usize, kind: rustyline::highlight::CmdKind) -> bool {
+        self.highlighter.highlight_char(line, pos, kind)
     }
 }
 
@@ -272,7 +274,7 @@ macro_rules! impl_userdata {
 #[gluon(vm_type = "Editor")]
 #[gluon_trace(skip)]
 struct Editor {
-    editor: Mutex<rustyline::Editor<Completer>>,
+    editor: Mutex<rustyline::Editor<Completer, rustyline::history::DefaultHistory>>,
 }
 
 impl_userdata! { Editor }
@@ -315,17 +317,21 @@ fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
 }
 
 fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
-    let mut editor = rustyline::Editor::with_config(
-        rustyline::config::Config::builder()
-            .color_mode(match vm.value.0 {
-                crate::Color::Auto => rustyline::config::ColorMode::Enabled,
-                crate::Color::Always | crate::Color::AlwaysAnsi => {
-                    rustyline::config::ColorMode::Forced
-                }
-                crate::Color::Never => rustyline::config::ColorMode::Disabled,
-            })
-            .build(),
-    );
+    let mut editor: rustyline::Editor<Completer, rustyline::history::DefaultHistory> =
+        match rustyline::Editor::with_config(
+            rustyline::config::Config::builder()
+                .color_mode(match vm.value.0 {
+                    crate::Color::Auto => rustyline::config::ColorMode::Enabled,
+                    crate::Color::Always | crate::Color::AlwaysAnsi => {
+                        rustyline::config::ColorMode::Forced
+                    }
+                    crate::Color::Never => rustyline::config::ColorMode::Disabled,
+                })
+                .build(),
+        ) {
+            Ok(editor) => editor,
+            Err(err) => return IO::Exception(format!("{}", err)),
+        };
 
     let history_result =
         app_dir_root().and_then(|path| Ok(editor.load_history(&*path.join("history"))?));
@@ -354,7 +360,9 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
         Err(err) => return IO::Exception(format!("{}", err)),
     };
     if !input.trim().is_empty() {
-        editor.add_history_entry(&input);
+        if let Err(err) = editor.add_history_entry(&input) {
+            return IO::Exception(format!("Unable to add history entry: {}", err));
+        }
     }
 
     IO::Value(Ok(input))

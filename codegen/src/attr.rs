@@ -5,21 +5,26 @@ use {
     syn::{
         self,
         parse::{self, Parse},
+        punctuated::Punctuated,
+        token::Comma,
+        Expr,
+        Meta,
         Meta::*,
         Path,
     },
 };
 
-fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
-    if attr.path.segments.len() == 1
-        && (attr.path.segments[0].ident == "gluon"
-            || attr.path.segments[0].ident == "gluon_trace"
-            || attr.path.segments[0].ident == "gluon_userdata")
+fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<Meta>> {
+    let path = attr.path();
+    if path.segments.len() == 1
+        && (path.segments[0].ident == "gluon"
+            || path.segments[0].ident == "gluon_trace"
+            || path.segments[0].ident == "gluon_userdata")
     {
-        match attr.parse_meta() {
-            Ok(List(ref meta)) => Some(meta.nested.iter().cloned().collect()),
-            _ => None,
-        }
+        let parsed = attr
+            .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+            .ok()?;
+        Some(parsed.into_iter().collect())
     } else {
         None
     }
@@ -42,8 +47,6 @@ pub struct Container {
 
 impl Container {
     pub fn from_ast(item: &syn::DeriveInput) -> Container {
-        use syn::NestedMeta::*;
-
         let mut crate_name = CrateName::None;
         let mut vm_type = None;
         let mut newtype = false;
@@ -55,49 +58,45 @@ impl Container {
             for meta_item in meta_items {
                 match meta_item {
                     // Parse `#[gluon(crate_name = "foo")]`
-                    Meta(NameValue(ref m)) if m.path.is_ident("crate_name") => {
-                        if let Ok(path) = parse_lit_into_path(&m.path, &m.lit) {
+                    NameValue(ref m) if m.path.is_ident("crate_name") => {
+                        if let Ok(path) = parse_lit_into_path(&m.path, &m.value) {
                             crate_name = CrateName::Some(path);
                         }
                     }
 
                     // Parse `#[gluon(gluon_vm)]`
-                    Meta(Path(ref w)) if w.is_ident("gluon_vm") => {
+                    Path(ref w) if w.is_ident("gluon_vm") => {
                         crate_name = CrateName::GluonVm;
                     }
 
-                    Meta(Path(ref w)) if w.is_ident("newtype") => {
+                    Path(ref w) if w.is_ident("newtype") => {
                         newtype = true;
                     }
 
-                    Meta(NameValue(ref m)) if m.path.is_ident("vm_type") => {
-                        vm_type = Some(get_lit_str(&m.path, &m.path, &m.lit).unwrap().value())
+                    NameValue(ref m) if m.path.is_ident("vm_type") => {
+                        vm_type = Some(get_lit_str(&m.path, &m.path, &m.value).unwrap().value())
                     }
 
-                    Meta(Path(ref w)) if w.is_ident("skip") => {
+                    Path(ref w) if w.is_ident("skip") => {
                         skip = true;
                     }
 
-                    Meta(Path(ref w)) if w.is_ident("clone") => {
+                    Path(ref w) if w.is_ident("clone") => {
                         clone = true;
                     }
 
-                    Meta(NameValue(ref m)) if m.path.is_ident("ast_clone_bounds") => {
+                    NameValue(ref m) if m.path.is_ident("ast_clone_bounds") => {
                         ast_clone_bounds =
-                            Some(get_lit_str(&m.path, &m.path, &m.lit).unwrap().value())
+                            Some(get_lit_str(&m.path, &m.path, &m.value).unwrap().value())
                     }
 
-                    Meta(meta_item) => {
+                    meta_item => {
                         let path = meta_item
                             .path()
                             .into_token_stream()
                             .to_string()
                             .replace(' ', "");
                         panic!("unexpected gluon container attribute: `{}`", path)
-                    }
-
-                    Lit(_) => {
-                        panic!("Unexpected literal in gluon container attribute",);
                     }
                 }
             }
@@ -117,11 +116,14 @@ impl Container {
 fn get_lit_str<'a>(
     attr_name: &Path,
     _meta_item_name: &Path,
-    lit: &'a syn::Lit,
+    expr: &'a Expr,
 ) -> Result<&'a syn::LitStr, ()> {
-    if let syn::Lit::Str(ref lit) = *lit {
-        Ok(lit)
-    } else {
+    if let Expr::Lit(expr_lit) = expr {
+        if let syn::Lit::Str(ref lit) = expr_lit.lit {
+            return Ok(lit);
+        }
+    }
+    {
         panic!(
             "Expected attribute `{:?}` to be a string",
             attr_name.into_token_stream().to_string().replace(' ', "")
@@ -129,8 +131,8 @@ fn get_lit_str<'a>(
     }
 }
 
-fn parse_lit_into_path(attr_name: &Path, lit: &syn::Lit) -> Result<syn::Path, ()> {
-    let string = get_lit_str(attr_name, attr_name, lit)?;
+fn parse_lit_into_path(attr_name: &Path, expr: &Expr) -> Result<syn::Path, ()> {
+    let string = get_lit_str(attr_name, attr_name, expr)?;
     parse_lit_str(string).map_err(|_| panic!("failed to parse path: {:?}", string.value()))
 }
 

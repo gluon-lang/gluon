@@ -204,7 +204,7 @@ fn gen_variant_match(ident: &Ident, _tag: usize, variant: &Variant) -> TokenStre
 
             quote! {
                 #ident::#variant_ident ( #(#fields),* ) =>
-                    #ident::#variant_ident#cons
+                    #ident:: #variant_ident #cons
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {

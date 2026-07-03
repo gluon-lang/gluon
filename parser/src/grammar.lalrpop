@@ -195,27 +195,27 @@ Ident: Id =
     IdentStr => env.from_str(<>);
 
 CtorIdent: Id =
-    Sp<Ident> => {
-        if !env.string(&<>.value).starts_with(char::is_uppercase) {
+    <ident: Sp<Ident>> => {
+        if !env.string(&ident.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
-                error: pos::spanned(<>.span, format!("Constructors must start with an uppercase letter").into()),
+                error: pos::spanned(ident.span, format!("Constructors must start with an uppercase letter").into()),
             });
         }
-        <>.value
+        ident.value
     };
 
 SpannedIdent: SpannedIdent<Id> =
-    Sp<Ident> => pos::spanned(<>.span, new_ident(type_cache, <>.value));
+    <ident: Sp<Ident>> => pos::spanned(ident.span, new_ident(type_cache, ident.value));
 
 Operator: TypedIdent<Id> =
     "operator" => new_ident(type_cache, env.from_str(<>));
 
 DocComment: Comment =
-    "documentation comment"+ => {
-        let typ = <>.last().unwrap().typ;
+    <comments: "documentation comment"+> => {
+        let typ = comments.last().unwrap().typ;
         Comment {
             typ: typ,
-            content: <>.into_iter().map(|comment| comment.content).join("\n")
+            content: comments.into_iter().map(|comment| comment.content).join("\n")
         }
     };
 
@@ -555,9 +555,9 @@ PatternField : PatternField<'ast, Id> = {
     <name: Sp<Ident>> "=" <body: Sp<Pattern>> =>
         PatternField::Value { name, value: Some(body) },
 
-    <Sp<IdentStr>> => {
-        let name = pos::spanned(<>.span, env.from_str(<>.value));
-        if <>.value.starts_with(char::is_uppercase) {
+    <ident: Sp<IdentStr>> => {
+        let name = pos::spanned(ident.span, env.from_str(ident.value));
+        if ident.value.starts_with(char::is_uppercase) {
             PatternField::Type { name }
         } else {
             PatternField::Value { name, value: None }

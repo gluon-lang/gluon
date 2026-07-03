@@ -1,6 +1,6 @@
 [package]
 name = "gluon_format"
-version = "0.18.2" # GLUON
+version = "0.18.2"                        # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -13,9 +13,9 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 log = "0.4.20"
-pretty = "0.10.0"
-itertools = "0.10.5"
-codespan = "0.11.1"
+pretty.workspace = true
+itertools.workspace = true
+codespan.workspace = true
 
 gluon_base = { path = "../base", version = "0.18.2" } # GLUON
 
@@ -31,7 +31,7 @@ walkdir = "2.3.3"
 gluon_base = { path = "../base", version = "0.18.2" } # GLUON
 gluon = { path = "..", version = ">=0.9" }
 
-tensile = { version = "0.7", features = ["tokio"] }
+tensile = { version = "0.8", features = ["tokio"] }
 
 [features]
 test = []

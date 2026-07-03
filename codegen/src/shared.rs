@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span, TokenStream};
-use syn::{GenericParam, Generics, Lifetime, LifetimeDef, TypeGenerics, TypeParam};
+use syn::{GenericParam, Generics, Lifetime, LifetimeParam, TypeGenerics, TypeParam};
 
 /// Maps all type parameters in `generics`. The function gets passed the ident of
 /// the respective type parameter.
@@ -76,7 +76,7 @@ pub fn split_for_impl<'a>(
     extra_lifetimes
         .into_iter()
         .map(|lifetime| {
-            GenericParam::from(LifetimeDef::new(Lifetime::new(lifetime, Span::call_site())))
+            GenericParam::from(LifetimeParam::new(Lifetime::new(lifetime, Span::call_site())))
         })
         .for_each(|lifetime| {
             if generics.params.iter().all(|p| *p != lifetime) {

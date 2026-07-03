@@ -18,7 +18,9 @@ use std::{
 
 use {
     anyhow::{anyhow, Context as _},
-    handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError},
+    handlebars::{
+        Context, Handlebars, Helper, Output, RenderContext, RenderError, RenderErrorReason,
+    },
     itertools::Itertools,
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
@@ -307,6 +309,16 @@ fn module_link(current_module: &str, param: &str) -> String {
 fn handlebars() -> Result<Handlebars<'static>> {
     let mut reg = Handlebars::new();
 
+    fn symbol_to_path(h: &Helper, index: usize) -> ::std::result::Result<&str, RenderError> {
+        h.param(index)
+            .and_then(|p| p.value().as_str())
+            .ok_or_else(|| {
+                RenderError::from(RenderErrorReason::Other(
+                    format!("Expected helper argument {} to be a string", index).into(),
+                ))
+            })
+    }
+
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
     reg.register_helper(
@@ -317,7 +329,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
                   _context: &Context,
                   _rc: &mut RenderContext,
                   out: &mut dyn Output| {
-                let param = String::deserialize(h.param(0).unwrap().value())?;
+                let param = symbol_to_path(h, 0)?;
                 out.write(&param.replace(".", "/"))?;
                 Ok(())
             },
@@ -333,7 +345,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = symbol_to_path(h, 0)?;
         out.write(&module_link(current_module, &param))?;
         Ok(())
     }
@@ -349,7 +361,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let parent_breadcrumb = current_module.rsplit('.').nth(1);
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = symbol_to_path(h, 0)?;
         match parent_breadcrumb {
             Some(parent_breadcrumb) => {
                 out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
@@ -370,7 +382,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = context.data()["name"].as_str().expect("name");
         let current_module_level = current_module.split('.').count();
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = symbol_to_path(h, 0)?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
             out.write(&format!(
@@ -420,7 +432,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = helper_param_string(h, 0)?;
 
         let parser = pulldown_cmark::Parser::new(&param);
         let mut buf = String::new();
@@ -452,7 +464,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = helper_param_string(h, 0)?;
 
         let first_paragraph: String = param.lines().take_while(|s| !s.is_empty()).collect();
 
@@ -700,7 +712,12 @@ impl From<&'_ Opt> for Options {
     }
 }
 
-const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\n",
+    "commit: ",
+    env!("GIT_HASH")
+);
 #[derive(StructOpt)]
 #[structopt(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {

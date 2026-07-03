@@ -210,7 +210,7 @@ impl Error {
                     Error::UnexpectedToken(token.map(|s| s.into()), expected),
                 )
             }
-            UnrecognizedEOF {
+            UnrecognizedEof {
                 location,
                 mut expected,
             } => {

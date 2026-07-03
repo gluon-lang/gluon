@@ -16,16 +16,16 @@ documentation = "https://docs.rs/gluon"
 collect-mac = "0.1.0"
 ena = "0.14.2"
 log = "0.4.20"
-itertools = "0.10.5"
-pretty = "0.10.0"
+itertools.workspace = true
+pretty.workspace = true
 smallvec = "1.11.0"
-rpds = "0.10.0"
+rpds = "1.2.1"
 quick-error = "2.0.1"
 
-codespan = "0.11.1"
-codespan-reporting = "0.11.1"
+codespan.workspace = true
+codespan-reporting.workspace = true
 
-strsim = "0.10.0"
+strsim = "0.11.1"
 
 gluon_base = { path = "../base", version = "0.18.2" }       # GLUON
 gluon_codegen = { path = "../codegen", version = "0.18.2" } # GLUON

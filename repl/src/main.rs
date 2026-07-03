@@ -113,7 +113,7 @@ pub enum SubOpt {
     Doc(::gluon_doc::Opt),
 }
 
-const LONG_VERSION: &str = concat!(clap::crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+const LONG_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\n", "commit: ", env!("GIT_HASH"));
 
 #[derive(StructOpt)]
 #[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
