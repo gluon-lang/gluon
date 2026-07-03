@@ -498,7 +498,7 @@ impl Value {
         self.clone_unrooted()
     }
 
-    pub fn get_variants(&self) -> Variants {
+    pub fn get_variants(&self) -> Variants<'_> {
         Variants::new(self)
     }
 
@@ -545,7 +545,7 @@ impl Value {
 }
 
 impl ValueRepr {
-    pub fn get_variants(&self) -> Variants {
+    pub fn get_variants(&self) -> Variants<'_> {
         Variants::new(Value::from_ref(self))
     }
 }
@@ -1342,7 +1342,7 @@ unsafe impl Trace for ValueArray {
 }
 
 impl ValueArray {
-    pub fn get(&self, index: usize) -> Option<Variants> {
+    pub fn get(&self, index: usize) -> Option<Variants<'_>> {
         if index < self.len() {
             // SAFETY the representation is checked before calling any unsafe
             unsafe {
@@ -1380,7 +1380,7 @@ impl ValueArray {
         self.array.len()
     }
 
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         Iter {
             array: self,
             index: 0,

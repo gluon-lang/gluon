@@ -203,7 +203,7 @@ fn create_trace_bounds(generics: &Generics) -> Vec<TokenStream> {
     })
 }
 
-fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<Ident>>, Vec<&Type>) {
+fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<'_, Ident>>, Vec<&Type>) {
     // get all the fields if there are any
     let fields = match fields {
         Fields::Named(FieldsNamed { named, .. }) => named,

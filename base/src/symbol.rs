@@ -428,7 +428,7 @@ impl Name {
         &self.0
     }
 
-    pub fn components(&self) -> Components {
+    pub fn components(&self) -> Components<'_> {
         Components(&self.0)
     }
 

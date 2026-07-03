@@ -322,7 +322,7 @@ where
     fn size(&self) -> usize {
         mem::size_of::<T>()
     }
-    fn initialize(self, result: WriteOnly<T>) -> &mut T {
+    fn initialize(self, result: WriteOnly<'_, T>) -> &mut T {
         result.write(self.0)
     }
 }
@@ -517,7 +517,7 @@ where
     fn size(&self) -> usize {
         (**self).size()
     }
-    fn initialize(self, result: WriteOnly<Self::Value>) -> &mut Self::Value {
+    fn initialize(self, result: WriteOnly<'_, Self::Value>) -> &mut Self::Value {
         self.0.initialize(result)
     }
 }
@@ -1086,7 +1086,7 @@ impl Gc {
         &mut self,
         roots: R,
         def: D,
-    ) -> Result<OwnedGcRef<D::Value>>
+    ) -> Result<OwnedGcRef<'_, D::Value>>
     where
         R: Trace + CollectScope,
         D: DataDef + Trace,
@@ -1113,7 +1113,7 @@ impl Gc {
     }
 
     /// Allocates a new object.
-    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1121,7 +1121,7 @@ impl Gc {
         self.alloc_owned(def).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<D::Value>>
+    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<'_, D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1137,7 +1137,7 @@ impl Gc {
         Ok(self.alloc_ignore_limit_(size, def))
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<'_, D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1209,7 +1209,7 @@ impl Gc {
         }
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<D::Value>
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<'_, D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,

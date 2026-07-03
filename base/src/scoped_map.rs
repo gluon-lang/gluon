@@ -67,7 +67,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     /// Exits the current scope, returning an iterator over the (key, value) pairs that are removed
     /// When `ExitScopeIter` is dropped any remaining pairs of the scope is removed as well.
-    pub fn exit_scope(&mut self) -> ExitScopeIter<K, V> {
+    pub fn exit_scope(&mut self) -> ExitScopeIter<'_, K, V> {
         ExitScopeIter {
             map: self,
             done: false,
@@ -133,7 +133,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.map.get(k).map(|x| &x[..])
     }
 
-    pub fn entry(&mut self, key: K) -> Entry<K, V> {
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         match self.map.entry(key) {
             hash_map::Entry::Occupied(entry) => {
                 if entry.get().is_empty() {
@@ -233,11 +233,11 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
 impl<K: Eq + Hash, V> ScopedMap<K, V> {
     /// Returns an iterator of the (key, values) pairs inserted in the map
-    pub fn iter_mut(&mut self) -> IterMut<K, Vec<V>> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, Vec<V>> {
         self.map.iter_mut()
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&self) -> Iter<'_, K, V> {
         Iter {
             iter: self.map.iter(),
         }

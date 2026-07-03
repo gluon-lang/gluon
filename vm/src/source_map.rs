@@ -129,7 +129,7 @@ impl LocalMap {
     }
 
     /// Returns an iterator over the variables in scope at `instruction_index`
-    pub fn locals(&self, instruction_index: usize) -> LocalIter {
+    pub fn locals(&self, instruction_index: usize) -> LocalIter<'_> {
         LocalIter {
             locals: self.map.iter(),
             instruction_index: instruction_index,

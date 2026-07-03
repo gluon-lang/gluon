@@ -70,7 +70,7 @@ impl<T> Mutex<T>
 where
     T: ?Sized + Trace,
 {
-    pub fn lock(&self) -> LockResult<MutexGuard<T>> {
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, T>> {
         let rooted = self.rooted.lock().unwrap();
         match self.mutex.lock() {
             Ok(lock) => Ok(self.new_guard(*rooted, lock)),
@@ -81,7 +81,7 @@ where
         }
     }
 
-    pub fn try_lock(&self) -> TryLockResult<MutexGuard<T>> {
+    pub fn try_lock(&self) -> TryLockResult<MutexGuard<'_, T>> {
         let rooted = self.rooted.lock().unwrap();
         match self.mutex.try_lock() {
             Ok(lock) => Ok(self.new_guard(*rooted, lock)),

@@ -79,7 +79,7 @@ impl SeSeed {
     }
 }
 
-fn gc_seed<S, T>(seed: &mut S) -> SharedSeed<GcPtr<T>, S> {
+fn gc_seed<S, T>(seed: &mut S) -> SharedSeed<'_, GcPtr<T>, S> {
     SharedSeed::with_cloner(seed, |p| unsafe { p.clone_unrooted() })
 }
 

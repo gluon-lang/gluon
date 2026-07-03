@@ -103,7 +103,7 @@ impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     #[inline]
-    pub fn new(value: &Value) -> Variants {
+    pub fn new(value: &Value) -> Variants<'_> {
         // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
         // variant is also rooted
         unsafe { Variants::with_root(value, value) }

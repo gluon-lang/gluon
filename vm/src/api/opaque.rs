@@ -32,11 +32,11 @@ mod private {
 }
 
 pub trait AsValueRef: private::Sealed {
-    fn as_value_ref(&self) -> ValueRef;
+    fn as_value_ref(&self) -> ValueRef<'_>;
 }
 
 impl<'value> AsValueRef for Variants<'value> {
-    fn as_value_ref(&self) -> ValueRef {
+    fn as_value_ref(&self) -> ValueRef<'_> {
         self.as_ref()
     }
 }
@@ -44,7 +44,7 @@ impl<T> AsValueRef for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    fn as_value_ref(&self) -> ValueRef {
+    fn as_value_ref(&self) -> ValueRef<'_> {
         self.get_variant().as_ref()
     }
 }

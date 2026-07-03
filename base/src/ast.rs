@@ -586,7 +586,7 @@ impl<'ast, Id> Expr<'ast, Id> {
     pub fn field_iter<'a>(
         &'a self,
     ) -> impl Iterator<
-        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<'ast, Id>>>,
+        Item = Either<&'a ExprField<'a, Id, ArcType<Id>>, &'a ExprField<'a, Id, SpannedExpr<'ast, Id>>>,
     > + 'a {
         let (types, exprs) = match *self {
             Expr::Record {
@@ -1255,7 +1255,7 @@ macro_rules! impl_ast_arena {
                 }
             }
 
-            pub fn borrow(&'ast self) -> ArenaRef<'_, 'ast, Id> {
+            pub fn borrow(&'ast self) -> ArenaRef<'ast, 'ast, Id> {
                 ArenaRef(self, PhantomData)
             }
 

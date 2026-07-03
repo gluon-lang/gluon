@@ -161,7 +161,7 @@ impl<T, F> Function<T, F>
 where
     T: VmRootInternal,
 {
-    pub fn get_variant(&self) -> Variants {
+    pub fn get_variant(&self) -> Variants<'_> {
         self.value.get_variant()
     }
 

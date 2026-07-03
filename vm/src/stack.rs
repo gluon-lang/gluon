@@ -181,7 +181,7 @@ impl CloneUnrooted for ExternState {
 }
 
 impl ExternState {
-    pub fn new(function: &GcPtr<ExternFunction>) -> gc::Borrow<Self> {
+    pub fn new(function: &GcPtr<ExternFunction>) -> gc::Borrow<'_, Self> {
         construct_gc! {
             ExternState {
                 @ function,
@@ -199,7 +199,7 @@ impl ExternState {
 pub trait StackState: CopyUnrooted + Sized {
     fn from_state(state: &State) -> &Self;
     fn from_state_mut(state: &mut State) -> &mut Self;
-    fn to_state(&self) -> gc::Borrow<State>;
+    fn to_state(&self) -> gc::Borrow<'_, State>;
     fn max_stack_size(&self) -> VmIndex;
 }
 
@@ -210,7 +210,7 @@ impl StackState for State {
     fn from_state_mut(state: &mut State) -> &mut Self {
         state
     }
-    fn to_state(&self) -> gc::Borrow<State> {
+    fn to_state(&self) -> gc::Borrow<'_, State> {
         gc::Borrow::new(self)
     }
 
@@ -236,7 +236,7 @@ impl StackState for ClosureState {
             _ => ice!("Expected closure state, got {:?}", state),
         }
     }
-    fn to_state(&self) -> gc::Borrow<State> {
+    fn to_state(&self) -> gc::Borrow<'_, State> {
         construct_gc!(State::Closure(@ gc::Borrow::new(self)))
     }
     fn max_stack_size(&self) -> VmIndex {
@@ -257,7 +257,7 @@ impl StackState for ExternState {
             _ => ice!("Expected closure state, got {:?}", state),
         }
     }
-    fn to_state(&self) -> gc::Borrow<State> {
+    fn to_state(&self) -> gc::Borrow<'_, State> {
         construct_gc!(State::Extern(@ gc::Borrow::new(self)))
     }
     fn max_stack_size(&self) -> VmIndex {
@@ -332,7 +332,7 @@ where
 }
 
 impl<S> Frame<S> {
-    fn to_state(&self) -> gc::Borrow<Frame<State>>
+    fn to_state(&self) -> gc::Borrow<'_, Frame<State>>
     where
         S: StackState,
     {
@@ -351,7 +351,7 @@ impl Frame<ClosureState> {
 }
 
 impl Frame<State> {
-    fn from_state<S>(&self) -> gc::Borrow<Frame<S>>
+    fn from_state<S>(&self) -> gc::Borrow<'_, Frame<S>>
     where
         S: StackState,
     {
@@ -512,12 +512,12 @@ impl Stack {
         v.push_to(self)
     }
 
-    pub fn last(&self) -> Option<Variants> {
+    pub fn last(&self) -> Option<Variants<'_>> {
         self.get_variant(self.len() - 1)
     }
 
     #[inline]
-    pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
+    pub fn get_variant(&self, index: VmIndex) -> Option<Variants<'_>> {
         if index < self.len() {
             Some(Variants::new(&self.values[index as usize]))
         } else {
@@ -546,7 +546,7 @@ impl Stack {
         &mut self.frames
     }
 
-    pub fn current_frame<S>(&mut self) -> StackFrame<S>
+    pub fn current_frame<S>(&mut self) -> StackFrame<'_, S>
     where
         S: StackState,
     {
@@ -718,7 +718,7 @@ where
         &self.frame
     }
 
-    pub fn frame_mut(&mut self) -> FrameViewMut<S> {
+    pub fn frame_mut(&mut self) -> FrameViewMut<'_, S> {
         FrameViewMut {
             frame: &mut self.frame,
             stack: self.stack,
@@ -808,7 +808,7 @@ where
     }
 
     #[inline]
-    pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
+    pub fn get_variant(&self, index: VmIndex) -> Option<Variants<'_>> {
         self.stack.get_variant(self.offset() + index)
     }
 
@@ -896,7 +896,7 @@ where
         }
     }
 
-    pub(crate) fn current(stack: &mut Stack) -> StackFrame<S>
+    pub(crate) fn current(stack: &mut Stack) -> StackFrame<'_, S>
     where
         S: StackState,
     {
@@ -949,7 +949,7 @@ where
 }
 
 impl<'b> StackFrame<'b, ClosureState> {
-    pub fn get_upvar(&self, index: VmIndex) -> Variants {
+    pub fn get_upvar(&self, index: VmIndex) -> Variants<'_> {
         Variants::new(&self.frame().upvars()[index as usize])
     }
 

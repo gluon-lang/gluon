@@ -719,7 +719,7 @@ impl GlobalVmState {
     }
 
     #[doc(hidden)]
-    pub fn get_globals(&self) -> parking_lot::RwLockReadGuard<Globals> {
+    pub fn get_globals(&self) -> parking_lot::RwLockReadGuard<'_, Globals> {
         self.env.read_recursive()
     }
 

@@ -154,7 +154,7 @@ impl<T> Scoped<T, &'static mut ()> {
         }
     }
 
-    pub fn write(&self) -> Result<WriteGuard<T>> {
+    pub fn write(&self) -> Result<WriteGuard<'_, T>> {
         let ptr = self.ptr.write().unwrap();
         if let None = *ptr {
             return Err("Scoped pointer is invalidated".to_string().into());
@@ -164,7 +164,7 @@ impl<T> Scoped<T, &'static mut ()> {
 }
 
 impl<T, M> Scoped<T, M> {
-    pub fn read(&self) -> Result<ReadGuard<T>> {
+    pub fn read(&self) -> Result<ReadGuard<'_, T>> {
         let ptr = self.ptr.read().unwrap();
         if let None = *ptr {
             return Err("Scoped pointer is invalidated".to_string().into());

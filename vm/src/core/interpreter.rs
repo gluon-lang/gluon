@@ -329,7 +329,7 @@ impl<'l> ReducedExpr<'l> {
         }
     }
 
-    fn as_ref(&self) -> &Expr {
+    fn as_ref(&self) -> &Expr<'_> {
         match self {
             Reduced::Local(e) => e,
             Reduced::Global(e) => e.value.expr(),

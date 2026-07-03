@@ -257,7 +257,7 @@ where
         &self.value
     }
 
-    pub fn get_variant(&self) -> Variants {
+    pub fn get_variant(&self) -> Variants<'_> {
         Variants::new(&self.value)
     }
 
@@ -391,8 +391,8 @@ impl<'b> Roots<'b> {
         &self,
         gc: &mut Gc,
     ) -> Vec<(
-        sync::RwLockReadGuard<ThreadSlab>,
-        MutexGuard<Context>,
+        sync::RwLockReadGuard<'_, ThreadSlab>,
+        MutexGuard<'_, Context>,
         GcPtr<Thread>,
     )> {
         let mut stack: Vec<GcPtr<Thread>> = Vec::new();
@@ -961,14 +961,14 @@ impl Thread {
         &self.global_state
     }
 
-    pub fn current_context(&self) -> ActiveThread {
+    pub fn current_context(&self) -> ActiveThread<'_> {
         ActiveThread {
             thread: self,
             context: Some(self.context().context),
         }
     }
 
-    fn owned_context(&self) -> OwnedContext {
+    fn owned_context(&self) -> OwnedContext<'_> {
         self.context()
     }
 
@@ -980,7 +980,7 @@ impl Thread {
         self.child_threads.read().unwrap().trace(gc);
     }
 
-    pub(crate) fn parent_threads(&self) -> sync::RwLockWriteGuard<ThreadSlab> {
+    pub(crate) fn parent_threads(&self) -> sync::RwLockWriteGuard<'_, ThreadSlab> {
         match self.parent {
             Some(ref parent) => parent.child_threads.write().unwrap(),
             None => self.global_state.generation_0_threads.write().unwrap(),
@@ -1067,7 +1067,7 @@ where
     Self: ::std::borrow::Borrow<Thread>,
 {
     /// Locks and retrives this threads stack
-    fn context(&self) -> OwnedContext;
+    fn context(&self) -> OwnedContext<'_>;
 
     /// Roots a value
     fn root_value<'vm, T>(&'vm self, value: Variants) -> RootedValue<T>
@@ -1128,7 +1128,7 @@ where
         args: VmIndex,
     ) -> Poll<Result<Option<OwnedContext<'b>>>>;
 
-    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext<'_>>>;
 
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>>;
 
@@ -1137,7 +1137,7 @@ where
 
 #[async_trait]
 impl ThreadInternal for Thread {
-    fn context(&self) -> OwnedContext {
+    fn context(&self) -> OwnedContext<'_> {
         OwnedContext {
             thread: self,
             context: self.context.lock().unwrap(),
@@ -1239,7 +1239,7 @@ impl ThreadInternal for Thread {
         context.execute(cx)
     }
 
-    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>> {
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext<'_>>> {
         let mut context = self.owned_context();
         if let Some(poll_fn) = context.poll_fns.last() {
             let frame_offset = poll_fn.frame_index as usize;
@@ -1337,7 +1337,7 @@ impl<'a> DebugInfo<'a> {
 
     /// Returns a struct which can be queried about information about the stack
     /// at a specific level where `0` is the currently executing frame.
-    pub fn stack_info(&self, level: usize) -> Option<StackInfo> {
+    pub fn stack_info(&self, level: usize) -> Option<StackInfo<'_>> {
         let frames = self.stack.get_frames();
         if level < frames.len() {
             Some(StackInfo {
@@ -1424,7 +1424,7 @@ impl<'a> StackInfo<'a> {
     }
 
     /// Returns an iterator over all locals available at the current executing instruction
-    pub fn locals(&self) -> LocalIter {
+    pub fn locals(&self) -> LocalIter<'_> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ClosureState {
@@ -1524,7 +1524,7 @@ impl Context {
         thread: &Thread,
         tag: VmTag,
         fields: usize,
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -1547,7 +1547,7 @@ impl Context {
         thread: &Thread,
         fields: usize,
         field_names: &[InternedStr],
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -1565,7 +1565,7 @@ impl Context {
         Ok(value)
     }
 
-    pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1573,7 +1573,7 @@ impl Context {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcRef<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcRef<'_, D::Value>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1630,7 +1630,7 @@ impl Context {
 }
 
 impl<'b> OwnedContext<'b> {
-    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1638,7 +1638,7 @@ impl<'b> OwnedContext<'b> {
         self.alloc_owned(data).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, data: D) -> Result<gc::OwnedGcRef<D::Value>>
+    pub fn alloc_owned<D>(&mut self, data: D) -> Result<gc::OwnedGcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1652,7 +1652,7 @@ impl<'b> OwnedContext<'b> {
         alloc_owned(gc, thread, &stack, data)
     }
 
-    pub fn debug_info(&self) -> DebugInfo {
+    pub fn debug_info(&self) -> DebugInfo<'_> {
         DebugInfo {
             stack: &self.stack,
             state: HookFlags::empty(),
@@ -1663,7 +1663,7 @@ impl<'b> OwnedContext<'b> {
         self.stack.get_frames().len()
     }
 
-    pub fn stack_frame<T>(&mut self) -> StackFrame<T>
+    pub fn stack_frame<T>(&mut self) -> StackFrame<'_, T>
     where
         T: StackState,
     {
@@ -1967,7 +1967,7 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn borrow_mut(&mut self) -> ExecuteContext<State> {
+    fn borrow_mut(&mut self) -> ExecuteContext<'_, '_, State> {
         let thread = self.thread;
         let context = &mut **self;
         ExecuteContext {
@@ -2016,7 +2016,7 @@ impl<'b, 'gc, S> ExecuteContext<'b, 'gc, S>
 where
     S: StackState,
 {
-    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -2024,7 +2024,7 @@ where
         alloc(&mut self.gc, self.thread, &self.stack.stack(), data)
     }
 
-    pub fn push_new_data(&mut self, tag: VmTag, fields: usize) -> Result<Variants> {
+    pub fn push_new_data(&mut self, tag: VmTag, fields: usize) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -2046,7 +2046,7 @@ where
         &mut self,
         fields: usize,
         field_names: &[InternedStr],
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -2064,7 +2064,7 @@ where
         Ok(value)
     }
 
-    pub fn push_new_alloc<D>(&mut self, def: D) -> Result<Variants>
+    pub fn push_new_alloc<D>(&mut self, def: D) -> Result<Variants<'_>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -2887,7 +2887,7 @@ impl<'vm> ActiveThread<'vm> {
     }
 
     // For gluon_codegen
-    pub fn context(&mut self) -> ExecuteContext<State> {
+    pub fn context(&mut self) -> ExecuteContext<'_, '_, State> {
         let thread = self.thread;
         let context = &mut **self.context.as_mut().expect("context");
         ExecuteContext {
