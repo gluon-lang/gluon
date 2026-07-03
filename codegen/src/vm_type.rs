@@ -171,8 +171,6 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         GenericParam::Const(c) => quote!( #c ),
     });
 
-    let dummy_const = Ident::new(&format!("_IMPL_VM_TYPE_FOR_{}", ident), Span::call_site());
-
     let make_type_impl = if container.newtype {
         let type_application = gen_type_application(&generics);
         let generic_params = map_type_params(&generics, |param| {
@@ -201,7 +199,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
 
     quote! {
         #[allow(non_upper_case_globals)]
-        const #dummy_const: () = {
+        const _: () = {
             #gluon
 
             #[automatically_derived]

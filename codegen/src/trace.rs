@@ -125,11 +125,6 @@ fn gen_impl(
 
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &[]);
 
-    let dummy_const = Ident::new(
-        &format!("_IMPL_TRAVERSEABLE_FOR_{}", ident),
-        Span::call_site(),
-    );
-
     let gluon = match container.crate_name {
         attr::CrateName::Some(ref ident) => quote! {
             use #ident::gc as _gluon_gc;
@@ -144,7 +139,7 @@ fn gen_impl(
 
     quote! {
         #[allow(non_upper_case_globals)]
-        const #dummy_const: () = {
+        const _: () = {
             #gluon
 
             #[automatically_derived]

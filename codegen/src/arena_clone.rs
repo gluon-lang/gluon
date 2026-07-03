@@ -132,14 +132,9 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         _ => panic!("Only structs and enums can derive `ArenaClone`"),
     };
 
-    let dummy_const = Ident::new(
-        &format!("_IMPL_ARENA_CLONE_FOR_{}", ident),
-        Span::call_site(),
-    );
-
     quote! {
         #[allow(non_upper_case_globals)]
-        const #dummy_const: () = {
+        const _: () = {
 
             #[automatically_derived]
             #[allow(unused_attributes, unused_variables)]
