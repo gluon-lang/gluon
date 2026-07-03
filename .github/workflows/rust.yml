@@ -19,17 +19,17 @@ jobs:
       SCCACHE_CACHE_SIZE: 500M
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v7
     - name: Use cache
-      uses: actions/cache@v2
+      uses: actions/cache@v6
       with:
         path: |
           ~/bin
         key: ${{ runner.os }}-${{ matrix.rust }}
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+      uses: dtolnay/rust-toolchain@master
       with:
-        rust-version: ${{ matrix.rust }}
+        toolchain: ${{ matrix.rust }}
     - uses: Swatinem/rust-cache@v2
     - run: echo "$HOME/bin" >> $GITHUB_PATH
     - run: mkdir -p $HOME/bin

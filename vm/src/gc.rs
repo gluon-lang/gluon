@@ -1416,7 +1416,7 @@ mod tests {
         fn size(&self) -> usize {
             mem::size_of::<Self::Value>()
         }
-        fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
+        fn initialize(self, result: WriteOnly<'_, Vec<Value>>) -> &mut Vec<Value> {
             unsafe { result.write(self.elems.iter().map(|v| v.clone_unrooted()).collect()) }
         }
     }
