@@ -17,6 +17,7 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
                 .path()
                 .to_str()
                 .map_or(false, |name| name.contains(lib_name))
+                && entry.path().extension().map_or(false, |ext| ext == "rlib")
             {
                 Some(entry)
             } else {

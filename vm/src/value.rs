@@ -1863,13 +1863,13 @@ mod tests {
 
     #[test]
     fn closure_data_upvars_location() {
-        use std::ptr;
+        use std::mem;
 
-        unsafe {
-            let p: *const ClosureData = ptr::null();
-            assert_eq!(p as *const u8, &(*p).function as *const _ as *const u8);
-            assert!((p as *const u8).offset(size_of::<*const ()>() as isize) != ptr::null());
-        }
+        assert_eq!(0, mem::offset_of!(ClosureData, function));
+        assert_eq!(
+            mem::size_of::<*const ()>(),
+            mem::offset_of!(ClosureData, upvars)
+        );
     }
 
     #[test]

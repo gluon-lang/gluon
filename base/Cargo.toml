@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.18.2" # GLUON
+version = "0.18.2"                        # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2018"
 
@@ -38,12 +38,18 @@ serde_derive = { version = "1.0.188", optional = true }
 serde_derive_state = { version = "0.4.10", optional = true }
 
 # Crates used in testing
-compiletest_rs = { version = "0.7.1", optional = true }
+compiletest_rs = { version = "0.11", optional = true }
 
 [dev-dependencies]
 env_logger = "0.9.3"
 pretty_assertions = "1.4.0"
 
 [features]
-serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "anymap"]
+serialization = [
+    "serde",
+    "serde_state",
+    "serde_derive",
+    "serde_derive_state",
+    "anymap",
+]
 nightly = ["compiletest_rs"]

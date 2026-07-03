@@ -1,6 +1,6 @@
 [package]
 name = "gluon"
-version = "0.18.2" # GLUON
+version = "0.18.2"                             # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 keywords = ["script", "scripting", "language"]
 build = "build.rs"
@@ -23,11 +23,11 @@ name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.18.2" } # GLUON
-gluon_check = { path = "check", version = "0.18.2" } # GLUON
-gluon_parser = { path = "parser", version = "0.18.2" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.18.2" } # GLUON
-gluon_vm = { path = "vm", version = "0.18.2", default-features = false } # GLUON
+gluon_base = { path = "base", version = "0.18.2" }                               # GLUON
+gluon_check = { path = "check", version = "0.18.2" }                             # GLUON
+gluon_parser = { path = "parser", version = "0.18.2" }                           # GLUON
+gluon_codegen = { path = "codegen", version = "0.18.2" }                         # GLUON
+gluon_vm = { path = "vm", version = "0.18.2", default-features = false }         # GLUON
 gluon_format = { path = "format", version = "0.18.2", default-features = false } # GLUON
 
 async-trait = "0.1.73"
@@ -54,12 +54,18 @@ regex = { version = "1.9.4", optional = true }
 # web
 tower-service = { version = "0.3.2", optional = true }
 http = { version = "0.2.9", optional = true }
-hyper = { version = "0.14.27", optional = true, features = ["stream", "client", "server", "http1", "tcp"] }
+hyper = { version = "0.14.27", optional = true, features = [
+    "stream",
+    "client",
+    "server",
+    "http1",
+    "tcp",
+] }
 native-tls = { version = "0.2.11", optional = true }
 tokio-native-tls = { version = "0.3.1", optional = true }
 
 # Crates used in testing
-compiletest_rs = { version = "0.7.1", optional = true }
+compiletest_rs = { version = "0.11", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rand = { version = "0.8.5", optional = true }
@@ -96,14 +102,29 @@ bincode = "1.3.3"
 pulldown-cmark = "0.8.0"
 
 gluon_completion = { path = "completion", version = "0.18.2" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.18.2" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.18.2" }       # GLUON
 
 [features]
 default = ["async", "regex", "random"]
 async = ["tokio"]
 random = ["rand", "rand_xorshift"]
-serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["async", "hyper", "http", "tower-service", "native-tls", "tokio/net", "tokio-stream", "tokio-native-tls", "pin-project-lite"]
+serialization = [
+    "serde",
+    "serde_state",
+    "serde_derive_state",
+    "gluon_vm/serialization",
+]
+web = [
+    "async",
+    "hyper",
+    "http",
+    "tower-service",
+    "native-tls",
+    "tokio/net",
+    "tokio-stream",
+    "tokio-native-tls",
+    "pin-project-lite",
+]
 
 docs_rs = ["serialization"]
 
