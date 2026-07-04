@@ -1405,7 +1405,7 @@ where
             Type::Forall(_, ref typ) => typ.kind_(cache, applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
-            Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
+            Type::Generic(ref r#gen) => Cow::Borrowed(&r#gen.kind),
             // FIXME can be another kind
             Type::Ident(_) | Type::Projection(_) => Cow::Owned(cache.typ()),
             Type::Alias(ref alias) => {
@@ -1730,7 +1730,7 @@ pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
 
     fn spine(&self) -> &Self {
         match &**self {
-            Type::App(ref id, _) => id.spine(),
+            Type::App(id, _) => id.spine(),
             _ => self,
         }
     }
@@ -2653,7 +2653,7 @@ where
             Type::Skolem(ref skolem) => {
                 chain![arena, skolem.name.as_ref(), "@", skolem.id.to_string()]
             }
-            Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
+            Type::Generic(ref r#gen) => arena.text(r#gen.id.as_ref()),
             Type::Function(..) => self.pretty_function(printer).nest(INDENT),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
@@ -3241,7 +3241,7 @@ where
 
 #[macro_export(local_inner_macros)]
 macro_rules! expr {
-    ($self: ident, $id: ident, $expr: expr) => {{
+    ($self: ident, $id: ident, $expr: expr_2021) => {{
         let $id = $self;
         $expr
     }};
@@ -4524,7 +4524,7 @@ where
     I: TypeContext<Id, U>,
 {
     macro_rules! intern {
-        ($e: expr) => {{
+        ($e: expr_2021) => {{
             let t = $e;
             interner.intern(t)
         }};
@@ -4599,7 +4599,7 @@ where
         Type::Error => interner.error(),
         Type::Builtin(ref builtin) => interner.builtin_type(builtin.clone()),
         Type::Variable(ref var) => interner.variable(var.clone()),
-        Type::Generic(ref gen) => interner.generic(gen.clone()),
+        Type::Generic(ref r#gen) => interner.generic(r#gen.clone()),
         Type::Ident(ref id) => interner.ident(id.clone()),
         Type::Projection(ref ids) => interner.projection(ids.clone()),
         Type::Alias(ref alias) => {

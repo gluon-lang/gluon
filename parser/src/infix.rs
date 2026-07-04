@@ -357,7 +357,7 @@ where
                 };
 
                 macro_rules! try_infix {
-                    ($expr:expr) => {
+                    ($expr:expr_2021) => {
                         match $expr {
                             Ok(e) => e,
                             Err(err) => {

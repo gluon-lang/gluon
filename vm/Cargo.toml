@@ -2,7 +2,7 @@
 name = "gluon_vm"
 version = "0.18.2"                        # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
-edition = "2021"
+edition = "2024"
 build = "build.rs"
 
 license = "MIT"

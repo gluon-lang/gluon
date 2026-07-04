@@ -136,9 +136,9 @@ unsafe impl CopyUnrooted for ClosureState {}
 impl CloneUnrooted for ClosureState {
     type Value = Self;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self {
+    unsafe fn clone_unrooted(&self) -> Self { unsafe {
         self.copy_unrooted()
-    }
+    }}
 }
 
 #[derive(Debug, PartialEq)]
@@ -175,9 +175,9 @@ unsafe impl CopyUnrooted for ExternState {}
 impl CloneUnrooted for ExternState {
     type Value = Self;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self {
+    unsafe fn clone_unrooted(&self) -> Self { unsafe {
         self.copy_unrooted()
-    }
+    }}
 }
 
 impl ExternState {
@@ -288,9 +288,9 @@ unsafe impl CopyUnrooted for State {}
 impl CloneUnrooted for State {
     type Value = Self;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self {
+    unsafe fn clone_unrooted(&self) -> Self { unsafe {
         self.copy_unrooted()
-    }
+    }}
 }
 
 #[derive(Debug, PartialEq)]
@@ -326,9 +326,9 @@ where
 {
     type Value = Self;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self {
+    unsafe fn clone_unrooted(&self) -> Self { unsafe {
         self.copy_unrooted()
-    }
+    }}
 }
 
 impl<S> Frame<S> {

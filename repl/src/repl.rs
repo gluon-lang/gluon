@@ -35,7 +35,7 @@ use codespan_reporting::term::termcolor;
 
 use crate::Color;
 
-fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> {
+fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> + use<> {
     let WithVM { vm, value: args } = args;
     let args = args.to_string();
     let vm = vm.new_thread().unwrap(); // TODO Run on the same thread once that works
@@ -371,7 +371,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
 fn eval_line(
     De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
-) -> impl Future<Output = IO<()>> {
+) -> impl Future<Output = IO<()>> + use<> {
     let vm = vm.new_thread().unwrap(); // TODO Reuse the current thread
     let line = line.to_string();
     async move {
@@ -548,7 +548,7 @@ fn set_globals(
                     .typ
                     .clone();
                 match pattern_value {
-                    Some(ref sub_pattern) => {
+                    Some(sub_pattern) => {
                         set_globals(vm, db, sub_pattern, &field_type, &field_value)?
                     }
                     None => db.set_global(
@@ -579,7 +579,7 @@ fn set_globals(
 fn finish_or_interrupt(
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> {
+) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> + use<> {
     let (sender, receiver) = oneshot::channel();
 
     tokio::spawn(async move {
@@ -720,7 +720,8 @@ mod tests {
 
     async fn new_vm() -> RootedThread {
         if std::env::var("GLUON_PATH").is_err() {
-            std::env::set_var("GLUON_PATH", "..");
+            // FIXME: Audit that the environment access only happens in single-threaded code.
+            unsafe { std::env::set_var("GLUON_PATH", "..") };
         }
         let vm = gluon::new_vm_async().await;
         let import = vm.get_macros().get("import");

@@ -655,7 +655,7 @@ pub enum ValueBindings<'ast, Id> {
 impl<'ast, Id> ValueBindings<'ast, Id> {
     pub fn is_recursive(&self) -> bool {
         match self {
-            ValueBindings::Plain(ref bind) => !bind.args.is_empty(),
+            ValueBindings::Plain(bind) => !bind.args.is_empty(),
             ValueBindings::Recursive(_) => true,
         }
     }
@@ -874,7 +874,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             v.visit_expr(expr);
         },
 
-        Expr::Do(Do {
+        Expr::Do(&mut Do {
             ref $($mut)* id,
             ref $($mut)* typ,
             ref $($mut)* bound,
@@ -942,13 +942,13 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
             v.visit_typ(typ);
             for field in &$($mut)* **fields {
                 match field {
-                    PatternField::Value { name, value: ref $($mut)* pattern, } => {
+                    & $($mut)* PatternField::Value { name: ref $($mut)* name, value: ref $($mut)* pattern, } => {
                         v.visit_spanned_ident(name);
                         if let Some(pattern) = pattern {
                         v.visit_pattern(pattern);
                         }
                     }
-                    PatternField::Type { name, .. } => {
+                    & $($mut)* PatternField::Type { name: ref $($mut)* name, .. } => {
                         v.visit_spanned_ident(name);
                     }
                 }
@@ -1106,7 +1106,7 @@ impl Typed for Expr<'_, Symbol> {
             Expr::Infix { ref op, .. } => get_return_type(env, &op.value.typ, 2),
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
-            | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
+            | Expr::Do(&mut Do { body: ref expr, .. }) => expr.try_type_of(env),
             Expr::App {
                 ref func, ref args, ..
             } => get_return_type(env, &func.try_type_of(env)?, args.len()),

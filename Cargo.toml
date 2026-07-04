@@ -4,7 +4,7 @@ version = "0.18.2"                             # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 keywords = ["script", "scripting", "language"]
 build = "build.rs"
-edition = "2021"
+edition = "2024"
 
 license = "MIT"
 

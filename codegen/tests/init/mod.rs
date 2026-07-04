@@ -2,7 +2,8 @@ use gluon::{self, import::Import, RootedThread};
 
 pub fn new_vm() -> RootedThread {
     if ::std::env::var("GLUON_PATH").is_err() {
-        ::std::env::set_var("GLUON_PATH", "..");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { ::std::env::set_var("GLUON_PATH", "..") };
     }
 
     let vm = gluon::new_vm();

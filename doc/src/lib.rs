@@ -200,9 +200,9 @@ pub fn record(
                         .typ
                         .params()
                         .iter()
-                        .map(|gen| Argument {
+                        .map(|r#gen| Argument {
                             implicit: false,
-                            name: gen.id.to_string(),
+                            name: r#gen.id.to_string(),
                         })
                         .collect(),
                     typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),

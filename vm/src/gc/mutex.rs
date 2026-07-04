@@ -131,7 +131,7 @@ unsafe impl<T> Trace for Mutex<T>
 where
     T: Trace,
 {
-    unsafe fn root(&mut self) {
+    unsafe fn root(&mut self) { unsafe {
         let mut rooted = self.rooted.lock().unwrap();
         assert!(!*rooted, "Mutex can't be rooted twice!");
         *rooted = true;
@@ -140,8 +140,8 @@ where
             Err(TryLockError::WouldBlock) => (), // The value will be rooted when the lock is released
             Err(TryLockError::Poisoned(err)) => err.into_inner().root(),
         }
-    }
-    unsafe fn unroot(&mut self) {
+    }}
+    unsafe fn unroot(&mut self) { unsafe {
         let mut rooted = self.rooted.lock().unwrap();
         assert!(*rooted, "Mutex can't be unrooted twice!");
         *rooted = false;
@@ -150,7 +150,7 @@ where
             Err(TryLockError::WouldBlock) => (), // The value will be unrooted when the lock is released
             Err(TryLockError::Poisoned(err)) => err.into_inner().unroot(),
         }
-    }
+    }}
     fn trace(&self, gc: &mut Gc) {
         match self.mutex.try_lock() {
             Ok(lock) => lock.trace(gc),

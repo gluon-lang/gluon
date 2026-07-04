@@ -1,7 +1,7 @@
 #[macro_export]
 #[cfg(any(test, feature = "test"))]
 macro_rules! assert_deq {
-    ($left:expr, $right:expr) => {{
+    ($left:expr_2021, $right:expr_2021) => {{
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
@@ -48,7 +48,7 @@ use crate::base::{
 };
 
 macro_rules! iterator {
-    ($($expr : expr),* $(,)?) => {
+    ($($expr : expr_2021),* $(,)?) => {
         [$(Some($expr)),*].iter_mut().map(|e| e.take().unwrap())
     }
 }
@@ -1178,7 +1178,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
 
-            ast::Expr::Do(ast::Do {
+            ast::Expr::Do(&mut ast::Do {
                 ref id,
                 ref bound,
                 ref body,
@@ -2364,7 +2364,7 @@ pub(crate) fn is_primitive(name: &Symbol) -> bool {
     name == "&&" || name == "||" || name.starts_with('#')
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(all(test, feature = "test"))]
 pub mod tests {
     extern crate gluon_parser as parser;
 

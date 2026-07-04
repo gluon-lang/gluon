@@ -58,7 +58,7 @@ impl UnrootedValue {
     }
 }
 
-unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> DatabaseGlobal {
+unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> DatabaseGlobal { unsafe {
     let UnrootedGlobal {
         id,
         typ,
@@ -71,7 +71,7 @@ unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> Database
         metadata,
         value: value.root_with(vm),
     }
-}
+}}
 pub type UnrootedGlobal = vm::vm::Global<UnrootedValue>;
 pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 

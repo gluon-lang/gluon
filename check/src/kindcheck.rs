@@ -236,9 +236,9 @@ impl<'a> KindCheck<'a> {
                 skolem.kind.clone()
             }
 
-            Type::Generic(ref mut gen) => {
-                gen.kind = self.find_at(span, &gen.id);
-                gen.kind.clone()
+            Type::Generic(ref mut generic) => {
+                generic.kind = self.find_at(span, &generic.id);
+                generic.kind.clone()
             }
 
             Type::Builtin(builtin_typ) => self.builtin_kind(builtin_typ),

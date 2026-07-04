@@ -22,9 +22,9 @@ unsafe impl Sync for InternedStr {}
 unsafe impl CopyUnrooted for InternedStr {}
 impl CloneUnrooted for InternedStr {
     type Value = Self;
-    unsafe fn clone_unrooted(&self) -> Self::Value {
+    unsafe fn clone_unrooted(&self) -> Self::Value { unsafe {
         self.copy_unrooted()
-    }
+    }}
 }
 
 // InternedStr are explicitly scanned in the intern table so we can skip them when they are

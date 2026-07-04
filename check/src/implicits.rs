@@ -167,7 +167,7 @@ impl<T> Partition<T> {
         &'a self,
         subs: &Substitution<RcType>,
         typ: &RcType,
-    ) -> impl DoubleEndedIterator<Item = &'a T>
+    ) -> impl DoubleEndedIterator<Item = &'a T> + use<'a, T>
     where
         T: fmt::Debug,
     {

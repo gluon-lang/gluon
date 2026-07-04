@@ -550,7 +550,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                 func,
                 args: _,
             } => match &func.value {
-                Expr::Ident(ref id) if id.name.as_str().ends_with('!') => {
+                Expr::Ident(id) if id.name.as_str().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,

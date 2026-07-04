@@ -22,7 +22,7 @@ use base::{
 const INDENT: isize = 4;
 
 macro_rules! newlines_iter {
-    ($self_:ident, $iterable:expr) => {
+    ($self_:ident, $iterable:expr_2021) => {
         $iterable
             .into_iter()
             .tuple_windows()
@@ -31,7 +31,7 @@ macro_rules! newlines_iter {
 }
 
 macro_rules! rev_newlines_iter {
-    ($self_:ident, $iterable:expr) => {
+    ($self_:ident, $iterable:expr_2021) => {
         $iterable
             .into_iter()
             .tuple_windows()
@@ -467,7 +467,7 @@ where
                 .group()
             }
 
-            Expr::Do(Do {
+            Expr::Do(&mut Do {
                 ref id,
                 ref bound,
                 ref body,
@@ -738,7 +738,7 @@ where
             }
 
             Expr::Tuple {
-                elems: [ref inner], ..
+                elems: &mut [ref inner], ..
             } => {
                 let decl = arena.text("(");
 
@@ -893,7 +893,7 @@ where
                                     arena,
                                     pretty_types::ident(arena, name.value.as_ref() as &str),
                                     match value {
-                                        Some(ref new_name) => {
+                                        Some(new_name) => {
                                             chain![arena, " = ", self.pretty_pattern(new_name)]
                                         }
                                         None => arena.nil(),

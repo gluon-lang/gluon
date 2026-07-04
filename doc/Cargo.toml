@@ -2,7 +2,7 @@
 name = "gluon_doc"
 version = "0.18.2"                                   # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 license = "MIT"
 

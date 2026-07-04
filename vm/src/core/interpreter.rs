@@ -1716,7 +1716,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         trace!("TRY INLINE {} ## {}", expr, f2.bind);
         match f2.bind {
             Binding::Expr(peek_f) => match peek_f.as_ref() {
-                Expr::Ident(ref id, ..) => {
+                Expr::Ident(id, ..) => {
                     if id.name.is_primitive() && args.len() == 2 {
                         let l = resolver.wrap(args.next().unwrap());
                         let r = resolver.wrap(args.next().unwrap());
@@ -1767,7 +1767,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 self.allocator,
                 self.inlined_global_bindings,
                 |resolver, expr| match peek_through_lets(expr) {
-                    Expr::Ident(ref id, _) => {
+                    Expr::Ident(id, _) => {
                         self.load_identifier(resolver, &id.name).or_else(|| {
                             resolver.find(&id.name).map(|bind| match bind {
                                 Binding::Expr(e) => CostBinding {
@@ -1967,7 +1967,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 self.allocator,
                 self.inlined_global_bindings,
                 |resolver, pattern_expr| match pattern_expr {
-                    Expr::Data(ref data_id, ref exprs, _) => {
+                    Expr::Data(data_id, exprs, _) => {
                         for pattern_field in fields {
                             let field = data_id
                                 .typ

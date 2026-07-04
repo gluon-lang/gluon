@@ -9,10 +9,10 @@ use {difference::assert_diff, expect_test::expect};
 use gluon::{RootedThread, ThreadExt, VmBuilder};
 
 macro_rules! test_format {
-    ($name: ident, $initial: expr) => {
+    ($name: ident, $initial: expr_2021) => {
         test_format! { $name, $initial, $initial }
     };
-    ($name: ident, $initial: expr, $formatted: expr) => {
+    ($name: ident, $initial: expr_2021, $formatted: expr_2021) => {
         #[test]
         fn $name() {
             let initial = $initial;

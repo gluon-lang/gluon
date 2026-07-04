@@ -94,7 +94,7 @@ where
                 if f.name.declared_name() == field_name.declared_name()
                     && args.len() == a.len()
                     && args.iter().zip(a).all(|(l, r)| match &**r {
-                        Type::Generic(gen) => *l == gen.id.declared_name(),
+                        Type::Generic(r#gen) => *l == r#gen.id.declared_name(),
                         _ => false,
                     })
                 {
@@ -129,7 +129,7 @@ where
                 alias_name,
                 args.iter()
                     .map(|arg| match *vm.global_env().get_generic(*arg) {
-                        Type::Generic(ref gen) => gen.clone(),
+                        Type::Generic(ref r#gen) => r#gen.clone(),
                         _ => unreachable!(),
                     })
                     .collect(),

@@ -170,9 +170,9 @@ unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    unsafe fn root(&mut self) {
+    unsafe fn root(&mut self) { unsafe {
         self.root_();
-    }
+    }}
     unsafe fn unroot(&mut self) {
         self.unroot_();
     }
@@ -241,7 +241,7 @@ where
     }
 
     // SAFETY The value must be owned by `vm`'s GC
-    unsafe fn new(vm: T, value: &Value) -> Self {
+    unsafe fn new(vm: T, value: &Value) -> Self { unsafe {
         vm.rooted_values
             .write()
             .unwrap()
@@ -251,7 +251,7 @@ where
             rooted: true,
             value: value.clone_unrooted(),
         }
-    }
+    }}
 
     pub fn get_value(&self) -> &Value {
         &self.value
@@ -304,13 +304,13 @@ where
         self.vm.root_value(self.get_variant())
     }
 
-    unsafe fn root_(&mut self) {
+    unsafe fn root_(&mut self) { unsafe {
         self.vm.root_vm();
         let mut rooted_values = self.vm.rooted_values.write().unwrap();
         assert!(self.rooted);
         self.rooted = true;
         rooted_values.push(self.value.clone_unrooted());
-    }
+    }}
 
     fn unroot_(&mut self) {
         self.vm.unroot_vm();
@@ -394,7 +394,7 @@ impl<'b> Roots<'b> {
         sync::RwLockReadGuard<'_, ThreadSlab>,
         MutexGuard<'_, Context>,
         GcPtr<Thread>,
-    )> {
+    )> { unsafe {
         let mut stack: Vec<GcPtr<Thread>> = Vec::new();
         let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
@@ -426,7 +426,7 @@ impl<'b> Roots<'b> {
             Vec::push(&mut locks, (child_threads, context, thread_ptr));
         }
         locks
-    }
+    }}
 }
 
 // All threads MUST be allocated in the garbage collected heap. This is necessary as a thread
@@ -709,12 +709,12 @@ impl RootedThread {
     /// Converts a raw pointer into a `RootedThread`.
     /// The reference count for the thread is not modified so it is up to the caller to ensure that
     /// the count is correct.
-    pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
+    pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread { unsafe {
         RootedThread {
             thread: GcPtr::from_raw(ptr),
             rooted: true,
         }
-    }
+    }}
 
     fn root_(&mut self) {
         assert!(!self.rooted);
@@ -1026,9 +1026,9 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
     where
         Self: Sized,
-    {
+    { unsafe {
         RootedValue::new(self, value)
-    }
+    }}
 }
 
 impl<'a> VmRoot<'a> for &'a Thread {
@@ -1608,7 +1608,7 @@ impl Context {
     where
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
-    {
+    { unsafe {
         let poll_fn: PollFnInner<'_> = Box::new(move |cx: &mut task::Context<'_>, vm: &Thread| {
             // `future` is moved into the closure, which is boxed and therefore pinned
             let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
@@ -1626,7 +1626,7 @@ impl Context {
             frame_index,
             poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
         });
-    }
+    }}
 }
 
 impl<'b> OwnedContext<'b> {
@@ -1980,26 +1980,26 @@ impl<'b> OwnedContext<'b> {
     }
 }
 
-unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
+unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> { unsafe {
     Variants::with_root(value, gc)
-}
+}}
 
 // SAFETY By branding the variant with the gc lifetime we prevent mutation in the gc
 // Since that implies that no collection can occur while the variant is alive alive it is
 // safe to keep clone the value (to disconnect the previous lifetime from the stack)
 // and store the value unrooted
 macro_rules! transfer {
-    ($context: expr, $value: expr) => {
+    ($context: expr_2021, $value: expr_2021) => {
         unsafe { lock_gc(&$context.gc, $value) }
     };
 }
 
-unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'gc, T> {
+unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'gc, T> { unsafe {
     GcRef::with_root(value.clone_unrooted(), gc)
-}
+}}
 
 macro_rules! transfer_ptr {
-    ($context: expr, $value: expr) => {
+    ($context: expr_2021, $value: expr_2021) => {
         unsafe { lock_gc_ptr(&$context.gc, $value) }
     };
 }
@@ -2336,7 +2336,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 TestPolyTag(string_index) => {
                     let expected_tag = &function.strings[string_index as usize];
                     let data_tag = match self.stack.top().get_repr() {
-                        Data(ref data) => data.poly_tag(),
+                        Data(data) => data.poly_tag(),
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
@@ -2349,7 +2349,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         "ICE: Polymorphic match on non-polymorphic variant {:#?}\n{:p}",
                         self.stack.top(),
                         match self.stack.top().get_repr() {
-                            Data(ref data) => &**data,
+                            Data(data) => &**data,
                             _ => unreachable!(),
                         }
                     );
@@ -2909,12 +2909,12 @@ impl<'vm> ActiveThread<'vm> {
     where
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
-    {
+    { unsafe {
         self.context
             .as_mut()
             .expect("context")
             .return_future(future, lock, frame_index)
-    }
+    }}
 }
 #[doc(hidden)]
 pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<crate::stack::Stacktrace> {
@@ -2946,9 +2946,9 @@ impl<'a> ProgramCounter<'a> {
     }
 
     #[inline(always)]
-    unsafe fn instruction(&self) -> Instruction {
+    unsafe fn instruction(&self) -> Instruction { unsafe {
         *self.instructions.get_unchecked(self.instruction_index)
-    }
+    }}
 
     #[inline(always)]
     fn step(&mut self) {

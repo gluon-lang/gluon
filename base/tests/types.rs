@@ -32,7 +32,7 @@ where
 }
 
 macro_rules! assert_eq_display {
-    ($l:expr, $r:expr) => {
+    ($l:expr_2021, $r:expr_2021) => {
         assert_eq!($l.to_string(), $r.to_string());
     };
 }
@@ -446,14 +446,14 @@ fn take_implicits_into_account_on_infix_type() {
 
 #[test]
 fn resolve_partially_applied_alias() {
-    let gen = |x: &str| Type::<_, ArcType>::generic(Generic::new(intern(x), Kind::typ()));
+    let r#gen = |x: &str| Type::<_, ArcType>::generic(Generic::new(intern(x), Kind::typ()));
     let test = Type::alias(
         intern("Test"),
         vec![
             Generic::new(intern("a"), Kind::typ()),
             Generic::new(intern("b"), Kind::typ()),
         ],
-        Type::function(vec![gen("a")], gen("b")),
+        Type::function(vec![r#gen("a")], r#gen("b")),
     );
     let test2 = Type::alias(
         intern("Test2"),
@@ -475,7 +475,7 @@ fn resolve_partially_applied_alias() {
 #[test]
 fn forall_hides_generic_flag() {
     let a = Generic::new("a", Kind::typ());
-    let gen = Type::<_, ArcType<_>>::generic(a.clone());
-    assert_eq!(gen.flags(), Flags::HAS_GENERICS);
-    assert_eq!(Type::forall(vec![a], gen).flags(), Flags::HAS_FORALL);
+    let r#gen = Type::<_, ArcType<_>>::generic(a.clone());
+    assert_eq!(r#gen.flags(), Flags::HAS_GENERICS);
+    assert_eq!(Type::forall(vec![a], r#gen).flags(), Flags::HAS_FORALL);
 }

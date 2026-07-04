@@ -22,8 +22,8 @@ pub(crate) struct TypeGeneralizer<'a, 'b, 'ast> {
 
 impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b, '_> {
     fn drop(&mut self) {
-        for (id, gen) in self.delayed_generalizations.drain(..) {
-            self.tc.subs.replace(id, gen);
+        for (id, generic) in self.delayed_generalizations.drain(..) {
+            self.tc.subs.replace(id, generic);
         }
     }
 }
@@ -157,7 +157,7 @@ impl<'a, 'b, 'ast> TypeGeneralizer<'a, 'b, 'ast> {
                     top_type,
                     ..
                 } = self;
-                let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                let generic = self.unbound_variables.entry(var.id).or_insert_with(|| {
                     let variable_generator = match variable_generator {
                         Some(v) => v,
                         None => {
@@ -169,13 +169,13 @@ impl<'a, 'b, 'ast> TypeGeneralizer<'a, 'b, 'ast> {
                     // Create a prefix if none exists
                     let id = variable_generator.next_variable(tc);
 
-                    let gen: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
-                    debug!("Gen {} to {}", var.id, gen);
+                    let generic: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, generic);
 
-                    gen
+                    generic
                 });
 
-                Some(gen.clone())
+                Some(generic.clone())
             }
 
             Type::Skolem(ref skolem) => {

@@ -322,7 +322,7 @@ fn spawn_on<'vm>(
     {
         fn future_wrapper<F>(
             data: &SpawnFuture<F>,
-        ) -> impl Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>>
+        ) -> impl Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + use<F>
         where
             F: Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + Send + 'static,
         {
@@ -377,7 +377,7 @@ fn spawn_on<'vm>(
 fn join(
     WithVM { vm: vm_a, value: a }: WithVM<OpaqueRef<IO<A>>>,
     b: OpaqueRef<IO<B>>,
-) -> impl Future<Output = RuntimeResult<IO<(Generic<A>, Generic<B>)>, Error>> {
+) -> impl Future<Output = RuntimeResult<IO<(Generic<A>, Generic<B>)>, Error>> + use<> {
     let vm_b = match vm_a.new_thread() {
         Ok(vm) => vm,
         Err(err) => return Either::Right(future::ready(RuntimeResult::Panic(err))),

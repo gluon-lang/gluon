@@ -382,7 +382,7 @@ pub fn close_record(typ: ArcType) -> ArcType {
 
 #[macro_export]
 macro_rules! assert_failed {
-    ($lhs:expr, $rhs:expr, $lhs_value:expr, $rhs_value:expr) => {
+    ($lhs:expr_2021, $rhs:expr_2021, $lhs_value:expr_2021, $rhs_value:expr_2021) => {
         panic!(
             r#"Assertion failed: `({} == {})`
         left: `{}`,
@@ -397,7 +397,7 @@ macro_rules! assert_failed {
 
 #[macro_export]
 macro_rules! assert_req {
-    ($lhs:expr, $rhs:expr) => {
+    ($lhs:expr_2021, $rhs:expr_2021) => {
         match ($lhs, $rhs) {
             (Ok(lhs), Ok(rhs)) => {
                 if lhs != rhs {
@@ -417,7 +417,7 @@ macro_rules! assert_req {
 
 #[macro_export]
 macro_rules! assert_eq2 {
-    ($lhs:expr, $rhs:expr) => {{
+    ($lhs:expr_2021, $rhs:expr_2021) => {{
         let ref lhs = $lhs;
         let ref rhs = $rhs;
         if lhs != rhs {
@@ -427,7 +427,7 @@ macro_rules! assert_eq2 {
 }
 
 macro_rules! test_check {
-    ($name:ident, $source:expr, $typ:expr) => {
+    ($name:ident, $source:expr_2021, $typ:expr_2021) => {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
@@ -439,7 +439,7 @@ macro_rules! test_check {
 }
 
 macro_rules! test_check_err {
-    ($name:ident, $source:expr, $($id: pat),+ $(,)? $(=> $ty: expr)?) => {
+    ($name:ident, $source:expr_2021, $($id: pat),+ $(,)? $(=> $ty: expr_2021)?) => {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
@@ -456,10 +456,10 @@ macro_rules! test_check_err {
 }
 
 macro_rules! assert_err {
-    ($e: expr, $($id: pat),+) => {
+    ($e: expr_2021, $($id: pat),+) => {
         assert_err!([""] $e, $($id),+)
     };
-    ([$text: expr] $e: expr, $($id: pat),+) => {{
+    ([$text: expr_2021] $e: expr_2021, $($id: pat),+) => {{
         #[allow(unused_imports)]
         use crate::check::{
             typecheck::TypeError::*,
@@ -514,13 +514,13 @@ macro_rules! count {
 }
 
 macro_rules! assert_unify_err {
-    ($e: expr, $($id: pat),+) => {
+    ($e: expr_2021, $($id: pat),+) => {
         assert_multi_unify_err!($e, [$($id),+])
     }
 }
 
 macro_rules! assert_multi_unify_err {
-    ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
+    ($e: expr_2021, $( [ $( $id: pat ),+ ] ),+) => {{
         #[allow(unused_imports)]
         use crate::check::{
             typecheck::TypeError::*,

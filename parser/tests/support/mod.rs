@@ -4,10 +4,10 @@ use std::marker::PhantomData;
 
 use crate::base::{
     ast::{
-        self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
-        Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
-        MutVisitor, Pattern, RootExpr, Sp, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
-        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        self, Alternative, Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv,
+        Lambda, Literal, MutVisitor, Pattern, RootExpr, Sp, SpannedAlias, SpannedAstType,
+        SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern,
     },
     error::Errors,
     kind::Kind,
@@ -17,8 +17,9 @@ use crate::base::{
     types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
 };
 use crate::parser::{
+    Error, ParseErrors,
     infix::{Fixity, OpMeta, OpTable, Reparser},
-    parse_partial_expr, Error, ParseErrors,
+    parse_partial_expr,
 };
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -171,7 +172,7 @@ pub fn zero_index(mut expr: RootExpr<String>) -> RootExpr<String> {
 }
 
 macro_rules! parse_new {
-    ($input:expr) => {{
+    ($input:expr_2021) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
         parse(&input).unwrap_or_else(|(_, err)| {
@@ -183,15 +184,11 @@ macro_rules! parse_new {
 }
 
 macro_rules! parse_zero_index {
-    ($input:expr) => {{
-        zero_index(parse_new!($input))
-    }};
+    ($input:expr_2021) => {{ zero_index(parse_new!($input)) }};
 }
 
 macro_rules! parse_clear_span {
-    ($input:expr) => {{
-        clear_span(parse_new!($input))
-    }};
+    ($input:expr_2021) => {{ clear_span(parse_new!($input)) }};
 }
 
 pub fn intern(s: &str) -> String {
@@ -542,7 +539,7 @@ pub fn remove_expected(errors: ParseErrors) -> ParseErrors {
 
 #[macro_export]
 macro_rules! test_parse {
-    ($test_name: ident, $text: expr, $expected: expr $(,)?) => {
+    ($test_name: ident, $text: expr_2021, $expected: expr_2021 $(,)?) => {
         #[test]
         fn $test_name() {
             let _ = ::env_logger::try_init();
@@ -560,7 +557,7 @@ macro_rules! test_parse {
 
 #[macro_export]
 macro_rules! test_parse_error {
-    ($test_name: ident, $text: expr, $expected: expr, $expected_error: expr $(,)?) => {
+    ($test_name: ident, $text: expr_2021, $expected: expr_2021, $expected_error: expr_2021 $(,)?) => {
         #[test]
         fn $test_name() {
             let _ = ::env_logger::try_init();

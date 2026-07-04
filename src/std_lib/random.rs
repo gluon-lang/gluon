@@ -20,7 +20,7 @@ use crate::vm::{
 #[gluon_trace(skip)]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 
-field_decl! { value, gen }
+field_decl! { value, r#gen }
 
 fn next_int(_: ()) -> IO<VmInt> {
     IO::Value(rand::rng().random())
@@ -36,7 +36,7 @@ fn gen_int_range(low: VmInt, high: VmInt) -> IO<VmInt> {
 
 type RngNext<G> = record_type! {
     value => VmInt,
-    gen => G
+    r#gen => G
 };
 
 fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
@@ -50,11 +50,11 @@ fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
     }
 }
 
-fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
-    let mut gen = gen.clone();
+fn xor_shift_next(r#gen: &XorShiftRng) -> RngNext<XorShiftRng> {
+    let mut r#gen = r#gen.clone();
     record_no_decl! {
-        value => gen.0.random(),
-        gen => gen
+        value => r#gen.0.random(),
+        r#gen => r#gen
     }
 }
 

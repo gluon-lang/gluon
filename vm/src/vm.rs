@@ -248,20 +248,20 @@ pub struct GlobalVmState {
 }
 
 unsafe impl Trace for GlobalVmState {
-    unsafe fn root(&mut self) {
+    unsafe fn root(&mut self) { unsafe {
         self.macros.root();
 
         // Also need to check the interned string table
         self.interner.get_mut().unwrap().root();
         self.generation_0_threads.get_mut().unwrap().root();
-    }
-    unsafe fn unroot(&mut self) {
+    }}
+    unsafe fn unroot(&mut self) { unsafe {
         self.macros.unroot();
 
         // Also need to check the interned string table
         self.interner.get_mut().unwrap().unroot();
         self.generation_0_threads.get_mut().unwrap().unroot();
-    }
+    }}
 
     fn trace(&self, gc: &mut Gc) {
         self.macros.trace(gc);

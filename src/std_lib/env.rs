@@ -23,7 +23,8 @@ fn join_paths(paths: Vec<&Path>) -> IO<PathBuf> {
 }
 
 fn remove_var(var: &str) -> IO<()> {
-    IO::Value(env::remove_var(var))
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    IO::Value(unsafe { env::remove_var(var) })
 }
 
 fn set_current_dir(dir: &str) -> IO<()> {
@@ -31,7 +32,8 @@ fn set_current_dir(dir: &str) -> IO<()> {
 }
 
 fn set_var(key: &str, value: &str) -> IO<()> {
-    IO::Value(env::set_var(key, value))
+    // FIXME: Audit that the environment access only happens in single-threaded code.
+    IO::Value(unsafe { env::set_var(key, value) })
 }
 
 fn split_paths(path: &str) -> IO<Vec<PathBuf>> {

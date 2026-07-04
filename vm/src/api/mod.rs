@@ -121,7 +121,7 @@ impl<'a> ValueRef<'a> {
     }
 
     #[inline]
-    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> {
+    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> { unsafe {
         match value {
             ValueRepr::Byte(i) => ValueRef::Byte(*i),
             ValueRepr::Int(i) => ValueRef::Int(*i),
@@ -137,7 +137,7 @@ impl<'a> ValueRef<'a> {
             ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
             ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
         }
-    }
+    }}
 
     #[inline]
     pub fn tag(t: VmTag) -> Self {
@@ -152,7 +152,7 @@ impl<'a> Closure<'a> {
     pub fn name(&self) -> &str {
         self.0.function.name.definition_name()
     }
-    pub fn upvars(&self) -> impl Iterator<Item = Variants<'a>> {
+    pub fn upvars(&self) -> impl Iterator<Item = Variants<'a>> + use<'a> {
         crate::value::variant_iter(&self.0.upvars)
     }
     pub fn debug_info(&self) -> &crate::compiler::DebugInfo {
@@ -214,7 +214,7 @@ impl<'a> Data<'a> {
     }
 
     /// Creates an iterator over the fields of this value.
-    pub fn iter(&self) -> impl Iterator<Item = Variants<'a>> {
+    pub fn iter(&self) -> impl Iterator<Item = Variants<'a>> + use<'a> {
         crate::value::variant_iter(self.fields())
     }
 
@@ -539,12 +539,12 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     unsafe fn marshal_unrooted(self, vm: &'vm Thread) -> Result<Value>
     where
         Self: Sized,
-    {
+    { unsafe {
         let mut context = vm.current_context();
         self.vm_push(&mut context)?;
         let value = context.pop().get_value().clone_unrooted();
         Ok(value)
-    }
+    }}
 
     fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
     where
