@@ -2161,7 +2161,7 @@ pub(crate) mod tests {
                 token: (lpos, _, rpos),
                 ..
             } => (lpos, rpos),
-            UnrecognizedEOF { location, .. } => (location, location),
+            UnrecognizedEof { location, .. } => (location, location),
             ExtraToken {
                 token: (lpos, _, rpos),
             } => (lpos, rpos),

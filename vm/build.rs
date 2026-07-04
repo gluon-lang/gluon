@@ -3,7 +3,7 @@ mod build {
     pub fn main() {
         lalrpop::Configuration::new()
             .use_cargo_dir_conventions()
-            .process("src/core/grammar.lalrpop")
+            .process()
             .unwrap();
 
         println!("cargo:rerun-if-changed=src/core/grammar.lalrpop");

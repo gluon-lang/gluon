@@ -1,5 +1,6 @@
 use crate::real_std::{
     fmt, fs,
+    net::SocketAddr,
     path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -14,26 +15,25 @@ use {
         task::{self, Poll},
     },
     http::{
-        header::{HeaderMap, HeaderName, HeaderValue},
         StatusCode,
+        header::{HeaderMap, HeaderName, HeaderValue},
     },
-    hyper::{body::Bytes, Server},
+    hyper::{Server, body::Bytes},
     pin_project_lite::pin_project,
 };
 
 use crate::base::types::{ArcType, Type};
 
 use crate::{
+    Error,
     vm::{
-        self,
+        self, ExternModule, Variants,
         api::{
-            generic, Collect, Eff, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType,
-            WithVM, IO,
+            Collect, Eff, Function, Getable, IO, OpaqueValue, PushAsRef, Pushable, VmType, WithVM,
+            generic,
         },
         thread::{ActiveThread, RootedThread, Thread},
-        ExternModule, Variants,
     },
-    Error,
 };
 
 macro_rules! try_future {
@@ -263,7 +263,7 @@ async fn listen_(
         Err(err) => return Err(err),
     };
 
-    let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
+    let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
 
     let listener = Handler::new(&thread, handler);
 

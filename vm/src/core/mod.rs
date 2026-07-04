@@ -2364,7 +2364,7 @@ pub(crate) fn is_primitive(name: &Symbol) -> bool {
     name == "&&" || name == "||" || name.starts_with('#')
 }
 
-#[cfg(all(test, feature = "test"))]
+#[cfg(feature = "test")]
 pub mod tests {
     extern crate gluon_parser as parser;
 

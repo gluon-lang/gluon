@@ -22,7 +22,7 @@ collect-mac = "0.1.0"
 downcast-rs = "2.0.2"
 difference = { version = "2.0.0", optional = true }
 crossbeam-utils = "0.8.16"
-frunk_core = "0.4.2"
+frunk_core = "0.5"
 futures = { version = "0.3.28", features = ["compat", "async-await"] }
 itertools.workspace = true
 lalrpop-util = { workspace = true, optional = true }
