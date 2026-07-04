@@ -4,8 +4,10 @@ extern crate rexpect;
 
 use std::process::Command;
 
-use rexpect::errors::*;
+use rexpect::error::Error;
 use rexpect::session::{PtySession, spawn_command};
+
+type Result<T> = std::result::Result<T, Error>;
 
 struct REPL {
     session: PtySession,

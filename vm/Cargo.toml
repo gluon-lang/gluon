@@ -63,7 +63,7 @@ gluon = { path = "..", version = ">=0.9" }
 lalrpop-util.workspace = true
 regex = "1.9.4"
 serde_json = "1.0.105"
-tokio = { version = "1.32.0", features = ["macros"] }
+tokio = { version = "1.32.0", features = ["macros", "rt-multi-thread"] }
 
 gluon_parser = { path = "../parser", version = "0.18.2" } # GLUON
 
