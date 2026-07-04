@@ -408,7 +408,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct SeqDeserializer<'de: 't, 't> {
+struct SeqDeserializer<'de, 't> {
     deserializer: &'t mut Deserializer<'de>,
     types: Vec<ArcType>,
     len: usize,
@@ -442,7 +442,7 @@ impl<'de, 'a, 't> SeqAccess<'de> for &'a mut SeqDeserializer<'de, 't> {
     }
 }
 
-struct MapDeserializer<'de: 't, 't, I> {
+struct MapDeserializer<'de, 't, I> {
     deserializer: &'t mut Deserializer<'de>,
     iter: I,
     types: Vec<Field<Symbol, ArcType>>,
@@ -492,7 +492,7 @@ where
     }
 }
 
-struct Enum<'a, 'de: 'a> {
+struct Enum<'a, 'de> {
     de: &'a mut Deserializer<'de>,
     variant: &'static str,
 }

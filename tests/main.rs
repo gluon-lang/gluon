@@ -249,7 +249,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
             }
             loop {
                 match parser.next() {
-                    Some(pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(_))) => {
+                    Some(pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock)) => {
                         break;
                     }
                     Some(pulldown_cmark::Event::Text(content)) => {

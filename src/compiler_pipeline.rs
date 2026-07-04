@@ -54,7 +54,7 @@ impl<T> From<Salvage<T, Error>> for Error {
 }
 
 macro_rules! join_result {
-    ($result: expr, |$f_arg: pat| $f_body: expr $(,)?) => {{
+    ($result: expr, |$f_arg:pat_param| $f_body: expr $(,)?) => {{
         let mut first_error = None;
         let $f_arg = match $result {
             Ok(x) => x,
@@ -730,13 +730,13 @@ where
                      module,
                      core_expr,
                      ..
-                 }| CompileValue {
+                 }| { let _ = &__self; CompileValue {
                     expr: self.expr,
                     core_expr,
                     typ,
                     metadata,
                     module,
-                },
+                } },
             )
     }
 }

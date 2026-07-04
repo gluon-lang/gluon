@@ -444,9 +444,6 @@ where
 }
 
 pub struct Iter<'a, 'value, T, V>
-where
-    T: 'a,
-    V: 'a,
 {
     index: usize,
     array: &'a Opaque<T, [V]>,

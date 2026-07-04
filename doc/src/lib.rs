@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
@@ -24,7 +22,6 @@ use {
     itertools::Itertools,
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
-    serde::Deserialize,
     structopt::StructOpt,
 };
 
@@ -309,7 +306,10 @@ fn module_link(current_module: &str, param: &str) -> String {
 fn handlebars() -> Result<Handlebars<'static>> {
     let mut reg = Handlebars::new();
 
-    fn symbol_to_path(h: &Helper, index: usize) -> ::std::result::Result<&str, RenderError> {
+    fn string_parameter<'a, 'b>(
+        h: &'a Helper<'b>,
+        index: usize,
+    ) -> ::std::result::Result<&'a str, RenderError> {
         h.param(index)
             .and_then(|p| p.value().as_str())
             .ok_or_else(|| {
@@ -329,7 +329,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
                   _context: &Context,
                   _rc: &mut RenderContext,
                   out: &mut dyn Output| {
-                let param = symbol_to_path(h, 0)?;
+                let param = string_parameter(h, 0)?;
                 out.write(&param.replace(".", "/"))?;
                 Ok(())
             },
@@ -345,7 +345,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
-        let param = symbol_to_path(h, 0)?;
+        let param = string_parameter(h, 0)?;
         out.write(&module_link(current_module, &param))?;
         Ok(())
     }
@@ -361,7 +361,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let parent_breadcrumb = current_module.rsplit('.').nth(1);
 
-        let param = symbol_to_path(h, 0)?;
+        let param = string_parameter(h, 0)?;
         match parent_breadcrumb {
             Some(parent_breadcrumb) => {
                 out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
@@ -382,19 +382,19 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = context.data()["name"].as_str().expect("name");
         let current_module_level = current_module.split('.').count();
 
-        let param = symbol_to_path(h, 0)?;
+        let param = string_parameter(h, 0)?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
             out.write(&format!(
                 r##"<li class="breadcrumb-item{}">{}</li>"##,
                 if i + 1 == parts.len() { " active" } else { "" },
                 if i + 1 == parts.len() {
-                    handlebars::html_escape(&part)
+                    handlebars::html_escape(*part)
                 } else {
                     let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
-                    let part = handlebars::html_escape(&part);
+                    let part = handlebars::html_escape(*part);
                     format!(
                         r##"<a href="{path}{part}.html">{part}</a>"##,
                         path = path,
@@ -432,7 +432,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = helper_param_string(h, 0)?;
+        let param = string_parameter(h, 0)?;
 
         let parser = pulldown_cmark::Parser::new(&param);
         let mut buf = String::new();
@@ -464,7 +464,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = helper_param_string(h, 0)?;
+        let param = string_parameter(h, 0)?;
 
         let first_paragraph: String = param.lines().take_while(|s| !s.is_empty()).collect();
 

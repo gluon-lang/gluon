@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate gluon_codegen;
-extern crate gluon;
 
 mod init;
 

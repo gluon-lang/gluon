@@ -321,7 +321,7 @@ struct Demand {
     constraint: RcType,
 }
 
-struct ResolveImplicitsVisitor<'a, 'b: 'a, 'ast> {
+struct ResolveImplicitsVisitor<'a, 'b, 'ast> {
     tc: &'a mut Typecheck<'b, 'ast>,
 }
 

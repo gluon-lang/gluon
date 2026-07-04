@@ -197,7 +197,7 @@ impl NodeMap {
     }
 }
 
-pub struct SharedSeed<'seed, T, S: 'seed> {
+pub struct SharedSeed<'seed, T, S> {
     pub seed: &'seed mut S,
     cloner: fn(&T) -> T,
     _marker: PhantomData<T>,

@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate gluon_base as base;
-extern crate pretty;
 #[macro_use]
 extern crate pretty_assertions;
 

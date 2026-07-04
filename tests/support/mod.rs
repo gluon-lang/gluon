@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-pub extern crate futures;
 
 use gluon::{
     import::Import,

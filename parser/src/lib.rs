@@ -530,8 +530,6 @@ where
     let mut errors = Errors::new();
 
     struct CheckInfix<'b, Id>
-    where
-        Id: 'b,
     {
         metadata: &'b FnvMap<Id, Arc<Metadata>>,
         errors: &'b mut Errors<Spanned<Error, BytePos>>,

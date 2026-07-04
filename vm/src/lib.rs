@@ -16,8 +16,6 @@ extern crate serde_derive_state;
 #[cfg(feature = "serde_state")]
 #[macro_use]
 extern crate serde_state as serde;
-#[cfg(feature = "serde_state")]
-extern crate serde_json;
 
 #[cfg(test)]
 extern crate env_logger;

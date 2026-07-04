@@ -1,7 +1,7 @@
 //! Module containing bindings to the `rand` library.
 
-extern crate rand;
-extern crate rand_xorshift;
+use rand;
+use rand_xorshift;
 
 use self::rand::{RngExt, SeedableRng};
 

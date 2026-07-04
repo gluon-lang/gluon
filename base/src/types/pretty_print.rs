@@ -74,10 +74,6 @@ impl From<bool> for Filter {
 }
 
 pub struct TypeFormatter<'a, I, T, A>
-where
-    I: 'a,
-    T: 'a,
-    A: 'a,
 {
     width: usize,
     typ: &'a T,
@@ -173,7 +169,7 @@ where
     }
 }
 
-pub struct Printer<'a, I: 'a, A: 'a> {
+pub struct Printer<'a, I, A> {
     pub arena: &'a Arena<'a, A>,
     pub source: &'a dyn Source,
     filter: &'a dyn Fn(&I) -> Filter,

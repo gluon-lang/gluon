@@ -202,7 +202,7 @@ where
     }
 }
 
-pub struct Reparser<'s, 'ast, Id: 's> {
+pub struct Reparser<'s, 'ast, Id> {
     arena: ast::ArenaRef<'s, 'ast, Id>,
     operators: OpTable<Id>,
     symbols: &'s dyn IdentEnv<Ident = Id>,
@@ -480,8 +480,6 @@ enum InfixToken<'ast, Id> {
 /// Arg:  8
 /// ```
 struct Infixes<'ast, Id>
-where
-    Id: 'ast,
 {
     /// The next part of the expression that we need to flatten
     remaining_expr: Option<&'ast mut SpannedExpr<'ast, Id>>,

@@ -542,7 +542,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         }
 
         {
-            struct ReplaceVisitor<'a: 'b, 'b, 'ast> {
+            struct ReplaceVisitor<'a, 'b, 'ast> {
                 tc: &'b mut Typecheck<'a, 'ast>,
             }
 
@@ -3249,7 +3249,7 @@ fn get_alias_app<'a>(
         }),
     }
 }
-struct FunctionArgIter<'a, 'b: 'a, 'ast> {
+struct FunctionArgIter<'a, 'b, 'ast> {
     tc: &'a mut Typecheck<'b, 'ast>,
     typ: RcType,
 }

@@ -122,7 +122,7 @@ unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
 }
 
 /// Pointer type which can only be written to.
-pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
+pub struct WriteOnly<'s, T: ?Sized>(*mut T, PhantomData<&'s mut T>);
 
 impl<'s, T: ?Sized> WriteOnly<'s, T> {
     /// Unsafe as the lifetime must not be longer than the liftime of `t`

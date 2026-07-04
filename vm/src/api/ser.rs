@@ -179,7 +179,7 @@ impl ser::Error for Error {
     }
 }
 
-pub struct Serializer<'a, 't: 'a> {
+pub struct Serializer<'a, 't> {
     thread: &'t Thread,
     context: &'a mut ActiveThread<'t>,
 }
@@ -223,7 +223,7 @@ impl<'a, 't> Serializer<'a, 't> {
 }
 
 #[doc(hidden)]
-pub struct RecordSerializer<'s, 'a: 's, 'vm: 'a> {
+pub struct RecordSerializer<'s, 'a, 'vm> {
     serializer: &'s mut Serializer<'a, 'vm>,
     variant_index: VmTag,
     values: VmIndex,

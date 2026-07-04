@@ -28,7 +28,7 @@ pub fn rename<'s, 'ast>(
         Return,
     }
 
-    struct RenameVisitor<'a: 'b, 'b, 's, 'ast> {
+    struct RenameVisitor<'a, 'b, 's, 'ast> {
         source: &'s (dyn Source + 's),
         symbols: &'b mut SymbolModule<'a>,
         seen_symbols: FnvMap<Symbol, u32>,

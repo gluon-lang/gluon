@@ -4,7 +4,6 @@ extern crate pretty_assertions;
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_format as format;
-extern crate gluon_parser as parser;
 
 use crate::base::{
     ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor},

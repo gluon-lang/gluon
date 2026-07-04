@@ -6,10 +6,8 @@
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.18.2")] // # GLUON
 #![recursion_limit = "128"]
-#[cfg(test)]
-extern crate env_logger;
 
-pub extern crate either;
+pub use either;
 #[macro_use]
 extern crate log;
 #[macro_use]

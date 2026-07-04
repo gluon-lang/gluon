@@ -1,11 +1,9 @@
 #[cfg(feature = "test")]
 mod build {
-    extern crate lalrpop;
-
     pub fn main() {
         lalrpop::Configuration::new()
             .use_cargo_dir_conventions()
-            .process()
+            .process("src/core/grammar.lalrpop")
             .unwrap();
 
         println!("cargo:rerun-if-changed=src/core/grammar.lalrpop");

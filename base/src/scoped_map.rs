@@ -334,9 +334,6 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 }
 
 pub struct Iter<'a, K, V>
-where
-    K: 'a,
-    V: 'a,
 {
     iter: hash_map::Iter<'a, K, Vec<V>>,
 }
@@ -364,8 +361,8 @@ where
 
 pub struct ExitScopeIter<'a, K, V>
 where
-    K: 'a + Eq + Hash + Clone,
-    V: 'a,
+    K: Eq + Hash + Clone,
+    
 {
     map: &'a mut ScopedMap<K, V>,
     done: bool,

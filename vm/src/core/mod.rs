@@ -22,7 +22,7 @@ lalrpop_util::lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
     #[allow(unused_parens)]
     pub grammar,
-    "/core/grammar.rs"
+    "core/grammar.rs"
 );
 pub mod costs;
 pub mod dead_code;
@@ -1553,7 +1553,7 @@ fn get_return_type(
     get_return_type(env, &ret, arg_count - 1)
 }
 
-pub struct PatternTranslator<'a, 'e: 'a>(&'a Translator<'a, 'e>);
+pub struct PatternTranslator<'a, 'e>(&'a Translator<'a, 'e>);
 
 #[derive(Clone, PartialEq, Debug)]
 struct Equation<'a, 'p, 'ast> {
@@ -2020,7 +2020,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         // | x ->
         let groups = equations
             .iter()
-            .group_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
+            .chunk_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
 
         let expr = match variables.first() {
             None => equations

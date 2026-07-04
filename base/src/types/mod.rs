@@ -2102,7 +2102,7 @@ impl<Id> TypeExt for ArcType<Id> {
     }
 }
 
-pub struct ForallScopeIter<'a, T: 'a> {
+pub struct ForallScopeIter<'a, T> {
     pub typ: &'a T,
     offset: usize,
 }
@@ -2150,7 +2150,7 @@ impl<Id> From<(Type<Id, ArcType<Id>>, Flags)> for ArcType<Id> {
 }
 
 #[derive(Clone)]
-pub struct TypeFieldIterator<'a, T: 'a> {
+pub struct TypeFieldIterator<'a, T> {
     typ: &'a T,
     current: usize,
 }
@@ -2185,7 +2185,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct RowIterator<'a, T: 'a> {
+pub struct RowIterator<'a, T> {
     typ: &'a T,
     current: usize,
 }
@@ -2261,7 +2261,7 @@ where
     }
 }
 
-pub struct RowIteratorMut<'a, SpId: 'a, T: 'a> {
+pub struct RowIteratorMut<'a, SpId, T> {
     fields: ::std::slice::IterMut<'a, Field<SpId, T>>,
     rest: Option<&'a mut T>,
 }
@@ -2366,7 +2366,7 @@ where
     ArgIterator { typ }
 }
 
-pub struct ArgIterator<'a, T: 'a> {
+pub struct ArgIterator<'a, T> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
     pub typ: &'a T,
@@ -2394,7 +2394,7 @@ where
     }
 }
 
-pub struct ImplicitArgIterator<'a, T: 'a> {
+pub struct ImplicitArgIterator<'a, T> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
     pub typ: &'a T,
@@ -2537,7 +2537,7 @@ fn top<T>(typ: &T) -> DisplayType<'_, T> {
     dt(Prec::Top, typ)
 }
 
-pub struct DisplayType<'a, T: 'a> {
+pub struct DisplayType<'a, T> {
     prec: Prec,
     typ: &'a T,
 }

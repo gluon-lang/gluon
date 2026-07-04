@@ -1,6 +1,6 @@
 //! Module containing bindings to the `regex` library.
 
-extern crate regex;
+use regex;
 
 use crate::vm::{self, thread::Thread, ExternModule};
 

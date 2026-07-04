@@ -509,7 +509,7 @@ pub(crate) struct CostBinding<'l> {
     bind: StackBinding<'l>,
 }
 
-pub struct Pure<'a, 'l: 'a, 'g: 'a>(bool, &'a mut Compiler<'g, 'l>);
+pub struct Pure<'a, 'l, 'g>(bool, &'a mut Compiler<'g, 'l>);
 
 impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
     type Producer = DifferentLifetime<'l, 'expr>;
@@ -996,7 +996,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         match resolver.wrap(expr) {
             Reduced::Local(expr) => {
-                struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+                struct ReplaceVisitor<'a, 'e, 'f> {
                     compiler: &'f mut Compiler<'a, 'e>,
                     functions: &'f mut FunctionEnvs<'e, 'a>,
                 }
@@ -1080,7 +1080,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         match resolver.wrap(expr) {
             Reduced::Local(expr) => {
-                struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+                struct ReplaceVisitor<'a, 'e, 'f> {
                     compiler: &'f mut Compiler<'a, 'e>,
                 }
                 impl<'a, 'e, 'f> Visitor<'e, 'e> for ReplaceVisitor<'a, 'e, 'f> {
@@ -1177,7 +1177,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         map: &mut FnvMap<Symbol, ArcType>,
         expr: CExpr<'e>,
     ) -> Option<CExpr<'e>> {
-        struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+        struct ReplaceVisitor<'a, 'e, 'f> {
             compiler: &'f mut Compiler<'a, 'e>,
             map: &'f mut FnvMap<Symbol, ArcType>,
         }

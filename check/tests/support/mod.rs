@@ -594,7 +594,7 @@ macro_rules! assert_multi_unify_err {
     }}
 }
 
-pub fn print_ident_types(expr: &SpannedExpr<Symbol>) {
+pub fn print_ident_types(expr: &SpannedExpr<'_, Symbol>) {
     struct Visitor;
     impl<'a> base::ast::Visitor<'_, 'a> for Visitor {
         type Ident = Symbol;

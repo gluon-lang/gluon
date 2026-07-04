@@ -736,7 +736,7 @@ where
     }
 }
 
-struct Enum<'a, 'de: 'a, 't: 'a> {
+struct Enum<'a, 'de, 't> {
     de: &'a mut Deserializer<'de, 't>,
 }
 

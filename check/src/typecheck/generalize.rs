@@ -8,7 +8,7 @@ use crate::base::{
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
 
-pub(crate) struct TypeGeneralizer<'a, 'b: 'a, 'ast> {
+pub(crate) struct TypeGeneralizer<'a, 'b, 'ast> {
     level: u32,
     unbound_variables: FnvMap<u32, RcType>,
     /// We delay updating the substitution until after all recursive bindings have been typechecked
@@ -373,7 +373,7 @@ fn unroll_record(
 }
 
 // Replaces all type variables with their inferred types
-pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c, 'ast> {
+pub struct ReplaceVisitor<'a, 'b, 'c, 'ast> {
     pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b, 'ast>,
 }
 

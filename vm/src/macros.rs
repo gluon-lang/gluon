@@ -533,7 +533,7 @@ fn replace_expr<'ast>(
     );
 }
 
-struct MacroVisitor<'a: 'b, 'b, 'c, 'd, 'e, 'ast> {
+struct MacroVisitor<'a, 'b, 'c, 'd, 'e, 'ast> {
     expander: &'b mut MacroExpander<'a>,
     symbols: &'c mut Symbols,
     arena: &'d mut ast::OwnedArena<'ast, Symbol>,

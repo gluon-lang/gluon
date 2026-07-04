@@ -1,8 +1,5 @@
-extern crate env_logger;
 #[macro_use]
 extern crate gluon_codegen;
-extern crate gluon;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]

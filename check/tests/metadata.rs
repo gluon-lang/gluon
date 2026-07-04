@@ -1,6 +1,5 @@
 extern crate gluon_base as base;
 extern crate gluon_check as check;
-extern crate gluon_parser as parser;
 
 use std::sync::Arc;
 

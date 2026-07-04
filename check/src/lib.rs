@@ -7,8 +7,6 @@
 
 #[macro_use]
 extern crate collect_mac;
-#[cfg(test)]
-extern crate env_logger;
 #[macro_use]
 extern crate log;
 

@@ -239,7 +239,7 @@ fn gen_variant_match(ident: &Ident, tag: usize, variant: &Variant) -> TokenStrea
             let cons = gen_tuple_variant_cons(unnamed);
 
             quote! {
-                #tag => #ident::#variant_ident#cons
+                #tag => #ident::#variant_ident #cons
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {
