@@ -81,9 +81,9 @@ use crate::{
 
 use codespan_reporting::diagnostic::Diagnostic;
 
-unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T { unsafe {
-    ::std::mem::transmute(x)
-}}
+unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
+    unsafe { ::std::mem::transmute(x) }
+}
 
 #[derive(Debug, PartialEq, Trace)]
 #[gluon(gluon_vm)]
@@ -108,9 +108,9 @@ impl<'a> Variants<'a> {
     }
 
     #[inline]
-    pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> { unsafe {
-        Variants(value.get_repr().clone_unrooted(), PhantomData)
-    }}
+    pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> {
+        unsafe { Variants(value.get_repr().clone_unrooted(), PhantomData) }
+    }
 
     #[inline]
     pub(crate) fn int(i: VmInt) -> Self {
@@ -132,9 +132,9 @@ impl<'a> Variants<'a> {
         &self.0
     }
 
-    pub(crate) unsafe fn unrooted(&self) -> Value { unsafe {
-        Value::from(self.0.clone_unrooted())
-    }}
+    pub(crate) unsafe fn unrooted(&self) -> Value {
+        unsafe { Value::from(self.0.clone_unrooted()) }
+    }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value

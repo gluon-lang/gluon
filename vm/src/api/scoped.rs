@@ -10,11 +10,11 @@ use std::sync::RwLock;
 use base::types::ArcType;
 
 use crate::{
+    Result,
     api::{Opaque, OpaqueValue, Pushable, VmType},
     gc::{Gc, Trace},
     thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
     value::Userdata,
-    Result,
 };
 
 pub struct Ref<'a, T>

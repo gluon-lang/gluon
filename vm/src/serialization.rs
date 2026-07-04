@@ -3,9 +3,9 @@ use std::{borrow::Cow, cell::RefCell, fmt, marker::PhantomData, rc::Rc, sync::Ar
 use itertools::Itertools;
 
 use crate::serde::{
+    Deserializer,
     de::{Deserialize, DeserializeSeed, DeserializeState, Error, SeqAccess, Visitor},
     ser::{Seeded, Serialize, SerializeSeq, SerializeState, Serializer},
-    Deserializer,
 };
 
 use crate::base::{
@@ -15,6 +15,7 @@ use crate::base::{
 };
 
 use crate::{
+    Variants,
     array::Array,
     gc::{CloneUnrooted, DataDef, GcPtr, GcRef, OwnedGcRef, WriteOnly},
     stack::State,
@@ -24,7 +25,6 @@ use crate::{
         BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
         PartialApplicationDataDef, Value, ValueArray, ValueRepr,
     },
-    Variants,
 };
 
 pub struct DeSeed<'gc> {

@@ -66,9 +66,7 @@ where
                 f.add_flags(flags);
                 args.add_flags(flags);
             }
-            Type::Record(typ) | Type::Variant(typ) | Type::Effect(typ) => {
-                typ.add_flags(flags)
-            }
+            Type::Record(typ) | Type::Variant(typ) | Type::Effect(typ) => typ.add_flags(flags),
             Type::Forall(params, typ) => {
                 *flags |= Flags::HAS_FORALL;
                 typ.add_flags(flags);

@@ -13,17 +13,18 @@ use crate::real_std::{
 use crate::base::types::ArcType;
 
 use crate::{
+    Error, ExternModule, Result, Variants,
     api::{
+        Array, Getable, IO, Opaque, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
+        WithVM,
         generic::{self, A, S},
-        primitive, Array, Getable, Opaque, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
-        VmType, WithVM, IO,
+        primitive,
     },
     gc::{DataDef, Trace, WriteOnly},
     stack::{ExternState, StackFrame},
     types::VmInt,
     value::{GcStr, Repr, ValueArray},
     vm::{Status, Thread},
-    Error, ExternModule, Result, Variants,
 };
 
 #[doc(hidden)]

@@ -1,4 +1,4 @@
-use gluon::{self, import::Import, RootedThread};
+use gluon::{self, RootedThread, import::Import};
 
 pub fn new_vm() -> RootedThread {
     if ::std::env::var("GLUON_PATH").is_err() {

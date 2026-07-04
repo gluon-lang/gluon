@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    Error, Result, Variants,
     api::{Pushable, VmType},
     base::types::ArcType,
     interner::InternedStr,
@@ -15,7 +16,6 @@ use crate::{
     thread::{ActiveThread, Thread},
     types::{VmIndex, VmTag},
     value::{Def, RecordDef, ValueRepr},
-    Error, Result, Variants,
 };
 
 /**

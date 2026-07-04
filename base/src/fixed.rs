@@ -45,9 +45,9 @@ impl<T: ?Sized> MutCell<T> {
 
     // We can get a mutable reference as long as we make sure to not have any `&T` references alive
     // for the time that we use the mutable refernce
-    unsafe fn unsafe_get_mut(&self) -> &mut T { unsafe {
-        &mut *self.0.get()
-    }}
+    unsafe fn unsafe_get_mut(&self) -> &mut T {
+        unsafe { &mut *self.0.get() }
+    }
 
     fn get_mut(&mut self) -> &mut T {
         // Getting a mutable reference from a mutable reference is safe

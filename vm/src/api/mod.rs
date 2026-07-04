@@ -19,16 +19,15 @@ use crate::base::{
     types::{self, ArcType, Field, Type},
 };
 use crate::{
-    forget_lifetime,
+    Error, Result, Variants, forget_lifetime,
     gc::{CloneUnrooted, DataDef, GcRef, Move, Trace},
     stack::Lock,
     thread::{RootedThread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt, VmTag},
     value::{ArrayDef, ArrayRepr, ClosureData, DataStruct, Value, ValueArray, ValueRepr},
     vm::{self, RootedValue, Status, Thread},
-    Error, Result, Variants,
 };
-use futures::{task::Poll, Future};
+use futures::{Future, task::Poll};
 
 pub use self::{
     function::*,
@@ -121,23 +120,25 @@ impl<'a> ValueRef<'a> {
     }
 
     #[inline]
-    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> { unsafe {
-        match value {
-            ValueRepr::Byte(i) => ValueRef::Byte(*i),
-            ValueRepr::Int(i) => ValueRef::Int(*i),
-            ValueRepr::Float(f) => ValueRef::Float(*f),
-            ValueRepr::String(s) => ValueRef::String(forget_lifetime(&*s)),
-            ValueRepr::Data(data) => {
-                ValueRef::Data(Data(DataInner::Data(GcRef::new(forget_lifetime(data)))))
+    pub(crate) unsafe fn rooted_new(value: &ValueRepr) -> ValueRef<'a> {
+        unsafe {
+            match value {
+                ValueRepr::Byte(i) => ValueRef::Byte(*i),
+                ValueRepr::Int(i) => ValueRef::Int(*i),
+                ValueRepr::Float(f) => ValueRef::Float(*f),
+                ValueRepr::String(s) => ValueRef::String(forget_lifetime(&*s)),
+                ValueRepr::Data(data) => {
+                    ValueRef::Data(Data(DataInner::Data(GcRef::new(forget_lifetime(data)))))
+                }
+                ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
+                ValueRepr::Array(array) => ValueRef::Array(GcRef::new(forget_lifetime(array))),
+                ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&***data)),
+                ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&**thread)),
+                ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
+                ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
             }
-            ValueRepr::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(*tag))),
-            ValueRepr::Array(array) => ValueRef::Array(GcRef::new(forget_lifetime(array))),
-            ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&***data)),
-            ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&**thread)),
-            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&**c))),
-            ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
         }
-    }}
+    }
 
     #[inline]
     pub fn tag(t: VmTag) -> Self {
@@ -539,12 +540,14 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     unsafe fn marshal_unrooted(self, vm: &'vm Thread) -> Result<Value>
     where
         Self: Sized,
-    { unsafe {
-        let mut context = vm.current_context();
-        self.vm_push(&mut context)?;
-        let value = context.pop().get_value().clone_unrooted();
-        Ok(value)
-    }}
+    {
+        unsafe {
+            let mut context = vm.current_context();
+            self.vm_push(&mut context)?;
+            let value = context.pop().get_value().clone_unrooted();
+            Ok(value)
+        }
+    }
 
     fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
     where

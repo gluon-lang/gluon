@@ -6,13 +6,13 @@ use std::{slice, str};
 use futures::{executor::block_on, future};
 
 use gluon::{
+    ThreadExt,
     vm::{
         api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable},
         stack,
         thread::{RootedThread, Status, Thread, ThreadInternal},
         types::{VmIndex, VmInt},
     },
-    ThreadExt,
 };
 
 pub type Function = extern "C" fn(&Thread) -> Status;
@@ -33,9 +33,11 @@ pub extern "C" fn glu_new_vm() -> *const Thread {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glu_free_vm(vm: &Thread) { unsafe {
-    RootedThread::from_raw(vm);
-}}
+pub unsafe extern "C" fn glu_free_vm(vm: &Thread) {
+    unsafe {
+        RootedThread::from_raw(vm);
+    }
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glu_run_expr(
@@ -44,21 +46,23 @@ pub unsafe extern "C" fn glu_run_expr(
     module_len: usize,
     expr: &u8,
     expr_len: usize,
-) -> Error { unsafe {
-    let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    let expr = match str::from_utf8(slice::from_raw_parts(expr, expr_len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>(module, expr);
-    match result {
-        Ok(_) => Error::Ok,
-        Err(_) => Error::Unknown,
+) -> Error {
+    unsafe {
+        let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        let expr = match str::from_utf8(slice::from_raw_parts(expr, expr_len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        let result = vm.run_expr::<OpaqueValue<&Thread, Hole>>(module, expr);
+        match result {
+            Ok(_) => Error::Ok,
+            Err(_) => Error::Unknown,
+        }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn glu_load_script(
@@ -67,21 +71,23 @@ pub unsafe extern "C" fn glu_load_script(
     module_len: usize,
     expr: &u8,
     expr_len: usize,
-) -> Error { unsafe {
-    let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    let expr = match str::from_utf8(slice::from_raw_parts(expr, expr_len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    let result = vm.load_script(module, expr);
-    match result {
-        Ok(_) => Error::Ok,
-        Err(_) => Error::Unknown,
+) -> Error {
+    unsafe {
+        let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        let expr = match str::from_utf8(slice::from_raw_parts(expr, expr_len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        let result = vm.load_script(module, expr);
+        match result {
+            Ok(_) => Error::Ok,
+            Err(_) => Error::Unknown,
+        }
     }
-}}
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
@@ -137,40 +143,46 @@ pub unsafe extern "C" fn glu_push_function(
     len: usize,
     function: Function,
     args: VmIndex,
-) -> Error { unsafe {
-    let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    match Thread::push(vm, CPrimitive::new(function, args, s)) {
-        Ok(()) => Error::Ok,
-        Err(_) => Error::Unknown,
+) -> Error {
+    unsafe {
+        let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        match Thread::push(vm, CPrimitive::new(function, args, s)) {
+            Ok(()) => Error::Ok,
+            Err(_) => Error::Unknown,
+        }
     }
-}}
+}
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Error { unsafe {
-    let s = match str::from_utf8(slice::from_raw_parts(s, len)) {
-        Ok(s) => s,
-        Err(_) => return Error::Unknown,
-    };
-    match s.vm_push(&mut vm.current_context()) {
-        Ok(()) => Error::Ok,
-        Err(_) => Error::Unknown,
+pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Error {
+    unsafe {
+        let s = match str::from_utf8(slice::from_raw_parts(s, len)) {
+            Ok(s) => s,
+            Err(_) => return Error::Unknown,
+        };
+        match s.vm_push(&mut vm.current_context()) {
+            Ok(()) => Error::Ok,
+            Err(_) => Error::Unknown,
+        }
     }
-}}
+}
 
 /// Push a string to the stack. If the string is not utf-8 this function will trigger undefined
 /// behaviour.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error { unsafe {
-    let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
-    match s.vm_push(&mut vm.current_context()) {
-        Ok(()) => Error::Ok,
-        Err(_) => Error::Unknown,
+pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error {
+    unsafe {
+        let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
+        match s.vm_push(&mut vm.current_context()) {
+            Ok(()) => Error::Ok,
+            Err(_) => Error::Unknown,
+        }
     }
-}}
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[unsafe(no_mangle)]
@@ -211,21 +223,23 @@ pub unsafe extern "C" fn glu_get_string(
     index: VmIndex,
     out: &mut *const u8,
     out_len: &mut usize,
-) -> Error { unsafe {
-    let mut context = vm.context();
-    let stack = context.stack_frame::<stack::State>();
-    match stack
-        .get_variant(index)
-        .map(|value| <&str>::from_value(vm, value))
-    {
-        Some(value) => {
-            *out = &*value.as_ptr();
-            *out_len = value.len();
-            Error::Ok
+) -> Error {
+    unsafe {
+        let mut context = vm.context();
+        let stack = context.stack_frame::<stack::State>();
+        match stack
+            .get_variant(index)
+            .map(|value| <&str>::from_value(vm, value))
+        {
+            Some(value) => {
+                *out = &*value.as_ptr();
+                *out_len = value.len();
+                Error::Ok
+            }
+            None => Error::Unknown,
         }
-        None => Error::Unknown,
     }
-}}
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 #[unsafe(no_mangle)]

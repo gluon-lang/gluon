@@ -11,20 +11,20 @@ use std::{collections::BTreeMap, sync::Arc};
 use futures::prelude::*;
 
 use gluon::{
+    ThreadExt,
     base::types::{Alias, ArcType, Type},
-    import::{add_extern_module, add_extern_module_with_deps, Import},
+    import::{Import, add_extern_module, add_extern_module_with_deps},
     query::Compilation,
     vm::{
+        Error, ExternModule,
         api::{
+            FunctionRef, FutureResult, Hole, IO, OpaqueValue, OwnedFunction, RuntimeResult, VmType,
             scoped::{Ref, RefMut},
-            FunctionRef, FutureResult, Hole, OpaqueValue, OwnedFunction, RuntimeResult, VmType, IO,
         },
         gc,
         thread::{RootedThread, Thread},
         types::VmInt,
-        Error, ExternModule,
     },
-    ThreadExt,
 };
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
@@ -270,8 +270,8 @@ fn io_future() {
 #[test]
 fn generic_record_type() {
     use gluon::base::types::ArcType;
-    use gluon::vm::api::generic::A;
     use gluon::vm::api::Generic;
+    use gluon::vm::api::generic::A;
 
     fn type_of<T: VmType>(thread: &Thread, _: &T) -> ArcType {
         T::make_forall_type(thread)

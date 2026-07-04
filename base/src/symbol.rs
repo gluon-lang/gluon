@@ -84,9 +84,7 @@ mod serialization {
         where
             S: Serializer,
         {
-            {
-                crate::serialization::shared::serialize(self, serializer, seed)
-            }
+            { crate::serialization::shared::serialize(self, serializer, seed) }
         }
     }
 }

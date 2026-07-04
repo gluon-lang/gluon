@@ -5,7 +5,7 @@ use std::{cell::RefCell, fmt, marker::PhantomData, result::Result as StdResult};
 use crate::base::{
     resolve,
     symbol::Symbol,
-    types::{ctor_args, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
+    types::{ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt, ctor_args},
 };
 
 use crate::api::{Getable, ValueRef, VmType};
@@ -856,7 +856,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                 return Err(VmError::Message(format!(
                     "Unable to deserialize `{}`",
                     self.de.typ
-                )))
+                )));
             }
         };
 
@@ -873,7 +873,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                 return Err(VmError::Message(format!(
                     "Unable to deserialize `{}`",
                     self.de.typ
-                )))
+                )));
             }
         };
 

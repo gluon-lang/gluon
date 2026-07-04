@@ -1,4 +1,4 @@
-use gluon::{import::Import, vm::thread::RootedThread, ThreadExt};
+use gluon::{ThreadExt, import::Import, vm::thread::RootedThread};
 
 fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();

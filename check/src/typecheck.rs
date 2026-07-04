@@ -29,11 +29,11 @@ use crate::base::{
 };
 
 use crate::{
-    implicits,
+    TypecheckEnv, implicits,
     kindcheck::KindCheck,
     substitution::{self, Substitution},
     typ::RcType,
-    unify, unify_type, TypecheckEnv,
+    unify, unify_type,
 };
 
 use self::{
@@ -1772,7 +1772,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     return Err(TypeError::PatternError {
                         constructor_type: typ.clone(),
                         pattern_args,
-                    })
+                    });
                 }
                 (None, None) => break,
             }
@@ -2246,9 +2246,11 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             _ => {
                 if let Type::Forall(params, ..) = &**typ {
                     let mut type_cache = &self.subs;
-                    self.environment
-                        .type_variables
-                        .extend(params.iter().map(|generic| (generic.id.clone(), type_cache.hole())));
+                    self.environment.type_variables.extend(
+                        params
+                            .iter()
+                            .map(|generic| (generic.id.clone(), type_cache.hole())),
+                    );
                 }
                 types::walk_type_(
                     typ,
@@ -3038,7 +3040,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                             _ => false,
                         };
                         if !valid_type {
-                            return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `type Effect r a = | Variant X | r` but found `{}`", unaliased))));
+                            return Some(Err(TypeError::Message(format!(
+                                "Invalid form for the type. Expect the type to be of the form `type Effect r a = | Variant X | r` but found `{}`",
+                                unaliased
+                            ))));
                         }
 
                         let f = self.subs.new_var();

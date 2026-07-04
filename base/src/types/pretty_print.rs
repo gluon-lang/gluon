@@ -3,14 +3,14 @@ use std::{borrow::Cow, fmt, marker::PhantomData};
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use crate::{
-    ast::{is_operator_char, HasMetadata},
+    ast::{HasMetadata, is_operator_char},
     metadata::{Comment, CommentType},
     pos::{BytePos, HasSpan, Span},
     source::Source,
     types::AsId,
 };
 
-use crate::types::{pretty_print, TypePtr};
+use crate::types::{TypePtr, pretty_print};
 
 pub fn ident<'a, S, A>(arena: &'a Arena<'a, A>, name: S) -> DocBuilder<'a, Arena<'a, A>, A>
 where
@@ -65,16 +65,11 @@ pub enum Filter {
 
 impl From<bool> for Filter {
     fn from(b: bool) -> Filter {
-        if b {
-            Filter::Retain
-        } else {
-            Filter::Drop
-        }
+        if b { Filter::Retain } else { Filter::Drop }
     }
 }
 
-pub struct TypeFormatter<'a, I, T, A>
-{
+pub struct TypeFormatter<'a, I, T, A> {
     width: usize,
     typ: &'a T,
     filter: &'a dyn Fn(&I) -> Filter,

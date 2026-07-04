@@ -8,7 +8,7 @@ use crate::base::{
 };
 use crate::check::kindcheck::KindCheck;
 
-use crate::support::{intern, typ, MockEnv, MockIdentEnv};
+use crate::support::{MockEnv, MockIdentEnv, intern, typ};
 
 #[macro_use]
 mod support;

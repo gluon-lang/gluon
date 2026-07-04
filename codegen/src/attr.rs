@@ -3,14 +3,12 @@ use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use {
     quote::ToTokens,
     syn::{
-        self,
+        self, Expr, Meta,
+        Meta::*,
+        Path,
         parse::{self, Parse},
         punctuated::Punctuated,
         token::Comma,
-        Expr,
-        Meta,
-        Meta::*,
-        Path,
     },
 };
 

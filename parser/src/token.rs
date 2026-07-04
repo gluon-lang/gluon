@@ -629,7 +629,7 @@ impl<'input> Tokenizer<'input> {
         let ch = match self.bump() {
             Some((start, b'\\')) => self.escape_code(start)?,
             Some((end, b'\'')) => {
-                return self.recover(start, end, EmptyCharLiteral, Token::CharLiteral('\0'))
+                return self.recover(start, end, EmptyCharLiteral, Token::CharLiteral('\0'));
             }
             Some((_, ch)) => ch,
             None => return self.eof_recover(Token::CharLiteral('\0')),
@@ -707,7 +707,7 @@ impl<'input> Tokenizer<'input> {
                             end1,
                             HexLiteralWrongPrefix,
                             Token::IntLiteral(0),
-                        )
+                        );
                     }
                 }
             }
@@ -885,7 +885,7 @@ mod test {
     use codespan::{ByteOffset, ColumnOffset};
 
     use super::*;
-    use super::{error, StringLiteral, Tokenizer};
+    use super::{StringLiteral, Tokenizer, error};
     use crate::token::Token;
     use crate::token::Token::*;
 

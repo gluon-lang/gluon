@@ -11,18 +11,17 @@ use std::{
     result::Result as StdResult,
     slice,
     sync::{
-        self,
+        self, Arc, Mutex, MutexGuard, RwLock,
         atomic::{self, AtomicBool},
-        Arc, Mutex, MutexGuard, RwLock,
     },
     usize,
 };
 
 use futures::{
+    Future,
     future::{self, Either, Ready},
     ready,
     task::{self, Poll},
-    Future,
 };
 
 use async_trait::async_trait;
@@ -34,6 +33,7 @@ use crate::base::{
 };
 
 use crate::{
+    Error, Result, Variants,
     api::{Getable, Pushable, ValueRef, VmType},
     compiler::UpvarInfo,
     gc::{self, CloneUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move},
@@ -53,7 +53,6 @@ use crate::{
         VariantDef,
     },
     vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnvInstance},
-    Error, Result, Variants,
 };
 
 pub use crate::{gc::Trace, stack::PopValue};
@@ -170,9 +169,11 @@ unsafe impl<T> Trace for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    unsafe fn root(&mut self) { unsafe {
-        self.root_();
-    }}
+    unsafe fn root(&mut self) {
+        unsafe {
+            self.root_();
+        }
+    }
     unsafe fn unroot(&mut self) {
         self.unroot_();
     }
@@ -241,17 +242,19 @@ where
     }
 
     // SAFETY The value must be owned by `vm`'s GC
-    unsafe fn new(vm: T, value: &Value) -> Self { unsafe {
-        vm.rooted_values
-            .write()
-            .unwrap()
-            .push(value.clone_unrooted());
-        RootedValue {
-            vm,
-            rooted: true,
-            value: value.clone_unrooted(),
+    unsafe fn new(vm: T, value: &Value) -> Self {
+        unsafe {
+            vm.rooted_values
+                .write()
+                .unwrap()
+                .push(value.clone_unrooted());
+            RootedValue {
+                vm,
+                rooted: true,
+                value: value.clone_unrooted(),
+            }
         }
-    }}
+    }
 
     pub fn get_value(&self) -> &Value {
         &self.value
@@ -304,13 +307,15 @@ where
         self.vm.root_value(self.get_variant())
     }
 
-    unsafe fn root_(&mut self) { unsafe {
-        self.vm.root_vm();
-        let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        assert!(self.rooted);
-        self.rooted = true;
-        rooted_values.push(self.value.clone_unrooted());
-    }}
+    unsafe fn root_(&mut self) {
+        unsafe {
+            self.vm.root_vm();
+            let mut rooted_values = self.vm.rooted_values.write().unwrap();
+            assert!(self.rooted);
+            self.rooted = true;
+            rooted_values.push(self.value.clone_unrooted());
+        }
+    }
 
     fn unroot_(&mut self) {
         self.vm.unroot_vm();
@@ -394,39 +399,41 @@ impl<'b> Roots<'b> {
         sync::RwLockReadGuard<'_, ThreadSlab>,
         MutexGuard<'_, Context>,
         GcPtr<Thread>,
-    )> { unsafe {
-        let mut stack: Vec<GcPtr<Thread>> = Vec::new();
-        let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
+    )> {
+        unsafe {
+            let mut stack: Vec<GcPtr<Thread>> = Vec::new();
+            let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
-        let child_threads = self.vm.child_threads.read().unwrap();
-        stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
-
-        while let Some(thread_ptr) = stack.pop() {
-            if locks.iter().any(|&(_, _, ref lock_thread)| {
-                &*thread_ptr as *const Thread == &**lock_thread as *const Thread
-            }) {
-                continue;
-            }
-
-            let thread = &*(&*thread_ptr as *const Thread);
-
-            let context = thread.context.lock().unwrap();
-
-            let child_threads = thread.child_threads.read().unwrap();
+            let child_threads = self.vm.child_threads.read().unwrap();
             stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
-            // Since we locked the context we need to scan the thread using `Roots` rather than
-            // letting it be scanned normally
-            Roots {
-                vm: &thread_ptr,
-                stack: &context.stack,
-            }
-            .trace(gc);
+            while let Some(thread_ptr) = stack.pop() {
+                if locks.iter().any(|&(_, _, ref lock_thread)| {
+                    &*thread_ptr as *const Thread == &**lock_thread as *const Thread
+                }) {
+                    continue;
+                }
 
-            Vec::push(&mut locks, (child_threads, context, thread_ptr));
+                let thread = &*(&*thread_ptr as *const Thread);
+
+                let context = thread.context.lock().unwrap();
+
+                let child_threads = thread.child_threads.read().unwrap();
+                stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
+
+                // Since we locked the context we need to scan the thread using `Roots` rather than
+                // letting it be scanned normally
+                Roots {
+                    vm: &thread_ptr,
+                    stack: &context.stack,
+                }
+                .trace(gc);
+
+                Vec::push(&mut locks, (child_threads, context, thread_ptr));
+            }
+            locks
         }
-        locks
-    }}
+    }
 }
 
 // All threads MUST be allocated in the garbage collected heap. This is necessary as a thread
@@ -709,12 +716,14 @@ impl RootedThread {
     /// Converts a raw pointer into a `RootedThread`.
     /// The reference count for the thread is not modified so it is up to the caller to ensure that
     /// the count is correct.
-    pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread { unsafe {
-        RootedThread {
-            thread: GcPtr::from_raw(ptr),
-            rooted: true,
+    pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
+        unsafe {
+            RootedThread {
+                thread: GcPtr::from_raw(ptr),
+                rooted: true,
+            }
         }
-    }}
+    }
 
     fn root_(&mut self) {
         assert!(!self.rooted);
@@ -1026,9 +1035,9 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     unsafe fn root_value_with_self(self, value: &Value) -> RootedValue<Self>
     where
         Self: Sized,
-    { unsafe {
-        RootedValue::new(self, value)
-    }}
+    {
+        unsafe { RootedValue::new(self, value) }
+    }
 }
 
 impl<'a> VmRoot<'a> for &'a Thread {
@@ -1608,25 +1617,30 @@ impl Context {
     where
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
-    { unsafe {
-        let poll_fn: PollFnInner<'_> = Box::new(move |cx: &mut task::Context<'_>, vm: &Thread| {
-            // `future` is moved into the closure, which is boxed and therefore pinned
-            let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
+    {
+        unsafe {
+            let poll_fn: PollFnInner<'_> = Box::new(
+                move |cx: &mut task::Context<'_>, vm: &Thread| {
+                    // `future` is moved into the closure, which is boxed and therefore pinned
+                    let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
 
-            let mut context = vm.current_context();
-            let result = {
-                context.stack().release_lock(lock);
-                let context =
-                    mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(&mut context);
-                value.vm_push(context)
-            };
-            Poll::Ready(result.map(|()| context.into_owned()))
-        });
-        self.poll_fns.push(PollFn {
-            frame_index,
-            poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
-        });
-    }}
+                    let mut context = vm.current_context();
+                    let result = {
+                        context.stack().release_lock(lock);
+                        let context = mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(
+                            &mut context,
+                        );
+                        value.vm_push(context)
+                    };
+                    Poll::Ready(result.map(|()| context.into_owned()))
+                },
+            );
+            self.poll_fns.push(PollFn {
+                frame_index,
+                poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
+            });
+        }
+    }
 }
 
 impl<'b> OwnedContext<'b> {
@@ -1728,11 +1742,7 @@ impl<'b> OwnedContext<'b> {
         let exists = StackFrame::<State>::current(&mut self.stack)
             .exit_scope()
             .is_ok();
-        if exists {
-            Ok(self)
-        } else {
-            Err(())
-        }
+        if exists { Ok(self) } else { Err(()) }
     }
 
     fn execute(mut self, cx: &mut task::Context<'_>) -> Poll<Result<Option<OwnedContext<'b>>>> {
@@ -1980,9 +1990,9 @@ impl<'b> OwnedContext<'b> {
     }
 }
 
-unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> { unsafe {
-    Variants::with_root(value, gc)
-}}
+unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
+    unsafe { Variants::with_root(value, gc) }
+}
 
 // SAFETY By branding the variant with the gc lifetime we prevent mutation in the gc
 // Since that implies that no collection can occur while the variant is alive alive it is
@@ -1994,9 +2004,9 @@ macro_rules! transfer {
     };
 }
 
-unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'gc, T> { unsafe {
-    GcRef::with_root(value.clone_unrooted(), gc)
-}}
+unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'gc, T> {
+    unsafe { GcRef::with_root(value.clone_unrooted(), gc) }
+}
 
 macro_rules! transfer_ptr {
     ($context: expr_2021, $value: expr_2021) => {
@@ -2909,12 +2919,14 @@ impl<'vm> ActiveThread<'vm> {
     where
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
-    { unsafe {
-        self.context
-            .as_mut()
-            .expect("context")
-            .return_future(future, lock, frame_index)
-    }}
+    {
+        unsafe {
+            self.context
+                .as_mut()
+                .expect("context")
+                .return_future(future, lock, frame_index)
+        }
+    }
 }
 #[doc(hidden)]
 pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<crate::stack::Stacktrace> {
@@ -2946,9 +2958,9 @@ impl<'a> ProgramCounter<'a> {
     }
 
     #[inline(always)]
-    unsafe fn instruction(&self) -> Instruction { unsafe {
-        *self.instructions.get_unchecked(self.instruction_index)
-    }}
+    unsafe fn instruction(&self) -> Instruction {
+        unsafe { *self.instructions.get_unchecked(self.instruction_index) }
+    }
 
     #[inline(always)]
     fn step(&mut self) {

@@ -84,7 +84,7 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::*,
-    import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
+    import::{DefaultImporter, Import, add_extern_module, add_extern_module_with_deps},
     query::{AsyncCompilation, Compilation, CompilationBase, CompilerDatabase},
 };
 

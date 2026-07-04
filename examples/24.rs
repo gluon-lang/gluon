@@ -2,7 +2,7 @@
 
 use std::{fs::File, io::Read};
 
-use gluon::{vm::api::IO, ThreadExt};
+use gluon::{ThreadExt, vm::api::IO};
 
 fn main() {
     env_logger::init();

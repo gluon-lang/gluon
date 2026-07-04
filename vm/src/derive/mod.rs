@@ -6,7 +6,7 @@ use crate::base::{
     metadata::Attribute,
     pos::{self, BytePos, Span},
     symbol::{Symbol, Symbols},
-    types::{row_iter, KindedIdent, Type, TypeContext},
+    types::{KindedIdent, Type, TypeContext, row_iter},
 };
 
 use crate::macros::Error;

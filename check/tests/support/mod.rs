@@ -20,7 +20,7 @@ use self::{
         metadata, rename,
         typecheck::{self, Typecheck},
     },
-    parser::{parse_partial_root_expr, reparse_infix, ParseErrors},
+    parser::{ParseErrors, parse_partial_root_expr, reparse_infix},
 };
 
 use {collect_mac::collect, quick_error::quick_error};

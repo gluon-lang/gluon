@@ -14,6 +14,7 @@ use {
 };
 
 use gluon::{
+    RootedThread, Thread, ThreadExt,
     base::{
         ast::{Expr, Pattern, SpannedExpr},
         filename_to_module,
@@ -22,8 +23,7 @@ use gluon::{
         types::{ArcType, Type},
     },
     new_vm_async,
-    vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO},
-    RootedThread, Thread, ThreadExt,
+    vm::api::{Getable, Hole, IO, OpaqueValue, OwnedFunction, VmType, de::De, generic::A},
 };
 
 #[derive(Debug, Error)]
@@ -235,7 +235,7 @@ async fn run_fail_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Resul
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
-    use gluon::base::ast::{walk_expr, Visitor};
+    use gluon::base::ast::{Visitor, walk_expr};
 
     fn make_test(comment: &str) -> String {
         let mut parser = pulldown_cmark::Parser::new(comment);
@@ -354,7 +354,10 @@ async fn run_doc_tests<'t>(
                     Ok(test) => make_tensile_test(test_name, test),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(test_name, || { let _ = &err; Err(err.0.into()) })
+                        tensile::test(test_name, || {
+                            let _ = &err;
+                            Err(err.0.into())
+                        })
                     }
                 }
             })
@@ -413,7 +416,10 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name2, || { let _ = &err; Err(err.0) })
+                        tensile::test(name2, || {
+                            let _ = &err;
+                            Err(err.0)
+                        })
                     }
                 }
             }))
@@ -451,7 +457,10 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(tests) => tensile::group(name.clone(), tests),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name.clone(), || { let _ = &err; Err(err.0) })
+                        tensile::test(name.clone(), || {
+                            let _ = &err;
+                            Err(err.0)
+                        })
                     }
                 }
             }))

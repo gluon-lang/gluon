@@ -22,15 +22,14 @@ use crate::base::{
 };
 
 use crate::core::{
-    self,
+    self, Allocator, Alternative, ArenaExt, CExpr, Closure, ClosureRef, CoreClosure, CoreExpr,
+    Expr, LetBinding, Literal, Named, Pattern,
     costs::{self, Cost, Costs},
     optimize::{
-        self, walk_expr, walk_expr_alloc, DifferentLifetime, ExprProducer, OptimizeEnv,
-        SameLifetime, Visitor,
+        self, DifferentLifetime, ExprProducer, OptimizeEnv, SameLifetime, Visitor, walk_expr,
+        walk_expr_alloc,
     },
     purity::PurityMap,
-    Allocator, Alternative, ArenaExt, CExpr, Closure, ClosureRef, CoreClosure, CoreExpr, Expr,
-    LetBinding, Literal, Named, Pattern,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -1767,20 +1766,18 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 self.allocator,
                 self.inlined_global_bindings,
                 |resolver, expr| match peek_through_lets(expr) {
-                    Expr::Ident(id, _) => {
-                        self.load_identifier(resolver, &id.name).or_else(|| {
-                            resolver.find(&id.name).map(|bind| match bind {
-                                Binding::Expr(e) => CostBinding {
-                                    cost: 1,
-                                    bind: Binding::Expr(Reduced::Global(e)),
-                                },
-                                Binding::Closure(c) => CostBinding {
-                                    cost: 1,
-                                    bind: Binding::Closure(Reduced::Global(c)),
-                                },
-                            })
+                    Expr::Ident(id, _) => self.load_identifier(resolver, &id.name).or_else(|| {
+                        resolver.find(&id.name).map(|bind| match bind {
+                            Binding::Expr(e) => CostBinding {
+                                cost: 1,
+                                bind: Binding::Expr(Reduced::Global(e)),
+                            },
+                            Binding::Closure(c) => CostBinding {
+                                cost: 1,
+                                bind: Binding::Closure(Reduced::Global(c)),
+                            },
                         })
-                    }
+                    }),
                     Expr::Match(match_expr, alts) => {
                         let match_expr = self.peek_reduced_expr(resolver.wrap(match_expr));
 
@@ -1808,7 +1805,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                     return Some(CostBinding {
                                         cost: 1,
                                         bind: Binding::Expr(resolver.wrap(alt.expr)),
-                                    })
+                                    });
                                 }
                                 _ => (),
                             }
@@ -1863,7 +1860,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         return CostBinding {
                             cost,
                             bind: Binding::Expr(new_expr),
-                        }
+                        };
                     }
                     _ => {
                         expr = new_expr;
@@ -1875,7 +1872,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     return CostBinding {
                         cost: 1,
                         bind: Binding::Expr(expr),
-                    }
+                    };
                 }
             }
         }

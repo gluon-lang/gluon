@@ -5,19 +5,19 @@ use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sy
 use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
+    DebugLevel,
     ast::{self, AstClone, Expr, Pattern, RootExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
     mk_ast_arena, pos, resolve,
     symbol::{Symbol, SymbolModule},
     types::{ArcType, TypeExt},
-    DebugLevel,
 };
-use crate::parser::{parse_partial_repl_line, ReplLine};
+use crate::parser::{ReplLine, parse_partial_repl_line};
 use crate::vm::{
     api::{
-        de::De, generic::A, Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM,
-        IO,
+        Generic, Getable, IO, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, de::De,
+        generic::A,
     },
     internal::ValuePrinter,
     thread::{ActiveThread, RootedValue, Thread},
@@ -25,10 +25,10 @@ use crate::vm::{
 };
 
 use gluon::{
+    Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
     compiler_pipeline::{Executable, ExecuteValue},
     import::add_extern_module_with_deps,
     query::CompilerDatabase,
-    Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
 use codespan_reporting::term::termcolor;

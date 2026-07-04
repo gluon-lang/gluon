@@ -10,19 +10,18 @@ use futures::prelude::*;
 use futures::Future;
 
 use crate::vm::{
-    self,
+    self, ExternModule, Result,
     api::{
+        Getable, IO, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM,
         generic::{A, B},
-        Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
     },
     internal::ValuePrinter,
     stack::{self, StackFrame},
     thread::{RootedThread, Thread, ThreadInternal},
     types::*,
-    ExternModule, Result,
 };
 
-use crate::{compiler_pipeline::*, Error, ModuleCompiler, ThreadExt};
+use crate::{Error, ModuleCompiler, ThreadExt, compiler_pipeline::*};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);

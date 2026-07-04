@@ -2,7 +2,7 @@ use crate::base::{
     ast::{self, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding},
     pos,
     symbol::{Symbol, Symbols},
-    types::{remove_forall, row_iter, KindedIdent, Type, TypeContext},
+    types::{KindedIdent, Type, TypeContext, remove_forall, row_iter},
 };
 
 use crate::macros::Error;

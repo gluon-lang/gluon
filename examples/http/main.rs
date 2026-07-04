@@ -8,9 +8,8 @@
 use std::{env, fs};
 
 use gluon::{
-    new_vm,
-    vm::api::{OwnedFunction, IO},
-    Thread, ThreadExt,
+    Thread, ThreadExt, new_vm,
+    vm::api::{IO, OwnedFunction},
 };
 
 #[tokio::main]

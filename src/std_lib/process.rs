@@ -1,5 +1,5 @@
 use crate::real_std::process::Command;
-use crate::vm::{api::IO, thread::Thread, ExternModule, Result};
+use crate::vm::{ExternModule, Result, api::IO, thread::Thread};
 
 #[derive(Getable, VmType)]
 #[gluon(crate_name = "::vm")]

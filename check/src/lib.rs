@@ -32,7 +32,7 @@ use crate::base::{
     kind::Kind,
     metadata::MetadataEnv,
     symbol::Symbol,
-    types::{translate_type, ArcType, PrimitiveEnv, SharedInterner, TypeEnv, TypeExt},
+    types::{ArcType, PrimitiveEnv, SharedInterner, TypeEnv, TypeExt, translate_type},
 };
 
 use crate::{substitution::Substitution, typ::RcType};

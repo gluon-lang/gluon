@@ -9,7 +9,7 @@ use std::{
 
 use {
     codespan_reporting::diagnostic::Diagnostic,
-    downcast_rs::{impl_downcast, Downcast},
+    downcast_rs::{Downcast, impl_downcast},
     futures::{prelude::*, task::Spawn},
 };
 

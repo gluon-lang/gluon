@@ -13,7 +13,7 @@ use crate::base::{
     types::{Field, NullInterner, Type},
 };
 
-use crate::support::{alias, intern, typ, MockEnv};
+use crate::support::{MockEnv, alias, intern, typ};
 
 use crate::check::typecheck::TypeError;
 

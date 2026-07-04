@@ -1,23 +1,23 @@
 use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use futures::{
+    Future,
     channel::oneshot,
     future::{self, Either, Shared},
     prelude::*,
-    Future,
 };
 
 use crate::{
+    Error, ExternModule, Result,
     api::{
-        generic::A, Getable, OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Userdata,
-        VmType, WithVM,
+        Getable, OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Userdata, VmType,
+        WithVM, generic::A,
     },
     base::types::{self, ArcType},
     gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
-    Error, ExternModule, Result,
 };
 
 pub struct Lazy<T> {

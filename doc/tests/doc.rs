@@ -4,7 +4,7 @@ use {itertools::Itertools, rayon::prelude::*};
 
 use gluon_doc as doc;
 
-use gluon::{check::metadata::metadata, RootedThread, ThreadExt};
+use gluon::{RootedThread, ThreadExt, check::metadata::metadata};
 
 fn new_vm() -> RootedThread {
     ::gluon::VmBuilder::new()

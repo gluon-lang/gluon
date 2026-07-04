@@ -20,6 +20,7 @@ use either::Either;
 use crate::ThreadExt;
 
 use crate::{
+    Error, ModuleCompiler, Result,
     base::{
         ast::{self, OwnedExpr, RootExpr, SpannedExpr, Typed},
         error::{Errors, InFile},
@@ -30,14 +31,13 @@ use crate::{
         types::{ArcType, NullInterner, Type, TypeCache},
     },
     check::{metadata, rename},
-    query::{env, AsyncCompilation, Compilation},
+    query::{AsyncCompilation, Compilation, env},
     vm::{
         compiler::CompiledModule,
-        core::{self, interpreter, CoreExpr},
+        core::{self, CoreExpr, interpreter},
         macros::MacroExpander,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot},
     },
-    Error, ModuleCompiler, Result,
 };
 
 pub type BoxFuture<'vm, T, E> =
@@ -74,7 +74,7 @@ macro_rules! join_result {
                     return Err(Salvage {
                         value: Some(value),
                         error,
-                    })
+                    });
                 }
                 None => Ok(value),
             },
@@ -730,13 +730,16 @@ where
                      module,
                      core_expr,
                      ..
-                 }| { let _ = &__self; CompileValue {
-                    expr: self.expr,
-                    core_expr,
-                    typ,
-                    metadata,
-                    module,
-                } },
+                 }| {
+                    let _ = &__self;
+                    CompileValue {
+                        expr: self.expr,
+                        core_expr,
+                        typ,
+                        metadata,
+                        module,
+                    }
+                },
             )
     }
 }
@@ -1138,7 +1141,7 @@ where
 {
     use crate::check::check_signature;
     use crate::vm::api::generic::A;
-    use crate::vm::api::{VmType, IO};
+    use crate::vm::api::{IO, VmType};
 
     if check_signature(&vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
         let ExecuteValue {

@@ -21,10 +21,11 @@ use crate::base::{
 };
 
 use crate::{
+    Error, ExternModule, Result as VmResult, Variants,
     api::{
+        Function, FunctionRef, Generic, Getable, IO, OpaqueRef, OpaqueValue, OwnedFunction,
+        Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM,
         generic::{A, B},
-        Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction, Pushable,
-        Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
     gc::{self, CloneUnrooted, GcPtr, Trace},
     stack::{ClosureState, ExternState, State},
@@ -32,7 +33,6 @@ use crate::{
     types::VmInt,
     value::{Callable, Userdata, Value, ValueRepr},
     vm::{RootedThread, Thread},
-    Error, ExternModule, Result as VmResult, Variants,
 };
 
 pub struct Sender<T> {

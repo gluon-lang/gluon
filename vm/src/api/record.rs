@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use frunk_core::hlist::{h_cons, HCons, HList, HNil};
+use frunk_core::hlist::{HCons, HList, HNil, h_cons};
 
 use crate::base::{
     symbol::Symbol,
@@ -9,7 +9,7 @@ use crate::base::{
 
 use super::{ActiveThread, Getable, Pushable, ValueRef, VmType};
 
-use crate::{interner::InternedStr, value::Value, vm::Thread, Result, Variants};
+use crate::{Result, Variants, interner::InternedStr, value::Value, vm::Thread};
 
 pub struct Record<T, U> {
     pub type_fields: T,

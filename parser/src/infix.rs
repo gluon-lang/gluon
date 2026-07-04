@@ -3,7 +3,7 @@
 //! after the fact.
 
 use crate::base::ast::{
-    self, walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent,
+    self, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent, walk_mut_expr,
 };
 use crate::base::error::Errors;
 use crate::base::fnv::FnvMap;
@@ -293,7 +293,11 @@ impl fmt::Display for Error {
                     lhs_meta, lhs_name, rhs_meta, rhs_name
                 )
             }
-            UndefinedFixity(ref op) => write!(f, "No fixity specified for `{}`. Fixity must be specified with the `#[infix]` attribute", op),
+            UndefinedFixity(ref op) => write!(
+                f,
+                "No fixity specified for `{}`. Fixity must be specified with the `#[infix]` attribute",
+                op
+            ),
             InvalidFixity => write!(
                 f,
                 "Only `left` or `right` is valid associativity specifications"
@@ -479,8 +483,7 @@ enum InfixToken<'ast, Id> {
 /// Op:   -
 /// Arg:  8
 /// ```
-struct Infixes<'ast, Id>
-{
+struct Infixes<'ast, Id> {
     /// The next part of the expression that we need to flatten
     remaining_expr: Option<&'ast mut SpannedExpr<'ast, Id>>,
     /// Cached operator from a previous iteration

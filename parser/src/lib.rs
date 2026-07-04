@@ -525,12 +525,11 @@ pub fn reparse_infix<'ast, Id>(
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
-    use crate::base::ast::{is_operator_char, walk_pattern, Pattern, Visitor};
+    use crate::base::ast::{Pattern, Visitor, is_operator_char, walk_pattern};
 
     let mut errors = Errors::new();
 
-    struct CheckInfix<'b, Id>
-    {
+    struct CheckInfix<'b, Id> {
         metadata: &'b FnvMap<Id, Arc<Metadata>>,
         errors: &'b mut Errors<Spanned<Error, BytePos>>,
         op_table: &'b mut OpTable<Id>,

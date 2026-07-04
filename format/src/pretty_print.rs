@@ -40,11 +40,7 @@ macro_rules! rev_newlines_iter {
 }
 
 fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
-    if let Doc::Nil = *doc.1 {
-        true
-    } else {
-        false
-    }
+    if let Doc::Nil = *doc.1 { true } else { false }
 }
 
 fn trailing_comma<'a, A>(arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A> {
@@ -536,11 +532,7 @@ where
         default: DocBuilder<'a, Arena<'a, A>, A>,
     ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let (doc, _) = self.comments_count(span);
-        if let Doc::Nil = *doc.1 {
-            default
-        } else {
-            doc
-        }
+        if let Doc::Nil = *doc.1 { default } else { doc }
     }
 
     fn pretty_if_expr(&self, mut expr: &'a SpannedExpr<I>) -> DocBuilder<'a, Arena<'a, A>, A>
@@ -738,7 +730,8 @@ where
             }
 
             Expr::Tuple {
-                elems: &mut [ref inner], ..
+                elems: &mut [ref inner],
+                ..
             } => {
                 let decl = arena.text("(");
 
@@ -989,11 +982,7 @@ where
                 body.clone(),
                 |next, ((body_spacing, nest), from)| {
                     let doc = body_spacing.append(from).append(next);
-                    if nest {
-                        doc.nest(INDENT)
-                    } else {
-                        doc
-                    }
+                    if nest { doc.nest(INDENT) } else { doc }
                 },
             );
 

@@ -20,21 +20,20 @@ use {
         types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
     vm::{
-        self,
+        self, ExternLoader,
         api::{OpaqueValue, ValueRef},
         compiler::{CompilerEnv, Variable},
-        core::{self, interpreter, optimize::OptimizeEnv, CoreExpr},
+        core::{self, CoreExpr, interpreter, optimize::OptimizeEnv},
         gc::{GcPtr, Trace},
         internal::ClosureData,
         internal::Value,
         macros,
         thread::{RootedThread, RootedValue, Thread, ThreadInternal},
         vm::VmEnv,
-        ExternLoader,
     },
 };
 
-use crate::{compiler_pipeline::*, import::PtrEq, Error, ModuleCompiler, Result, Settings};
+use crate::{Error, ModuleCompiler, Result, Settings, compiler_pipeline::*, import::PtrEq};
 
 pub use salsa;
 
@@ -58,20 +57,22 @@ impl UnrootedValue {
     }
 }
 
-unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> DatabaseGlobal { unsafe {
-    let UnrootedGlobal {
-        id,
-        typ,
-        metadata,
-        value,
-    } = global;
-    DatabaseGlobal {
-        id,
-        typ,
-        metadata,
-        value: value.root_with(vm),
+unsafe fn root_global_with(global: UnrootedGlobal, vm: RootedThread) -> DatabaseGlobal {
+    unsafe {
+        let UnrootedGlobal {
+            id,
+            typ,
+            metadata,
+            value,
+        } = global;
+        DatabaseGlobal {
+            id,
+            typ,
+            metadata,
+            value: value.root_with(vm),
+        }
     }
-}}
+}
 pub type UnrootedGlobal = vm::vm::Global<UnrootedValue>;
 pub type DatabaseGlobal = vm::vm::Global<RootedValue<RootedThread>>;
 

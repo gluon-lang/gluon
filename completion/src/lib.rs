@@ -11,8 +11,8 @@ use either::Either;
 
 use crate::base::{
     ast::{
-        self, walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
-        SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor,
+        self, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent, SpannedPattern,
+        Typed, TypedIdent, Visitor, walk_expr, walk_pattern,
     },
     filename_to_module,
     fnv::{FnvMap, FnvSet},
@@ -23,8 +23,8 @@ use crate::base::{
     scoped_map::ScopedMap,
     symbol::{Name, Symbol, SymbolRef},
     types::{
-        walk_type_, AliasData, ArcType, ControlVisitation, Generic, NullInterner, Type, TypeEnv,
-        TypeExt,
+        AliasData, ArcType, ControlVisitation, Generic, NullInterner, Type, TypeEnv, TypeExt,
+        walk_type_,
     },
 };
 
@@ -466,9 +466,7 @@ where
                                         field_type.clone(),
                                     ));
                                 }
-                                (Ordering::Greater, &Some(pattern)) => {
-                                    self.visit_pattern(pattern)
-                                }
+                                (Ordering::Greater, &Some(pattern)) => self.visit_pattern(pattern),
                                 _ => self.found = MatchState::Empty,
                             }
                         }
@@ -729,7 +727,8 @@ where
             }
 
             Type::Generic(ref r#gen) => {
-                self.found = MatchState::Found(Match::Type(typ.span(), &r#gen.id, r#gen.kind.clone()));
+                self.found =
+                    MatchState::Found(Match::Type(typ.span(), &r#gen.id, r#gen.kind.clone()));
             }
 
             Type::Alias(ref alias) => {

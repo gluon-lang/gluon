@@ -1029,14 +1029,14 @@ mod mut_ {
     visitor!(MutVisitor, unresolved_type_mut, try_get_alias_mut, mut);
 }
 pub use self::mut_::{
-    walk_alias as walk_mut_alias, walk_ast_type as walk_mut_ast_type, walk_expr as walk_mut_expr,
-    walk_pattern as walk_mut_pattern, MutVisitor,
+    MutVisitor, walk_alias as walk_mut_alias, walk_ast_type as walk_mut_ast_type,
+    walk_expr as walk_mut_expr, walk_pattern as walk_mut_pattern,
 };
 mod ref_ {
     use super::*;
     visitor!(Visitor, unresolved_type, try_get_alias,);
 }
-pub use self::ref_::{walk_alias, walk_ast_type, walk_expr, walk_pattern, Visitor};
+pub use self::ref_::{Visitor, walk_alias, walk_ast_type, walk_expr, walk_pattern};
 
 /// Trait which abstracts over things that have a type.
 /// It is not guaranteed that the correct type is returned until after typechecking

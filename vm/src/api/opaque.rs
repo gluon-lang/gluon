@@ -3,12 +3,13 @@ use std::{borrow::Borrow, cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 use crate::base::types::ArcType;
 
 use crate::{
+    Result, Variants,
     api::{Getable, Pushable, ValueRef, VmType},
     gc::{GcPtr, GcRef, Trace},
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
     value::{ArrayRepr, ClosureData, Value, ValueArray, ValueRepr},
-    vm, Result, Variants,
+    vm,
 };
 
 #[cfg(feature = "serde")]
@@ -443,8 +444,7 @@ where
     }
 }
 
-pub struct Iter<'a, 'value, T, V>
-{
+pub struct Iter<'a, 'value, T, V> {
     index: usize,
     array: &'a Opaque<T, [V]>,
     _marker: PhantomData<&'value ()>,

@@ -6,11 +6,10 @@ use rand_xorshift;
 use self::rand::{RngExt, SeedableRng};
 
 use crate::vm::{
-    self,
-    api::{RuntimeResult, IO},
+    self, ExternModule,
+    api::{IO, RuntimeResult},
     thread::Thread,
     types::VmInt,
-    ExternModule,
 };
 
 #[derive(Clone, Debug, Userdata, Trace, VmType)]

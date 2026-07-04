@@ -76,7 +76,10 @@ pub fn split_for_impl<'a>(
     extra_lifetimes
         .into_iter()
         .map(|lifetime| {
-            GenericParam::from(LifetimeParam::new(Lifetime::new(lifetime, Span::call_site())))
+            GenericParam::from(LifetimeParam::new(Lifetime::new(
+                lifetime,
+                Span::call_site(),
+            )))
         })
         .for_each(|lifetime| {
             if generics.params.iter().all(|p| *p != lifetime) {

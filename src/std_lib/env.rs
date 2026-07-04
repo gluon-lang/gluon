@@ -4,7 +4,7 @@ use crate::real_std::{
     path::{Path, PathBuf},
 };
 
-use crate::vm::{self, api::IO, thread::Thread, ExternModule};
+use crate::vm::{self, ExternModule, api::IO, thread::Thread};
 
 fn args() -> IO<Vec<String>> {
     IO::Value(env::args().collect())

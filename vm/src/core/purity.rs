@@ -4,8 +4,8 @@ use base::{
 };
 
 use crate::core::{
-    optimize::{walk_expr, DifferentLifetime, Visitor},
     Allocator, CExpr, Expr, Named, Pattern,
+    optimize::{DifferentLifetime, Visitor, walk_expr},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

@@ -36,15 +36,15 @@ use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem
 
 use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec, typed_arena::Arena};
 
-use self::optimize::{walk_expr_alloc, SameLifetime, Visitor};
+use self::optimize::{SameLifetime, Visitor, walk_expr_alloc};
 
 use crate::base::{
     ast::{self, SpannedExpr, SpannedPattern, Typed, TypedIdent},
     fnv::{FnvMap, FnvSet},
-    pos::{spanned, BytePos, Span, Spanned},
+    pos::{BytePos, Span, Spanned, spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
-    types::{arg_iter, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
+    types::{ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt, arg_iter},
 };
 
 macro_rules! iterator {
@@ -637,7 +637,7 @@ mod internal {
     fn assert_sync<T: Sync>() {}
 }
 
-pub use self::internal::{freeze_closure, freeze_expr, CoreClosure, CoreExpr};
+pub use self::internal::{CoreClosure, CoreExpr, freeze_closure, freeze_expr};
 
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,

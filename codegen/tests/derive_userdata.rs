@@ -8,9 +8,8 @@ mod init;
 use std::sync::Arc;
 
 use gluon::{
-    import,
+    Thread, ThreadExt, import,
     vm::{self, ExternModule},
-    Thread, ThreadExt,
 };
 
 use init::new_vm;

@@ -8,14 +8,14 @@ extern crate log;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, create_dir_all, File},
+    fs::{self, File, create_dir_all},
     io::{self, Read},
     path::{Path, PathBuf},
     result::Result as StdResult,
 };
 
 use {
-    anyhow::{anyhow, Context as _},
+    anyhow::{Context as _, anyhow},
     handlebars::{
         Context, Handlebars, Helper, Output, RenderContext, RenderError, RenderErrorReason,
     },
@@ -26,6 +26,7 @@ use {
 };
 
 use gluon::{
+    Thread, ThreadExt,
     base::{
         filename_to_module,
         fnv::FnvMap,
@@ -35,7 +36,6 @@ use gluon::{
         types::{ArcType, ArgType, Type, TypeExt, TypePtr},
     },
     check::metadata::metadata,
-    Thread, ThreadExt,
 };
 
 pub type Error = anyhow::Error;

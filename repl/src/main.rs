@@ -32,7 +32,7 @@ use crate::base::{
 };
 
 use gluon::{
-    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread, ThreadExt,
+    Result, Thread, ThreadExt, new_vm_async, vm::Error as VMError, vm::thread::ThreadInternal,
 };
 
 mod repl;
@@ -113,7 +113,12 @@ pub enum SubOpt {
     Doc(::gluon_doc::Opt),
 }
 
-const LONG_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\n", "commit: ", env!("GIT_HASH"));
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\n",
+    "commit: ",
+    env!("GIT_HASH")
+);
 
 #[derive(StructOpt)]
 #[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
@@ -223,7 +228,7 @@ async fn fmt_file(thread: &Thread, name: &Path) -> Result<()> {
 }
 
 async fn fmt_stdio(thread: &Thread) -> Result<()> {
-    use std::io::{stdin, stdout, Read};
+    use std::io::{Read, stdin, stdout};
 
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;

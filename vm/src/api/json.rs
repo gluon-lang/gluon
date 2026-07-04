@@ -5,9 +5,9 @@ use std::{borrow::Borrow, fmt, result::Result as StdResult};
 use crate::base::types::ArcType;
 
 use crate::{
+    ExternModule, Result, Variants,
     api::{Getable, OpaqueValue, ValueRef, VmInt, VmType},
     thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
-    ExternModule, Result, Variants,
 };
 
 use crate::serde::de::{self, DeserializeState, MapAccess, SeqAccess, Visitor};

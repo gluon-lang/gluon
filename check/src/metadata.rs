@@ -8,7 +8,7 @@ use crate::base::{
     fnv::FnvMap,
     metadata::{BaseMetadata, Metadata, MetadataEnv},
     symbol::{Name, Symbol},
-    types::{row_iter, TypeExt},
+    types::{TypeExt, row_iter},
 };
 
 struct Environment<'b> {

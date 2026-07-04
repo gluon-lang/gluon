@@ -5,7 +5,7 @@ use std::{fs::File, io::Read};
 
 use criterion::{Bencher, Criterion};
 
-use gluon::{compiler_pipeline::compile_to, new_vm, ThreadExt};
+use gluon::{ThreadExt, compiler_pipeline::compile_to, new_vm};
 
 fn precompiled_prelude(b: &mut Bencher) {
     let thread = new_vm();

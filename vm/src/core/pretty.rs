@@ -197,9 +197,7 @@ impl<'a> Expr<'a> {
             }
             Expr::Match(expr, alts) => match alts.first() {
                 Some(
-                    alt
-                    @
-                    &Alternative {
+                    alt @ &Alternative {
                         pattern: Pattern::Record { .. },
                         ..
                     },

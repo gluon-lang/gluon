@@ -3,9 +3,8 @@ use std::fs;
 use tempfile::NamedTempFile;
 
 use gluon::{
-    new_vm,
-    vm::api::{Hole, OpaqueValue, OwnedFunction, ValueRef, IO},
-    Thread, ThreadExt,
+    Thread, ThreadExt, new_vm,
+    vm::api::{Hole, IO, OpaqueValue, OwnedFunction, ValueRef},
 };
 
 use tokio::runtime::Runtime;

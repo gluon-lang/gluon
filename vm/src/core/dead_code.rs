@@ -10,9 +10,8 @@ use base::{
 };
 
 use crate::core::{
-    self,
-    optimize::{walk_closures, walk_expr, walk_expr_alloc, SameLifetime, Visitor},
-    Allocator, CExpr, Expr, LetBinding, Pattern,
+    self, Allocator, CExpr, Expr, LetBinding, Pattern,
+    optimize::{SameLifetime, Visitor, walk_closures, walk_expr, walk_expr_alloc},
 };
 
 pub fn dead_code_elimination<'a>(

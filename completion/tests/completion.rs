@@ -20,7 +20,7 @@ use either::Either;
 
 #[allow(unused)]
 mod support;
-use crate::support::{intern, loc, typ, MockEnv};
+use crate::support::{MockEnv, intern, loc, typ};
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
     let env = MockEnv::new();

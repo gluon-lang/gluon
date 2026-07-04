@@ -22,7 +22,7 @@ use {
 };
 
 use crate::base::{
-    ast::{self, expr_to_path, Expr, Literal, SpannedExpr},
+    ast::{self, Expr, Literal, SpannedExpr, expr_to_path},
     filename_to_module, pos,
     source::FileId,
     symbol::{Symbol, Symbols},
@@ -30,18 +30,17 @@ use crate::base::{
 };
 
 use crate::vm::{
-    self,
+    self, ExternLoader, ExternModule,
     gc::Trace,
     macros::{Error as MacroError, LazyMacroResult, Macro, MacroExpander, MacroFuture},
     thread::{RootedThread, Thread},
     vm::VmEnv,
-    ExternLoader, ExternModule,
 };
 
 use crate::{
+    IoError, ModuleCompiler, ThreadExt,
     compiler_pipeline::{Salvage, SalvageResult},
     query::{AsyncCompilation, Compilation, CompilerDatabase},
-    IoError, ModuleCompiler, ThreadExt,
 };
 
 quick_error! {
@@ -525,13 +524,16 @@ where
 
         info!("import! {}", modulename);
 
-        let mut db = try_future!(macros
-            .userdata
-            .fork(macros.vm.root_thread())
-            .downcast::<salsa::Snapshot<CompilerDatabase>>()
-            .map_err(|_| MacroError::new(Error::String(
-                "`import` requires a `CompilerDatabase` as user data during macro expansion".into(),
-            ))));
+        let mut db = try_future!(
+            macros
+                .userdata
+                .fork(macros.vm.root_thread())
+                .downcast::<salsa::Snapshot<CompilerDatabase>>()
+                .map_err(|_| MacroError::new(Error::String(
+                    "`import` requires a `CompilerDatabase` as user data during macro expansion"
+                        .into(),
+                )))
+        );
 
         let span = args[0].span;
 
