@@ -17,7 +17,7 @@ macro_rules! assert_deq {
     }};
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(feature = "test")]
 lalrpop_util::lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
     #[allow(unused_parens)]

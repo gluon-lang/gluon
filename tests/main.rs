@@ -354,7 +354,7 @@ async fn run_doc_tests<'t>(
                     Ok(test) => make_tensile_test(test_name, test),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(test_name, || Err(err.0.into()))
+                        tensile::test(test_name, || { let _ = &err; Err(err.0.into()) })
                     }
                 }
             })
@@ -413,7 +413,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name2, || Err(err.0))
+                        tensile::test(name2, || { let _ = &err; Err(err.0) })
                     }
                 }
             }))
@@ -451,7 +451,7 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(tests) => tensile::group(name.clone(), tests),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name.clone(), || Err(err.0))
+                        tensile::test(name.clone(), || { let _ = &err; Err(err.0) })
                     }
                 }
             }))
