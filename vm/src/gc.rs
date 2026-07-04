@@ -35,7 +35,7 @@ macro_rules! impl_trace {
         fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
         }
     };
-    ($self_: tt, $gc: ident, $body: expr) => {
+    ($self_: tt, $gc: ident, $body: expr_2021) => {
         unsafe fn root(&mut $self_) { unsafe {
             #[allow(unused)]
             unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) { unsafe {
@@ -779,7 +779,7 @@ pub unsafe trait Trace {
 
 #[macro_export]
 macro_rules! construct_enum_gc {
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr, $($rest: tt)*) => { {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr_2021, $($rest: tt)*) => { {
         let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
@@ -788,7 +788,7 @@ macro_rules! construct_enum_gc {
         )
     } };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr, $($rest: tt)*) => {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr_2021, $($rest: tt)*) => {
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* $expr,]
                       [$($ptr)*]
@@ -796,7 +796,7 @@ macro_rules! construct_enum_gc {
         )
     };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr) => { {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr_2021) => { {
         let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
@@ -804,7 +804,7 @@ macro_rules! construct_enum_gc {
         )
     } };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr) => {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr_2021) => {
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* $expr,]
                       [$($ptr)*]
@@ -828,7 +828,7 @@ macro_rules! construct_enum_gc {
 
 #[macro_export]
 macro_rules! construct_gc {
-    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr, $($rest: tt)*) => { {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr_2021, $($rest: tt)*) => { {
         let $field = $expr;
         $crate::construct_gc!(impl $typ
                       [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
@@ -845,7 +845,7 @@ macro_rules! construct_gc {
         )
     };
 
-    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr)?, $($rest: tt)*) => {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr_2021)?, $($rest: tt)*) => {
         $crate::construct_gc!(impl $typ
                       [$($acc)* $field $(: $expr)?,]
                       [$($ptr)*]
@@ -1435,7 +1435,7 @@ mod tests {
     }
     unsafe impl<'a> DataDef for Def<'a> {
         type Value = Vec<Value>;
-t         fn size(&self) -> usize {
+        fn size(&self) -> usize {
             mem::size_of::<Self::Value>()
         }
         fn initialize(self, result: WriteOnly<'_, Vec<Value>>) -> &mut Vec<Value> {

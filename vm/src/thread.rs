@@ -829,10 +829,6 @@ impl Thread {
     /// # #[tokio::main]
     /// # async fn main() {
     ///
-    /// # if ::std::env::var("GLUON_PATH").is_err() {
-    /// #     ::std::env::set_var("GLUON_PATH", "..");
-    /// # }
-    ///
     /// let vm = new_vm_async().await;
     ///
     /// vm.run_expr_async::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)

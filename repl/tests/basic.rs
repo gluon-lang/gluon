@@ -7,11 +7,6 @@ use std::process::{Command, Stdio};
 
 #[test]
 fn issue_365_run_io_from_command_line() {
-    if ::std::env::var("GLUON_PATH").is_err() {
-        // FIXME: Audit that the environment access only happens in single-threaded code.
-        unsafe { ::std::env::set_var("GLUON_PATH", "..") };
-    }
-
     let path = env::args().next().unwrap();
     let gluon_path = Path::new(&path[..])
         .parent()

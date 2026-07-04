@@ -719,11 +719,10 @@ mod tests {
     use gluon::{self, RootedThread};
 
     async fn new_vm() -> RootedThread {
-        if std::env::var("GLUON_PATH").is_err() {
-            // FIXME: Audit that the environment access only happens in single-threaded code.
-            unsafe { std::env::set_var("GLUON_PATH", "..") };
-        }
-        let vm = gluon::new_vm_async().await;
+        let vm = gluon::VmBuilder::new()
+            .import_paths(Some(vec!["..".into()]))
+            .build_async()
+            .await;
         let import = vm.get_macros().get("import");
         import
             .as_ref()
