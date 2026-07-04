@@ -2,7 +2,7 @@ use std::{
     any::{Any, TypeId},
     cell::Cell,
     cmp::Ordering,
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{
-    base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex, Error, Result,
+    Error, Result, base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex,
 };
 
 pub mod mutex;
@@ -23,6 +23,18 @@ pub mod mutex;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! impl_trace {
+    ($self_: tt, $gc: ident, {}) => {
+        unsafe fn root(&mut $self_) { }
+        unsafe fn unroot(&mut $self_) { }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+        }
+    };
+    ($self_: tt, $gc: ident, ()) => {
+        unsafe fn root(&mut $self_) { }
+        unsafe fn unroot(&mut $self_) { }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+        }
+    };
     ($self_: tt, $gc: ident, $body: expr_2021) => {
         unsafe fn root(&mut $self_) { unsafe {
             #[allow(unused)]
@@ -111,15 +123,17 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 }
 
 #[inline]
-unsafe fn deallocate(ptr: *mut u8, old_size: usize) { unsafe {
-    let cap = old_size / mem::size_of::<f64>()
-        + (if old_size % mem::size_of::<f64>() != 0 {
-            1
-        } else {
-            0
-        });
-    Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
-}}
+unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
+    unsafe {
+        let cap = old_size / mem::size_of::<f64>()
+            + (if old_size % mem::size_of::<f64>() != 0 {
+                1
+            } else {
+                0
+            });
+        Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
+    }
+}
 
 /// Pointer type which can only be written to.
 pub struct WriteOnly<'s, T: ?Sized>(*mut T, PhantomData<&'s mut T>);
@@ -284,9 +298,9 @@ unsafe impl<D, T> FromPtr<D> for T {
 }
 
 unsafe impl<'s, 't, T> FromPtr<&'s &'t [T]> for [T] {
-    unsafe fn make_ptr(v: &'s &'t [T], ptr: *mut ()) -> *mut [T] { unsafe {
-        ::std::slice::from_raw_parts_mut(ptr as *mut T, v.len())
-    }}
+    unsafe fn make_ptr(v: &'s &'t [T], ptr: *mut ()) -> *mut [T] {
+        unsafe { ::std::slice::from_raw_parts_mut(ptr as *mut T, v.len()) }
+    }
 }
 
 /// A definition of some data which may be allocated by the garbage collector.
@@ -456,9 +470,9 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
 
 /// SAFETY The only unsafety from copying the type is the creation of an unrooted value
 pub unsafe trait CopyUnrooted: CloneUnrooted<Value = Self> + Sized {
-    unsafe fn copy_unrooted(&self) -> Self { unsafe {
-        ptr::read(self)
-    }}
+    unsafe fn copy_unrooted(&self) -> Self {
+        unsafe { ptr::read(self) }
+    }
 }
 
 pub trait CloneUnrooted {
@@ -471,9 +485,9 @@ pub trait CloneUnrooted {
 impl<T: ?Sized + CloneUnrooted> CloneUnrooted for &'_ T {
     type Value = T::Value;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self::Value { unsafe {
-        (**self).clone_unrooted()
-    }}
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        unsafe { (**self).clone_unrooted() }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -501,9 +515,9 @@ where
 {
     type Value = T::Value;
     #[inline]
-    unsafe fn clone_unrooted(&self) -> Self::Value { unsafe {
-        self.0.clone_unrooted()
-    }}
+    unsafe fn clone_unrooted(&self) -> Self::Value {
+        unsafe { self.0.clone_unrooted() }
+    }
 }
 
 deref_trace! { ['a, T: Trace] Borrow<'a, T> }
@@ -664,14 +678,14 @@ impl<T: ?Sized> CloneUnrooted for GcPtr<T> {
 impl<T: ?Sized> GcPtr<T> {
     /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
     /// else
-    pub unsafe fn as_mut(&mut self) -> &mut T { unsafe {
-        self.0.as_mut()
-    }}
+    pub unsafe fn as_mut(&mut self) -> &mut T {
+        unsafe { self.0.as_mut() }
+    }
 
     /// Unsafe as `ptr` must have been allocted by this garbage collector
-    pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> { unsafe {
-        GcPtr(NonNull::new_unchecked(ptr as *mut _))
-    }}
+    pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> {
+        unsafe { GcPtr(NonNull::new_unchecked(ptr as *mut _)) }
+    }
 
     pub fn generation(&self) -> Generation {
         self.header().generation()
@@ -1091,26 +1105,28 @@ impl Gc {
         R: Trace + CollectScope,
         D: DataDef + Trace,
         D::Value: Sized + Any,
-    { unsafe {
-        #[derive(Trace)]
-        #[gluon(gluon_vm)]
-        struct Scope1<A, B>(A, B);
+    {
+        unsafe {
+            #[derive(Trace)]
+            #[gluon(gluon_vm)]
+            struct Scope1<A, B>(A, B);
 
-        impl<A, B> CollectScope for Scope1<A, B>
-        where
-            A: CollectScope,
-        {
-            fn scope<F>(&self, gc: &mut Gc, f: F)
+            impl<A, B> CollectScope for Scope1<A, B>
             where
-                F: FnOnce(&mut Gc),
+                A: CollectScope,
             {
-                self.0.scope(gc, f)
+                fn scope<F>(&self, gc: &mut Gc, f: F)
+                where
+                    F: FnOnce(&mut Gc),
+                {
+                    self.0.scope(gc, f)
+                }
             }
-        }
 
-        self.check_collect(Scope1(roots, &def));
-        self.alloc_owned(def)
-    }}
+            self.check_collect(Scope1(roots, &def));
+            self.alloc_owned(def)
+        }
+    }
 
     /// Allocates a new object.
     pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<'_, D::Value>>
@@ -1214,9 +1230,11 @@ impl Gc {
         D: DataDef,
         D::Value: Sized + Any,
     {
-        unsafe fn drop<T>(t: *mut ()) { unsafe {
-            ptr::drop_in_place(t as *mut T);
-        }}
+        unsafe fn drop<T>(t: *mut ()) {
+            unsafe {
+                ptr::drop_in_place(t as *mut T);
+            }
+        }
 
         let type_info = self.get_type_info(
             def.tag(),
@@ -1244,28 +1262,32 @@ impl Gc {
     pub unsafe fn check_collect<R>(&mut self, roots: R) -> bool
     where
         R: Trace + CollectScope,
-    { unsafe {
-        if self.allocated_memory >= self.collect_limit {
-            self.collect(roots);
-            true
-        } else {
-            false
+    {
+        unsafe {
+            if self.allocated_memory >= self.collect_limit {
+                self.collect(roots);
+                true
+            } else {
+                false
+            }
         }
-    }}
+    }
 
     /// Does a mark and sweep collection by walking from `roots`. This function is unsafe since
     /// roots need to cover all reachable object.
     pub unsafe fn collect<R>(&mut self, roots: R)
     where
         R: Trace + CollectScope,
-    { unsafe {
-        info!("Start collect {:?}", self.generation);
-        roots.scope(self, |self_| {
-            roots.trace(self_);
-            self_.sweep();
-            self_.collect_limit = 2 * self_.allocated_memory;
-        })
-    }}
+    {
+        unsafe {
+            info!("Start collect {:?}", self.generation);
+            roots.scope(self, |self_| {
+                roots.trace(self_);
+                self_.sweep();
+                self_.collect_limit = 2 * self_.allocated_memory;
+            })
+        }
+    }
 
     /// Marks the GcPtr
     /// Returns true if the pointer was already marked
@@ -1433,9 +1455,9 @@ mod tests {
     impl CloneUnrooted for Value {
         type Value = Self;
         #[inline]
-        unsafe fn clone_unrooted(&self) -> Self { unsafe {
-            self.copy_unrooted()
-        }}
+        unsafe fn clone_unrooted(&self) -> Self {
+            unsafe { self.copy_unrooted() }
+        }
     }
 
     fn new_data(p: GcRef<Vec<Value>>) -> Value {
