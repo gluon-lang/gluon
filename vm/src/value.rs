@@ -1247,7 +1247,7 @@ fn cast<T, R>(array: T, f: impl FnOnce(T) -> R) -> R {
 }
 
 macro_rules! on_array {
-    ($array:expr_2021, $f:expr_2021) => {{
+    ($array:expr, $f:expr) => {{
         let ref array = $array;
         #[allow(unused_unsafe)]
         // SAFETY We check the `repr` before casting to the inner type
@@ -1267,7 +1267,7 @@ macro_rules! on_array {
 }
 
 macro_rules! on_array_mut {
-    ($array:expr_2021, $f:expr_2021) => {{
+    ($array:expr, $f:expr) => {{
         let array = $array;
         #[allow(unused_unsafe)]
         // SAFETY We check the `repr` before casting to the inner type

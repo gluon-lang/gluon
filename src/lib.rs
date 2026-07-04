@@ -32,10 +32,10 @@ pub extern crate gluon_vm as vm;
 pub use salsa;
 
 macro_rules! try_future {
-    ($e:expr_2021) => {
+    ($e:expr) => {
         try_future!($e, Box::pin)
     };
-    ($e:expr_2021, $f:expr_2021) => {
+    ($e:expr, $f:expr) => {
         match $e {
             Ok(x) => x,
             Err(err) => return $f(::futures::future::err(err.into())),

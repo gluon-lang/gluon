@@ -18,7 +18,7 @@ use crate::support::*;
 mod support;
 
 macro_rules! assert_pass {
-    ($e:expr_2021) => {{
+    ($e:expr) => {{
         if !$e.is_ok() {
             panic!("assert_pass: {}", $e.unwrap_err());
         }
@@ -204,7 +204,7 @@ in g 5
 }
 
 macro_rules! assert_match {
-    ($i:expr_2021, $p:pat => $e:expr_2021) => {
+    ($i:expr, $p:pat => $e:expr) => {
         match $i {
             $p => $e,
             ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x),

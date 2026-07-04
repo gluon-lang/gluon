@@ -1,7 +1,7 @@
 #[macro_export]
 #[cfg(any(test, feature = "test"))]
 macro_rules! assert_deq {
-    ($left:expr_2021, $right:expr_2021) => {{
+    ($left:expr, $right:expr) => {{
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
@@ -48,7 +48,7 @@ use crate::base::{
 };
 
 macro_rules! iterator {
-    ($($expr : expr_2021),* $(,)?) => {
+    ($($expr : expr),* $(,)?) => {
         [$(Some($expr)),*].iter_mut().map(|e| e.take().unwrap())
     }
 }

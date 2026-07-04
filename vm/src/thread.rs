@@ -1999,7 +1999,7 @@ unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
 // safe to keep clone the value (to disconnect the previous lifetime from the stack)
 // and store the value unrooted
 macro_rules! transfer {
-    ($context: expr_2021, $value: expr_2021) => {
+    ($context: expr, $value: expr) => {
         unsafe { lock_gc(&$context.gc, $value) }
     };
 }
@@ -2009,7 +2009,7 @@ unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'g
 }
 
 macro_rules! transfer_ptr {
-    ($context: expr_2021, $value: expr_2021) => {
+    ($context: expr, $value: expr) => {
         unsafe { lock_gc_ptr(&$context.gc, $value) }
     };
 }

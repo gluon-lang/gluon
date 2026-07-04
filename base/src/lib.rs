@@ -75,7 +75,7 @@ macro_rules! type_cache {
 
 #[macro_export]
 macro_rules! chain {
-    ($alloc: expr_2021, $first: expr_2021, $($rest: expr_2021),+ $(,)?) => {{
+    ($alloc: expr, $first: expr, $($rest: expr),+ $(,)?) => {{
         let mut doc = ::pretty::DocBuilder($alloc, $first.into());
         $(
             doc = doc.append($rest);

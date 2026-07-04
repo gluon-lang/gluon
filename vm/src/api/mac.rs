@@ -32,28 +32,28 @@ macro_rules! primitive_cast {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! closure_wrapper {
-    (0, $name:expr_2021) => {
+    (0, $name:expr) => {
         || $crate::api::FutureResult::new($name())
     };
-    (1, $name:expr_2021) => {
+    (1, $name:expr) => {
         |a| $crate::api::FutureResult::new($name(a))
     };
-    (2, $name:expr_2021) => {
+    (2, $name:expr) => {
         |a, b| $crate::api::FutureResult::new($name(a, b))
     };
-    (3, $name:expr_2021) => {
+    (3, $name:expr) => {
         |a, b, c| $crate::api::FutureResult::new($name(a, b, c))
     };
-    (4, $name:expr_2021) => {
+    (4, $name:expr) => {
         |a, b, c, d| $crate::api::FutureResult::new($name(a, b, c, d))
     };
-    (5, $name:expr_2021) => {
+    (5, $name:expr) => {
         |a, b, c, d, e| $crate::api::FutureResult::new($name(a, b, c, d, e))
     };
-    (6, $name:expr_2021) => {
+    (6, $name:expr) => {
         |a, b, c, d, e, f| $crate::api::FutureResult::new($name(a, b, c, d, e, f))
     };
-    (7, $name:expr_2021) => {
+    (7, $name:expr) => {
         |a, b, c, d, e, f, g| $crate::api::FutureResult::new($name(a, b, c, d, e, f, g))
     };
 }
@@ -73,15 +73,15 @@ macro_rules! closure_wrapper {
 /// ```
 #[macro_export(local_inner_macros)]
 macro_rules! primitive {
-    ($arg_count:tt, async fn $name:expr_2021) => {
+    ($arg_count:tt, async fn $name:expr) => {
         primitive!($arg_count, stringify_inner!($name), async fn $name)
     };
 
-    ($arg_count:tt, $name:expr_2021) => {
+    ($arg_count:tt, $name:expr) => {
         primitive!(impl primitive_cast!($arg_count), stringify_inner!($name), $name)
     };
 
-    ($arg_count:tt, $name:expr_2021, async fn $func:expr_2021 $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
+    ($arg_count:tt, $name:expr, async fn $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
         primitive!(
             impl primitive_cast!($arg_count),
             $name,
@@ -89,11 +89,11 @@ macro_rules! primitive {
             $(, [$($params)*] [$($where_)*])?
         )
     };
-    ($arg_count:tt, $name:expr_2021, $func:expr_2021) => {
+    ($arg_count:tt, $name:expr, $func:expr) => {
         $crate::primitive!(impl primitive_cast!($arg_count), $name, $func)
     };
 
-    (impl $func_type:ty, $name:expr_2021, $func:expr_2021 $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
+    (impl $func_type:ty, $name:expr, $func:expr $(, [$($params: tt)*] [$($where_: tt)*] )?) => {
         {
             extern "C" fn wrapper<'thread $(, $($params)*)?>(thread: &'thread $crate::thread::Thread) -> $crate::thread::Status
                 $(where $($where_)*)?
@@ -121,7 +121,7 @@ pub fn phantom<F>(_: F) -> PhantomData<F> {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! stringify_inner {
-    ($name:expr_2021) => {
+    ($name:expr) => {
         stringify!($name)
     };
 }
@@ -162,7 +162,7 @@ macro_rules! field_decl_inner {
             ($field stringify_inner!($field))
         }
     };
-    (($alias: ident $field: expr_2021)) => {
+    (($alias: ident $field: expr)) => {
         #[allow(non_camel_case_types)]
         #[derive(Default)]
         pub struct $alias;
@@ -191,7 +191,7 @@ macro_rules! field_decl_inner {
             $($rest)*
         }
     };
-    (($alias: ident $field: expr_2021), $($rest: tt)*) => {
+    (($alias: ident $field: expr), $($rest: tt)*) => {
         field_decl_inner!{ ($alias $field) }
         field_decl_inner!{$($rest)*}
     };
@@ -224,12 +224,12 @@ macro_rules! field_decl_record {
         field_decl!($($acc)*);
     };
 
-    ([ $($acc: tt)* ] $field: ident => $ignore: expr_2021) => {
+    ([ $($acc: tt)* ] $field: ident => $ignore: expr) => {
         field_decl_record!{
             [$($acc)* ($field stringify_inner!($field)),]
         }
     };
-    ([ $($acc: tt)* ] ($alias: ident $field: expr_2021) => $ignore: expr_2021) => {
+    ([ $($acc: tt)* ] ($alias: ident $field: expr) => $ignore: expr) => {
         field_decl_record!{
             [$($acc)* ($alias $field),]
         }
@@ -240,13 +240,13 @@ macro_rules! field_decl_record {
         }
     };
 
-    ([ $($acc: tt)* ] $field: ident => $ignore: expr_2021, $($rest: tt)*) => {
+    ([ $($acc: tt)* ] $field: ident => $ignore: expr, $($rest: tt)*) => {
         field_decl_record!{
             [$($acc)* ($field stringify_inner!($field)),]
             $($rest)*
         }
     };
-    ([ $($acc: tt)* ] ($alias: ident $field: expr_2021) => $ignore: expr_2021, $($rest: tt)*) => {
+    ([ $($acc: tt)* ] ($alias: ident $field: expr) => $ignore: expr, $($rest: tt)*) => {
         field_decl_record!{
             [$($acc)* ($alias $field),]
             $($rest)*
@@ -264,23 +264,23 @@ macro_rules! field_decl_record {
 #[macro_export(local_inner_macros)]
 macro_rules! record_no_decl_inner {
     () => { $crate::frunk_core::hlist::HNil };
-    ($field: ident => $value: expr_2021) => {
+    ($field: ident => $value: expr) => {
         $crate::frunk_core::hlist::h_cons((_field::$field, $value), record_no_decl_inner!())
     };
-    ( ($field: ident $ignore: expr_2021) => $value: expr_2021) => {
+    ( ($field: ident $ignore: expr) => $value: expr) => {
         record_no_decl_inner!($field => $value)
     };
     ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty) => {
         record_no_decl_inner!()
     };
 
-    ($field: ident => $value: expr_2021, $($rest: tt)*) => {
+    ($field: ident => $value: expr, $($rest: tt)*) => {
         $crate::frunk_core::hlist::h_cons(
             (_field::$field, $value),
             record_no_decl_inner!($($rest)*)
         )
     };
-    ( ($field: ident $ignore: expr_2021) => $value: expr_2021, $($rest: tt)*) => {
+    ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner!($field => $value, $($rest)*)
     };
     ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty, $($rest: tt)*) => {
@@ -292,20 +292,20 @@ macro_rules! record_no_decl_inner {
 #[macro_export(local_inner_macros)]
 macro_rules! record_no_decl_inner_types {
     () => { $crate::frunk_core::hlist::HNil };
-    ($field: ident => $value: expr_2021) => {
+    ($field: ident => $value: expr) => {
         record_no_decl_inner_types!()
     };
-    ( ($field: ident $ignore: expr_2021) => $value: expr_2021) => {
+    ( ($field: ident $ignore: expr) => $value: expr) => {
         record_no_decl_inner_types!($field => $value)
     };
     ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty) => {
         $crate::frunk_core::hlist::h_cons((record_mod!($field $($suffix)*), ::std::marker::PhantomData::<$value>), record_no_decl_inner_types!())
     };
 
-    ($field: ident => $value: expr_2021, $($rest: tt)*) => {
+    ($field: ident => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner_types!($($rest)*)
     };
-    ( ($field: ident $ignore: expr_2021) => $value: expr_2021, $($rest: tt)*) => {
+    ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner_types!($field => $value, $($rest)*)
     };
     ( type $field: ident $( :: $suffix: ident)* $($arg: ident)* => $value: ty, $($rest: tt)*) => {

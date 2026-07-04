@@ -33,7 +33,7 @@ extern crate pretty_assertions;
 pub type BoxFuture<'vm, T, E> = futures::future::BoxFuture<'vm, std::result::Result<T, E>>;
 
 macro_rules! alloc {
-    ($context: ident, $data: expr_2021) => {
+    ($context: ident, $data: expr) => {
         $crate::thread::alloc($context.gc, $context.thread, &$context.stack.stack(), $data)
     };
 }

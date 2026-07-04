@@ -172,7 +172,7 @@ pub fn zero_index(mut expr: RootExpr<String>) -> RootExpr<String> {
 }
 
 macro_rules! parse_new {
-    ($input:expr_2021) => {{
+    ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
         parse(&input).unwrap_or_else(|(_, err)| {
@@ -184,11 +184,11 @@ macro_rules! parse_new {
 }
 
 macro_rules! parse_zero_index {
-    ($input:expr_2021) => {{ zero_index(parse_new!($input)) }};
+    ($input:expr) => {{ zero_index(parse_new!($input)) }};
 }
 
 macro_rules! parse_clear_span {
-    ($input:expr_2021) => {{ clear_span(parse_new!($input)) }};
+    ($input:expr) => {{ clear_span(parse_new!($input)) }};
 }
 
 pub fn intern(s: &str) -> String {
@@ -539,7 +539,7 @@ pub fn remove_expected(errors: ParseErrors) -> ParseErrors {
 
 #[macro_export]
 macro_rules! test_parse {
-    ($test_name: ident, $text: expr_2021, $expected: expr_2021 $(,)?) => {
+    ($test_name: ident, $text: expr, $expected: expr $(,)?) => {
         #[test]
         fn $test_name() {
             let _ = ::env_logger::try_init();
@@ -557,7 +557,7 @@ macro_rules! test_parse {
 
 #[macro_export]
 macro_rules! test_parse_error {
-    ($test_name: ident, $text: expr_2021, $expected: expr_2021, $expected_error: expr_2021 $(,)?) => {
+    ($test_name: ident, $text: expr, $expected: expr, $expected_error: expr $(,)?) => {
         #[test]
         fn $test_name() {
             let _ = ::env_logger::try_init();

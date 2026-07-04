@@ -32,7 +32,7 @@ where
 }
 
 macro_rules! assert_eq_display {
-    ($l:expr_2021, $r:expr_2021) => {
+    ($l:expr, $r:expr) => {
         assert_eq!($l.to_string(), $r.to_string());
     };
 }

@@ -61,7 +61,7 @@ pub async fn make_vm_async() -> RootedThread {
 
 #[allow(unused_macros)]
 macro_rules! test_expr {
-    (prelude $name:ident, $expr:expr_2021, $value:expr_2021) => {
+    (prelude $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
@@ -74,7 +74,7 @@ macro_rules! test_expr {
             equiv(&value, &$value);
         }
     };
-    (io $name:ident, $expr:expr_2021, $value:expr_2021) => {
+    (io $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             use gluon::{ThreadExt, vm::api::IO};
@@ -97,7 +97,7 @@ macro_rules! test_expr {
             }
         }
     };
-    (any $name:ident, $expr:expr_2021, $value:expr_2021) => {
+    (any $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
@@ -106,7 +106,7 @@ macro_rules! test_expr {
             assert_eq!(value.get_ref(), $value);
         }
     };
-    ($name:ident, $expr:expr_2021, $value:expr_2021) => {
+    ($name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
@@ -119,7 +119,7 @@ macro_rules! test_expr {
             equiv(&value, &$value);
         }
     };
-    ($name:ident, $expr:expr_2021) => {
+    ($name:ident, $expr:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();

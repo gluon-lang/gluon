@@ -3241,7 +3241,7 @@ where
 
 #[macro_export(local_inner_macros)]
 macro_rules! expr {
-    ($self: ident, $id: ident, $expr: expr_2021) => {{
+    ($self: ident, $id: ident, $expr: expr) => {{
         let $id = $self;
         $expr
     }};
@@ -4524,7 +4524,7 @@ where
     I: TypeContext<Id, U>,
 {
     macro_rules! intern {
-        ($e: expr_2021) => {{
+        ($e: expr) => {{
             let t = $e;
             interner.intern(t)
         }};

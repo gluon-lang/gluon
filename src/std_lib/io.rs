@@ -57,7 +57,7 @@ fn eprintln(s: &str) -> IO<()> {
 struct GluonFile(Mutex<Option<File>>);
 
 macro_rules! unwrap_file {
-    ($file: expr_2021) => {{
+    ($file: expr) => {{
         match *$file {
             Some(ref mut file) => file,
             None => return IO::Value(RuntimeResult::Panic("the file has been closed".to_owned())),

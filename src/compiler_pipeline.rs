@@ -54,7 +54,7 @@ impl<T> From<Salvage<T, Error>> for Error {
 }
 
 macro_rules! join_result {
-    ($result: expr_2021, |$f_arg:pat_param| $f_body: expr_2021 $(,)?) => {{
+    ($result: expr, |$f_arg:pat_param| $f_body: expr $(,)?) => {{
         let mut first_error = None;
         let $f_arg = match $result {
             Ok(x) => x,

@@ -22,7 +22,7 @@ use base::{
 const INDENT: isize = 4;
 
 macro_rules! newlines_iter {
-    ($self_:ident, $iterable:expr_2021) => {
+    ($self_:ident, $iterable:expr) => {
         $iterable
             .into_iter()
             .tuple_windows()
@@ -31,7 +31,7 @@ macro_rules! newlines_iter {
 }
 
 macro_rules! rev_newlines_iter {
-    ($self_:ident, $iterable:expr_2021) => {
+    ($self_:ident, $iterable:expr) => {
         $iterable
             .into_iter()
             .tuple_windows()

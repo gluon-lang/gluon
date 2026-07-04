@@ -428,9 +428,9 @@ fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
 macro_rules! add_extern_module_if {
     (
         #[cfg($($features: tt)*)],
-        available_if = $msg: expr_2021,
-        $(dependencies = $dependencies: expr_2021,)?
-        args($vm: expr_2021, $mod_name: expr_2021, $loader: path)
+        available_if = $msg: expr,
+        $(dependencies = $dependencies: expr,)?
+        args($vm: expr, $mod_name: expr, $loader: path)
     ) => {{
         #[cfg($($features)*)]
         $crate::import::add_extern_module_with_deps(
