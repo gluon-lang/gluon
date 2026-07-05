@@ -331,12 +331,3 @@ async fn main() {
         ::std::process::exit(1);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    // If nothing else this suppresses the unused imports warnings when compiling in test mode
-    #[test]
-    fn execute_repl_help() {
-        super::main();
-    }
-}

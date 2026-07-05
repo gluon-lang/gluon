@@ -19,7 +19,7 @@ use crate::vm::{
 #[gluon_trace(skip)]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 
-field_decl! { value, r#gen }
+field_decl! { value, (r#gen "gen") }
 
 fn next_int(_: ()) -> IO<VmInt> {
     IO::Value(rand::rng().random())
@@ -53,7 +53,7 @@ fn xor_shift_next(r#gen: &XorShiftRng) -> RngNext<XorShiftRng> {
     let mut r#gen = r#gen.clone();
     record_no_decl! {
         value => r#gen.0.random(),
-        r#gen => r#gen
+        (r#gen "gen") => r#gen
     }
 }
 

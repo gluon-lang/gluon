@@ -19,6 +19,7 @@ use {
         symbol::{Name, Symbol, SymbolModule, SymbolRef},
         types::{Alias, ArcType, NullInterner, PrimitiveEnv, TypeEnv, TypeExt},
     },
+    gluon_codegen::Trace,
     vm::{
         self, ExternLoader,
         api::{OpaqueValue, ValueRef},

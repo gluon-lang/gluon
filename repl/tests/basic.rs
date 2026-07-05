@@ -17,6 +17,7 @@ fn issue_365_run_io_from_command_line() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("GLUON_PATH", "..")
         .arg("tests/print.glu")
         .output()
         .unwrap_or_else(|err| panic!("{}\nWhen opening `{}`", err, gluon_path.display()));
