@@ -36,8 +36,7 @@ tokio = { version = "1.32.0", features = [
     "macros",
     "signal",
 ] }
-clap = "4.6.1"
-structopt = "0.3.26"
+clap = { version = "4.6.1", features = ["derive"] }
 log = "0.4.20"
 env_logger = { workspace = true, optional = true }
 lazy_static = "1.4.0"

@@ -16,13 +16,13 @@ use std::{
 
 use {
     anyhow::{Context as _, anyhow},
+    clap::Parser,
     handlebars::{
         Context, Handlebars, Helper, Output, RenderContext, RenderError, RenderErrorReason,
     },
     itertools::Itertools,
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
-    structopt::StructOpt,
 };
 
 use gluon::{
@@ -718,20 +718,17 @@ const LONG_VERSION: &str = concat!(
     "commit: ",
     env!("GIT_HASH")
 );
-#[derive(StructOpt)]
-#[structopt(about = "Documents gluon source code", long_version = LONG_VERSION)]
+#[derive(Parser)]
+#[command(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {
-    #[structopt(long = "open")]
-    #[structopt(help = "Opens the documentation after it has been generated")]
+    #[arg(long = "open", help = "Opens the documentation after it has been generated")]
     pub open: bool,
-    #[structopt(long = "jobs")]
-    #[structopt(help = "How many threads to run in parallel")]
+    #[arg(long = "jobs", help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
-    #[structopt(long = "src-url")]
-    #[structopt(help = "Where the source can be found")]
+    #[arg(long = "src-url", help = "Where the source can be found")]
     pub src_url: Option<String>,
-    #[structopt(help = "Documents the file or directory")]
+    #[arg(help = "Documents the file or directory")]
     pub input: String,
-    #[structopt(help = "Outputs the documentation to this directory")]
+    #[arg(help = "Outputs the documentation to this directory")]
     pub output: String,
 }

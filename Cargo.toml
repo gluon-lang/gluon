@@ -81,7 +81,7 @@ expect-test = "1.4.1"
 thiserror = "2"
 insta = "1.31.0"
 pretty_assertions = "1.4.0"
-structopt = "0.3.26"
+clap = { version = "4.6.1", features = ["derive"] }
 tempfile = "3.8.0"
 tensile = { version = "0.8", features = ["tokio"] }
 tokio = { version = "1.32.0", features = ["macros", "rt-multi-thread", "fs"] }

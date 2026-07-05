@@ -5,10 +5,10 @@ use std::{
 
 use {
     anyhow::anyhow,
+    clap::Parser,
     collect_mac::collect,
     futures::{join, prelude::*, stream, task::SpawnExt},
     serde_derive::Deserialize,
-    structopt::StructOpt,
     thiserror::Error,
     tokio::fs,
 };
@@ -77,19 +77,18 @@ impl From<gluon::Error> for Error {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(about = "gluon tests")]
+#[derive(Parser)]
+#[command(about = "gluon tests")]
 pub struct Opt {
-    #[structopt(long = "jobs")]
-    #[structopt(help = "How many threads to run in parallel")]
+    #[arg(long = "jobs", help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
 
-    #[structopt(name = "FILTER", help = "Filters which tests to run")]
+    #[arg(value_name = "FILTER", help = "Filters which tests to run")]
     pub filter: Vec<String>,
 }
 
 fn main() {
-    let options = Opt::from_args();
+    let options = Opt::parse();
     let runtime = {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         if let Some(jobs) = options.jobs {

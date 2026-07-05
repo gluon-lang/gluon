@@ -20,8 +20,8 @@ use std::{
 };
 
 use codespan_reporting::term::termcolor;
+use clap::{CommandFactory, Parser, Subcommand};
 use quick_error::quick_error;
-use structopt::StructOpt;
 use walkdir::WalkDir;
 
 use gluon::{base, parser, vm};
@@ -98,18 +98,18 @@ impl ::std::str::FromStr for Color {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(about = "Formats gluon source code")]
+#[derive(Parser)]
+#[command(about = "Formats gluon source code")]
 pub struct FmtOpt {
-    #[structopt(name = "FILE", parse(from_os_str), help = "Formats each file")]
+    #[arg(value_name = "FILE", help = "Formats each file")]
     input: Vec<PathBuf>,
 }
 
-#[derive(StructOpt)]
+#[derive(Subcommand)]
 pub enum SubOpt {
-    #[structopt(name = "fmt", about = "Formats gluon source code")]
+    #[command(name = "fmt", about = "Formats gluon source code")]
     Fmt(FmtOpt),
-    #[structopt(name = "doc", about = "Documents gluon source code")]
+    #[command(name = "doc", about = "Documents gluon source code")]
     Doc(::gluon_doc::Opt),
 }
 
@@ -120,52 +120,52 @@ const LONG_VERSION: &str = concat!(
     env!("GIT_HASH")
 );
 
-#[derive(StructOpt)]
-#[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
+#[derive(Parser)]
+#[command(about = "executes gluon programs", long_version = LONG_VERSION)]
 pub struct Opt {
-    #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
+    #[arg(short = 'i', long = "interactive", help = "Starts the repl")]
     interactive: bool,
 
-    #[structopt(
+    #[arg(
         long = "color",
         default_value = "auto",
         help = "Coloring: auto, always, always-ansi, never"
     )]
     color: Color,
 
-    #[structopt(
+    #[arg(
         long = "prompt",
-        short = "p",
+        short = 'p',
         default_value = "> ",
         help = "String printed as the prompt for the repl"
     )]
     prompt: String,
 
-    #[structopt(
+    #[arg(
         long = "debug",
         default_value = "none",
         help = "Debug Level: none, low, high"
     )]
     debug_level: base::DebugLevel,
 
-    #[structopt(
+    #[arg(
         long = "no-std",
         help = "Skip searching the internal standard library for requested modules."
     )]
     no_std: bool,
 
-    #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
+    #[arg(value_name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
 
-    #[structopt(
+    #[arg(
         last = true,
-        name = "ARGS",
+        value_name = "ARGS",
         help = "Extra arguments passed to the gluon program"
     )]
     #[allow(dead_code)]
     args: Vec<String>,
 
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     subcommand_opt: Option<SubOpt>,
 }
 
@@ -290,7 +290,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input).await?;
             } else {
-                writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
+                writeln!(io::stderr(), "{}", Opt::command().render_usage())
                     .expect("Error writing help to stderr");
             }
         }
@@ -302,7 +302,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
 async fn main() {
     init_env_logger();
 
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     let vm = new_vm_async().await;
     vm.get_database_mut()
