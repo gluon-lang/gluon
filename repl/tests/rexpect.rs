@@ -4,7 +4,7 @@ extern crate rexpect;
 
 use std::process::Command;
 
-use rexpect::session::{PtySession, spawn_command};
+use rexpect::session::{Options, PtySession, spawn_with_options};
 
 use anyhow::{Context as _, Result};
 
@@ -22,14 +22,28 @@ impl REPL {
     /// Defines the command, timeout, and prompt settings.
     /// Wraps a rexpect::session::PtySession. expecting the prompt after launch.
     fn new_() -> Result<REPL> {
-        let timeout: u64 = 10_000;
+        let _ = env_logger::try_init();
+
+        let timeout: u64 = 1_000;
         let prompt: &'static str = "REXPECT> ";
 
         let mut command = Command::new("../target/debug/gluon");
         command
-            .args(&["-i", "--color", "never", "--prompt", prompt])
+            .args(&[
+                "-i",
+                "--color",
+                "never",
+                "--prompt",
+                prompt,
+                "--no-auto-complete",
+            ])
             .env("GLUON_PATH", "..");
-        let mut session = spawn_command(command, Some(timeout))?;
+        let mut session = spawn_with_options(
+            command,
+            Options::new()
+                .timeout_ms(Some(timeout))
+                .strip_ansi_escape_codes(true),
+        )?;
 
         session.exp_string(prompt)?;
 

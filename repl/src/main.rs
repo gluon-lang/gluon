@@ -19,8 +19,8 @@ use std::{
     sync::Arc,
 };
 
-use codespan_reporting::term::termcolor;
 use clap::{CommandFactory, Parser, Subcommand};
+use codespan_reporting::term::termcolor;
 use quick_error::quick_error;
 use walkdir::WalkDir;
 
@@ -154,6 +154,14 @@ pub struct Opt {
     )]
     no_std: bool,
 
+    #[arg(
+        long = "no-auto-complete",
+        help = "Enable auto-completion in the REPL",
+        default_value = "true",
+        action = clap::ArgAction::SetFalse
+    )]
+    auto_complete: bool,
+
     #[arg(value_name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
 
@@ -241,7 +249,7 @@ async fn fmt_stdio(thread: &Thread) -> Result<()> {
     Ok(())
 }
 
-async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Error> {
+async fn run(opt: &Opt, vm: &Thread) -> std::result::Result<(), Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -286,7 +294,16 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                repl::run(color, &prompt, debug_level, use_std_lib).await?;
+                repl::run(
+                    repl::Settings {
+                        color: opt.color,
+                        prompt: &prompt,
+                        auto_complete: opt.auto_complete,
+                    },
+                    debug_level,
+                    use_std_lib,
+                )
+                .await?;
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input).await?;
             } else {
@@ -310,7 +327,7 @@ async fn main() {
         .run_io(true);
 
     let color = opt.color;
-    let result = run(&opt, opt.color, &vm).await;
+    let result = run(&opt, &vm).await;
     if let Err(err) = result {
         match err {
             Error::Gluon(gluon::Error::VM(VMError::Message(_))) => {

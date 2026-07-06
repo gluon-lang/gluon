@@ -316,11 +316,16 @@ fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     )?)
 }
 
-fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
+fn new_editor(
+    WithVM {
+        vm,
+        value: settings,
+    }: WithVM<Settings<'_>>,
+) -> IO<Editor> {
     let mut editor: rustyline::Editor<Completer, rustyline::history::DefaultHistory> =
         match rustyline::Editor::with_config(
             rustyline::config::Config::builder()
-                .color_mode(match vm.value.0 {
+                .color_mode(match settings.color {
                     crate::Color::Auto => rustyline::config::ColorMode::Enabled,
                     crate::Color::Always | crate::Color::AlwaysAnsi => {
                         rustyline::config::ColorMode::Forced
@@ -339,11 +344,13 @@ fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
     if let Err(err) = history_result {
         warn!("Unable to load history: {}", err);
     }
-    editor.set_helper(Some(Completer {
-        thread: vm.vm.root_thread(),
-        hinter: rustyline::hint::HistoryHinter {},
-        highlighter: rustyline::highlight::MatchingBracketHighlighter::default(),
-    }));
+    if settings.auto_complete {
+        editor.set_helper(Some(Completer {
+            thread: vm.root_thread(),
+            hinter: rustyline::hint::HistoryHinter {},
+            highlighter: rustyline::highlight::MatchingBracketHighlighter::default(),
+        }));
+    }
     IO::Value(Editor {
         editor: Mutex::new(editor),
     })
@@ -645,9 +652,10 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
 }
 
 #[derive(VmType, Pushable, Getable)]
-struct Settings<'a> {
-    color: Color,
-    prompt: &'a str,
+pub struct Settings<'a> {
+    pub color: Color,
+    pub auto_complete: bool,
+    pub prompt: &'a str,
 }
 
 fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
@@ -689,8 +697,7 @@ async fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
 
 #[allow(dead_code)]
 pub async fn run(
-    color: Color,
-    prompt: &str,
+    settings: Settings<'_>,
     debug_level: DebugLevel,
     use_std_lib: bool,
 ) -> gluon::Result<()> {
@@ -704,7 +711,7 @@ pub async fn run(
 
     let mut repl: OwnedFunction<fn(_) -> _> = vm.get_global("repl")?;
     debug!("Starting repl");
-    repl.call_async(Settings { color, prompt })
+    repl.call_async(settings)
         .await
         .map(|_: IO<()>| ())
         .map_err(|err| err.into())
