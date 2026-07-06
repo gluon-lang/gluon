@@ -4,10 +4,9 @@ extern crate rexpect;
 
 use std::process::Command;
 
-use rexpect::error::Error;
 use rexpect::session::{PtySession, spawn_command};
 
-type Result<T> = std::result::Result<T, Error>;
+use anyhow::{Context as _, Result};
 
 struct REPL {
     session: PtySession,
@@ -23,7 +22,7 @@ impl REPL {
     /// Defines the command, timeout, and prompt settings.
     /// Wraps a rexpect::session::PtySession. expecting the prompt after launch.
     fn new_() -> Result<REPL> {
-        let timeout: u64 = 30_000;
+        let timeout: u64 = 10_000;
         let prompt: &'static str = "REXPECT> ";
 
         let mut command = Command::new("../target/debug/gluon");
@@ -40,7 +39,7 @@ impl REPL {
     #[track_caller]
     fn test(&mut self, send: &str, expect: Option<&str>) {
         self.test_(send, expect)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:#}", err));
     }
 
     /// Ensures certain lines are expected to reduce race conditions.
@@ -49,18 +48,20 @@ impl REPL {
     #[track_caller]
     fn test_(&mut self, send: &str, expect: Option<&str>) -> Result<()> {
         self.session.send_line(send)?;
-        self.session.exp_string(send)?;
+        self.session.exp_string(send).context("Send string")?;
 
         if let Some(string) = expect {
-            self.session.exp_string(string)?;
+            self.session.exp_string(string).context("Expect string")?;
         }
 
-        self.session.exp_string(self.prompt)?;
+        self.session
+            .exp_string(self.prompt)
+            .context("Expect prompt")?;
         Ok(())
     }
 
     fn quit(&mut self) {
-        self.quit_().unwrap_or_else(|err| panic!("{}", err));
+        self.quit_().unwrap_or_else(|err| panic!("{:#}", err));
     }
 
     fn quit_(&mut self) -> Result<()> {
