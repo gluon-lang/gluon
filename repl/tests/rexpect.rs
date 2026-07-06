@@ -37,6 +37,7 @@ impl REPL {
         Ok(REPL { session, prompt })
     }
 
+    #[track_caller]
     fn test(&mut self, send: &str, expect: Option<&str>) {
         self.test_(send, expect)
             .unwrap_or_else(|err| panic!("{}", err));
@@ -45,6 +46,7 @@ impl REPL {
     /// Ensures certain lines are expected to reduce race conditions.
     /// If no ouput is expected or desired to be tested, pass it an Option::None,
     /// causing rexpect to wait for the next prompt.
+    #[track_caller]
     fn test_(&mut self, send: &str, expect: Option<&str>) -> Result<()> {
         self.session.send_line(send)?;
         self.session.exp_string(send)?;
