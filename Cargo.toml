@@ -53,8 +53,19 @@ tokio-stream = { version = "0.1", features = ["net"], optional = true }
 regex = { version = "1.9.4", optional = true }
 # web
 tower-service = { version = "0.3.2", optional = true }
-http = { version = "0.2", optional = true }
-hyper = { version = "0.14", optional = true, features = ["full"] }
+http = { version = "1", optional = true }
+hyper = { version = "1", optional = true, default-features = false, features = [
+    "server",
+    "http1",
+    "client",
+] }
+hyper-util = { version = "0.1", optional = true, features = [
+    "server-auto",
+    "tokio",
+    "client-legacy",
+    "http1",
+] }
+http-body-util = { version = "0.1", optional = true }
 native-tls = { version = "0.2.11", optional = true }
 tokio-native-tls = { version = "0.3.1", optional = true }
 
@@ -123,6 +134,8 @@ serialization = [
 web = [
     "async",
     "hyper",
+    "hyper-util",
+    "http-body-util",
     "http",
     "tower-service",
     "native-tls",
