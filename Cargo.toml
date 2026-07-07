@@ -17,18 +17,20 @@ documentation = "https://docs.rs/gluon"
 
 [workspace]
 members = ["c-api", "repl", "completion", "format", "doc", "codegen"]
+resolver = "2"
 
 [lib]
 name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.18.2" }                               # GLUON
-gluon_check = { path = "check", version = "0.18.2" }                             # GLUON
-gluon_parser = { path = "parser", version = "0.18.2" }                           # GLUON
-gluon_codegen = { path = "codegen", version = "0.18.2" }                         # GLUON
-gluon_vm = { path = "vm", version = "0.18.2", default-features = false }         # GLUON
-gluon_format = { path = "format", version = "0.18.2", default-features = false } # GLUON
+gluon_base = { path = "base", version = "0.18.2" }                                                        # GLUON
+gluon_check = { path = "check", version = "0.18.2" }                                                      # GLUON
+gluon_parser = { path = "parser", version = "0.18.2" }                                                    # GLUON
+gluon_codegen = { path = "codegen", version = "0.18.2" }                                                  # GLUON
+gluon_vm = { path = "vm", version = "0.18.2", default-features = false }                                  # GLUON
+gluon_format = { path = "format", version = "0.18.2", default-features = false }                          # GLUON
+gluon_completion = { path = "completion", version = "0.18.2", default-features = false, optional = true } # GLUON
 
 async-trait = "0.1.73"
 log = "0.4.20"
@@ -144,6 +146,8 @@ web = [
     "tokio-native-tls",
     "pin-project-lite",
 ]
+
+gluon_completion = ["dep:gluon_completion", "gluon_vm/gluon_completion"]
 
 docs_rs = ["serialization"]
 

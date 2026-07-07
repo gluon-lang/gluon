@@ -959,6 +959,31 @@ where
         env.get_extern_global(name)
             .or_else(|| env.peek_global(module.as_str().into()))
     }
+
+    fn list_vm_types(&self, consume: &mut dyn FnMut(&Symbol, &ArcType)) {
+        let env = self.0.borrow_mut();
+        let globals = env
+            .state()
+            .extern_globals
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        for global in globals {
+            if let Some(global) = env.get_extern_global(&global) {
+                consume(&global.id, &global.typ);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "gluon_completion")]
+impl<T> gluon_completion::CompletionEnv for Env<T>
+where
+    T: Deref<Target = CompilerDatabase>,
+{
+    fn list_types(&self, consume: &mut dyn FnMut(&Symbol, &Self::Type)) {
+        self.list_vm_types(consume);
+    }
 }
 
 fn get_scoped_global<'n, T>(

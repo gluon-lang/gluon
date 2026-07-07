@@ -21,6 +21,7 @@ gluon = { version = "0.18.2", path = "..", features = [
     "serialization",
 ] } # GLUON
 gluon_vm = { version = "0.18.2", path = "../vm", features = [
+    "gluon_completion",
     "serialization",
 ] } # GLUON
 gluon_completion = { path = "../completion", version = "0.18.2" } # GLUON

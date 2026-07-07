@@ -20,7 +20,7 @@ use either::Either;
 
 #[allow(unused)]
 mod support;
-use crate::support::{MockEnv, intern, loc, typ};
+use crate::support::{MockEnv, find_comment_pos, intern, loc, typ};
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
     let env = MockEnv::new();
@@ -34,13 +34,8 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKin
 }
 
 fn find_span_type2(s: &str) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
-    let pos = {
-        let marker = s.find("// ^").expect("Position marker") + "// ".len();
-        let previous_line_end = s[..marker].rfind('\n').expect("Previous line");
-        let previous_line_start = s[..previous_line_end].rfind('\n').expect("Previous line");
-        previous_line_start + (marker - previous_line_end)
-    };
-    find_span_type(s, BytePos::from(pos as u32 + 1))
+    let pos = find_comment_pos(s);
+    find_span_type(s, pos)
 }
 
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {

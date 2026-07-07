@@ -59,6 +59,19 @@ impl<'a, 'ast> Match<'a, 'ast> {
     }
 }
 
+pub trait CompletionEnv: TypeEnv<Type = ArcType> {
+    fn list_types(&self, consume: &mut dyn FnMut(&Symbol, &Self::Type));
+}
+
+impl<T> CompletionEnv for &'_ T
+where
+    T: CompletionEnv + ?Sized,
+{
+    fn list_types(&self, consume: &mut dyn FnMut(&Symbol, &Self::Type)) {
+        T::list_types(self, consume)
+    }
+}
+
 trait OnFound {
     fn on_ident(&mut self, ident: &TypedIdent) {
         let _ = ident;
@@ -1186,7 +1199,7 @@ pub fn suggest<'ast, T>(
     pos: BytePos,
 ) -> Vec<Suggestion>
 where
-    T: TypeEnv<Type = ArcType>,
+    T: CompletionEnv<Type = ArcType>,
 {
     SuggestionQuery::default().suggest(env, source_span, expr, pos)
 }
@@ -1278,7 +1291,7 @@ impl SuggestionQuery {
         pos: BytePos,
     ) -> Vec<Suggestion>
     where
-        T: TypeEnv<Type = ArcType>,
+        T: CompletionEnv<Type = ArcType>,
     {
         let mut suggest = Suggest::new(env);
 
@@ -1439,12 +1452,20 @@ impl SuggestionQuery {
         context: &Match,
         ident: &str,
     ) where
-        T: TypeEnv<Type = ArcType>,
+        T: CompletionEnv<Type = ArcType>,
     {
+        let globals = {
+            let mut types = Vec::new();
+            suggest
+                .env
+                .list_types(&mut |k, typ| types.push((k.clone(), typ.clone())));
+            types
+        };
         result.extend(
             suggest
                 .stack
                 .iter()
+                .chain(globals.iter().map(|(k, typ)| (k, typ)))
                 .filter(move |&(k, _)| self.filter(k.declared_name(), ident))
                 .filter(|&(k, _)| match context {
                     // If inside a record expression, remove any fields that have already been used
