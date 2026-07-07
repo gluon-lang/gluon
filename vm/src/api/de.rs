@@ -107,7 +107,7 @@ impl VmType for Enum {
 let thread = new_vm();
 # thread.get_database_mut().implicit_prelude(false);
 # #[cfg(feature = "test")]
-# let thread = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), ::std::env::var("CARGO_MANIFEST_DIR").unwrap().into()])).build();
+# let thread = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build();
 
 thread
     .load_script(

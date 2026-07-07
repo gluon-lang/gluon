@@ -57,6 +57,8 @@ impl VmType for Vec2 {
 }
 
 let thread = new_vm_async().await;
+# #[cfg(feature = "test")]
+# let thread = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build_async().await;
 
 let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = thread
     .run_expr_async("", r#"let f v: _ -> Int = v.x + v.y in f"#)

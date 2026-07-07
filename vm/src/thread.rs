@@ -830,6 +830,8 @@ impl Thread {
     /// # async fn main() {
     ///
     /// let vm = new_vm_async().await;
+    /// # #[cfg(feature = "test")]
+    /// # let vm = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build_async().await;
     ///
     /// vm.run_expr_async::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
     ///     .await
