@@ -1,4 +1,4 @@
-use gluon::{new_vm, ThreadExt};
+use gluon::{ThreadExt, new_vm};
 
 #[test]
 fn dont_stack_overflow_on_let_bindings() {

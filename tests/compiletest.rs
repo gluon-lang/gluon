@@ -5,7 +5,7 @@ extern crate env_logger;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
+fn lib_dir(out_dir: &Path, lib_name: &str, extension: &str) -> PathBuf {
     // Just loading gluon through -L dir does not work as we compile gluon with different sets of
     // flags which gives ambiguity errors.
     // Instead retrieve the latest compiled gluon library which should usually be the correct one
@@ -17,6 +17,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
                 .path()
                 .to_str()
                 .map_or(false, |name| name.contains(lib_name))
+                && entry
+                    .path()
+                    .extension()
+                    .map_or(false, |ext| ext == extension)
             {
                 Some(entry)
             } else {
@@ -31,7 +35,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
             .unwrap()
             .cmp(&r.metadata().unwrap().modified().unwrap())
     });
-    gluon_rlibs.last().expect("libgluon not found").path()
+    gluon_rlibs
+        .last()
+        .unwrap_or_else(|| panic!("{lib_name} not found"))
+        .path()
 }
 
 fn run_mode(mode: &'static str) {
@@ -47,8 +54,8 @@ fn run_mode(mode: &'static str) {
         }
         out_dir.pop();
     }
-    let gluon_rlib = lib_dir(&out_dir, "libgluon-");
-    let gluon_vm_rlib = lib_dir(&out_dir, "libgluon_vm-");
+    let gluon_rlib = lib_dir(&out_dir, "libgluon-", "rlib");
+    let gluon_vm_rlib = lib_dir(&out_dir, "libgluon_vm-", "rlib");
 
     let mut config = compiletest::Config::default();
     let cfg_mode = mode.parse().ok().expect("Invalid mode");
@@ -57,17 +64,17 @@ fn run_mode(mode: &'static str) {
     config.mode = cfg_mode;
     config.src_base = PathBuf::from(format!("tests/{}", mode));
     config.target_rustcflags = Some(format!(
-        "-L {}/deps --extern gluon={} --extern gluon_vm={}",
+        "-L {}/deps --extern gluon={} --extern gluon_vm={} --extern gluon_codegen={}",
         out_dir.display(),
         gluon_rlib.display(),
-        gluon_vm_rlib.display()
+        gluon_vm_rlib.display(),
+        lib_dir(&out_dir, "gluon_codegen-", std::env::consts::DLL_EXTENSION).display()
     ));
     println!("{}", config.target_rustcflags.as_ref().unwrap());
     compiletest::run_tests(&config);
 }
 
 #[test]
-#[should_panic]
 fn compile_test() {
     let _ = env_logger::try_init();
     run_mode("compile-fail");

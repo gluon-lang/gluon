@@ -8,7 +8,7 @@ use gluon_base::{
 fn main() {
     mk_ast_arena!(arena1);
     mk_ast_arena!(arena2);
-    //~^ `tag` does not live long enough [E0597]
+    //~^ temporary value dropped while borrowed [E0716]
 
     let arena1_expr = arena1.alloc(pos::spanned(
         Default::default(),

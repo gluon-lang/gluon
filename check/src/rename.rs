@@ -28,7 +28,7 @@ pub fn rename<'s, 'ast>(
         Return,
     }
 
-    struct RenameVisitor<'a: 'b, 'b, 's, 'ast> {
+    struct RenameVisitor<'a, 'b, 's, 'ast> {
         source: &'s (dyn Source + 's),
         symbols: &'b mut SymbolModule<'a>,
         seen_symbols: FnvMap<Symbol, u32>,
@@ -278,9 +278,9 @@ pub fn rename<'s, 'ast>(
                     return TailCall::TailCall;
                 }
                 Expr::Do(Do {
-                    ref mut id,
-                    ref mut bound,
-                    ref mut flat_map_id,
+                    id,
+                    bound,
+                    flat_map_id,
                     ..
                 }) => {
                     let flat_map = self.symbols.simple_symbol("flat_map");
@@ -327,13 +327,11 @@ pub fn rename<'s, 'ast>(
                 match self.rename_expr(expr) {
                     TailCall::Return => break,
                     TailCall::TailCall => {
-                        expr = match { expr }.value {
-                            Expr::LetBindings(_, ref mut new_expr)
-                            | Expr::TypeBindings(_, ref mut new_expr)
-                            | Expr::Do(Do {
-                                body: ref mut new_expr,
-                                ..
-                            }) => new_expr,
+                        expr = match &mut { expr }.value {
+                            Expr::LetBindings(_, new_expr) | Expr::TypeBindings(_, new_expr) => {
+                                new_expr
+                            }
+                            Expr::Do(Do { body, .. }) => body,
                             _ => ice!("Only Let and Type expressions can tailcall"),
                         };
                         i += 1;

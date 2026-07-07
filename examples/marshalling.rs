@@ -9,19 +9,17 @@ extern crate serde_derive;
 use std::{collections::HashMap, sync::Arc};
 
 use gluon::{
+    Result, RootedThread, Thread, ThreadExt,
     base::types::{AppVec, ArcType, Type},
     import, new_vm,
     vm::{
-        self,
+        self, ExternModule, Variants,
         api::{
-            self,
+            self, ActiveThread, FunctionRef, Getable, Hole, IO, OpaqueRef, OpaqueValue, Pushable,
+            UserdataValue, ValueRef, VmType,
             generic::{A, L, R},
-            ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable,
-            UserdataValue, ValueRef, VmType, IO,
         },
-        ExternModule, Variants,
     },
-    Result, RootedThread, Thread, ThreadExt,
 };
 
 #[derive(Debug, Deserialize, Serialize)]

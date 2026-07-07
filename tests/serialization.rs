@@ -6,14 +6,13 @@ use std::{fs::File, io::Read};
 use crate::serde::ser::SerializeState;
 
 use gluon::{
-    new_vm, new_vm_async,
+    ThreadExt, new_vm, new_vm_async,
     vm::{
-        api::{Hole, OpaqueValue, IO},
+        Variants,
+        api::{Hole, IO, OpaqueValue},
         serialization::{DeSeed, SeSeed},
         thread::{RootedThread, RootedValue, Thread},
-        Variants,
     },
-    ThreadExt,
 };
 
 fn serialize_value(value: Variants) {
@@ -277,8 +276,10 @@ fn issue_805_no_deadlock_in_deserialize() {
     let serialized_client = serialize_value(variant);
 
     let vm2 = gluon::new_vm();
-    assert!(deserialize_value(&vm2, &serialized_client)
-        .unwrap_err()
-        .to_string()
-        .contains("is not defined"));
+    assert!(
+        deserialize_value(&vm2, &serialized_client)
+            .unwrap_err()
+            .to_string()
+            .contains("is not defined")
+    );
 }

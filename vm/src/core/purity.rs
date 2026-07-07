@@ -4,8 +4,8 @@ use base::{
 };
 
 use crate::core::{
-    optimize::{walk_expr, DifferentLifetime, Visitor},
     Allocator, CExpr, Expr, Named, Pattern,
+    optimize::{DifferentLifetime, Visitor, walk_expr},
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -97,7 +97,7 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
     fn visit_expr(&mut self, expr: CExpr<'expr>) -> Option<CExpr<'l>> {
         match *expr {
             Expr::Call(ref f, _) => match f {
-                Expr::Ident(ref id, ..) => {
+                Expr::Ident(id, ..) => {
                     if self.pure_symbols.pure_call(&*id.name) || id.name.is_primitive() {
                         walk_expr(self, expr);
                     } else {
@@ -167,7 +167,7 @@ impl<'l, 'expr> Visitor<'l, 'expr> for Pure<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 mod tests {
     use super::*;
 

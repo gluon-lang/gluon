@@ -62,21 +62,19 @@ where
                 arg.add_flags(flags);
                 ret.add_flags(flags);
             }
-            Type::App(ref f, ref args) => {
+            Type::App(f, args) => {
                 f.add_flags(flags);
                 args.add_flags(flags);
             }
-            Type::Record(ref typ) | Type::Variant(ref typ) | Type::Effect(ref typ) => {
-                typ.add_flags(flags)
-            }
-            Type::Forall(ref params, ref typ) => {
+            Type::Record(typ) | Type::Variant(typ) | Type::Effect(typ) => typ.add_flags(flags),
+            Type::Forall(params, typ) => {
                 *flags |= Flags::HAS_FORALL;
                 typ.add_flags(flags);
 
                 let mut unbound_generic = false;
                 FlagsVisitor(Flags::HAS_GENERICS, |typ: &T| match &**typ {
-                    Type::Generic(gen) => {
-                        unbound_generic |= params.iter().all(|param| param.id != gen.id)
+                    Type::Generic(r#gen) => {
+                        unbound_generic |= params.iter().all(|param| param.id != r#gen.id)
                     }
                     _ => (),
                 })

@@ -7,10 +7,6 @@ use std::process::{Command, Stdio};
 
 #[test]
 fn issue_365_run_io_from_command_line() {
-    if ::std::env::var("GLUON_PATH").is_err() {
-        ::std::env::set_var("GLUON_PATH", "..");
-    }
-
     let path = env::args().next().unwrap();
     let gluon_path = Path::new(&path[..])
         .parent()
@@ -21,6 +17,7 @@ fn issue_365_run_io_from_command_line() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env("GLUON_PATH", "..")
         .arg("tests/print.glu")
         .output()
         .unwrap_or_else(|err| panic!("{}\nWhen opening `{}`", err, gluon_path.display()));

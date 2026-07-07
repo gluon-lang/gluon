@@ -1,4 +1,4 @@
-use gluon::{new_vm, ThreadExt};
+use gluon::{ThreadExt, new_vm};
 
 #[test]
 fn macro_error_with_line_column_info() {

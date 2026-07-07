@@ -1,11 +1,7 @@
-use gluon::{new_vm, vm::api::FunctionRef, ThreadExt};
+use gluon::{ThreadExt, new_vm, vm::api::FunctionRef};
 
 fn fib(n: u64) -> u64 {
-    if n <= 1 {
-        1
-    } else {
-        fib(n - 1) + fib(n - 2)
-    }
+    if n <= 1 { 1 } else { fib(n - 1) + fib(n - 2) }
 }
 
 fn main() {

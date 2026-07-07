@@ -1,4 +1,4 @@
-extern crate fnv;
+use fnv;
 
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasherDefault;

@@ -159,8 +159,6 @@ fn gen_impl(
 
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &["Id"], &["'ast"]);
 
-    let dummy_const = Ident::new(&format!("_IMPL_AST_CLONE_FOR_{}", ident), Span::call_site());
-
     let extra_bounds = container.ast_clone_bounds.as_ref().map(|b| {
         let b = TokenStream::from_str(b).unwrap();
         quote! { #b, }
@@ -168,7 +166,7 @@ fn gen_impl(
 
     quote! {
         #[allow(non_upper_case_globals)]
-        const #dummy_const: () = {
+        const _: () = {
             use crate as gluon_base;
 
             #[automatically_derived]
@@ -206,7 +204,7 @@ fn gen_variant_match(ident: &Ident, _tag: usize, variant: &Variant) -> TokenStre
 
             quote! {
                 #ident::#variant_ident ( #(#fields),* ) =>
-                    #ident::#variant_ident#cons
+                    #ident:: #variant_ident #cons
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {

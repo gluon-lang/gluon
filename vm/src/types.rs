@@ -30,7 +30,7 @@ impl From<EqFloat> for f64 {
 
 impl EqFloat {
     fn key(&self) -> u64 {
-        unsafe { std::mem::transmute(self.0) }
+        f64::to_bits(self.0)
     }
 }
 

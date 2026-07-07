@@ -5,15 +5,16 @@ use std::{
 
 use {
     anyhow::anyhow,
+    clap::Parser,
     collect_mac::collect,
     futures::{join, prelude::*, stream, task::SpawnExt},
     serde_derive::Deserialize,
-    structopt::StructOpt,
     thiserror::Error,
     tokio::fs,
 };
 
 use gluon::{
+    RootedThread, Thread, ThreadExt,
     base::{
         ast::{Expr, Pattern, SpannedExpr},
         filename_to_module,
@@ -22,8 +23,7 @@ use gluon::{
         types::{ArcType, Type},
     },
     new_vm_async,
-    vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO},
-    RootedThread, Thread, ThreadExt,
+    vm::api::{Getable, Hole, IO, OpaqueValue, OwnedFunction, VmType, de::De, generic::A},
 };
 
 #[derive(Debug, Error)]
@@ -77,19 +77,18 @@ impl From<gluon::Error> for Error {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(about = "gluon tests")]
+#[derive(Parser)]
+#[command(about = "gluon tests")]
 pub struct Opt {
-    #[structopt(long = "jobs")]
-    #[structopt(help = "How many threads to run in parallel")]
+    #[arg(long = "jobs", help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
 
-    #[structopt(name = "FILTER", help = "Filters which tests to run")]
+    #[arg(value_name = "FILTER", help = "Filters which tests to run")]
     pub filter: Vec<String>,
 }
 
 fn main() {
-    let options = Opt::from_args();
+    let options = Opt::parse();
     let runtime = {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         if let Some(jobs) = options.jobs {
@@ -235,7 +234,7 @@ async fn run_fail_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Resul
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
-    use gluon::base::ast::{walk_expr, Visitor};
+    use gluon::base::ast::{Visitor, walk_expr};
 
     fn make_test(comment: &str) -> String {
         let mut parser = pulldown_cmark::Parser::new(comment);
@@ -249,7 +248,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
             }
             loop {
                 match parser.next() {
-                    Some(pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(_))) => {
+                    Some(pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock)) => {
                         break;
                     }
                     Some(pulldown_cmark::Event::Text(content)) => {
@@ -354,7 +353,10 @@ async fn run_doc_tests<'t>(
                     Ok(test) => make_tensile_test(test_name, test),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(test_name, || Err(err.0.into()))
+                        tensile::test(test_name, || {
+                            let _ = &err;
+                            Err(err.0.into())
+                        })
                     }
                 }
             })
@@ -413,7 +415,10 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(test) => test.into_tensile_test(),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name2, || Err(err.0))
+                        tensile::test(name2, || {
+                            let _ = &err;
+                            Err(err.0)
+                        })
                     }
                 }
             }))
@@ -451,7 +456,10 @@ async fn main_(options: &Opt) -> Result<(), Error> {
                     Ok(tests) => tensile::group(name.clone(), tests),
                     Err(err) => {
                         let err = ::std::panic::AssertUnwindSafe(err);
-                        tensile::test(name.clone(), || Err(err.0))
+                        tensile::test(name.clone(), || {
+                            let _ = &err;
+                            Err(err.0)
+                        })
                     }
                 }
             }))

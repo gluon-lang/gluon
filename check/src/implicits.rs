@@ -22,11 +22,11 @@ use crate::base::{
 };
 
 use crate::{
+    TypecheckEnv,
     substitution::Substitution,
     typ::RcType,
     typecheck::{TypeError, Typecheck},
     unify_type::{self, Size},
-    TypecheckEnv,
 };
 
 fn spliterator<'a>(
@@ -51,7 +51,7 @@ fn split_type<'a>(
             return split_type(subs, id).map(|(key, _)| (key, args.get(0)));
         }
         Type::Forall(_, typ) | Type::Function(ArgType::Implicit, _, typ) => {
-            return split_type(subs, typ)
+            return split_type(subs, typ);
         }
         Type::Function(ArgType::Explicit, ..) => {
             Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
@@ -167,7 +167,7 @@ impl<T> Partition<T> {
         &'a self,
         subs: &Substitution<RcType>,
         typ: &RcType,
-    ) -> impl DoubleEndedIterator<Item = &'a T>
+    ) -> impl DoubleEndedIterator<Item = &'a T> + use<'a, T>
     where
         T: fmt::Debug,
     {
@@ -321,7 +321,7 @@ struct Demand {
     constraint: RcType,
 }
 
-struct ResolveImplicitsVisitor<'a, 'b: 'a, 'ast> {
+struct ResolveImplicitsVisitor<'a, 'b, 'ast> {
     tc: &'a mut Typecheck<'b, 'ast>,
 }
 
@@ -574,11 +574,13 @@ impl<'a, 'b, 'ast> ResolveImplicitsVisitor<'a, 'b, 'ast> {
                         let state = unify_type::State::new(&self.tc.environment, &self.tc.subs);
                         if !smallers(state, &new_demands, entry.get()) {
                             return Err(Error {
-                                kind: ErrorKind::LoopInImplicitResolution(vec![candidate_path
-                                    .iter()
-                                    .map(|id| &id.name)
-                                    .format(".")
-                                    .to_string()]),
+                                kind: ErrorKind::LoopInImplicitResolution(vec![
+                                    candidate_path
+                                        .iter()
+                                        .map(|id| &id.name)
+                                        .format(".")
+                                        .to_string(),
+                                ]),
                                 reason: demand.reason.clone(),
                             });
                         }

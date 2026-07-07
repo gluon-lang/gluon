@@ -3,7 +3,7 @@ extern crate gluon_parser as parser;
 
 use std::fs;
 
-use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{Bencher, Criterion, criterion_group, criterion_main};
 
 use crate::base::{
     ast, mk_ast_arena,

@@ -9,7 +9,7 @@ use std::{
 
 use {
     codespan_reporting::diagnostic::Diagnostic,
-    downcast_rs::{impl_downcast, Downcast},
+    downcast_rs::{Downcast, impl_downcast},
     futures::{prelude::*, task::Spawn},
 };
 
@@ -533,7 +533,7 @@ fn replace_expr<'ast>(
     );
 }
 
-struct MacroVisitor<'a: 'b, 'b, 'c, 'd, 'e, 'ast> {
+struct MacroVisitor<'a, 'b, 'c, 'd, 'e, 'ast> {
     expander: &'b mut MacroExpander<'a>,
     symbols: &'c mut Symbols,
     arena: &'d mut ast::OwnedArena<'ast, Symbol>,
@@ -550,7 +550,7 @@ impl<'a, 'b, 'c, 'e, 'ast> MutVisitor<'e, 'ast> for MacroVisitor<'a, 'b, 'c, '_,
                 func,
                 args: _,
             } => match &func.value {
-                Expr::Ident(ref id) if id.name.as_str().ends_with('!') => {
+                Expr::Ident(id) if id.name.as_str().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
                             expr.span,

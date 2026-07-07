@@ -1,12 +1,12 @@
 mod support;
 
 use gluon::{
+    Error, Thread, ThreadExt,
     vm::{
+        Error as VMError,
         api::{Hole, OpaqueValue},
         thread::ThreadInternal,
-        Error as VMError,
     },
-    Error, Thread, ThreadExt,
 };
 
 use crate::support::make_vm;

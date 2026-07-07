@@ -1,8 +1,8 @@
 use std::{cell::RefCell, fs};
 
-use criterion::{criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{Bencher, Criterion, criterion_group, criterion_main};
 
-use gluon::{base, compiler_pipeline::*, new_vm, ThreadExt};
+use gluon::{ThreadExt, base, compiler_pipeline::*, new_vm};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();

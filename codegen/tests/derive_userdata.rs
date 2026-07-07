@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate gluon_codegen;
-extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
@@ -9,9 +8,8 @@ mod init;
 use std::sync::Arc;
 
 use gluon::{
-    import,
+    Thread, ThreadExt, import,
     vm::{self, ExternModule},
-    Thread, ThreadExt,
 };
 
 use init::new_vm;
@@ -71,6 +69,7 @@ fn userdata() {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Userdata, Trace, Debug, VmType)]
 #[gluon(vm_type = "Empty")]
 struct Empty;

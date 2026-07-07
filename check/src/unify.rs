@@ -182,7 +182,7 @@ where
 
 struct Unify<'e, T, E>
 where
-    T: Substitutable + 'e,
+    T: Substitutable,
 {
     errors: Errors<Error<E, T>>,
     subs: &'e Substitution<T>,

@@ -4,8 +4,9 @@ extern crate rexpect;
 
 use std::process::Command;
 
-use rexpect::errors::*;
-use rexpect::session::{spawn_command, PtySession};
+use rexpect::session::{Options, PtySession, spawn_with_options};
+
+use anyhow::{Context as _, Result};
 
 struct REPL {
     session: PtySession,
@@ -21,42 +22,60 @@ impl REPL {
     /// Defines the command, timeout, and prompt settings.
     /// Wraps a rexpect::session::PtySession. expecting the prompt after launch.
     fn new_() -> Result<REPL> {
-        let timeout: u64 = 30_000;
+        let _ = env_logger::try_init();
+
+        let timeout: u64 = 5_000;
         let prompt: &'static str = "REXPECT> ";
 
         let mut command = Command::new("../target/debug/gluon");
         command
-            .args(&["-i", "--color", "never", "--prompt", prompt])
+            .args(&[
+                "-i",
+                "--color",
+                "never",
+                "--prompt",
+                prompt,
+                "--no-auto-complete",
+            ])
             .env("GLUON_PATH", "..");
-        let mut session = spawn_command(command, Some(timeout))?;
+        let mut session = spawn_with_options(
+            command,
+            Options::new()
+                .timeout_ms(Some(timeout))
+                .strip_ansi_escape_codes(true),
+        )?;
 
         session.exp_string(prompt)?;
 
         Ok(REPL { session, prompt })
     }
 
+    #[track_caller]
     fn test(&mut self, send: &str, expect: Option<&str>) {
         self.test_(send, expect)
-            .unwrap_or_else(|err| panic!("{}", err));
+            .unwrap_or_else(|err| panic!("{:#}", err));
     }
 
     /// Ensures certain lines are expected to reduce race conditions.
     /// If no ouput is expected or desired to be tested, pass it an Option::None,
     /// causing rexpect to wait for the next prompt.
+    #[track_caller]
     fn test_(&mut self, send: &str, expect: Option<&str>) -> Result<()> {
         self.session.send_line(send)?;
-        self.session.exp_string(send)?;
+        self.session.exp_string(send).context("Send string")?;
 
         if let Some(string) = expect {
-            self.session.exp_string(string)?;
+            self.session.exp_string(string).context("Expect string")?;
         }
 
-        self.session.exp_string(self.prompt)?;
+        self.session
+            .exp_string(self.prompt)
+            .context("Expect prompt")?;
         Ok(())
     }
 
     fn quit(&mut self) {
-        self.quit_().unwrap_or_else(|err| panic!("{}", err));
+        self.quit_().unwrap_or_else(|err| panic!("{:#}", err));
     }
 
     fn quit_(&mut self) -> Result<()> {

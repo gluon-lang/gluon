@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    Error, Result, Variants,
     api::{Pushable, VmType},
     base::types::ArcType,
     interner::InternedStr,
@@ -15,7 +16,6 @@ use crate::{
     thread::{ActiveThread, Thread},
     types::{VmIndex, VmTag},
     value::{Def, RecordDef, ValueRepr},
-    Error, Result, Variants,
 };
 
 /**
@@ -56,11 +56,9 @@ impl VmType for Vec2 {
     }
 }
 
-# if ::std::env::var("GLUON_PATH").is_err() {
-#     ::std::env::set_var("GLUON_PATH", "..");
-# }
-
 let thread = new_vm_async().await;
+# #[cfg(feature = "test")]
+# let thread = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build_async().await;
 
 let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = thread
     .run_expr_async("", r#"let f v: _ -> Int = v.x + v.y in f"#)
@@ -107,10 +105,6 @@ impl VmType for Enum {
         thread.find_type_info("test.Enum").unwrap().into_type()
     }
 }
-
-# if ::std::env::var("GLUON_PATH").is_err() {
-#     ::std::env::set_var("GLUON_PATH", "..");
-# }
 
 let thread = new_vm();
 # thread.get_database_mut().implicit_prelude(false);
@@ -179,7 +173,7 @@ impl ser::Error for Error {
     }
 }
 
-pub struct Serializer<'a, 't: 'a> {
+pub struct Serializer<'a, 't> {
     thread: &'t Thread,
     context: &'a mut ActiveThread<'t>,
 }
@@ -223,7 +217,7 @@ impl<'a, 't> Serializer<'a, 't> {
 }
 
 #[doc(hidden)]
-pub struct RecordSerializer<'s, 'a: 's, 'vm: 'a> {
+pub struct RecordSerializer<'s, 'a, 'vm> {
     serializer: &'s mut Serializer<'a, 'vm>,
     variant_index: VmTag,
     values: VmIndex,

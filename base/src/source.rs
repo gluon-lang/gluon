@@ -242,7 +242,7 @@ pub trait Source {
     /// Returns the starting position of any comments and whitespace before `end`
     fn comment_start_before(&self, end: BytePos) -> BytePos;
 
-    fn comments_between(&self, span: Span<BytePos>) -> CommentIter;
+    fn comments_between(&self, span: Span<BytePos>) -> CommentIter<'_>;
 }
 
 impl Source for FileMap {
@@ -295,7 +295,7 @@ impl Source for FileMap {
         BytePos::from(iter.src.len() as u32)
     }
 
-    fn comments_between(&self, span: Span<BytePos>) -> CommentIter {
+    fn comments_between(&self, span: Span<BytePos>) -> CommentIter<'_> {
         CommentIter {
             src: self.src_slice(span),
         }
@@ -337,7 +337,7 @@ impl Source for () {
         pos
     }
 
-    fn comments_between(&self, _: Span<BytePos>) -> CommentIter {
+    fn comments_between(&self, _: Span<BytePos>) -> CommentIter<'_> {
         CommentIter { src: "" }
     }
 }

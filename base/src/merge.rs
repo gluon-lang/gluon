@@ -104,25 +104,33 @@ where
             let converter = &mut self.converter;
             let state = &mut self.state;
             self.clone_types_iter.next().map(|e| converter(state, e))
-        } else if let Some(typ) = self.next.take() {
-            self.clone_types_iter.next();
-            Some(typ)
         } else {
-            let action = &mut self.action;
-            let state = &mut self.state;
+            match self.next.take() {
+                Some(typ) => {
+                    self.clone_types_iter.next();
+                    Some(typ)
+                }
+                _ => {
+                    let action = &mut self.action;
+                    let state = &mut self.state;
 
-            if let Some((i, typ)) = self
-                .types
-                .by_ref()
-                .enumerate()
-                .find_map(|(i, typ)| action(state, typ).map(|typ| (i, typ)))
-            {
-                self.clone_types = i;
-                self.next = Some(typ);
-                self.next()
-            } else {
-                self.clone_types = usize::max_value();
-                self.next()
+                    match self
+                        .types
+                        .by_ref()
+                        .enumerate()
+                        .find_map(|(i, typ)| action(state, typ).map(|typ| (i, typ)))
+                    {
+                        Some((i, typ)) => {
+                            self.clone_types = i;
+                            self.next = Some(typ);
+                            self.next()
+                        }
+                        _ => {
+                            self.clone_types = usize::max_value();
+                            self.next()
+                        }
+                    }
+                }
             }
         }
     }
@@ -176,12 +184,12 @@ where
 {
     let mut types = types.into_iter();
     let clone_types_iter = types.clone();
-    if let Some((i, typ)) = types
+    match types
         .by_ref()
         .enumerate()
         .find_map(|(i, typ)| action(state, typ).map(|typ| (i, typ)))
     {
-        Some(MergeIter {
+        Some((i, typ)) => Some(MergeIter {
             clone_types_iter,
             types,
             action,
@@ -189,8 +197,7 @@ where
             clone_types: i,
             next: Some(typ),
             state,
-        })
-    } else {
-        None
+        }),
+        _ => None,
     }
 }

@@ -29,11 +29,11 @@ use crate::base::{
 };
 
 use crate::{
-    implicits,
+    TypecheckEnv, implicits,
     kindcheck::KindCheck,
     substitution::{self, Substitution},
     typ::RcType,
-    unify, unify_type, TypecheckEnv,
+    unify, unify_type,
 };
 
 use self::{
@@ -542,7 +542,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         }
 
         {
-            struct ReplaceVisitor<'a: 'b, 'b, 'ast> {
+            struct ReplaceVisitor<'a, 'b, 'ast> {
                 tc: &'b mut Typecheck<'a, 'ast>,
             }
 
@@ -1171,11 +1171,11 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 Ok((self.typecheck_opt(last, expected_type.take()), Vec::new()))
             }
             Expr::Do(Do {
-                ref mut id,
-                ref mut typ,
-                ref mut bound,
-                ref mut body,
-                ref mut flat_map_id,
+                id,
+                typ,
+                bound,
+                body,
+                flat_map_id,
             }) => {
                 let do_span = expr.span.subspan(0.into(), 2.into());
                 let flat_map_type = match flat_map_id
@@ -1772,7 +1772,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     return Err(TypeError::PatternError {
                         constructor_type: typ.clone(),
                         pattern_args,
-                    })
+                    });
                 }
                 (None, None) => break,
             }
@@ -1800,7 +1800,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
         match **ast_type {
             // Undo the hack in kindchecking that inserts a dummy alias wrapping a generic
             Type::Alias(ref alias) => match **alias.unresolved_type() {
-                Type::Generic(ref gen) if gen.id == alias.name => self.ident(KindedIdent {
+                Type::Generic(ref generic) if generic.id == alias.name => self.ident(KindedIdent {
                     name: alias.name.clone(),
                     typ: alias.kind(&self.kind_cache).into_owned(),
                 }),
@@ -2246,9 +2246,11 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             _ => {
                 if let Type::Forall(params, ..) = &**typ {
                     let mut type_cache = &self.subs;
-                    self.environment
-                        .type_variables
-                        .extend(params.iter().map(|gen| (gen.id.clone(), type_cache.hole())));
+                    self.environment.type_variables.extend(
+                        params
+                            .iter()
+                            .map(|generic| (generic.id.clone(), type_cache.hole())),
+                    );
                 }
                 types::walk_type_(
                     typ,
@@ -3038,7 +3040,10 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                             _ => false,
                         };
                         if !valid_type {
-                            return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `type Effect r a = | Variant X | r` but found `{}`", unaliased))));
+                            return Some(Err(TypeError::Message(format!(
+                                "Invalid form for the type. Expect the type to be of the form `type Effect r a = | Variant X | r` but found `{}`",
+                                unaliased
+                            ))));
                         }
 
                         let f = self.subs.new_var();
@@ -3227,7 +3232,7 @@ where
 pub fn extract_generics(args: &[RcType]) -> Vec<Generic<Symbol>> {
     args.iter()
         .map(|arg| match **arg {
-            Type::Generic(ref gen) => gen.clone(),
+            Type::Generic(ref generic) => generic.clone(),
             _ => ice!("The type on the lhs of a type binding did not have all generic arguments"),
         })
         .collect()
@@ -3249,7 +3254,7 @@ fn get_alias_app<'a>(
         }),
     }
 }
-struct FunctionArgIter<'a, 'b: 'a, 'ast> {
+struct FunctionArgIter<'a, 'b, 'ast> {
     tc: &'a mut Typecheck<'b, 'ast>,
     typ: RcType,
 }

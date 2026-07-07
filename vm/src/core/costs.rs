@@ -4,9 +4,8 @@ use base::{
 };
 
 use crate::core::{
-    is_primitive,
-    optimize::{walk_expr, SameLifetime, Visitor},
-    Allocator, CExpr, Expr, Named,
+    Allocator, CExpr, Expr, Named, is_primitive,
+    optimize::{SameLifetime, Visitor, walk_expr},
 };
 
 pub type Cost = u32;

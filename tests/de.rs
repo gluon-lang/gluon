@@ -4,6 +4,7 @@ extern crate env_logger;
 extern crate serde_derive;
 
 use gluon::{
+    ThreadExt,
     base::{
         symbol::Symbol,
         types::{ArcType, Field, Type},
@@ -11,12 +12,11 @@ use gluon::{
     new_vm,
     vm::{
         api::{
-            de::{self, De},
             Getable, Hole, OpaqueValue, VmType,
+            de::{self, De},
         },
         thread::Thread,
     },
-    ThreadExt,
 };
 
 #[test]

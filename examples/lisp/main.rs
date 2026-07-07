@@ -7,9 +7,8 @@ extern crate gluon_codegen;
 use std::io::{self, BufRead};
 
 use gluon::{
-    new_vm,
+    RootedThread, ThreadExt, new_vm,
     vm::api::{FunctionRef, OpaqueValue},
-    RootedThread, ThreadExt,
 };
 
 #[derive(VmType)]

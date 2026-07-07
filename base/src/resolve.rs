@@ -120,7 +120,7 @@ where
                     | Type::ExtendTypeRow { .. }
                         if args.is_empty() =>
                     {
-                        return Ok(typ)
+                        return Ok(typ);
                     }
                     _ => {
                         let typ = typ

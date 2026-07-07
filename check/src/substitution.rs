@@ -148,7 +148,7 @@ pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: u32) -> bool
 where
     T: Substitutable,
 {
-    struct Occurs<'a, T: Substitutable + 'a> {
+    struct Occurs<'a, T: Substitutable> {
         occurs: bool,
         var: u32,
         subs: &'a Substitution<T>,

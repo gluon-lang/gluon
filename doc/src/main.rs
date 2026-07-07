@@ -1,14 +1,13 @@
 extern crate env_logger;
 extern crate opener;
 extern crate rayon;
-extern crate structopt;
 
 extern crate gluon;
 extern crate gluon_doc;
 
 use std::path::Path;
 
-use structopt::StructOpt;
+use clap::Parser;
 
 fn main() {
     if let Err(err) = main_() {
@@ -19,7 +18,7 @@ fn main() {
 fn main_() -> Result<(), anyhow::Error> {
     env_logger::init();
 
-    let opt = gluon_doc::Opt::from_args();
+    let opt = gluon_doc::Opt::parse();
 
     if let Some(jobs) = opt.jobs {
         rayon::ThreadPoolBuilder::new()

@@ -12,7 +12,7 @@ use {
     },
     check::check_signature,
     vm::{
-        api::{generic::A, VmType, IO},
+        api::{IO, VmType, generic::A},
         macros::{self, Macro, MacroExpander, MacroFuture},
     },
 };
@@ -41,7 +41,7 @@ impl Macro for LiftIo {
                 _ => {
                     return Err(macros::Error::message(format!(
                         "`lift_io!` expects an identifier as the first argument"
-                    )))
+                    )));
                 }
             };
 
@@ -56,7 +56,7 @@ impl Macro for LiftIo {
                     return Err(macros::Error::message(format!(
                         "The second argument to `lift_io!` must be a record. Found: `{}`",
                         typ
-                    )))
+                    )));
                 }
             }
 

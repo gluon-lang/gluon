@@ -1,6 +1,4 @@
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
@@ -10,23 +8,25 @@ extern crate log;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, create_dir_all, File},
+    fs::{self, File, create_dir_all},
     io::{self, Read},
     path::{Path, PathBuf},
     result::Result as StdResult,
 };
 
 use {
-    anyhow::{anyhow, Context as _},
-    handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError},
+    anyhow::{Context as _, anyhow},
+    clap::Parser,
+    handlebars::{
+        Context, Handlebars, Helper, Output, RenderContext, RenderError, RenderErrorReason,
+    },
     itertools::Itertools,
     pretty::{Arena, DocAllocator},
     rayon::prelude::*,
-    serde::Deserialize,
-    structopt::StructOpt,
 };
 
 use gluon::{
+    Thread, ThreadExt,
     base::{
         filename_to_module,
         fnv::FnvMap,
@@ -36,7 +36,6 @@ use gluon::{
         types::{ArcType, ArgType, Type, TypeExt, TypePtr},
     },
     check::metadata::metadata,
-    Thread, ThreadExt,
 };
 
 pub type Error = anyhow::Error;
@@ -201,9 +200,9 @@ pub fn record(
                         .typ
                         .params()
                         .iter()
-                        .map(|gen| Argument {
+                        .map(|r#gen| Argument {
                             implicit: false,
-                            name: gen.id.to_string(),
+                            name: r#gen.id.to_string(),
                         })
                         .collect(),
                     typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),
@@ -307,6 +306,19 @@ fn module_link(current_module: &str, param: &str) -> String {
 fn handlebars() -> Result<Handlebars<'static>> {
     let mut reg = Handlebars::new();
 
+    fn string_parameter<'a, 'b>(
+        h: &'a Helper<'b>,
+        index: usize,
+    ) -> ::std::result::Result<&'a str, RenderError> {
+        h.param(index)
+            .and_then(|p| p.value().as_str())
+            .ok_or_else(|| {
+                RenderError::from(RenderErrorReason::Other(
+                    format!("Expected helper argument {} to be a string", index).into(),
+                ))
+            })
+    }
+
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
     reg.register_helper(
@@ -317,7 +329,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
                   _context: &Context,
                   _rc: &mut RenderContext,
                   out: &mut dyn Output| {
-                let param = String::deserialize(h.param(0).unwrap().value())?;
+                let param = string_parameter(h, 0)?;
                 out.write(&param.replace(".", "/"))?;
                 Ok(())
             },
@@ -333,7 +345,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = string_parameter(h, 0)?;
         out.write(&module_link(current_module, &param))?;
         Ok(())
     }
@@ -349,7 +361,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let parent_breadcrumb = current_module.rsplit('.').nth(1);
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = string_parameter(h, 0)?;
         match parent_breadcrumb {
             Some(parent_breadcrumb) => {
                 out.write(&format!("../{}/{}.html", parent_breadcrumb, &param))?
@@ -370,19 +382,19 @@ fn handlebars() -> Result<Handlebars<'static>> {
         let current_module = context.data()["name"].as_str().expect("name");
         let current_module_level = current_module.split('.').count();
 
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = string_parameter(h, 0)?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
             out.write(&format!(
                 r##"<li class="breadcrumb-item{}">{}</li>"##,
                 if i + 1 == parts.len() { " active" } else { "" },
                 if i + 1 == parts.len() {
-                    handlebars::html_escape(&part)
+                    handlebars::html_escape(*part)
                 } else {
                     let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
-                    let part = handlebars::html_escape(&part);
+                    let part = handlebars::html_escape(*part);
                     format!(
                         r##"<a href="{path}{part}.html">{part}</a>"##,
                         path = path,
@@ -420,7 +432,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = string_parameter(h, 0)?;
 
         let parser = pulldown_cmark::Parser::new(&param);
         let mut buf = String::new();
@@ -452,7 +464,7 @@ fn handlebars() -> Result<Handlebars<'static>> {
         _: &mut RenderContext,
         out: &mut dyn Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let param = string_parameter(h, 0)?;
 
         let first_paragraph: String = param.lines().take_while(|s| !s.is_empty()).collect();
 
@@ -700,21 +712,23 @@ impl From<&'_ Opt> for Options {
     }
 }
 
-const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
-#[derive(StructOpt)]
-#[structopt(about = "Documents gluon source code", long_version = LONG_VERSION)]
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\n",
+    "commit: ",
+    env!("GIT_HASH")
+);
+#[derive(Parser)]
+#[command(about = "Documents gluon source code", long_version = LONG_VERSION)]
 pub struct Opt {
-    #[structopt(long = "open")]
-    #[structopt(help = "Opens the documentation after it has been generated")]
+    #[arg(long = "open", help = "Opens the documentation after it has been generated")]
     pub open: bool,
-    #[structopt(long = "jobs")]
-    #[structopt(help = "How many threads to run in parallel")]
+    #[arg(long = "jobs", help = "How many threads to run in parallel")]
     pub jobs: Option<usize>,
-    #[structopt(long = "src-url")]
-    #[structopt(help = "Where the source can be found")]
+    #[arg(long = "src-url", help = "Where the source can be found")]
     pub src_url: Option<String>,
-    #[structopt(help = "Documents the file or directory")]
+    #[arg(help = "Documents the file or directory")]
     pub input: String,
-    #[structopt(help = "Outputs the documentation to this directory")]
+    #[arg(help = "Outputs the documentation to this directory")]
     pub output: String,
 }

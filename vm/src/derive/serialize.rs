@@ -5,7 +5,7 @@ use crate::base::{
     },
     pos,
     symbol::{Symbol, Symbols},
-    types::{ctor_args, remove_forall, row_iter, Type, TypeContext},
+    types::{Type, TypeContext, ctor_args, remove_forall, row_iter},
 };
 
 use crate::macros::Error;

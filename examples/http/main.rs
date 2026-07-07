@@ -8,9 +8,8 @@
 use std::{env, fs};
 
 use gluon::{
-    new_vm,
-    vm::api::{OwnedFunction, IO},
-    Thread, ThreadExt,
+    Thread, ThreadExt, new_vm,
+    vm::api::{IO, OwnedFunction},
 };
 
 #[tokio::main]
@@ -47,26 +46,33 @@ mod tests {
     use std::str;
 
     use futures::prelude::*;
-    use hyper::Client;
+    use http_body_util::{BodyExt, Full};
+    use hyper::{Request, body::Bytes};
+    use hyper_util::{
+        client::legacy::{Client, connect::HttpConnector},
+        rt::TokioExecutor,
+    };
+
+    fn client() -> Client<HttpConnector, Full<Bytes>> {
+        Client::builder(TokioExecutor::new()).build_http()
+    }
 
     async fn wait_for_server(port: u16) -> Result<(), anyhow::Error> {
         let mut err = None;
         for _ in 0..40 {
-            match Client::new()
+            match client()
                 .get(format!("http://localhost:{}", port).parse().unwrap())
                 .await
             {
                 Ok(response) => {
                     return response
                         .into_body()
-                        .try_fold(Vec::new(), |mut acc, buf| async move {
-                            acc.extend_from_slice(&buf);
-                            Ok(acc)
-                        })
-                        .map_ok(|body| {
+                        .collect()
+                        .map_ok(|collected| {
+                            let body = collected.to_bytes();
                             assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
                         })
-                        .err_into::<anyhow::Error>()
+                        .map_err(anyhow::Error::from)
                         .await;
                 }
                 Err(e) => err = Some(e),
@@ -103,24 +109,22 @@ mod tests {
         };
 
         start_server.await.unwrap_or_else(|err| panic!("{}", err));
-        let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
-            .body(hyper::Body::from("test"))
+        let request = Request::post(format!("http://localhost:{}/echo", port))
+            .body(Full::new(Bytes::from_static(b"test")))
             .unwrap();
 
-        Client::new()
+        client()
             .request(request)
             .err_into::<anyhow::Error>()
             .and_then(|response| {
                 response
                     .into_body()
-                    .try_fold(Vec::new(), |mut acc, buf| async move {
-                        acc.extend_from_slice(&buf);
-                        Ok(acc)
-                    })
-                    .map_ok(|body| {
+                    .collect()
+                    .map_ok(|collected| {
+                        let body = collected.to_bytes();
                         assert_eq!(str::from_utf8(&body).unwrap(), "test");
                     })
-                    .err_into::<anyhow::Error>()
+                    .map_err(anyhow::Error::from)
             })
             .await
             .unwrap_or_else(|err: anyhow::Error| panic!("{}", err));

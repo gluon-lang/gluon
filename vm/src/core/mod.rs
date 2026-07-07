@@ -17,12 +17,12 @@ macro_rules! assert_deq {
     }};
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(feature = "test")]
 lalrpop_util::lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
     #[allow(unused_parens)]
     pub grammar,
-    "/core/grammar.rs"
+    "core/grammar.rs"
 );
 pub mod costs;
 pub mod dead_code;
@@ -36,15 +36,15 @@ use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem
 
 use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec, typed_arena::Arena};
 
-use self::optimize::{walk_expr_alloc, SameLifetime, Visitor};
+use self::optimize::{SameLifetime, Visitor, walk_expr_alloc};
 
 use crate::base::{
     ast::{self, SpannedExpr, SpannedPattern, Typed, TypedIdent},
     fnv::{FnvMap, FnvSet},
-    pos::{spanned, BytePos, Span, Spanned},
+    pos::{BytePos, Span, Spanned, spanned},
     resolve::remove_aliases_cow,
     symbol::Symbol,
-    types::{arg_iter, ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt},
+    types::{ArcType, NullInterner, PrimitiveEnv, Type, TypeEnv, TypeExt, arg_iter},
 };
 
 macro_rules! iterator {
@@ -363,7 +363,7 @@ mod internal {
     };
 
     #[derive(Clone)]
-    pub struct FrozenAllocator(Arc<Allocator<'static>>);
+    pub struct FrozenAllocator(#[allow(dead_code)] Arc<Allocator<'static>>);
 
     // `Allocator` is not `Sync` due to the `RefCell` it contains. But since we do not allow
     // `Allocator` to be accessed there is not way to interact with it and we can safely allow
@@ -637,7 +637,7 @@ mod internal {
     fn assert_sync<T: Sync>() {}
 }
 
-pub use self::internal::{freeze_closure, freeze_expr, CoreClosure, CoreExpr};
+pub use self::internal::{CoreClosure, CoreExpr, freeze_closure, freeze_expr};
 
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
@@ -1178,7 +1178,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
 
-            ast::Expr::Do(ast::Do {
+            ast::Expr::Do(&mut ast::Do {
                 ref id,
                 ref bound,
                 ref body,
@@ -1553,7 +1553,7 @@ fn get_return_type(
     get_return_type(env, &ret, arg_count - 1)
 }
 
-pub struct PatternTranslator<'a, 'e: 'a>(&'a Translator<'a, 'e>);
+pub struct PatternTranslator<'a, 'e>(&'a Translator<'a, 'e>);
 
 #[derive(Clone, PartialEq, Debug)]
 struct Equation<'a, 'p, 'ast> {
@@ -2020,7 +2020,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         // | x ->
         let groups = equations
             .iter()
-            .group_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
+            .chunk_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
 
         let expr = match variables.first() {
             None => equations
@@ -2364,7 +2364,7 @@ pub(crate) fn is_primitive(name: &Symbol) -> bool {
     name == "&&" || name == "||" || name.starts_with('#')
 }
 
-#[cfg(any(test, feature = "test"))]
+#[cfg(feature = "test")]
 pub mod tests {
     extern crate gluon_parser as parser;
 

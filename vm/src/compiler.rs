@@ -12,12 +12,12 @@ use crate::base::{
 };
 
 use crate::{
-    core::{self, is_primitive, CExpr, Expr, Literal, Pattern},
+    Error, Result,
+    core::{self, CExpr, Expr, Literal, Pattern, is_primitive},
     interner::InternedStr,
     source_map::{LocalMap, SourceMap},
     types::*,
     vm::GlobalVmState,
-    Error, Result,
 };
 
 use self::Variable::*;
@@ -726,16 +726,25 @@ impl<'a> Compiler<'a> {
                                         function.stack_size -= 1;
                                         function.function.instructions[offset] =
                                             NewRecord { record, args };
-                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
+                                        function.function.instructions[construct_index] =
+                                            CloseData {
+                                                index: stack_start + i as VmIndex,
+                                            };
                                     }
                                     ConstructVariant { tag, args } => {
                                         function.stack_size -= 1;
                                         function.function.instructions[offset] =
                                             NewVariant { tag, args };
-                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
+                                        function.function.instructions[construct_index] =
+                                            CloseData {
+                                                index: stack_start + i as VmIndex,
+                                            };
                                     }
                                     x => ice!(
-                                        "Expected record as last expression of recursive binding `{}`: {:?}\n{}", closure.name.name, x, closure.expr
+                                        "Expected record as last expression of recursive binding `{}`: {:?}\n{}",
+                                        closure.name.name,
+                                        x,
+                                        closure.expr
                                     ),
                                 }
                             } else {
@@ -971,8 +980,8 @@ impl<'a> Compiler<'a> {
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
             function.emit(ConstructVariant { tag: 0, args: 0 });
             function.emit(Jump(0)); //lhs false, jump to after rhs
-                                    // Dont count the integer added added above as the next part of the code never
-                                    // pushed it
+            // Dont count the integer added added above as the next part of the code never
+            // pushed it
             function.stack_size -= 1;
             self.compile(rhs, function, tail_position)?;
             // replace jump instruction
@@ -1156,7 +1165,7 @@ mod tests {
 
     use crate::{
         base::symbol::Symbols,
-        core::{grammar::ExprParser, Allocator},
+        core::{Allocator, grammar::ExprParser},
         vm::GlobalVmState,
     };
 

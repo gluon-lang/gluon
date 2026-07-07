@@ -1,12 +1,12 @@
 use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use crate::{
-    api::{generic::A, Generic, Unrooted, Userdata, WithVM, IO},
+    ExternModule, Result,
+    api::{Generic, IO, Unrooted, Userdata, WithVM, generic::A},
     gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::ThreadInternal,
     value::{Cloner, Value},
     vm::Thread,
-    ExternModule, Result,
 };
 
 #[derive(VmType)]

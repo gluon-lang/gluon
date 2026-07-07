@@ -11,18 +11,17 @@ use std::{
     result::Result as StdResult,
     slice,
     sync::{
-        self,
+        self, Arc, Mutex, MutexGuard, RwLock,
         atomic::{self, AtomicBool},
-        Arc, Mutex, MutexGuard, RwLock,
     },
     usize,
 };
 
 use futures::{
+    Future,
     future::{self, Either, Ready},
     ready,
     task::{self, Poll},
-    Future,
 };
 
 use async_trait::async_trait;
@@ -34,6 +33,7 @@ use crate::base::{
 };
 
 use crate::{
+    Error, Result, Variants,
     api::{Getable, Pushable, ValueRef, VmType},
     compiler::UpvarInfo,
     gc::{self, CloneUnrooted, DataDef, Gc, GcPtr, GcRef, Generation, Move},
@@ -53,7 +53,6 @@ use crate::{
         VariantDef,
     },
     vm::{GlobalVmState, GlobalVmStateBuilder, ThreadSlab, VmEnvInstance},
-    Error, Result, Variants,
 };
 
 pub use crate::{gc::Trace, stack::PopValue};
@@ -171,7 +170,9 @@ where
     T: VmRootInternal,
 {
     unsafe fn root(&mut self) {
-        self.root_();
+        unsafe {
+            self.root_();
+        }
     }
     unsafe fn unroot(&mut self) {
         self.unroot_();
@@ -242,14 +243,16 @@ where
 
     // SAFETY The value must be owned by `vm`'s GC
     unsafe fn new(vm: T, value: &Value) -> Self {
-        vm.rooted_values
-            .write()
-            .unwrap()
-            .push(value.clone_unrooted());
-        RootedValue {
-            vm,
-            rooted: true,
-            value: value.clone_unrooted(),
+        unsafe {
+            vm.rooted_values
+                .write()
+                .unwrap()
+                .push(value.clone_unrooted());
+            RootedValue {
+                vm,
+                rooted: true,
+                value: value.clone_unrooted(),
+            }
         }
     }
 
@@ -257,7 +260,7 @@ where
         &self.value
     }
 
-    pub fn get_variant(&self) -> Variants {
+    pub fn get_variant(&self) -> Variants<'_> {
         Variants::new(&self.value)
     }
 
@@ -305,11 +308,13 @@ where
     }
 
     unsafe fn root_(&mut self) {
-        self.vm.root_vm();
-        let mut rooted_values = self.vm.rooted_values.write().unwrap();
-        assert!(self.rooted);
-        self.rooted = true;
-        rooted_values.push(self.value.clone_unrooted());
+        unsafe {
+            self.vm.root_vm();
+            let mut rooted_values = self.vm.rooted_values.write().unwrap();
+            assert!(self.rooted);
+            self.rooted = true;
+            rooted_values.push(self.value.clone_unrooted());
+        }
     }
 
     fn unroot_(&mut self) {
@@ -391,41 +396,43 @@ impl<'b> Roots<'b> {
         &self,
         gc: &mut Gc,
     ) -> Vec<(
-        sync::RwLockReadGuard<ThreadSlab>,
-        MutexGuard<Context>,
+        sync::RwLockReadGuard<'_, ThreadSlab>,
+        MutexGuard<'_, Context>,
         GcPtr<Thread>,
     )> {
-        let mut stack: Vec<GcPtr<Thread>> = Vec::new();
-        let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
+        unsafe {
+            let mut stack: Vec<GcPtr<Thread>> = Vec::new();
+            let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
-        let child_threads = self.vm.child_threads.read().unwrap();
-        stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
-
-        while let Some(thread_ptr) = stack.pop() {
-            if locks.iter().any(|&(_, _, ref lock_thread)| {
-                &*thread_ptr as *const Thread == &**lock_thread as *const Thread
-            }) {
-                continue;
-            }
-
-            let thread = &*(&*thread_ptr as *const Thread);
-
-            let context = thread.context.lock().unwrap();
-
-            let child_threads = thread.child_threads.read().unwrap();
+            let child_threads = self.vm.child_threads.read().unwrap();
             stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
 
-            // Since we locked the context we need to scan the thread using `Roots` rather than
-            // letting it be scanned normally
-            Roots {
-                vm: &thread_ptr,
-                stack: &context.stack,
-            }
-            .trace(gc);
+            while let Some(thread_ptr) = stack.pop() {
+                if locks.iter().any(|&(_, _, ref lock_thread)| {
+                    &*thread_ptr as *const Thread == &**lock_thread as *const Thread
+                }) {
+                    continue;
+                }
 
-            Vec::push(&mut locks, (child_threads, context, thread_ptr));
+                let thread = &*(&*thread_ptr as *const Thread);
+
+                let context = thread.context.lock().unwrap();
+
+                let child_threads = thread.child_threads.read().unwrap();
+                stack.extend(child_threads.iter().map(|(_, t)| t.clone()));
+
+                // Since we locked the context we need to scan the thread using `Roots` rather than
+                // letting it be scanned normally
+                Roots {
+                    vm: &thread_ptr,
+                    stack: &context.stack,
+                }
+                .trace(gc);
+
+                Vec::push(&mut locks, (child_threads, context, thread_ptr));
+            }
+            locks
         }
-        locks
     }
 }
 
@@ -710,9 +717,11 @@ impl RootedThread {
     /// The reference count for the thread is not modified so it is up to the caller to ensure that
     /// the count is correct.
     pub unsafe fn from_raw(ptr: *const Thread) -> RootedThread {
-        RootedThread {
-            thread: GcPtr::from_raw(ptr),
-            rooted: true,
+        unsafe {
+            RootedThread {
+                thread: GcPtr::from_raw(ptr),
+                rooted: true,
+            }
         }
     }
 
@@ -820,11 +829,9 @@ impl Thread {
     /// # #[tokio::main]
     /// # async fn main() {
     ///
-    /// # if ::std::env::var("GLUON_PATH").is_err() {
-    /// #     ::std::env::set_var("GLUON_PATH", "..");
-    /// # }
-    ///
     /// let vm = new_vm_async().await;
+    /// # #[cfg(feature = "test")]
+    /// # let vm = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build_async().await;
     ///
     /// vm.run_expr_async::<OpaqueValue<&Thread, Hole>>("example", r#" import! std.int "#)
     ///     .await
@@ -961,14 +968,14 @@ impl Thread {
         &self.global_state
     }
 
-    pub fn current_context(&self) -> ActiveThread {
+    pub fn current_context(&self) -> ActiveThread<'_> {
         ActiveThread {
             thread: self,
             context: Some(self.context().context),
         }
     }
 
-    fn owned_context(&self) -> OwnedContext {
+    fn owned_context(&self) -> OwnedContext<'_> {
         self.context()
     }
 
@@ -980,7 +987,7 @@ impl Thread {
         self.child_threads.read().unwrap().trace(gc);
     }
 
-    pub(crate) fn parent_threads(&self) -> sync::RwLockWriteGuard<ThreadSlab> {
+    pub(crate) fn parent_threads(&self) -> sync::RwLockWriteGuard<'_, ThreadSlab> {
         match self.parent {
             Some(ref parent) => parent.child_threads.write().unwrap(),
             None => self.global_state.generation_0_threads.write().unwrap(),
@@ -1027,7 +1034,7 @@ pub trait VmRootInternal: Deref<Target = Thread> + Clone {
     where
         Self: Sized,
     {
-        RootedValue::new(self, value)
+        unsafe { RootedValue::new(self, value) }
     }
 }
 
@@ -1067,7 +1074,7 @@ where
     Self: ::std::borrow::Borrow<Thread>,
 {
     /// Locks and retrives this threads stack
-    fn context(&self) -> OwnedContext;
+    fn context(&self) -> OwnedContext<'_>;
 
     /// Roots a value
     fn root_value<'vm, T>(&'vm self, value: Variants) -> RootedValue<T>
@@ -1128,7 +1135,7 @@ where
         args: VmIndex,
     ) -> Poll<Result<Option<OwnedContext<'b>>>>;
 
-    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>>;
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext<'_>>>;
 
     fn deep_clone_value(&self, owner: &Thread, value: &Value) -> Result<RootedValue<&Thread>>;
 
@@ -1137,7 +1144,7 @@ where
 
 #[async_trait]
 impl ThreadInternal for Thread {
-    fn context(&self) -> OwnedContext {
+    fn context(&self) -> OwnedContext<'_> {
         OwnedContext {
             thread: self,
             context: self.context.lock().unwrap(),
@@ -1239,7 +1246,7 @@ impl ThreadInternal for Thread {
         context.execute(cx)
     }
 
-    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext>> {
+    fn resume(&self, cx: &mut task::Context<'_>) -> Poll<Result<OwnedContext<'_>>> {
         let mut context = self.owned_context();
         if let Some(poll_fn) = context.poll_fns.last() {
             let frame_offset = poll_fn.frame_index as usize;
@@ -1337,7 +1344,7 @@ impl<'a> DebugInfo<'a> {
 
     /// Returns a struct which can be queried about information about the stack
     /// at a specific level where `0` is the currently executing frame.
-    pub fn stack_info(&self, level: usize) -> Option<StackInfo> {
+    pub fn stack_info(&self, level: usize) -> Option<StackInfo<'_>> {
         let frames = self.stack.get_frames();
         if level < frames.len() {
             Some(StackInfo {
@@ -1424,7 +1431,7 @@ impl<'a> StackInfo<'a> {
     }
 
     /// Returns an iterator over all locals available at the current executing instruction
-    pub fn locals(&self) -> LocalIter {
+    pub fn locals(&self) -> LocalIter<'_> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ClosureState {
@@ -1524,7 +1531,7 @@ impl Context {
         thread: &Thread,
         tag: VmTag,
         fields: usize,
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -1547,7 +1554,7 @@ impl Context {
         thread: &Thread,
         fields: usize,
         field_names: &[InternedStr],
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -1565,7 +1572,7 @@ impl Context {
         Ok(value)
     }
 
-    pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1573,7 +1580,7 @@ impl Context {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcRef<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcRef<'_, D::Value>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1609,28 +1616,33 @@ impl Context {
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
     {
-        let poll_fn: PollFnInner<'_> = Box::new(move |cx: &mut task::Context<'_>, vm: &Thread| {
-            // `future` is moved into the closure, which is boxed and therefore pinned
-            let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
+        unsafe {
+            let poll_fn: PollFnInner<'_> = Box::new(
+                move |cx: &mut task::Context<'_>, vm: &Thread| {
+                    // `future` is moved into the closure, which is boxed and therefore pinned
+                    let value = ready!(Pin::new_unchecked(&mut future).poll(cx));
 
-            let mut context = vm.current_context();
-            let result = {
-                context.stack().release_lock(lock);
-                let context =
-                    mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(&mut context);
-                value.vm_push(context)
-            };
-            Poll::Ready(result.map(|()| context.into_owned()))
-        });
-        self.poll_fns.push(PollFn {
-            frame_index,
-            poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
-        });
+                    let mut context = vm.current_context();
+                    let result = {
+                        context.stack().release_lock(lock);
+                        let context = mem::transmute::<&mut ActiveThread<'_>, &mut ActiveThread<'vm>>(
+                            &mut context,
+                        );
+                        value.vm_push(context)
+                    };
+                    Poll::Ready(result.map(|()| context.into_owned()))
+                },
+            );
+            self.poll_fns.push(PollFn {
+                frame_index,
+                poll_fn: mem::transmute::<PollFnInner<'_>, PollFnInner<'static>>(poll_fn),
+            });
+        }
     }
 }
 
 impl<'b> OwnedContext<'b> {
-    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1638,7 +1650,7 @@ impl<'b> OwnedContext<'b> {
         self.alloc_owned(data).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, data: D) -> Result<gc::OwnedGcRef<D::Value>>
+    pub fn alloc_owned<D>(&mut self, data: D) -> Result<gc::OwnedGcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -1652,7 +1664,7 @@ impl<'b> OwnedContext<'b> {
         alloc_owned(gc, thread, &stack, data)
     }
 
-    pub fn debug_info(&self) -> DebugInfo {
+    pub fn debug_info(&self) -> DebugInfo<'_> {
         DebugInfo {
             stack: &self.stack,
             state: HookFlags::empty(),
@@ -1663,7 +1675,7 @@ impl<'b> OwnedContext<'b> {
         self.stack.get_frames().len()
     }
 
-    pub fn stack_frame<T>(&mut self) -> StackFrame<T>
+    pub fn stack_frame<T>(&mut self) -> StackFrame<'_, T>
     where
         T: StackState,
     {
@@ -1728,11 +1740,7 @@ impl<'b> OwnedContext<'b> {
         let exists = StackFrame::<State>::current(&mut self.stack)
             .exit_scope()
             .is_ok();
-        if exists {
-            Ok(self)
-        } else {
-            Err(())
-        }
+        if exists { Ok(self) } else { Err(()) }
     }
 
     fn execute(mut self, cx: &mut task::Context<'_>) -> Poll<Result<Option<OwnedContext<'b>>>> {
@@ -1967,7 +1975,7 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn borrow_mut(&mut self) -> ExecuteContext<State> {
+    fn borrow_mut(&mut self) -> ExecuteContext<'_, '_, State> {
         let thread = self.thread;
         let context = &mut **self;
         ExecuteContext {
@@ -1981,7 +1989,7 @@ impl<'b> OwnedContext<'b> {
 }
 
 unsafe fn lock_gc<'gc>(gc: &'gc Gc, value: &Value) -> Variants<'gc> {
-    Variants::with_root(value, gc)
+    unsafe { Variants::with_root(value, gc) }
 }
 
 // SAFETY By branding the variant with the gc lifetime we prevent mutation in the gc
@@ -1995,7 +2003,7 @@ macro_rules! transfer {
 }
 
 unsafe fn lock_gc_ptr<'gc, T: ?Sized>(gc: &'gc Gc, value: &GcPtr<T>) -> GcRef<'gc, T> {
-    GcRef::with_root(value.clone_unrooted(), gc)
+    unsafe { GcRef::with_root(value.clone_unrooted(), gc) }
 }
 
 macro_rules! transfer_ptr {
@@ -2016,7 +2024,7 @@ impl<'b, 'gc, S> ExecuteContext<'b, 'gc, S>
 where
     S: StackState,
 {
-    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, data: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -2024,7 +2032,7 @@ where
         alloc(&mut self.gc, self.thread, &self.stack.stack(), data)
     }
 
-    pub fn push_new_data(&mut self, tag: VmTag, fields: usize) -> Result<Variants> {
+    pub fn push_new_data(&mut self, tag: VmTag, fields: usize) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -2046,7 +2054,7 @@ where
         &mut self,
         fields: usize,
         field_names: &[InternedStr],
-    ) -> Result<Variants> {
+    ) -> Result<Variants<'_>> {
         let value = {
             let fields = &self.stack[self.stack.len() - fields as VmIndex..];
             Variants::from(alloc(
@@ -2064,7 +2072,7 @@ where
         Ok(value)
     }
 
-    pub fn push_new_alloc<D>(&mut self, def: D) -> Result<Variants>
+    pub fn push_new_alloc<D>(&mut self, def: D) -> Result<Variants<'_>>
     where
         D: DataDef + Trace,
         D::Value: Sized + Any,
@@ -2336,7 +2344,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                 TestPolyTag(string_index) => {
                     let expected_tag = &function.strings[string_index as usize];
                     let data_tag = match self.stack.top().get_repr() {
-                        Data(ref data) => data.poly_tag(),
+                        Data(data) => data.poly_tag(),
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
@@ -2349,7 +2357,7 @@ impl<'b, 'gc> ExecuteContext<'b, 'gc> {
                         "ICE: Polymorphic match on non-polymorphic variant {:#?}\n{:p}",
                         self.stack.top(),
                         match self.stack.top().get_repr() {
-                            Data(ref data) => &**data,
+                            Data(data) => &**data,
                             _ => unreachable!(),
                         }
                     );
@@ -2887,7 +2895,7 @@ impl<'vm> ActiveThread<'vm> {
     }
 
     // For gluon_codegen
-    pub fn context(&mut self) -> ExecuteContext<State> {
+    pub fn context(&mut self) -> ExecuteContext<'_, '_, State> {
         let thread = self.thread;
         let context = &mut **self.context.as_mut().expect("context");
         ExecuteContext {
@@ -2910,10 +2918,12 @@ impl<'vm> ActiveThread<'vm> {
         F: Future + Send + 'vm,
         F::Output: Pushable<'vm>,
     {
-        self.context
-            .as_mut()
-            .expect("context")
-            .return_future(future, lock, frame_index)
+        unsafe {
+            self.context
+                .as_mut()
+                .expect("context")
+                .return_future(future, lock, frame_index)
+        }
     }
 }
 #[doc(hidden)]
@@ -2947,7 +2957,7 @@ impl<'a> ProgramCounter<'a> {
 
     #[inline(always)]
     unsafe fn instruction(&self) -> Instruction {
-        *self.instructions.get_unchecked(self.instruction_index)
+        unsafe { *self.instructions.get_unchecked(self.instruction_index) }
     }
 
     #[inline(always)]

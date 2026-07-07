@@ -1,23 +1,23 @@
 use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use futures::{
+    Future,
     channel::oneshot,
     future::{self, Either, Shared},
     prelude::*,
-    Future,
 };
 
 use crate::{
+    Error, ExternModule, Result,
     api::{
-        generic::A, Getable, OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Userdata,
-        VmType, WithVM,
+        Getable, OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Userdata, VmType,
+        WithVM, generic::A,
     },
     base::types::{self, ArcType},
     gc::{CloneUnrooted, GcPtr, GcRef, Move, Trace},
     thread::{RootedThread, ThreadInternal},
     value::{Cloner, Value},
     vm::Thread,
-    Error, ExternModule, Result,
 };
 
 pub struct Lazy<T> {
@@ -97,7 +97,7 @@ where
 
 fn force(
     WithVM { vm, value: lazy }: WithVM<&Lazy<A>>,
-) -> impl Future<Output = RuntimeResult<Pushed<A>, Error>> {
+) -> impl Future<Output = RuntimeResult<Pushed<A>, Error>> + use<> {
     let mut lazy_lock = lazy.value.lock().unwrap();
     let lazy: GcPtr<Lazy<A>> = unsafe { GcPtr::from_raw(lazy) };
     let thunk = match *lazy_lock {

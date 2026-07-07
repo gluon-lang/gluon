@@ -6,10 +6,8 @@
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.18.2")] // # GLUON
 #![recursion_limit = "128"]
-#[cfg(test)]
-extern crate env_logger;
 
-pub extern crate either;
+pub use either;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -86,7 +84,7 @@ use crate::vm::{
 
 use crate::{
     compiler_pipeline::*,
-    import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import},
+    import::{DefaultImporter, Import, add_extern_module, add_extern_module_with_deps},
     query::{AsyncCompilation, Compilation, CompilationBase, CompilerDatabase},
 };
 
@@ -970,16 +968,19 @@ impl VmBuilder {
             vec!["std.types".into()],
         );
 
-        vm.run_expr_async::<OpaqueValue<RootedThread, Hole>>(
-            "",
-            r#"//@NO-IMPLICIT-PRELUDE
+        if let Err(err) = vm
+            .run_expr_async::<OpaqueValue<RootedThread, Hole>>(
+                "",
+                r#"//@NO-IMPLICIT-PRELUDE
                     let _ = import! std.types
                     let _ = import! std.prim
                     ()
                 "#,
-        )
-        .await
-        .unwrap_or_else(|err| panic!("{}", err));
+            )
+            .await
+        {
+            log::error!("Unable to load impicit prelude:{}", err);
+        }
 
         let deps: &[(_, fn(&Thread) -> _)] = &[
             ("std.byte.prim", crate::vm::primitives::load_byte),

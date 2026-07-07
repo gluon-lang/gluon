@@ -2,7 +2,7 @@ use std::{
     any::{Any, TypeId},
     result::Result as StdResult,
     string::String as StdString,
-    sync::{atomic::AtomicUsize, Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicUsize},
     usize,
 };
 
@@ -10,7 +10,7 @@ use std::{
 use serde::de::DeserializeState;
 
 use crate::base::{
-    ast,
+    DebugLevel, ast,
     fnv::FnvMap,
     kind::{ArcKind, Kind, KindEnv},
     metadata::{Metadata, MetadataEnv},
@@ -19,13 +19,13 @@ use crate::base::{
         Alias, AliasData, AppVec, ArcType, Generic, NullInterner, PrimitiveEnv, Type, TypeCache,
         TypeEnv, TypeExt,
     },
-    DebugLevel,
 };
 
 use crate::{
-    api::{OpaqueValue, ValueRef, IO},
+    Error, Result, Variants,
+    api::{IO, OpaqueValue, ValueRef},
     compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable},
-    core::{interpreter, optimize::OptimizeEnv, CoreExpr},
+    core::{CoreExpr, interpreter, optimize::OptimizeEnv},
     gc::{Gc, GcPtr, GcRef, Generation, Move, Trace},
     interner::{InternedStr, Interner},
     lazy::Lazy,
@@ -33,7 +33,6 @@ use crate::{
     thread::ThreadInternal,
     types::*,
     value::{BytecodeFunction, ClosureData, ClosureDataDef},
-    Error, Result, Variants,
 };
 
 pub use crate::{
@@ -249,18 +248,22 @@ pub struct GlobalVmState {
 
 unsafe impl Trace for GlobalVmState {
     unsafe fn root(&mut self) {
-        self.macros.root();
+        unsafe {
+            self.macros.root();
 
-        // Also need to check the interned string table
-        self.interner.get_mut().unwrap().root();
-        self.generation_0_threads.get_mut().unwrap().root();
+            // Also need to check the interned string table
+            self.interner.get_mut().unwrap().root();
+            self.generation_0_threads.get_mut().unwrap().root();
+        }
     }
     unsafe fn unroot(&mut self) {
-        self.macros.unroot();
+        unsafe {
+            self.macros.unroot();
 
-        // Also need to check the interned string table
-        self.interner.get_mut().unwrap().unroot();
-        self.generation_0_threads.get_mut().unwrap().unroot();
+            // Also need to check the interned string table
+            self.interner.get_mut().unwrap().unroot();
+            self.generation_0_threads.get_mut().unwrap().unroot();
+        }
     }
 
     fn trace(&self, gc: &mut Gc) {
@@ -546,8 +549,8 @@ impl GlobalVmState {
     }
 
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
-        use crate::api::generic::A;
         use crate::api::Generic;
+        use crate::api::generic::A;
         use crate::base::types::BuiltinType;
         fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
             add_builtin_type_(self_, b, TypeId::of::<T>())
@@ -664,8 +667,7 @@ impl GlobalVmState {
     #[doc(hidden)]
     pub fn get_cache_alias(&self, name: &str) -> Option<ArcType> {
         let env = self.env.read();
-        env
-            .type_infos
+        env.type_infos
             .id_to_type
             .get(name)
             .map(|alias| alias.clone().into_type())
@@ -719,7 +721,7 @@ impl GlobalVmState {
     }
 
     #[doc(hidden)]
-    pub fn get_globals(&self) -> parking_lot::RwLockReadGuard<Globals> {
+    pub fn get_globals(&self) -> parking_lot::RwLockReadGuard<'_, Globals> {
         self.env.read_recursive()
     }
 

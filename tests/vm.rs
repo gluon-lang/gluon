@@ -9,14 +9,14 @@ mod support;
 use crate::support::*;
 
 use gluon::{
+    Error, ThreadExt,
     base::{pos::BytePos, source::Source, types::Type},
     vm,
     vm::{
-        api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO},
+        api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef},
         channel::Sender,
         thread::Thread,
     },
-    Error, ThreadExt,
 };
 
 test_expr! { pass_function_value,

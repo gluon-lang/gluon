@@ -1,4 +1,4 @@
-pub use crate::base::types::{ArcType as RcType, Flags, TypeExt, TypePtr};
+pub use crate::base::types::{ArcType as RcType, Flags};
 
 #[cfg(test)]
 mod tests {
@@ -6,15 +6,16 @@ mod tests {
 
     use crate::base::{
         symbol::Symbol,
-        types::{Generic, Type},
+        types::{Generic, Type, TypePtr as _},
     };
 
     #[test]
     fn flags() {
-        let gen = Type::<_, RcType>::generic(Generic::new(Symbol::from("a"), Default::default()));
-        assert_eq!(gen.flags(), Flags::HAS_GENERICS);
+        let generic =
+            Type::<_, RcType>::generic(Generic::new(Symbol::from("a"), Default::default()));
+        assert_eq!(generic.flags(), Flags::HAS_GENERICS);
         assert_eq!(
-            Type::function(vec![gen.clone()], gen.clone()).flags(),
+            Type::function(vec![generic.clone()], generic.clone()).flags(),
             Flags::HAS_GENERICS
         );
     }

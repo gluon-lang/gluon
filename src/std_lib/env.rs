@@ -4,7 +4,7 @@ use crate::real_std::{
     path::{Path, PathBuf},
 };
 
-use crate::vm::{self, api::IO, thread::Thread, ExternModule};
+use crate::vm::{self, ExternModule, api::IO, thread::Thread};
 
 fn args() -> IO<Vec<String>> {
     IO::Value(env::args().collect())
@@ -22,16 +22,8 @@ fn join_paths(paths: Vec<&Path>) -> IO<PathBuf> {
     env::join_paths(paths).map(PathBuf::from).into()
 }
 
-fn remove_var(var: &str) -> IO<()> {
-    IO::Value(env::remove_var(var))
-}
-
 fn set_current_dir(dir: &str) -> IO<()> {
     env::set_current_dir(dir).into()
-}
-
-fn set_var(key: &str, value: &str) -> IO<()> {
-    IO::Value(env::set_var(key, value))
 }
 
 fn split_paths(path: &str) -> IO<Vec<PathBuf>> {
@@ -84,9 +76,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             current_dir => primitive!(0, std::env::prim::current_dir),
             current_exe => primitive!(0, std::env::prim::current_exe),
             join_paths => primitive!(1, std::env::prim::join_paths),
-            remove_var => primitive!(1, std::env::prim::remove_var),
             set_current_dir => primitive!(1, std::env::prim::set_current_dir),
-            set_var => primitive!(2, std::env::prim::set_var),
             split_paths => primitive!(1, std::env::prim::split_paths),
             temp_dir => primitive!(0, std::env::prim::temp_dir),
             var => primitive!(1, std::env::prim::var),

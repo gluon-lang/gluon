@@ -5,7 +5,7 @@ use std::{cell::RefCell, fmt, marker::PhantomData, result::Result as StdResult};
 use crate::base::{
     resolve,
     symbol::Symbol,
-    types::{ctor_args, ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt},
+    types::{ArcType, BuiltinType, NullInterner, Type, TypeEnv, TypeExt, ctor_args},
 };
 
 use crate::api::{Getable, ValueRef, VmType};
@@ -63,10 +63,6 @@ impl VmType for Vec2 {
     }
 }
 
-# if ::std::env::var("GLUON_PATH").is_err() {
-#     ::std::env::set_var("GLUON_PATH", "..");
-# }
-
 let thread = new_vm();
 # thread.get_database_mut().implicit_prelude(false);
 
@@ -108,12 +104,10 @@ impl VmType for Enum {
     }
 }
 
-# if ::std::env::var("GLUON_PATH").is_err() {
-#     ::std::env::set_var("GLUON_PATH", "..");
-# }
-
 let thread = new_vm();
 # thread.get_database_mut().implicit_prelude(false);
+# #[cfg(feature = "test")]
+# let thread = gluon::VmBuilder::new().import_paths(Some(vec![".".into(), "..".into()])).build();
 
 thread
     .load_script(
@@ -736,7 +730,7 @@ where
     }
 }
 
-struct Enum<'a, 'de: 'a, 't: 'a> {
+struct Enum<'a, 'de, 't> {
     de: &'a mut Deserializer<'de, 't>,
 }
 
@@ -856,7 +850,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                 return Err(VmError::Message(format!(
                     "Unable to deserialize `{}`",
                     self.de.typ
-                )))
+                )));
             }
         };
 
@@ -873,7 +867,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                 return Err(VmError::Message(format!(
                     "Unable to deserialize `{}`",
                     self.de.typ
-                )))
+                )));
             }
         };
 

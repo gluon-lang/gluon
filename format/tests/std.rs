@@ -1,4 +1,3 @@
-extern crate gluon_base as base;
 extern crate gluon_format as format;
 
 use std::{

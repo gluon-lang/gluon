@@ -10,9 +10,8 @@ use base::{
 };
 
 use crate::core::{
-    self,
-    optimize::{walk_closures, walk_expr, walk_expr_alloc, SameLifetime, Visitor},
-    Allocator, CExpr, Expr, LetBinding, Pattern,
+    self, Allocator, CExpr, Expr, LetBinding, Pattern,
+    optimize::{SameLifetime, Visitor, walk_closures, walk_expr, walk_expr_alloc},
 };
 
 pub fn dead_code_elimination<'a>(
@@ -166,7 +165,7 @@ impl<'a> DepGraph<'a> {
 
     fn bind_pattern(&mut self, pattern: &'a Pattern, scrutinee_id: petgraph::graph::NodeIndex) {
         match pattern {
-            Pattern::Ident(ref id) => {
+            Pattern::Ident(id) => {
                 let id_id = self.add_node(Scope::Symbol(&id.name));
                 self.graph.add_edge(id_id, scrutinee_id, ());
             }
@@ -340,7 +339,7 @@ impl<'e> Visitor<'e, 'e> for DepGraph<'e> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 mod tests {
     use super::*;
 

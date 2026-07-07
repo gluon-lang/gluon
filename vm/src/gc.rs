@@ -2,7 +2,7 @@ use std::{
     any::{Any, TypeId},
     cell::Cell,
     cmp::Ordering,
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{
-    base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex, Error, Result,
+    Error, Result, base::fnv::FnvMap, forget_lifetime, interner::InternedStr, types::VmIndex,
 };
 
 pub mod mutex;
@@ -23,23 +23,35 @@ pub mod mutex;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! impl_trace {
-    ($self_: tt, $gc: ident, $body: expr) => {
-        unsafe fn root(&mut $self_) {
+    ($self_: tt, $gc: ident, {}) => {
+        unsafe fn root(&mut $self_) { }
+        unsafe fn unroot(&mut $self_) { }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+        }
+    };
+    ($self_: tt, $gc: ident, ()) => {
+        unsafe fn root(&mut $self_) { }
+        unsafe fn unroot(&mut $self_) { }
+        fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
+        }
+    };
+    ($self_: tt, $gc: ident, $body: expr_2021) => {
+        unsafe fn root(&mut $self_) { unsafe {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) { unsafe {
                 Trace::root(this)
-            }
+            }}
             let $gc = ();
             $body
-        }
-        unsafe fn unroot(&mut $self_) {
+        }}
+        unsafe fn unroot(&mut $self_) { unsafe {
             #[allow(unused)]
-            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) {
+            unsafe fn mark<T: ?Sized + Trace>(this: &mut T, _: ()) { unsafe {
                 Trace::unroot(this)
-            }
+            }}
             let $gc = ();
             $body
-        }
+        }}
         fn trace(&$self_, $gc: &mut $crate::gc::Gc) {
             #[allow(unused)]
             fn mark<T: ?Sized + Trace>(this: &T, gc: &mut $crate::gc::Gc) {
@@ -53,12 +65,12 @@ macro_rules! impl_trace {
 macro_rules! deref_trace_mut {
     ([$($params: tt)*] $ty: ty) => {
         unsafe impl<$($params)*> Trace for $ty {
-            unsafe fn root(&mut self) {
+            unsafe fn root(&mut self) { unsafe {
                 (**self).root();
-            }
-            unsafe fn unroot(&mut self) {
+            }}
+            unsafe fn unroot(&mut self) { unsafe {
                 (**self).unroot();
-            }
+            }}
             fn trace(&self, gc: &mut Gc) {
                 (**self).trace(gc);
             }
@@ -112,17 +124,19 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 
 #[inline]
 unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
-    let cap = old_size / mem::size_of::<f64>()
-        + (if old_size % mem::size_of::<f64>() != 0 {
-            1
-        } else {
-            0
-        });
-    Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
+    unsafe {
+        let cap = old_size / mem::size_of::<f64>()
+            + (if old_size % mem::size_of::<f64>() != 0 {
+                1
+            } else {
+                0
+            });
+        Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
+    }
 }
 
 /// Pointer type which can only be written to.
-pub struct WriteOnly<'s, T: ?Sized + 's>(*mut T, PhantomData<&'s mut T>);
+pub struct WriteOnly<'s, T: ?Sized>(*mut T, PhantomData<&'s mut T>);
 
 impl<'s, T: ?Sized> WriteOnly<'s, T> {
     /// Unsafe as the lifetime must not be longer than the liftime of `t`
@@ -285,7 +299,7 @@ unsafe impl<D, T> FromPtr<D> for T {
 
 unsafe impl<'s, 't, T> FromPtr<&'s &'t [T]> for [T] {
     unsafe fn make_ptr(v: &'s &'t [T], ptr: *mut ()) -> *mut [T] {
-        ::std::slice::from_raw_parts_mut(ptr as *mut T, v.len())
+        unsafe { ::std::slice::from_raw_parts_mut(ptr as *mut T, v.len()) }
     }
 }
 
@@ -322,7 +336,7 @@ where
     fn size(&self) -> usize {
         mem::size_of::<T>()
     }
-    fn initialize(self, result: WriteOnly<T>) -> &mut T {
+    fn initialize(self, result: WriteOnly<'_, T>) -> &mut T {
         result.write(self.0)
     }
 }
@@ -457,7 +471,7 @@ impl<T: ?Sized> From<OwnedPtr<T>> for GcPtr<T> {
 /// SAFETY The only unsafety from copying the type is the creation of an unrooted value
 pub unsafe trait CopyUnrooted: CloneUnrooted<Value = Self> + Sized {
     unsafe fn copy_unrooted(&self) -> Self {
-        ptr::read(self)
+        unsafe { ptr::read(self) }
     }
 }
 
@@ -472,7 +486,7 @@ impl<T: ?Sized + CloneUnrooted> CloneUnrooted for &'_ T {
     type Value = T::Value;
     #[inline]
     unsafe fn clone_unrooted(&self) -> Self::Value {
-        (**self).clone_unrooted()
+        unsafe { (**self).clone_unrooted() }
     }
 }
 
@@ -502,7 +516,7 @@ where
     type Value = T::Value;
     #[inline]
     unsafe fn clone_unrooted(&self) -> Self::Value {
-        self.0.clone_unrooted()
+        unsafe { self.0.clone_unrooted() }
     }
 }
 
@@ -517,7 +531,7 @@ where
     fn size(&self) -> usize {
         (**self).size()
     }
-    fn initialize(self, result: WriteOnly<Self::Value>) -> &mut Self::Value {
+    fn initialize(self, result: WriteOnly<'_, Self::Value>) -> &mut Self::Value {
         self.0.initialize(result)
     }
 }
@@ -665,12 +679,12 @@ impl<T: ?Sized> GcPtr<T> {
     /// Unsafe as it is up to the caller to ensure that this pointer is not referenced somewhere
     /// else
     pub unsafe fn as_mut(&mut self) -> &mut T {
-        self.0.as_mut()
+        unsafe { self.0.as_mut() }
     }
 
     /// Unsafe as `ptr` must have been allocted by this garbage collector
     pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> {
-        GcPtr(NonNull::new_unchecked(ptr as *mut _))
+        unsafe { GcPtr(NonNull::new_unchecked(ptr as *mut _)) }
     }
 
     pub fn generation(&self) -> Generation {
@@ -765,7 +779,7 @@ pub unsafe trait Trace {
 
 #[macro_export]
 macro_rules! construct_enum_gc {
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr, $($rest: tt)*) => { {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr_2021, $($rest: tt)*) => { {
         let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
@@ -774,7 +788,7 @@ macro_rules! construct_enum_gc {
         )
     } };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr, $($rest: tt)*) => {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr_2021, $($rest: tt)*) => {
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* $expr,]
                       [$($ptr)*]
@@ -782,7 +796,7 @@ macro_rules! construct_enum_gc {
         )
     };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr) => { {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] @ $expr: expr_2021) => { {
         let ref ptr = $expr;
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* unsafe { $crate::gc::CloneUnrooted::clone_unrooted(ptr) },]
@@ -790,7 +804,7 @@ macro_rules! construct_enum_gc {
         )
     } };
 
-    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr) => {
+    (impl $typ: ident $(:: $variant: ident)? [$($acc: tt)*] [$($ptr: ident)*] $expr: expr_2021) => {
         $crate::construct_enum_gc!(impl $typ $(:: $variant)?
                       [$($acc)* $expr,]
                       [$($ptr)*]
@@ -814,7 +828,7 @@ macro_rules! construct_enum_gc {
 
 #[macro_export]
 macro_rules! construct_gc {
-    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr, $($rest: tt)*) => { {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] @ $field: ident : $expr: expr_2021, $($rest: tt)*) => { {
         let $field = $expr;
         $crate::construct_gc!(impl $typ
                       [$($acc)* $field: unsafe { $crate::gc::CloneUnrooted::clone_unrooted(&$field) },]
@@ -831,7 +845,7 @@ macro_rules! construct_gc {
         )
     };
 
-    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr)?, $($rest: tt)*) => {
+    (impl $typ: ident [$($acc: tt)*] [$($ptr: ident)*] $field: ident $(: $expr: expr_2021)?, $($rest: tt)*) => {
         $crate::construct_gc!(impl $typ
                       [$($acc)* $field $(: $expr)?,]
                       [$($ptr)*]
@@ -1086,34 +1100,36 @@ impl Gc {
         &mut self,
         roots: R,
         def: D,
-    ) -> Result<OwnedGcRef<D::Value>>
+    ) -> Result<OwnedGcRef<'_, D::Value>>
     where
         R: Trace + CollectScope,
         D: DataDef + Trace,
         D::Value: Sized + Any,
     {
-        #[derive(Trace)]
-        #[gluon(gluon_vm)]
-        struct Scope1<A, B>(A, B);
+        unsafe {
+            #[derive(Trace)]
+            #[gluon(gluon_vm)]
+            struct Scope1<A, B>(A, B);
 
-        impl<A, B> CollectScope for Scope1<A, B>
-        where
-            A: CollectScope,
-        {
-            fn scope<F>(&self, gc: &mut Gc, f: F)
+            impl<A, B> CollectScope for Scope1<A, B>
             where
-                F: FnOnce(&mut Gc),
+                A: CollectScope,
             {
-                self.0.scope(gc, f)
+                fn scope<F>(&self, gc: &mut Gc, f: F)
+                where
+                    F: FnOnce(&mut Gc),
+                {
+                    self.0.scope(gc, f)
+                }
             }
-        }
 
-        self.check_collect(Scope1(roots, &def));
-        self.alloc_owned(def)
+            self.check_collect(Scope1(roots, &def));
+            self.alloc_owned(def)
+        }
     }
 
     /// Allocates a new object.
-    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<D::Value>>
+    pub fn alloc<D>(&mut self, def: D) -> Result<GcRef<'_, D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1121,7 +1137,7 @@ impl Gc {
         self.alloc_owned(def).map(GcRef::from)
     }
 
-    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<D::Value>>
+    pub fn alloc_owned<D>(&mut self, def: D) -> Result<OwnedGcRef<'_, D::Value>>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1137,7 +1153,7 @@ impl Gc {
         Ok(self.alloc_ignore_limit_(size, def))
     }
 
-    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<D::Value>
+    pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcRef<'_, D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
@@ -1209,13 +1225,15 @@ impl Gc {
         }
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<D::Value>
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> OwnedGcRef<'_, D::Value>
     where
         D: DataDef,
         D::Value: Sized + Any,
     {
         unsafe fn drop<T>(t: *mut ()) {
-            ptr::drop_in_place(t as *mut T);
+            unsafe {
+                ptr::drop_in_place(t as *mut T);
+            }
         }
 
         let type_info = self.get_type_info(
@@ -1245,11 +1263,13 @@ impl Gc {
     where
         R: Trace + CollectScope,
     {
-        if self.allocated_memory >= self.collect_limit {
-            self.collect(roots);
-            true
-        } else {
-            false
+        unsafe {
+            if self.allocated_memory >= self.collect_limit {
+                self.collect(roots);
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -1259,12 +1279,14 @@ impl Gc {
     where
         R: Trace + CollectScope,
     {
-        info!("Start collect {:?}", self.generation);
-        roots.scope(self, |self_| {
-            roots.trace(self_);
-            self_.sweep();
-            self_.collect_limit = 2 * self_.allocated_memory;
-        })
+        unsafe {
+            info!("Start collect {:?}", self.generation);
+            roots.scope(self, |self_| {
+                roots.trace(self_);
+                self_.sweep();
+                self_.collect_limit = 2 * self_.allocated_memory;
+            })
+        }
     }
 
     /// Marks the GcPtr
@@ -1416,7 +1438,7 @@ mod tests {
         fn size(&self) -> usize {
             mem::size_of::<Self::Value>()
         }
-        fn initialize(self, result: WriteOnly<Vec<Value>>) -> &mut Vec<Value> {
+        fn initialize(self, result: WriteOnly<'_, Vec<Value>>) -> &mut Vec<Value> {
             unsafe { result.write(self.elems.iter().map(|v| v.clone_unrooted()).collect()) }
         }
     }
@@ -1434,7 +1456,7 @@ mod tests {
         type Value = Self;
         #[inline]
         unsafe fn clone_unrooted(&self) -> Self {
-            self.copy_unrooted()
+            unsafe { self.copy_unrooted() }
         }
     }
 

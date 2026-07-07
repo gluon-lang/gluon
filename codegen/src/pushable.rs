@@ -130,8 +130,6 @@ fn gen_impl(
     let pushable_bounds = create_pushable_bounds(&generics);
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[], &["'__vm"]);
 
-    let dummy_const = Ident::new(&format!("_IMPL_PUSHABLE_FOR_{}", ident), Span::call_site());
-
     let gluon = match container.crate_name {
         CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
@@ -155,7 +153,7 @@ fn gen_impl(
     quote! {
         #[allow(non_upper_case_globals)]
         #[allow(unused_imports)]
-        const #dummy_const: () = {
+        const _: () = {
             #gluon
 
             #[automatically_derived]
@@ -215,7 +213,7 @@ fn create_pushable_bounds(generics: &Generics) -> Vec<TokenStream> {
     })
 }
 
-fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<Ident>>, Vec<&Type>) {
+fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<'_, Ident>>, Vec<&Type>) {
     // get all the fields if there are any
     let fields = match fields {
         Fields::Named(FieldsNamed { named, .. }) => named,

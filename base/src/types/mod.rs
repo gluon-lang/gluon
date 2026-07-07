@@ -509,7 +509,7 @@ where
     T::SpannedId: Clone + PartialEq,
 {
     /// Returns the actual type of the alias
-    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
+    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<'_, T> {
         match *self._typ {
             Type::Alias(ref alias) => alias.typ(interner),
             _ => unreachable!(),
@@ -656,7 +656,7 @@ where
     Id: Clone + PartialEq,
     T::SpannedId: Clone + PartialEq,
 {
-    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<T> {
+    pub fn typ(&self, interner: &mut impl TypeContext<Id, T>) -> Cow<'_, T> {
         match self.typ_(interner, &self.typ) {
             Some(typ) => Cow::Owned(typ),
             None => Cow::Borrowed(&self.typ),
@@ -1324,7 +1324,7 @@ where
         None
     }
 
-    pub fn unapplied_args(&self) -> Cow<[T]>
+    pub fn unapplied_args(&self) -> Cow<'_, [T]>
     where
         T: Clone,
     {
@@ -1405,7 +1405,7 @@ where
             Type::Forall(_, ref typ) => typ.kind_(cache, applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
-            Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
+            Type::Generic(ref r#gen) => Cow::Borrowed(&r#gen.kind),
             // FIXME can be another kind
             Type::Ident(_) | Type::Projection(_) => Cow::Owned(cache.typ()),
             Type::Alias(ref alias) => {
@@ -1634,18 +1634,18 @@ impl<Id> HasMetadata for ArcType<Id> {
     }
 }
 
-pub fn row_iter<T>(typ: &T) -> RowIterator<T> {
+pub fn row_iter<T>(typ: &T) -> RowIterator<'_, T> {
     RowIterator { typ, current: 0 }
 }
 
-pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<Id, T> {
+pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<'_, Id, T> {
     RowIteratorMut {
         fields: [].iter_mut(),
         rest: Some(typ),
     }
 }
 
-pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<T> {
+pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<'_, T> {
     TypeFieldIterator { typ, current: 0 }
 }
 
@@ -1730,12 +1730,12 @@ pub trait TypePtr: Deref<Target = Type<<Self as TypePtr>::Id, Self>> + Sized {
 
     fn spine(&self) -> &Self {
         match &**self {
-            Type::App(ref id, _) => id.spine(),
+            Type::App(id, _) => id.spine(),
             _ => self,
         }
     }
 
-    fn display<A>(&self, width: usize) -> TypeFormatter<Self::Id, Self, A>
+    fn display<A>(&self, width: usize) -> TypeFormatter<'_, Self::Id, Self, A>
     where
         Self::Id: AsRef<str>,
         Self::SpannedId: AsRef<str>,
@@ -1757,21 +1757,21 @@ pub trait TypeExt:
 
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
-    fn type_field_iter(&self) -> TypeFieldIterator<Self> {
+    fn type_field_iter(&self) -> TypeFieldIterator<'_, Self> {
         type_field_iter(self)
     }
 
-    fn arg_iter(&self) -> ArgIterator<Self> {
+    fn arg_iter(&self) -> ArgIterator<'_, Self> {
         arg_iter(self)
     }
 
-    fn implicit_arg_iter(&self) -> ImplicitArgIterator<Self> {
+    fn implicit_arg_iter(&self) -> ImplicitArgIterator<'_, Self> {
         implicit_arg_iter(self)
     }
 
     /// Returns an iterator over all fields in a record.
     /// `{ Test, Test2, x, y } => [x, y]`
-    fn row_iter(&self) -> RowIterator<Self> {
+    fn row_iter(&self) -> RowIterator<'_, Self> {
         row_iter(self)
     }
 
@@ -1855,7 +1855,7 @@ pub trait TypeExt:
         }
     }
 
-    fn forall_scope_iter(&self) -> ForallScopeIter<Self> {
+    fn forall_scope_iter(&self) -> ForallScopeIter<'_, Self> {
         ForallScopeIter {
             typ: self,
             offset: 0,
@@ -2102,7 +2102,7 @@ impl<Id> TypeExt for ArcType<Id> {
     }
 }
 
-pub struct ForallScopeIter<'a, T: 'a> {
+pub struct ForallScopeIter<'a, T> {
     pub typ: &'a T,
     offset: usize,
 }
@@ -2150,7 +2150,7 @@ impl<Id> From<(Type<Id, ArcType<Id>>, Flags)> for ArcType<Id> {
 }
 
 #[derive(Clone)]
-pub struct TypeFieldIterator<'a, T: 'a> {
+pub struct TypeFieldIterator<'a, T> {
     typ: &'a T,
     current: usize,
 }
@@ -2185,7 +2185,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct RowIterator<'a, T: 'a> {
+pub struct RowIterator<'a, T> {
     typ: &'a T,
     current: usize,
 }
@@ -2261,7 +2261,7 @@ where
     }
 }
 
-pub struct RowIteratorMut<'a, SpId: 'a, T: 'a> {
+pub struct RowIteratorMut<'a, SpId, T> {
     fields: ::std::slice::IterMut<'a, Field<SpId, T>>,
     rest: Option<&'a mut T>,
 }
@@ -2310,7 +2310,7 @@ where
     }
 }
 
-fn split_top<'a, Id, T>(self_: &'a T) -> Option<(Option<&'a T>, Cow<[T]>)>
+fn split_top<'a, Id, T>(self_: &'a T) -> Option<(Option<&'a T>, Cow<'a, [T]>)>
 where
     T: TypePtr<Id = Id> + Clone,
     Id: 'a,
@@ -2334,7 +2334,7 @@ where
     }
 }
 
-pub fn split_app<'a, Id, T>(self_: &'a T) -> (Option<&'a T>, Cow<[T]>)
+pub fn split_app<'a, Id, T>(self_: &'a T) -> (Option<&'a T>, Cow<'a, [T]>)
 where
     T: TypePtr<Id = Id> + Clone,
     Id: 'a,
@@ -2359,21 +2359,21 @@ where
     }
 }
 
-pub fn ctor_args<Id, T>(typ: &T) -> ArgIterator<T>
+pub fn ctor_args<Id, T>(typ: &T) -> ArgIterator<'_, T>
 where
     T: TypePtr<Id = Id>,
 {
     ArgIterator { typ }
 }
 
-pub struct ArgIterator<'a, T: 'a> {
+pub struct ArgIterator<'a, T> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
     pub typ: &'a T,
 }
 
 /// Constructs an iterator over a functions arguments
-pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<T>
+pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<'_, T>
 where
     T: TypePtr<Id = Id>,
 {
@@ -2394,14 +2394,14 @@ where
     }
 }
 
-pub struct ImplicitArgIterator<'a, T: 'a> {
+pub struct ImplicitArgIterator<'a, T> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
     pub typ: &'a T,
 }
 
 /// Constructs an iterator over a functions arguments
-pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<T>
+pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<'_, T>
 where
     T: TypePtr<Id = Id>,
 {
@@ -2529,15 +2529,15 @@ impl Prec {
 }
 
 #[doc(hidden)]
-pub fn dt<T>(prec: Prec, typ: &T) -> DisplayType<T> {
+pub fn dt<T>(prec: Prec, typ: &T) -> DisplayType<'_, T> {
     DisplayType { prec, typ }
 }
 
-fn top<T>(typ: &T) -> DisplayType<T> {
+fn top<T>(typ: &T) -> DisplayType<'_, T> {
     dt(Prec::Top, typ)
 }
 
-pub struct DisplayType<'a, T: 'a> {
+pub struct DisplayType<'a, T> {
     prec: Prec,
     typ: &'a T,
 }
@@ -2653,7 +2653,7 @@ where
             Type::Skolem(ref skolem) => {
                 chain![arena, skolem.name.as_ref(), "@", skolem.id.to_string()]
             }
-            Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
+            Type::Generic(ref r#gen) => arena.text(r#gen.id.as_ref()),
             Type::Function(..) => self.pretty_function(printer).nest(INDENT),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
@@ -4599,7 +4599,7 @@ where
         Type::Error => interner.error(),
         Type::Builtin(ref builtin) => interner.builtin_type(builtin.clone()),
         Type::Variable(ref var) => interner.variable(var.clone()),
-        Type::Generic(ref gen) => interner.generic(gen.clone()),
+        Type::Generic(ref r#gen) => interner.generic(r#gen.clone()),
         Type::Ident(ref id) => interner.ident(id.clone()),
         Type::Projection(ref ids) => interner.projection(ids.clone()),
         Type::Alias(ref alias) => {

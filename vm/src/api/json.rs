@@ -1,13 +1,13 @@
-extern crate serde_json;
+use serde_json;
 
 use std::{borrow::Borrow, fmt, result::Result as StdResult};
 
 use crate::base::types::ArcType;
 
 use crate::{
+    ExternModule, Result, Variants,
     api::{Getable, OpaqueValue, ValueRef, VmInt, VmType},
     thread::{ActiveThread, RootedThread, Thread, ThreadInternal},
-    ExternModule, Result, Variants,
 };
 
 use crate::serde::de::{self, DeserializeState, MapAccess, SeqAccess, Visitor};
@@ -188,7 +188,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonString {
     where
         D: de::Deserializer<'de>,
     {
-        struct StringVisitor<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>);
+        struct StringVisitor<'a, 'vm>(&'a mut ActiveThread<'vm>);
 
         impl<'a, 'de> Visitor<'de> for StringVisitor<'a, 'de> {
             type Value = JsonString;
@@ -254,7 +254,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
     where
         D: de::Deserializer<'de>,
     {
-        struct ValueVisitor<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>);
+        struct ValueVisitor<'a, 'vm>(&'a mut ActiveThread<'vm>);
 
         impl<'a, 'vm> ValueVisitor<'a, 'vm> {
             fn marshal<T>(&mut self, value: T) -> JsonValue

@@ -1,11 +1,11 @@
 mod support;
 
 use gluon::{
+    RootedThread, Thread, ThreadExt,
     vm::{
-        api::{FunctionRef, OpaqueValue, IO},
+        api::{FunctionRef, IO, OpaqueValue},
         reference::Reference,
     },
-    RootedThread, Thread, ThreadExt,
 };
 
 use crate::support::*;

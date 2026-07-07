@@ -1,16 +1,15 @@
 //! Module containing bindings to the `rand` library.
 
-extern crate rand;
-extern crate rand_xorshift;
+use rand;
+use rand_xorshift;
 
-use self::rand::{Rng, SeedableRng};
+use self::rand::{RngExt, SeedableRng};
 
 use crate::vm::{
-    self,
-    api::{RuntimeResult, IO},
+    self, ExternModule,
+    api::{IO, RuntimeResult},
     thread::Thread,
     types::VmInt,
-    ExternModule,
 };
 
 #[derive(Clone, Debug, Userdata, Trace, VmType)]
@@ -20,23 +19,23 @@ use crate::vm::{
 #[gluon_trace(skip)]
 struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 
-field_decl! { value, gen }
+field_decl! { value, (r#gen "gen") }
 
 fn next_int(_: ()) -> IO<VmInt> {
-    IO::Value(rand::thread_rng().gen())
+    IO::Value(rand::rng().random())
 }
 
 fn next_float(_: ()) -> IO<f64> {
-    IO::Value(rand::thread_rng().gen())
+    IO::Value(rand::rng().random())
 }
 
 fn gen_int_range(low: VmInt, high: VmInt) -> IO<VmInt> {
-    IO::Value(rand::thread_rng().gen_range(low..high))
+    IO::Value(rand::rng().random_range(low..high))
 }
 
 type RngNext<G> = record_type! {
     value => VmInt,
-    gen => G
+    r#gen => G
 };
 
 fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
@@ -50,11 +49,11 @@ fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
     }
 }
 
-fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
-    let mut gen = gen.clone();
+fn xor_shift_next(r#gen: &XorShiftRng) -> RngNext<XorShiftRng> {
+    let mut r#gen = r#gen.clone();
     record_no_decl! {
-        value => gen.0.gen(),
-        gen => gen
+        value => r#gen.0.random(),
+        (r#gen "gen") => r#gen
     }
 }
 

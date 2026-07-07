@@ -19,8 +19,8 @@ Comma<Rule>: Vec<Rule> =
 
 Identifier: Symbol = {
     <r"@?[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(SymbolData::<&Name>::from(<>)),
-    <r"\(#?[A-Za-z_]+[+\-*/<=]+\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
-    <r"\([&\|=*><+]+\)"> => symbols.simple_symbol(&<>[1..<>.len() - 1]),
+    <s:r"\(#?[A-Za-z_]+[+\-*/<=]+\)"> => symbols.simple_symbol(&s[1..s.len() - 1]),
+    <s:r"\([&\|=*><+]+\)"> => symbols.simple_symbol(&s[1..s.len() - 1]),
 };
 
 Field: (Symbol, Option<Symbol>) = {
@@ -29,7 +29,7 @@ Field: (Symbol, Option<Symbol>) = {
 
 Literal: Literal = {
     <r"[0-9]+"> => Literal::Int(<>.parse().unwrap()),
-    <r#""[^"]*""#> => Literal::String(Box::from(&<>[1..<>.len() - 1])),
+    <s:r#""[^"]*""#> => Literal::String(Box::from(&s[1..s.len() - 1])),
 };
 
 Pattern: Pattern = {

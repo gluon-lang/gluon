@@ -11,8 +11,8 @@ use either::Either;
 
 use crate::base::{
     ast::{
-        self, walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
-        SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor,
+        self, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent, SpannedPattern,
+        Typed, TypedIdent, Visitor, walk_expr, walk_pattern,
     },
     filename_to_module,
     fnv::{FnvMap, FnvSet},
@@ -23,8 +23,8 @@ use crate::base::{
     scoped_map::ScopedMap,
     symbol::{Name, Symbol, SymbolRef},
     types::{
-        walk_type_, AliasData, ArcType, ControlVisitation, Generic, NullInterner, Type, TypeEnv,
-        TypeExt,
+        AliasData, ArcType, ControlVisitation, Generic, NullInterner, Type, TypeEnv, TypeExt,
+        walk_type_,
     },
 };
 
@@ -135,8 +135,8 @@ where
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
-    fn on_type_ident(&mut self, gen: &Generic<Symbol>) {
-        self.type_stack.insert(gen.id.clone(), gen.kind.clone());
+    fn on_type_ident(&mut self, r#gen: &Generic<Symbol>) {
+        self.type_stack.insert(r#gen.id.clone(), r#gen.kind.clone());
     }
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
@@ -165,7 +165,7 @@ where
                             }
                         }
                         PatternField::Value { name, value } => match value {
-                            Some(ref value) => self.on_pattern(value),
+                            Some(value) => self.on_pattern(value),
                             None => {
                                 let name = name.value.clone();
                                 let typ = unaliased
@@ -466,9 +466,7 @@ where
                                         field_type.clone(),
                                     ));
                                 }
-                                (Ordering::Greater, &Some(ref pattern)) => {
-                                    self.visit_pattern(pattern)
-                                }
+                                (Ordering::Greater, &Some(pattern)) => self.visit_pattern(pattern),
                                 _ => self.found = MatchState::Empty,
                             }
                         }
@@ -728,8 +726,9 @@ where
                 ));
             }
 
-            Type::Generic(ref gen) => {
-                self.found = MatchState::Found(Match::Type(typ.span(), &gen.id, gen.kind.clone()));
+            Type::Generic(ref r#gen) => {
+                self.found =
+                    MatchState::Found(Match::Type(typ.span(), &r#gen.id, r#gen.kind.clone()));
             }
 
             Type::Alias(ref alias) => {
@@ -1259,7 +1258,7 @@ impl SuggestionQuery {
         &'e self,
         stack: &'e ScopedMap<Symbol, ArcType>,
         expr: &'e SpannedExpr<'ast, Symbol>,
-    ) -> impl Iterator<Item = (&'e Symbol, &'e ArcType)> {
+    ) -> impl Iterator<Item = (&'e Symbol, &'e ArcType)> + use<'e> {
         if let Expr::Ident(ref ident) = expr.value {
             Either::Left(
                 stack.iter().filter(move |&(k, _)| {
@@ -1449,7 +1448,7 @@ impl SuggestionQuery {
                 .filter(move |&(k, _)| self.filter(k.declared_name(), ident))
                 .filter(|&(k, _)| match context {
                     // If inside a record expression, remove any fields that have already been used
-                    Match::Expr(&Spanned {
+                    &Match::Expr(&Spanned {
                         value:
                             Expr::Record {
                                 ref types,
@@ -1487,7 +1486,7 @@ impl SuggestionQuery {
                 .filter(|&(k, _)| self.filter(k.declared_name(), ident))
                 .filter(|&(k, _)| match context {
                     // If inside a record expression, remove any fields that have already been used
-                    Match::Expr(&Spanned {
+                    &Match::Expr(&Spanned {
                         value:
                             Expr::Record {
                                 ref types,

@@ -18,6 +18,6 @@ fn main() {
     let vm = new_vm();
     add_extern_module(&vm, "test", |vm| {
         ExternModule::new(vm, primitive!(1, f))
-        //~^ `thread` has lifetime `'thread` but it needs to satisfy a `'static` lifetime requirement
+        //~^ lifetime may not live long enough
     });
 }

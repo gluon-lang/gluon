@@ -1,5 +1,3 @@
-extern crate proc_macro;
-
 use proc_macro2::{Ident, Span, TokenStream};
 use syn::{self, Data, DeriveInput, Generics};
 
@@ -30,7 +28,7 @@ fn gen_impl(ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     let map_methods = generics
         .type_params()
         .last()
-        .map(|gen| gen_map(&ident, &generics, &gen.ident, data))
+        .map(|r#gen| gen_map(&ident, &generics, &r#gen.ident, data))
         .into_iter();
 
     quote! {
@@ -116,7 +114,7 @@ enum Parameter {
 
 fn detect_parameter(typ: &syn::Type, param: &syn::Ident) -> Option<Parameter> {
     match typ {
-        syn::Type::Path(ref p) => {
+        syn::Type::Path(p) => {
             if p.qself.is_none() && p.path.is_ident(param) {
                 Some(Parameter::Direct)
             } else {

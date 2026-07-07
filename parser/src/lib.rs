@@ -72,7 +72,7 @@ fn shrink_hidden_spans<Id: std::fmt::Debug>(mut expr: SpannedExpr<Id>) -> Spanne
         Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
         | Expr::TypeBindings(_, ref last)
-        | Expr::Do(Do { body: ref last, .. }) => {
+        | Expr::Do(&mut Do { body: ref last, .. }) => {
             expr.span = Span::new(expr.span.start(), last.span.end())
         }
         Expr::LetBindings(_, ref last) => expr.span = Span::new(expr.span.start(), last.span.end()),
@@ -210,7 +210,7 @@ impl Error {
                     Error::UnexpectedToken(token.map(|s| s.into()), expected),
                 )
             }
-            UnrecognizedEOF {
+            UnrecognizedEof {
                 location,
                 mut expected,
             } => {
@@ -297,14 +297,14 @@ macro_rules! impl_temp_vec {
                 T::select(self)
             }
 
-            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl DoubleEndedIterator<Item = T> + 'a
+            fn drain<'a, T>(&'a mut self, start: TempVecStart<T>) -> impl DoubleEndedIterator<Item = T> + 'a + use<'a, T, Id>
             where
                 T: TempVec<'ast, Id> + 'a,
             {
                 T::select(self).drain(start.0..)
             }
 
-            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl DoubleEndedIterator<Item = T> + 'a
+            fn drain_n<'a, T>(&'a mut self, n: usize) -> impl DoubleEndedIterator<Item = T> + 'a + use<'a, T, Id>
             where
                 T: TempVec<'ast, Id> + 'a,
             {
@@ -525,14 +525,11 @@ pub fn reparse_infix<'ast, Id>(
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
-    use crate::base::ast::{is_operator_char, walk_pattern, Pattern, Visitor};
+    use crate::base::ast::{Pattern, Visitor, is_operator_char, walk_pattern};
 
     let mut errors = Errors::new();
 
-    struct CheckInfix<'b, Id>
-    where
-        Id: 'b,
-    {
+    struct CheckInfix<'b, Id> {
         metadata: &'b FnvMap<Id, Arc<Metadata>>,
         errors: &'b mut Errors<Spanned<Error, BytePos>>,
         op_table: &'b mut OpTable<Id>,

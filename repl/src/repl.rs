@@ -5,19 +5,19 @@ use std::{borrow::Cow, error::Error as StdError, path::PathBuf, str::FromStr, sy
 use futures::{channel::oneshot, future, prelude::*};
 
 use crate::base::{
+    DebugLevel,
     ast::{self, AstClone, Expr, Pattern, RootExpr, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
     mk_ast_arena, pos, resolve,
     symbol::{Symbol, SymbolModule},
     types::{ArcType, TypeExt},
-    DebugLevel,
 };
-use crate::parser::{parse_partial_repl_line, ReplLine};
+use crate::parser::{ReplLine, parse_partial_repl_line};
 use crate::vm::{
     api::{
-        de::De, generic::A, Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM,
-        IO,
+        Generic, Getable, IO, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, de::De,
+        generic::A,
     },
     internal::ValuePrinter,
     thread::{ActiveThread, RootedValue, Thread},
@@ -25,17 +25,17 @@ use crate::vm::{
 };
 
 use gluon::{
+    Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
     compiler_pipeline::{Executable, ExecuteValue},
     import::add_extern_module_with_deps,
     query::CompilerDatabase,
-    Error as GluonError, Result as GluonResult, RootedThread, ThreadExt,
 };
 
 use codespan_reporting::term::termcolor;
 
 use crate::Color;
 
-fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> {
+fn type_of_expr(args: WithVM<&str>) -> impl Future<Output = IO<Result<String, String>>> + use<> {
     let WithVM { vm, value: args } = args;
     let args = args.to_string();
     let vm = vm.new_thread().unwrap(); // TODO Run on the same thread once that works
@@ -195,7 +195,9 @@ impl rustyline::validate::Validator for Completer {
 }
 
 impl rustyline::hint::Hinter for Completer {
-    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context) -> Option<String> {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<String> {
         self.hinter.hint(line, pos, ctx)
     }
 }
@@ -234,8 +236,8 @@ impl rustyline::highlight::Highlighter for Completer {
         self.highlighter.highlight_candidate(candidate, completion)
     }
 
-    fn highlight_char(&self, line: &str, pos: usize) -> bool {
-        self.highlighter.highlight_char(line, pos)
+    fn highlight_char(&self, line: &str, pos: usize, kind: rustyline::highlight::CmdKind) -> bool {
+        self.highlighter.highlight_char(line, pos, kind)
     }
 }
 
@@ -272,7 +274,7 @@ macro_rules! impl_userdata {
 #[gluon(vm_type = "Editor")]
 #[gluon_trace(skip)]
 struct Editor {
-    editor: Mutex<rustyline::Editor<Completer>>,
+    editor: Mutex<rustyline::Editor<Completer, rustyline::history::DefaultHistory>>,
 }
 
 impl_userdata! { Editor }
@@ -314,18 +316,27 @@ fn app_dir_root() -> Result<PathBuf, Box<dyn StdError>> {
     )?)
 }
 
-fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
-    let mut editor = rustyline::Editor::with_config(
-        rustyline::config::Config::builder()
-            .color_mode(match vm.value.0 {
-                crate::Color::Auto => rustyline::config::ColorMode::Enabled,
-                crate::Color::Always | crate::Color::AlwaysAnsi => {
-                    rustyline::config::ColorMode::Forced
-                }
-                crate::Color::Never => rustyline::config::ColorMode::Disabled,
-            })
-            .build(),
-    );
+fn new_editor(
+    WithVM {
+        vm,
+        value: settings,
+    }: WithVM<Settings<'_>>,
+) -> IO<Editor> {
+    let mut editor: rustyline::Editor<Completer, rustyline::history::DefaultHistory> =
+        match rustyline::Editor::with_config(
+            rustyline::config::Config::builder()
+                .color_mode(match settings.color {
+                    crate::Color::Auto => rustyline::config::ColorMode::Enabled,
+                    crate::Color::Always | crate::Color::AlwaysAnsi => {
+                        rustyline::config::ColorMode::Forced
+                    }
+                    crate::Color::Never => rustyline::config::ColorMode::Disabled,
+                })
+                .build(),
+        ) {
+            Ok(editor) => editor,
+            Err(err) => return IO::Exception(format!("{}", err)),
+        };
 
     let history_result =
         app_dir_root().and_then(|path| Ok(editor.load_history(&*path.join("history"))?));
@@ -333,11 +344,13 @@ fn new_editor(vm: WithVM<De<crate::Color>>) -> IO<Editor> {
     if let Err(err) = history_result {
         warn!("Unable to load history: {}", err);
     }
-    editor.set_helper(Some(Completer {
-        thread: vm.vm.root_thread(),
-        hinter: rustyline::hint::HistoryHinter {},
-        highlighter: rustyline::highlight::MatchingBracketHighlighter::default(),
-    }));
+    if settings.auto_complete {
+        editor.set_helper(Some(Completer {
+            thread: vm.root_thread(),
+            hinter: rustyline::hint::HistoryHinter {},
+            highlighter: rustyline::highlight::MatchingBracketHighlighter::default(),
+        }));
+    }
     IO::Value(Editor {
         editor: Mutex::new(editor),
     })
@@ -354,7 +367,9 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
         Err(err) => return IO::Exception(format!("{}", err)),
     };
     if !input.trim().is_empty() {
-        editor.add_history_entry(&input);
+        if let Err(err) = editor.add_history_entry(&input) {
+            return IO::Exception(format!("Unable to add history entry: {}", err));
+        }
     }
 
     IO::Value(Ok(input))
@@ -363,7 +378,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
 fn eval_line(
     De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
-) -> impl Future<Output = IO<()>> {
+) -> impl Future<Output = IO<()>> + use<> {
     let vm = vm.new_thread().unwrap(); // TODO Reuse the current thread
     let line = line.to_string();
     async move {
@@ -540,7 +555,7 @@ fn set_globals(
                     .typ
                     .clone();
                 match pattern_value {
-                    Some(ref sub_pattern) => {
+                    Some(sub_pattern) => {
                         set_globals(vm, db, sub_pattern, &field_type, &field_value)?
                     }
                     None => db.set_global(
@@ -571,7 +586,7 @@ fn set_globals(
 fn finish_or_interrupt(
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> {
+) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> + use<> {
     let (sender, receiver) = oneshot::channel();
 
     tokio::spawn(async move {
@@ -637,9 +652,10 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
 }
 
 #[derive(VmType, Pushable, Getable)]
-struct Settings<'a> {
-    color: Color,
-    prompt: &'a str,
+pub struct Settings<'a> {
+    pub color: Color,
+    pub auto_complete: bool,
+    pub prompt: &'a str,
 }
 
 fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
@@ -681,8 +697,7 @@ async fn compile_repl(vm: &Thread) -> Result<(), GluonError> {
 
 #[allow(dead_code)]
 pub async fn run(
-    color: Color,
-    prompt: &str,
+    settings: Settings<'_>,
     debug_level: DebugLevel,
     use_std_lib: bool,
 ) -> gluon::Result<()> {
@@ -696,7 +711,7 @@ pub async fn run(
 
     let mut repl: OwnedFunction<fn(_) -> _> = vm.get_global("repl")?;
     debug!("Starting repl");
-    repl.call_async(Settings { color, prompt })
+    repl.call_async(settings)
         .await
         .map(|_: IO<()>| ())
         .map_err(|err| err.into())
@@ -711,10 +726,10 @@ mod tests {
     use gluon::{self, RootedThread};
 
     async fn new_vm() -> RootedThread {
-        if std::env::var("GLUON_PATH").is_err() {
-            std::env::set_var("GLUON_PATH", "..");
-        }
-        let vm = gluon::new_vm_async().await;
+        let vm = gluon::VmBuilder::new()
+            .import_paths(Some(vec!["..".into()]))
+            .build_async()
+            .await;
         let import = vm.get_macros().get("import");
         import
             .as_ref()

@@ -11,6 +11,7 @@ use std::{
 use futures::{prelude::*, task::Poll};
 
 use gluon::{
+    RootedThread, ThreadExt,
     base::{
         pos::Line,
         types::{ArcType, Type, TypeExt},
@@ -19,7 +20,6 @@ use gluon::{
         compiler::UpvarInfo,
         thread::{HookFlags, ThreadInternal},
     },
-    RootedThread, ThreadExt,
 };
 
 fn new_vm() -> RootedThread {
@@ -84,17 +84,19 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
     let mut result = Poll::Pending;
 
     let mut lines = Vec::new();
-    futures::executor::block_on(future::lazy(|cx| loop {
-        match &result {
-            Poll::Ready(Ok(())) => break,
-            Poll::Pending => {
-                let context = thread.context();
-                let debug_info = context.debug_info();
-                lines.extend(debug_info.stack_info(0).expect("stack info").line());
+    futures::executor::block_on(future::lazy(|cx| {
+        loop {
+            match &result {
+                Poll::Ready(Ok(())) => break,
+                Poll::Pending => {
+                    let context = thread.context();
+                    let debug_info = context.debug_info();
+                    lines.extend(debug_info.stack_info(0).expect("stack info").line());
+                }
+                Poll::Ready(Err(err)) => panic!("{}", err),
             }
-            Poll::Ready(Err(err)) => panic!("{}", err),
+            result = execute.poll_unpin(cx);
         }
-        result = execute.poll_unpin(cx);
     }));
     lines
 }
@@ -158,17 +160,19 @@ fn line_hook_after_call() {
     let mut result = Poll::Pending;
 
     let mut lines = Vec::new();
-    futures::executor::block_on(future::lazy(|cx| loop {
-        match &result {
-            Poll::Ready(Ok(())) => break,
-            Poll::Pending => {
-                let context = thread.context();
-                let debug_info = context.debug_info();
-                lines.extend(debug_info.stack_info(0).and_then(|s| s.line()));
+    futures::executor::block_on(future::lazy(|cx| {
+        loop {
+            match &result {
+                Poll::Ready(Ok(())) => break,
+                Poll::Pending => {
+                    let context = thread.context();
+                    let debug_info = context.debug_info();
+                    lines.extend(debug_info.stack_info(0).and_then(|s| s.line()));
+                }
+                Poll::Ready(Err(err)) => panic!("{}", err),
             }
-            Poll::Ready(Err(err)) => panic!("{}", err),
+            result = execute.poll_unpin(cx);
         }
-        result = execute.poll_unpin(cx);
     }));
 
     assert_eq!(
@@ -202,18 +206,20 @@ fn implicit_prelude_lines_not_counted() {
     let mut result = Poll::Pending;
 
     let mut lines = Vec::new();
-    futures::executor::block_on(future::lazy(|cx| loop {
-        match &result {
-            Poll::Ready(Ok(())) => break,
-            Poll::Pending => {
-                let context = thread.context();
-                let debug_info = context.debug_info();
-                let stack_info = debug_info.stack_info(0).unwrap();
-                lines.extend(stack_info.line());
+    futures::executor::block_on(future::lazy(|cx| {
+        loop {
+            match &result {
+                Poll::Ready(Ok(())) => break,
+                Poll::Pending => {
+                    let context = thread.context();
+                    let debug_info = context.debug_info();
+                    let stack_info = debug_info.stack_info(0).unwrap();
+                    lines.extend(stack_info.line());
+                }
+                Poll::Ready(Err(err)) => panic!("{}", err),
             }
-            Poll::Ready(Err(err)) => panic!("{}", err),
+            result = execute.poll_unpin(cx);
         }
-        result = execute.poll_unpin(cx);
     }));
 
     assert_eq!(lines, vec![Line::from(0)]);
@@ -476,9 +482,10 @@ fn implicit_prelude_variable_names() {
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {
-            assert!(row
-                .row_iter()
-                .any(|field| field.name.declared_name() == "+"));
+            assert!(
+                row.row_iter()
+                    .any(|field| field.name.declared_name() == "+")
+            );
         }
         _ => panic!("{:#?}", f[0]),
     }

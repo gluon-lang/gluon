@@ -1,14 +1,12 @@
 #![allow(dead_code)]
 
-pub extern crate futures;
-
 use gluon::{
+    ThreadExt,
     import::Import,
     vm::{
         api::{Getable, VmType},
         thread::{RootedThread, Thread},
     },
-    ThreadExt,
 };
 
 #[allow(dead_code)]
@@ -79,7 +77,7 @@ macro_rules! test_expr {
     (io $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
-            use gluon::{vm::api::IO, ThreadExt};
+            use gluon::{ThreadExt, vm::api::IO};
 
             let _ = ::env_logger::try_init();
             let vm = $crate::support::make_vm();

@@ -17,6 +17,7 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
                 .path()
                 .to_str()
                 .map_or(false, |name| name.contains(lib_name))
+                && entry.path().extension().map_or(false, |ext| ext == "rlib")
             {
                 Some(entry)
             } else {
@@ -31,7 +32,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
             .unwrap()
             .cmp(&r.metadata().unwrap().modified().unwrap())
     });
-    gluon_rlibs.last().expect("libgluon not found").path()
+    gluon_rlibs
+        .last()
+        .unwrap_or_else(|| panic!("{lib_name} not found"))
+        .path()
 }
 
 fn run_mode(mode: &'static str) {

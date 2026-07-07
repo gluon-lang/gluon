@@ -7,9 +7,8 @@ extern crate gluon_vm;
 mod init;
 
 use gluon::{
-    import,
+    Thread, ThreadExt, import,
     vm::{self, ExternModule},
-    Thread, ThreadExt,
 };
 use init::new_vm;
 

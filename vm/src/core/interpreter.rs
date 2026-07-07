@@ -22,15 +22,14 @@ use crate::base::{
 };
 
 use crate::core::{
-    self,
+    self, Allocator, Alternative, ArenaExt, CExpr, Closure, ClosureRef, CoreClosure, CoreExpr,
+    Expr, LetBinding, Literal, Named, Pattern,
     costs::{self, Cost, Costs},
     optimize::{
-        self, walk_expr, walk_expr_alloc, DifferentLifetime, ExprProducer, OptimizeEnv,
-        SameLifetime, Visitor,
+        self, DifferentLifetime, ExprProducer, OptimizeEnv, SameLifetime, Visitor, walk_expr,
+        walk_expr_alloc,
     },
     purity::PurityMap,
-    Allocator, Alternative, ArenaExt, CExpr, Closure, ClosureRef, CoreClosure, CoreExpr, Expr,
-    LetBinding, Literal, Named, Pattern,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -126,6 +125,7 @@ pub type GlobalBinding = Binding<Global<CoreExpr>, Global<CoreClosure>>;
 
 trait Resolver<'l, 'a> {
     fn produce(&self, expr: CExpr<'a>) -> CExpr<'l>;
+    #[allow(dead_code)]
     fn produce_slice(&self, expr: &'a [Expr<'a>]) -> &'l [Expr<'l>];
     fn produce_alts(&self, expr: &'a [Alternative<'a>]) -> &'l [Alternative<'l>];
     fn wrap(&self, expr: CExpr<'a>) -> ReducedExpr<'l>;
@@ -329,7 +329,7 @@ impl<'l> ReducedExpr<'l> {
         }
     }
 
-    fn as_ref(&self) -> &Expr {
+    fn as_ref(&self) -> &Expr<'_> {
         match self {
             Reduced::Local(e) => e,
             Reduced::Global(e) => e.value.expr(),
@@ -508,7 +508,7 @@ pub(crate) struct CostBinding<'l> {
     bind: StackBinding<'l>,
 }
 
-pub struct Pure<'a, 'l: 'a, 'g: 'a>(bool, &'a mut Compiler<'g, 'l>);
+pub struct Pure<'a, 'l, 'g>(bool, &'a mut Compiler<'g, 'l>);
 
 impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
     type Producer = DifferentLifetime<'l, 'expr>;
@@ -995,7 +995,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         match resolver.wrap(expr) {
             Reduced::Local(expr) => {
-                struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+                struct ReplaceVisitor<'a, 'e, 'f> {
                     compiler: &'f mut Compiler<'a, 'e>,
                     functions: &'f mut FunctionEnvs<'e, 'a>,
                 }
@@ -1079,7 +1079,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
     ) -> Option<CExpr<'e>> {
         match resolver.wrap(expr) {
             Reduced::Local(expr) => {
-                struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+                struct ReplaceVisitor<'a, 'e, 'f> {
                     compiler: &'f mut Compiler<'a, 'e>,
                 }
                 impl<'a, 'e, 'f> Visitor<'e, 'e> for ReplaceVisitor<'a, 'e, 'f> {
@@ -1176,7 +1176,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         map: &mut FnvMap<Symbol, ArcType>,
         expr: CExpr<'e>,
     ) -> Option<CExpr<'e>> {
-        struct ReplaceVisitor<'a: 'f, 'e: 'f, 'f> {
+        struct ReplaceVisitor<'a, 'e, 'f> {
             compiler: &'f mut Compiler<'a, 'e>,
             map: &'f mut FnvMap<Symbol, ArcType>,
         }
@@ -1715,7 +1715,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         trace!("TRY INLINE {} ## {}", expr, f2.bind);
         match f2.bind {
             Binding::Expr(peek_f) => match peek_f.as_ref() {
-                Expr::Ident(ref id, ..) => {
+                Expr::Ident(id, ..) => {
                     if id.name.is_primitive() && args.len() == 2 {
                         let l = resolver.wrap(args.next().unwrap());
                         let r = resolver.wrap(args.next().unwrap());
@@ -1766,20 +1766,18 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 self.allocator,
                 self.inlined_global_bindings,
                 |resolver, expr| match peek_through_lets(expr) {
-                    Expr::Ident(ref id, _) => {
-                        self.load_identifier(resolver, &id.name).or_else(|| {
-                            resolver.find(&id.name).map(|bind| match bind {
-                                Binding::Expr(e) => CostBinding {
-                                    cost: 1,
-                                    bind: Binding::Expr(Reduced::Global(e)),
-                                },
-                                Binding::Closure(c) => CostBinding {
-                                    cost: 1,
-                                    bind: Binding::Closure(Reduced::Global(c)),
-                                },
-                            })
+                    Expr::Ident(id, _) => self.load_identifier(resolver, &id.name).or_else(|| {
+                        resolver.find(&id.name).map(|bind| match bind {
+                            Binding::Expr(e) => CostBinding {
+                                cost: 1,
+                                bind: Binding::Expr(Reduced::Global(e)),
+                            },
+                            Binding::Closure(c) => CostBinding {
+                                cost: 1,
+                                bind: Binding::Closure(Reduced::Global(c)),
+                            },
                         })
-                    }
+                    }),
                     Expr::Match(match_expr, alts) => {
                         let match_expr = self.peek_reduced_expr(resolver.wrap(match_expr));
 
@@ -1807,7 +1805,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                     return Some(CostBinding {
                                         cost: 1,
                                         bind: Binding::Expr(resolver.wrap(alt.expr)),
-                                    })
+                                    });
                                 }
                                 _ => (),
                             }
@@ -1862,7 +1860,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         return CostBinding {
                             cost,
                             bind: Binding::Expr(new_expr),
-                        }
+                        };
                     }
                     _ => {
                         expr = new_expr;
@@ -1874,7 +1872,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     return CostBinding {
                         cost: 1,
                         bind: Binding::Expr(expr),
-                    }
+                    };
                 }
             }
         }
@@ -1966,7 +1964,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 self.allocator,
                 self.inlined_global_bindings,
                 |resolver, pattern_expr| match pattern_expr {
-                    Expr::Data(ref data_id, ref exprs, _) => {
+                    Expr::Data(data_id, exprs, _) => {
                         for pattern_field in fields {
                             let field = data_id
                                 .typ
@@ -2160,7 +2158,7 @@ pub(crate) mod tests {
                 token: (lpos, _, rpos),
                 ..
             } => (lpos, rpos),
-            UnrecognizedEOF { location, .. } => (location, location),
+            UnrecognizedEof { location, .. } => (location, location),
             ExtraToken {
                 token: (lpos, _, rpos),
             } => (lpos, rpos),

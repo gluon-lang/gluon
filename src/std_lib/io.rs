@@ -10,19 +10,18 @@ use futures::prelude::*;
 use futures::Future;
 
 use crate::vm::{
-    self,
+    self, ExternModule, Result,
     api::{
+        Getable, IO, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM,
         generic::{A, B},
-        Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
     },
     internal::ValuePrinter,
     stack::{self, StackFrame},
     thread::{RootedThread, Thread, ThreadInternal},
     types::*,
-    ExternModule, Result,
 };
 
-use crate::{compiler_pipeline::*, Error, ModuleCompiler, ThreadExt};
+use crate::{Error, ModuleCompiler, ThreadExt, compiler_pipeline::*};
 
 fn print(s: &str) -> IO<()> {
     print!("{}", s);
@@ -234,7 +233,7 @@ fn read_line() -> IO<String> {
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
     mut catch: OwnedFunction<fn(String) -> IO<OpaqueValue<RootedThread, A>>>,
-) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> + Send {
+) -> impl Future<Output = IO<OpaqueValue<RootedThread, A>>> + Send + use<> {
     let vm = action.vm().root_thread();
     let frame_level = vm.context().frame_level();
     let mut action: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
@@ -292,7 +291,7 @@ field_decl! { value, typ }
 #[allow(dead_code)]
 type RunExpr = record_type! { value => String, typ => String };
 
-fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO<RunExpr>> {
+fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO<RunExpr>> + use<> {
     let vm = vm.root_thread();
     let vm1 = vm.clone();
     let expr = expr.to_owned(); // FIXME
@@ -321,7 +320,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> impl Future<Output = IO
 fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
-) -> impl Future<Output = IO<String>> {
+) -> impl Future<Output = IO<String>> + use<> {
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();

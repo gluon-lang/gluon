@@ -20,7 +20,7 @@ use self::{
         metadata, rename,
         typecheck::{self, Typecheck},
     },
-    parser::{parse_partial_root_expr, reparse_infix, ParseErrors},
+    parser::{ParseErrors, parse_partial_root_expr, reparse_infix},
 };
 
 use {collect_mac::collect, quick_error::quick_error};
@@ -594,7 +594,7 @@ macro_rules! assert_multi_unify_err {
     }}
 }
 
-pub fn print_ident_types(expr: &SpannedExpr<Symbol>) {
+pub fn print_ident_types(expr: &SpannedExpr<'_, Symbol>) {
     struct Visitor;
     impl<'a> base::ast::Visitor<'_, 'a> for Visitor {
         type Ident = Symbol;

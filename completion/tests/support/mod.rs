@@ -21,7 +21,7 @@ use crate::check::{
     typecheck::{self, Typecheck},
 };
 
-use crate::parser::{parse_partial_root_expr, reparse_infix, ParseErrors};
+use crate::parser::{ParseErrors, parse_partial_root_expr, reparse_infix};
 
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 

@@ -10,10 +10,10 @@ use crate::base::{
 };
 
 use crate::core::{
-    dead_code::{self},
-    interpreter::Global,
     Allocator, Alternative, ArenaAllocatable, ArenaExt, CExpr, Closure, CoreExpr, Expr, LetBinding,
     Named, Pattern,
+    dead_code::{self},
+    interpreter::Global,
 };
 
 pub trait OptimizeEnv: TypeEnv {

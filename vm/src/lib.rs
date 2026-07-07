@@ -16,8 +16,6 @@ extern crate serde_derive_state;
 #[cfg(feature = "serde_state")]
 #[macro_use]
 extern crate serde_state as serde;
-#[cfg(feature = "serde_state")]
-extern crate serde_json;
 
 #[cfg(test)]
 extern crate env_logger;
@@ -84,7 +82,7 @@ use crate::{
 use codespan_reporting::diagnostic::Diagnostic;
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
-    ::std::mem::transmute(x)
+    unsafe { ::std::mem::transmute(x) }
 }
 
 #[derive(Debug, PartialEq, Trace)]
@@ -103,7 +101,7 @@ impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     #[inline]
-    pub fn new(value: &Value) -> Variants {
+    pub fn new(value: &Value) -> Variants<'_> {
         // SAFETY The returned value is tied to the lifetime of the `value` root meaning the
         // variant is also rooted
         unsafe { Variants::with_root(value, value) }
@@ -111,7 +109,7 @@ impl<'a> Variants<'a> {
 
     #[inline]
     pub(crate) unsafe fn with_root<'r, T: ?Sized>(value: &Value, _root: &'r T) -> Variants<'r> {
-        Variants(value.get_repr().clone_unrooted(), PhantomData)
+        unsafe { Variants(value.get_repr().clone_unrooted(), PhantomData) }
     }
 
     #[inline]
@@ -135,7 +133,7 @@ impl<'a> Variants<'a> {
     }
 
     pub(crate) unsafe fn unrooted(&self) -> Value {
-        Value::from(self.0.clone_unrooted())
+        unsafe { Value::from(self.0.clone_unrooted()) }
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a

@@ -1,12 +1,13 @@
-use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
+use std::hint::black_box;
+
+use criterion::{Bencher, Criterion, criterion_group, criterion_main};
 
 use gluon::{
-    new_vm,
+    ThreadExt, new_vm,
     vm::{
-        api::{primitive, FunctionRef, Primitive},
+        api::{FunctionRef, Primitive, primitive},
         thread::{Status, Thread},
     },
-    ThreadExt,
 };
 
 // Benchmarks function calls

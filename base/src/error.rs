@@ -59,7 +59,7 @@ impl<T> Errors<T> {
         self.errors.pop()
     }
 
-    pub fn iter(&self) -> slice::Iter<T> {
+    pub fn iter(&self) -> slice::Iter<'_, T> {
         self.errors.iter()
     }
 
@@ -256,7 +256,7 @@ impl<E: fmt::Display> InFile<E> {
             if i != 0 {
                 writeln!(writer)?;
             }
-            ::codespan_reporting::term::emit(
+            ::codespan_reporting::term::emit_to_write_style(
                 &mut *writer,
                 &Default::default(),
                 &self.source,

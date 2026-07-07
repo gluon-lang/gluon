@@ -1,4 +1,4 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
     Generics, Ident, Variant,
@@ -174,8 +174,6 @@ fn gen_impl(
     let (impl_generics, ty_generics, where_clause) =
         split_for_impl(&generics, &[], &["'__vm", "'__value"]);
 
-    let dummy_const = Ident::new(&format!("_IMPL_GETABLE_FOR_{}", ident), Span::call_site());
-
     let gluon = match container.crate_name {
         attr::CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
@@ -199,7 +197,7 @@ fn gen_impl(
 
     quote! {
         #[allow(non_upper_case_globals)]
-        const #dummy_const: () = {
+        const _: () = {
             #gluon
 
             #[automatically_derived]
@@ -241,7 +239,7 @@ fn gen_variant_match(ident: &Ident, tag: usize, variant: &Variant) -> TokenStrea
             let cons = gen_tuple_variant_cons(unnamed);
 
             quote! {
-                #tag => #ident::#variant_ident#cons
+                #tag => #ident::#variant_ident #cons
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {

@@ -1,6 +1,5 @@
 extern crate gluon_base as base;
 extern crate gluon_check as check;
-extern crate gluon_parser as parser;
 
 use crate::base::{
     kind::{Kind, KindCache},
@@ -9,7 +8,7 @@ use crate::base::{
 };
 use crate::check::kindcheck::KindCheck;
 
-use crate::support::{intern, typ, MockEnv, MockIdentEnv};
+use crate::support::{MockEnv, MockIdentEnv, intern, typ};
 
 #[macro_use]
 mod support;

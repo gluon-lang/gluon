@@ -8,9 +8,9 @@ use crate::base::{
     merge, pos,
     resolve::{self, Error as ResolveError},
     symbol::{Symbol, SymbolRef},
-    types::{AsId,
-        self, walk_type, AppVec, ArgType, Field, Filter, SharedInterner, Skolem, Type, TypeContext,
-        TypeEnv, TypeExt, TypeFormatter, TypePtr, TypeVariable,
+    types::{
+        self, AppVec, ArgType, AsId, Field, Filter, SharedInterner, Skolem, Type, TypeContext,
+        TypeEnv, TypeExt, TypeFormatter, TypePtr, TypeVariable, walk_type,
     },
 };
 
@@ -1633,8 +1633,8 @@ mod tests {
     use crate::base::types::{Field, SharedInterner};
     use crate::substitution::Substitution;
     use crate::tests::*;
-    use crate::unify::unify;
     use crate::unify::Error::*;
+    use crate::unify::unify;
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {

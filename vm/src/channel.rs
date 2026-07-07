@@ -21,10 +21,11 @@ use crate::base::{
 };
 
 use crate::{
+    Error, ExternModule, Result as VmResult, Variants,
     api::{
+        Function, FunctionRef, Generic, Getable, IO, OpaqueRef, OpaqueValue, OwnedFunction,
+        Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM,
         generic::{A, B},
-        Function, FunctionRef, Generic, Getable, OpaqueRef, OpaqueValue, OwnedFunction, Pushable,
-        Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
     },
     gc::{self, CloneUnrooted, GcPtr, Trace},
     stack::{ClosureState, ExternState, State},
@@ -32,7 +33,6 @@ use crate::{
     types::VmInt,
     value::{Callable, Userdata, Value, ValueRepr},
     vm::{RootedThread, Thread},
-    Error, ExternModule, Result as VmResult, Variants,
 };
 
 pub struct Sender<T> {
@@ -322,7 +322,7 @@ fn spawn_on<'vm>(
     {
         fn future_wrapper<F>(
             data: &SpawnFuture<F>,
-        ) -> impl Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>>
+        ) -> impl Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + use<F>
         where
             F: Future<Output = IO<OpaqueValue<RootedThread, Pushed<A>>>> + Send + 'static,
         {
@@ -377,7 +377,7 @@ fn spawn_on<'vm>(
 fn join(
     WithVM { vm: vm_a, value: a }: WithVM<OpaqueRef<IO<A>>>,
     b: OpaqueRef<IO<B>>,
-) -> impl Future<Output = RuntimeResult<IO<(Generic<A>, Generic<B>)>, Error>> {
+) -> impl Future<Output = RuntimeResult<IO<(Generic<A>, Generic<B>)>, Error>> + use<> {
     let vm_b = match vm_a.new_thread() {
         Ok(vm) => vm,
         Err(err) => return Either::Right(future::ready(RuntimeResult::Panic(err))),

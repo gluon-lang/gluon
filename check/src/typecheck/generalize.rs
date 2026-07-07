@@ -8,7 +8,7 @@ use crate::base::{
 
 use crate::{substitution::Substitution, typ::RcType, typecheck::Typecheck};
 
-pub(crate) struct TypeGeneralizer<'a, 'b: 'a, 'ast> {
+pub(crate) struct TypeGeneralizer<'a, 'b, 'ast> {
     level: u32,
     unbound_variables: FnvMap<u32, RcType>,
     /// We delay updating the substitution until after all recursive bindings have been typechecked
@@ -22,8 +22,8 @@ pub(crate) struct TypeGeneralizer<'a, 'b: 'a, 'ast> {
 
 impl<'a, 'b> Drop for TypeGeneralizer<'a, 'b, '_> {
     fn drop(&mut self) {
-        for (id, gen) in self.delayed_generalizations.drain(..) {
-            self.tc.subs.replace(id, gen);
+        for (id, generic) in self.delayed_generalizations.drain(..) {
+            self.tc.subs.replace(id, generic);
         }
     }
 }
@@ -157,7 +157,7 @@ impl<'a, 'b, 'ast> TypeGeneralizer<'a, 'b, 'ast> {
                     top_type,
                     ..
                 } = self;
-                let gen = self.unbound_variables.entry(var.id).or_insert_with(|| {
+                let generic = self.unbound_variables.entry(var.id).or_insert_with(|| {
                     let variable_generator = match variable_generator {
                         Some(v) => v,
                         None => {
@@ -169,13 +169,13 @@ impl<'a, 'b, 'ast> TypeGeneralizer<'a, 'b, 'ast> {
                     // Create a prefix if none exists
                     let id = variable_generator.next_variable(tc);
 
-                    let gen: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
-                    debug!("Gen {} to {}", var.id, gen);
+                    let generic: RcType = tc.generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, generic);
 
-                    gen
+                    generic
                 });
 
-                Some(gen.clone())
+                Some(generic.clone())
             }
 
             Type::Skolem(ref skolem) => {
@@ -373,7 +373,7 @@ fn unroll_record(
 }
 
 // Replaces all type variables with their inferred types
-pub struct ReplaceVisitor<'a: 'c, 'b: 'a, 'c, 'ast> {
+pub struct ReplaceVisitor<'a, 'b, 'c, 'ast> {
     pub(crate) generalizer: &'c mut TypeGeneralizer<'a, 'b, 'ast>,
 }
 

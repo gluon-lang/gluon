@@ -586,7 +586,10 @@ impl<'ast, Id> Expr<'ast, Id> {
     pub fn field_iter<'a>(
         &'a self,
     ) -> impl Iterator<
-        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<'ast, Id>>>,
+        Item = Either<
+            &'a ExprField<'a, Id, ArcType<Id>>,
+            &'a ExprField<'a, Id, SpannedExpr<'ast, Id>>,
+        >,
     > + 'a {
         let (types, exprs) = match *self {
             Expr::Record {
@@ -652,7 +655,7 @@ pub enum ValueBindings<'ast, Id> {
 impl<'ast, Id> ValueBindings<'ast, Id> {
     pub fn is_recursive(&self) -> bool {
         match self {
-            ValueBindings::Plain(ref bind) => !bind.args.is_empty(),
+            ValueBindings::Plain(bind) => !bind.args.is_empty(),
             ValueBindings::Recursive(_) => true,
         }
     }
@@ -871,7 +874,7 @@ pub fn walk_expr<'a, 'ast, V>(v: &mut V, e: &'a $($mut)* SpannedExpr<'ast, V::Id
             v.visit_expr(expr);
         },
 
-        Expr::Do(Do {
+        Expr::Do(&mut Do {
             ref $($mut)* id,
             ref $($mut)* typ,
             ref $($mut)* bound,
@@ -939,13 +942,13 @@ pub fn walk_pattern<'a, 'ast,V: ?Sized + $trait_name<'a, 'ast>>(v: &mut V, p: &'
             v.visit_typ(typ);
             for field in &$($mut)* **fields {
                 match field {
-                    PatternField::Value { name, value: ref $($mut)* pattern, } => {
+                    & $($mut)* PatternField::Value { name: ref $($mut)* name, value: ref $($mut)* pattern, } => {
                         v.visit_spanned_ident(name);
                         if let Some(pattern) = pattern {
                         v.visit_pattern(pattern);
                         }
                     }
-                    PatternField::Type { name, .. } => {
+                    & $($mut)* PatternField::Type { name: ref $($mut)* name, .. } => {
                         v.visit_spanned_ident(name);
                     }
                 }
@@ -1026,14 +1029,14 @@ mod mut_ {
     visitor!(MutVisitor, unresolved_type_mut, try_get_alias_mut, mut);
 }
 pub use self::mut_::{
-    walk_alias as walk_mut_alias, walk_ast_type as walk_mut_ast_type, walk_expr as walk_mut_expr,
-    walk_pattern as walk_mut_pattern, MutVisitor,
+    MutVisitor, walk_alias as walk_mut_alias, walk_ast_type as walk_mut_ast_type,
+    walk_expr as walk_mut_expr, walk_pattern as walk_mut_pattern,
 };
 mod ref_ {
     use super::*;
     visitor!(Visitor, unresolved_type, try_get_alias,);
 }
-pub use self::ref_::{walk_alias, walk_ast_type, walk_expr, walk_pattern, Visitor};
+pub use self::ref_::{Visitor, walk_alias, walk_ast_type, walk_expr, walk_pattern};
 
 /// Trait which abstracts over things that have a type.
 /// It is not guaranteed that the correct type is returned until after typechecking
@@ -1103,7 +1106,7 @@ impl Typed for Expr<'_, Symbol> {
             Expr::Infix { ref op, .. } => get_return_type(env, &op.value.typ, 2),
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
-            | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
+            | Expr::Do(&mut Do { body: ref expr, .. }) => expr.try_type_of(env),
             Expr::App {
                 ref func, ref args, ..
             } => get_return_type(env, &func.try_type_of(env)?, args.len()),
@@ -1255,7 +1258,7 @@ macro_rules! impl_ast_arena {
                 }
             }
 
-            pub fn borrow(&'ast self) -> ArenaRef<'_, 'ast, Id> {
+            pub fn borrow(&'ast self) -> ArenaRef<'ast, 'ast, Id> {
                 ArenaRef(self, PhantomData)
             }
 
@@ -1325,7 +1328,7 @@ macro_rules! mk_ast_arena {
         // unify the lifetimes of two macro calls by binding the lifetime to
         // drop scope
         if false {
-            struct Guard<'tag>(&'tag $crate::ast::InvariantLifetime<'tag>);
+            struct Guard<'tag>(#[allow(dead_code)] &'tag $crate::ast::InvariantLifetime<'tag>);
             impl<'tag> ::core::ops::Drop for Guard<'tag> {
                 fn drop(&mut self) {}
             }

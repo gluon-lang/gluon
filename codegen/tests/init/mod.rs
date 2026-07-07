@@ -1,11 +1,9 @@
-use gluon::{self, import::Import, RootedThread};
+use gluon::{self, RootedThread, import::Import};
 
 pub fn new_vm() -> RootedThread {
-    if ::std::env::var("GLUON_PATH").is_err() {
-        ::std::env::set_var("GLUON_PATH", "..");
-    }
-
-    let vm = gluon::new_vm();
+    let vm = gluon::VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build();
     let import = vm.get_macros().get("import");
     import
         .as_ref()

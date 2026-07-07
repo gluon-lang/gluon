@@ -3,12 +3,13 @@ use std::{borrow::Borrow, cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 use crate::base::types::ArcType;
 
 use crate::{
+    Result, Variants,
     api::{Getable, Pushable, ValueRef, VmType},
     gc::{GcPtr, GcRef, Trace},
     thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot, VmRootInternal},
     types::{VmIndex, VmInt},
     value::{ArrayRepr, ClosureData, Value, ValueArray, ValueRepr},
-    vm, Result, Variants,
+    vm,
 };
 
 #[cfg(feature = "serde")]
@@ -32,11 +33,11 @@ mod private {
 }
 
 pub trait AsValueRef: private::Sealed {
-    fn as_value_ref(&self) -> ValueRef;
+    fn as_value_ref(&self) -> ValueRef<'_>;
 }
 
 impl<'value> AsValueRef for Variants<'value> {
-    fn as_value_ref(&self) -> ValueRef {
+    fn as_value_ref(&self) -> ValueRef<'_> {
         self.as_ref()
     }
 }
@@ -44,7 +45,7 @@ impl<T> AsValueRef for RootedValue<T>
 where
     T: VmRootInternal,
 {
-    fn as_value_ref(&self) -> ValueRef {
+    fn as_value_ref(&self) -> ValueRef<'_> {
         self.get_variant().as_ref()
     }
 }
@@ -443,11 +444,7 @@ where
     }
 }
 
-pub struct Iter<'a, 'value, T, V>
-where
-    T: 'a,
-    V: 'a,
-{
+pub struct Iter<'a, 'value, T, V> {
     index: usize,
     array: &'a Opaque<T, [V]>,
     _marker: PhantomData<&'value ()>,

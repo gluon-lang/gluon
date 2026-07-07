@@ -3,7 +3,7 @@ use support::*;
 
 mod support;
 
-use gluon::{self, query::AsyncCompilation, vm::core::tests::check_expr_eq, ThreadExt};
+use gluon::{self, ThreadExt, query::AsyncCompilation, vm::core::tests::check_expr_eq};
 
 #[ignore]
 #[tokio::test]

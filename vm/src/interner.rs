@@ -6,10 +6,9 @@ use std::ops::Deref;
 use crate::base::fnv::FnvMap;
 
 use crate::{
-    forget_lifetime,
+    Result, forget_lifetime,
     gc::{CloneUnrooted, CopyUnrooted, Gc, Trace},
     value::GcStr,
-    Result,
 };
 
 /// Interned strings which allow for fast equality checks and hashing
@@ -23,7 +22,7 @@ unsafe impl CopyUnrooted for InternedStr {}
 impl CloneUnrooted for InternedStr {
     type Value = Self;
     unsafe fn clone_unrooted(&self) -> Self::Value {
-        self.copy_unrooted()
+        unsafe { self.copy_unrooted() }
     }
 }
 

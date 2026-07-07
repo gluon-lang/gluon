@@ -4,10 +4,10 @@ use std::marker::PhantomData;
 
 use crate::base::{
     ast::{
-        self, walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
-        Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv, Lambda, Literal,
-        MutVisitor, Pattern, RootExpr, Sp, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
-        SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        self, Alternative, Argument, Array, AstType, DisplayEnv, Do, Expr, ExprField, IdentEnv,
+        Lambda, Literal, MutVisitor, Pattern, RootExpr, Sp, SpannedAlias, SpannedAstType,
+        SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+        walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern,
     },
     error::Errors,
     kind::Kind,
@@ -17,8 +17,9 @@ use crate::base::{
     types::{Alias, AliasData, ArcType, Field, Generic, KindedIdent, Type, TypeCache, TypeContext},
 };
 use crate::parser::{
+    Error, ParseErrors,
     infix::{Fixity, OpMeta, OpTable, Reparser},
-    parse_partial_expr, Error, ParseErrors,
+    parse_partial_expr,
 };
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -183,15 +184,11 @@ macro_rules! parse_new {
 }
 
 macro_rules! parse_zero_index {
-    ($input:expr) => {{
-        zero_index(parse_new!($input))
-    }};
+    ($input:expr) => {{ zero_index(parse_new!($input)) }};
 }
 
 macro_rules! parse_clear_span {
-    ($input:expr) => {{
-        clear_span(parse_new!($input))
-    }};
+    ($input:expr) => {{ clear_span(parse_new!($input)) }};
 }
 
 pub fn intern(s: &str) -> String {

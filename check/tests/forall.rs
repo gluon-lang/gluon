@@ -5,7 +5,6 @@ extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
-extern crate gluon_parser as parser;
 
 use crate::base::{
     ast::{Expr, Pattern, SpannedExpr},
@@ -14,7 +13,7 @@ use crate::base::{
     types::{Field, NullInterner, Type},
 };
 
-use crate::support::{alias, intern, typ, MockEnv};
+use crate::support::{MockEnv, alias, intern, typ};
 
 use crate::check::typecheck::TypeError;
 

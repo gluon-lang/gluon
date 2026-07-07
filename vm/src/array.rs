@@ -133,15 +133,11 @@ mod tests {
     #[test]
     fn array_values_offset() {
         use std::mem;
-        use std::ptr;
 
-        unsafe {
-            let p: *const Array<i32> = ptr::null();
-            assert_eq!(p as *const u8, &(*p).len as *const _ as *const u8);
-            assert_eq!(
-                (p as *const u8).offset(mem::size_of::<usize>() as isize),
-                &(*p).array_start as *const _ as *const u8
-            );
-        }
+        assert_eq!(0, mem::offset_of!(Array<i32>, len));
+        assert_eq!(
+            mem::size_of::<usize>(),
+            mem::offset_of!(Array<i32>, array_start)
+        );
     }
 }

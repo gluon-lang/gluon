@@ -14,7 +14,7 @@ use crate::base::{
 
 #[allow(unused)]
 mod support;
-use crate::support::{intern, loc, MockEnv};
+use crate::support::{MockEnv, intern, loc};
 
 fn line_comment<S>(s: S) -> Comment
 where

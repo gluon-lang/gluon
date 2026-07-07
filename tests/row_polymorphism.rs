@@ -1,6 +1,6 @@
 use gluon::{
-    vm::api::{FunctionRef, Hole, OpaqueValue},
     Thread, ThreadExt,
+    vm::api::{FunctionRef, Hole, OpaqueValue},
 };
 
 use crate::support::make_vm;

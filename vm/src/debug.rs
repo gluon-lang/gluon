@@ -1,8 +1,8 @@
 use crate::{
-    api::{generic::A, Generic, OpaqueRef},
+    ExternModule, Result,
+    api::{Generic, OpaqueRef, generic::A},
     thread::Thread,
     value::ValueRepr,
-    ExternModule, Result,
 };
 
 fn trace(a: Generic<A>) {

@@ -1,8 +1,5 @@
-extern crate env_logger;
 #[macro_use]
 extern crate gluon_codegen;
-extern crate gluon;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
@@ -11,17 +8,14 @@ extern crate gluon_vm;
 mod init;
 
 use gluon::{
-    import,
+    RootedThread, Thread, ThreadExt, import,
     vm::{
-        self,
+        self, ExternModule,
         api::{
-            self,
+            self, OpaqueValue,
             generic::{self, L, R},
-            OpaqueValue,
         },
-        ExternModule,
     },
-    RootedThread, Thread, ThreadExt,
 };
 use init::new_vm;
 
@@ -202,6 +196,7 @@ fn derive_generates_same_type_as_gluon_define() {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Getable)]
 struct LifetimeStruct<'a> {
     _str: &'a str,

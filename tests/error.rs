@@ -1,8 +1,8 @@
 use expect_test::expect;
 
 use gluon::{
-    base, check::typecheck::TypeError, compiler_pipeline::*, parser, vm::Error as VMError, Error,
-    ThreadExt,
+    Error, ThreadExt, base, check::typecheck::TypeError, compiler_pipeline::*, parser,
+    vm::Error as VMError,
 };
 
 mod support;

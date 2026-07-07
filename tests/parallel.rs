@@ -4,12 +4,11 @@ extern crate gluon_vm;
 use std::thread::spawn;
 
 use gluon::{
-    new_vm,
+    Error, RootedThread, ThreadExt, new_vm,
     vm::{
-        api::{FunctionRef, OpaqueValue, IO},
+        api::{FunctionRef, IO, OpaqueValue},
         channel::{ChannelRecord, Receiver, Sender},
     },
-    Error, RootedThread, ThreadExt,
 };
 
 #[test]

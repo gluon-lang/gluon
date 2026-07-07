@@ -70,7 +70,7 @@ impl<T> Mutex<T>
 where
     T: ?Sized + Trace,
 {
-    pub fn lock(&self) -> LockResult<MutexGuard<T>> {
+    pub fn lock(&self) -> LockResult<MutexGuard<'_, T>> {
         let rooted = self.rooted.lock().unwrap();
         match self.mutex.lock() {
             Ok(lock) => Ok(self.new_guard(*rooted, lock)),
@@ -81,7 +81,7 @@ where
         }
     }
 
-    pub fn try_lock(&self) -> TryLockResult<MutexGuard<T>> {
+    pub fn try_lock(&self) -> TryLockResult<MutexGuard<'_, T>> {
         let rooted = self.rooted.lock().unwrap();
         match self.mutex.try_lock() {
             Ok(lock) => Ok(self.new_guard(*rooted, lock)),
@@ -132,23 +132,27 @@ where
     T: Trace,
 {
     unsafe fn root(&mut self) {
-        let mut rooted = self.rooted.lock().unwrap();
-        assert!(!*rooted, "Mutex can't be rooted twice!");
-        *rooted = true;
-        match self.mutex.try_lock() {
-            Ok(mut lock) => lock.root(),
-            Err(TryLockError::WouldBlock) => (), // The value will be rooted when the lock is released
-            Err(TryLockError::Poisoned(err)) => err.into_inner().root(),
+        unsafe {
+            let mut rooted = self.rooted.lock().unwrap();
+            assert!(!*rooted, "Mutex can't be rooted twice!");
+            *rooted = true;
+            match self.mutex.try_lock() {
+                Ok(mut lock) => lock.root(),
+                Err(TryLockError::WouldBlock) => (), // The value will be rooted when the lock is released
+                Err(TryLockError::Poisoned(err)) => err.into_inner().root(),
+            }
         }
     }
     unsafe fn unroot(&mut self) {
-        let mut rooted = self.rooted.lock().unwrap();
-        assert!(*rooted, "Mutex can't be unrooted twice!");
-        *rooted = false;
-        match self.mutex.try_lock() {
-            Ok(mut lock) => lock.unroot(),
-            Err(TryLockError::WouldBlock) => (), // The value will be unrooted when the lock is released
-            Err(TryLockError::Poisoned(err)) => err.into_inner().unroot(),
+        unsafe {
+            let mut rooted = self.rooted.lock().unwrap();
+            assert!(*rooted, "Mutex can't be unrooted twice!");
+            *rooted = false;
+            match self.mutex.try_lock() {
+                Ok(mut lock) => lock.unroot(),
+                Err(TryLockError::WouldBlock) => (), // The value will be unrooted when the lock is released
+                Err(TryLockError::Poisoned(err)) => err.into_inner().unroot(),
+            }
         }
     }
     fn trace(&self, gc: &mut Gc) {

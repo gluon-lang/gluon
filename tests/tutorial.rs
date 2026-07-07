@@ -2,7 +2,7 @@
 extern crate gluon_vm;
 
 use gluon::base::types::Type;
-use gluon::import::{add_extern_module, Import};
+use gluon::import::{Import, add_extern_module};
 use gluon::vm;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
 use gluon::{RootedThread, Thread, ThreadExt};
@@ -36,11 +36,7 @@ fn call_rust_from_gluon() {
     let _ = ::env_logger::try_init();
 
     fn factorial(x: i32) -> i32 {
-        if x <= 1 {
-            1
-        } else {
-            x * factorial(x - 1)
-        }
+        if x <= 1 { 1 } else { x * factorial(x - 1) }
     }
 
     fn load_factorial(vm: &Thread) -> vm::Result<vm::ExternModule> {

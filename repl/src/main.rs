@@ -19,9 +19,9 @@ use std::{
     sync::Arc,
 };
 
+use clap::{CommandFactory, Parser, Subcommand};
 use codespan_reporting::term::termcolor;
 use quick_error::quick_error;
-use structopt::StructOpt;
 use walkdir::WalkDir;
 
 use gluon::{base, parser, vm};
@@ -32,7 +32,7 @@ use crate::base::{
 };
 
 use gluon::{
-    new_vm_async, vm::thread::ThreadInternal, vm::Error as VMError, Result, Thread, ThreadExt,
+    Result, Thread, ThreadExt, new_vm_async, vm::Error as VMError, vm::thread::ThreadInternal,
 };
 
 mod repl;
@@ -98,69 +98,82 @@ impl ::std::str::FromStr for Color {
     }
 }
 
-#[derive(StructOpt)]
-#[structopt(about = "Formats gluon source code")]
+#[derive(Parser)]
+#[command(about = "Formats gluon source code")]
 pub struct FmtOpt {
-    #[structopt(name = "FILE", parse(from_os_str), help = "Formats each file")]
+    #[arg(value_name = "FILE", help = "Formats each file")]
     input: Vec<PathBuf>,
 }
 
-#[derive(StructOpt)]
+#[derive(Subcommand)]
 pub enum SubOpt {
-    #[structopt(name = "fmt", about = "Formats gluon source code")]
+    #[command(name = "fmt", about = "Formats gluon source code")]
     Fmt(FmtOpt),
-    #[structopt(name = "doc", about = "Documents gluon source code")]
+    #[command(name = "doc", about = "Documents gluon source code")]
     Doc(::gluon_doc::Opt),
 }
 
-const LONG_VERSION: &str = concat!(clap::crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "\n",
+    "commit: ",
+    env!("GIT_HASH")
+);
 
-#[derive(StructOpt)]
-#[structopt(about = "executes gluon programs", long_version = LONG_VERSION)]
+#[derive(Parser)]
+#[command(about = "executes gluon programs", long_version = LONG_VERSION)]
 pub struct Opt {
-    #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
+    #[arg(short = 'i', long = "interactive", help = "Starts the repl")]
     interactive: bool,
 
-    #[structopt(
+    #[arg(
         long = "color",
         default_value = "auto",
         help = "Coloring: auto, always, always-ansi, never"
     )]
     color: Color,
 
-    #[structopt(
+    #[arg(
         long = "prompt",
-        short = "p",
+        short = 'p',
         default_value = "> ",
         help = "String printed as the prompt for the repl"
     )]
     prompt: String,
 
-    #[structopt(
+    #[arg(
         long = "debug",
         default_value = "none",
         help = "Debug Level: none, low, high"
     )]
     debug_level: base::DebugLevel,
 
-    #[structopt(
+    #[arg(
         long = "no-std",
         help = "Skip searching the internal standard library for requested modules."
     )]
     no_std: bool,
 
-    #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
+    #[arg(
+        long = "no-auto-complete",
+        help = "Enable auto-completion in the REPL",
+        default_value = "true",
+        action = clap::ArgAction::SetFalse
+    )]
+    auto_complete: bool,
+
+    #[arg(value_name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
 
-    #[structopt(
+    #[arg(
         last = true,
-        name = "ARGS",
+        value_name = "ARGS",
         help = "Extra arguments passed to the gluon program"
     )]
     #[allow(dead_code)]
     args: Vec<String>,
 
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     subcommand_opt: Option<SubOpt>,
 }
 
@@ -223,7 +236,7 @@ async fn fmt_file(thread: &Thread, name: &Path) -> Result<()> {
 }
 
 async fn fmt_stdio(thread: &Thread) -> Result<()> {
-    use std::io::{stdin, stdout, Read};
+    use std::io::{Read, stdin, stdout};
 
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
@@ -236,7 +249,7 @@ async fn fmt_stdio(thread: &Thread) -> Result<()> {
     Ok(())
 }
 
-async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Error> {
+async fn run(opt: &Opt, vm: &Thread) -> std::result::Result<(), Error> {
     vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
@@ -281,11 +294,20 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
                 let prompt = opt.prompt.clone();
                 let debug_level = opt.debug_level.clone();
                 let use_std_lib = !opt.no_std;
-                repl::run(color, &prompt, debug_level, use_std_lib).await?;
+                repl::run(
+                    repl::Settings {
+                        color: opt.color,
+                        prompt: &prompt,
+                        auto_complete: opt.auto_complete,
+                    },
+                    debug_level,
+                    use_std_lib,
+                )
+                .await?;
             } else if !opt.input.is_empty() {
                 run_files(&vm, &opt.input).await?;
             } else {
-                writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
+                writeln!(io::stderr(), "{}", Opt::command().render_usage())
                     .expect("Error writing help to stderr");
             }
         }
@@ -297,7 +319,7 @@ async fn run(opt: &Opt, color: Color, vm: &Thread) -> std::result::Result<(), Er
 async fn main() {
     init_env_logger();
 
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     let vm = new_vm_async().await;
     vm.get_database_mut()
@@ -305,7 +327,7 @@ async fn main() {
         .run_io(true);
 
     let color = opt.color;
-    let result = run(&opt, opt.color, &vm).await;
+    let result = run(&opt, &vm).await;
     if let Err(err) = result {
         match err {
             Error::Gluon(gluon::Error::VM(VMError::Message(_))) => {
@@ -324,14 +346,5 @@ async fn main() {
             }
         }
         ::std::process::exit(1);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    // If nothing else this suppresses the unused imports warnings when compiling in test mode
-    #[test]
-    fn execute_repl_help() {
-        super::main();
     }
 }

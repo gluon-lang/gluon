@@ -95,7 +95,7 @@ impl StrSuffix {
         &self.0
     }
 
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         Iter(self)
     }
 }
