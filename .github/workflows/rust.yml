@@ -55,3 +55,28 @@ jobs:
               rustup target add wasm32-unknown-unknown
               cargo check --target wasm32-unknown-unknown -p gluon_c-api
           fi
+
+  test-windows:
+    name: test on Windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        rust: [stable]
+    env:
+      CRATE_NAME: gluon
+      CARGO_INCREMENTAL: 0 # Incremental compilation is slower and bloats the cache
+      RUST_BACKTRACE: 1
+      # RUSTC_WRAPPER: sccache
+      SCCACHE_CACHE_SIZE: 500M
+      RUST_VERSION: ${{ matrix.rust }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+    - uses: Swatinem/rust-cache@v2
+    - name: Run tests
+      run: |
+        cargo test --all-features --all-targets --workspace
