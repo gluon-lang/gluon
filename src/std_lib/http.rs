@@ -1,19 +1,8 @@
-use crate::real_std::{
-    fmt, fs,
-    net::SocketAddr,
-    path::PathBuf,
-    pin::Pin,
-    sync::{Arc, Mutex},
-};
+use crate::real_std::{fmt, fs, net::SocketAddr, path::PathBuf, pin::Pin, sync::Arc};
 
 use {
     collect_mac::collect,
-    futures::{
-        future::{self, BoxFuture},
-        prelude::*,
-        ready,
-        task::Poll,
-    },
+    futures::{future::BoxFuture, prelude::*},
     http::{
         StatusCode,
         header::{HeaderMap, HeaderName, HeaderValue},
@@ -25,6 +14,7 @@ use {
         rt::{TokioExecutor, TokioIo},
         server::conn::auto::Builder as ServerBuilder,
     },
+    tokio::sync::Mutex,
 };
 
 use crate::base::types::{ArcType, Type};
@@ -130,22 +120,17 @@ impl fmt::Debug for Body {
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
 // into `&Body` argument
 fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Bytes, [u8]>>>> {
-    use futures::future::poll_fn;
-
     let body = body.0.clone();
-    poll_fn(move |cx| {
-        let mut stream = body.lock().unwrap();
-        Poll::Ready(IO::Value(
-            if let Some(result) = ready!(stream.as_mut().poll_next(cx)) {
-                match result {
-                    Ok(chunk) => Some(chunk),
-                    Err(err) => return IO::Exception(err.to_string()).into(),
-                }
-            } else {
-                None
+    async move {
+        let mut stream = body.lock().await;
+        match stream.as_mut().next().await {
+            Some(result) => match result {
+                Ok(chunk) => IO::Value(Some(chunk)),
+                Err(err) => IO::Exception(err.to_string()),
             },
-        ))
-    })
+            None => IO::Value(None),
+        }
+    }
 }
 
 // A http body that is being written
@@ -154,7 +139,7 @@ fn read_chunk(body: &Body) -> impl Future<Output = IO<Option<PushAsRef<Bytes, [u
 #[gluon(crate_name = "::vm")]
 #[gluon_userdata(clone)]
 #[gluon_trace(skip)]
-pub struct ResponseBody(Arc<Mutex<Option<tokio::sync::mpsc::Sender<Bytes>>>>);
+pub struct ResponseBody(tokio::sync::mpsc::WeakSender<Bytes>);
 
 impl fmt::Debug for ResponseBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -164,24 +149,19 @@ impl fmt::Debug for ResponseBody {
 
 fn write_response(response: &ResponseBody, bytes: &[u8]) -> impl Future<Output = IO<()>> {
     // Turn `bytes` into `Bytes` which can be sent to the response stream
-    let mut unsent_chunk = Some(Bytes::from(bytes.to_owned()));
-    let response = response.0.clone();
-    let mut sender = response.lock().unwrap();
-    let sender = sender
-        .as_mut()
-        .expect("Sender has been dropped while still in use");
-    let mut fut = Box::pin(sender.clone().reserve_owned());
-    future::poll_fn(move |cx| {
-        let permit = match ready!(fut.as_mut().poll(cx)) {
-            Ok(permit) => permit,
-            Err(_) => return Poll::Ready(IO::Exception("Receiver has been dropped".to_string())),
+    let chunk = Bytes::copy_from_slice(bytes);
+    let upgrade = response.0.upgrade();
+    async move {
+        let Some(sender) = upgrade else {
+            return IO::Exception("Receiver has been dropped".to_string());
         };
-        let chunk = unsent_chunk
-            .take()
-            .expect("Attempt to poll after chunk is sent");
+        let permit = match sender.reserve_owned().await {
+            Ok(permit) => permit,
+            Err(_) => return IO::Exception("Receiver has been dropped".to_string()),
+        };
         permit.send(chunk);
-        IO::Value(()).into()
-    })
+        IO::Value(())
+    }
 }
 
 #[derive(Debug, Userdata, Trace, VmType, Clone)]
@@ -410,10 +390,9 @@ impl Handler {
             tokio_stream::wrappers::ReceiverStream::new(response_receiver)
                 .map(|chunk| Ok::<_, ::std::convert::Infallible>(Frame::data(chunk))),
         ));
-        let response_sender = Arc::new(Mutex::new(Some(response_sender)));
         let http_state = record_no_decl! {
             request => gluon_request,
-            response => ResponseBody(response_sender.clone())
+            response => ResponseBody(response_sender.downgrade())
         };
 
         let handler = self.handler.clone();
@@ -426,7 +405,7 @@ impl Handler {
                             IO::Value(record_p! { status, headers }) => {
                                 // Drop the sender to so that it the receiver stops waiting for
                                 // more chunks
-                                *response_sender.lock().unwrap() = None;
+                                drop(response_sender);
 
                                 let status = StatusCode::from_u16(status)
                                     .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
