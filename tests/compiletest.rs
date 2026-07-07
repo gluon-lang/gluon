@@ -35,7 +35,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str, extension: &str) -> PathBuf {
             .unwrap()
             .cmp(&r.metadata().unwrap().modified().unwrap())
     });
-    gluon_rlibs.last().expect("libgluon not found").path()
+    gluon_rlibs
+        .last()
+        .unwrap_or_else(|| panic!("{lib_name} not found"))
+        .path()
 }
 
 fn run_mode(mode: &'static str) {
@@ -65,7 +68,7 @@ fn run_mode(mode: &'static str) {
         out_dir.display(),
         gluon_rlib.display(),
         gluon_vm_rlib.display(),
-        lib_dir(&out_dir, "gluon_codegen-", "dll").display()
+        lib_dir(&out_dir, "gluon_codegen-", std::env::consts::DLL_EXTENSION).display()
     ));
     println!("{}", config.target_rustcflags.as_ref().unwrap());
     compiletest::run_tests(&config);

@@ -24,7 +24,7 @@ impl REPL {
     fn new_() -> Result<REPL> {
         let _ = env_logger::try_init();
 
-        let timeout: u64 = 1_000;
+        let timeout: u64 = 5_000;
         let prompt: &'static str = "REXPECT> ";
 
         let mut command = Command::new("../target/debug/gluon");

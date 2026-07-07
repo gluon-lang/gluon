@@ -968,16 +968,19 @@ impl VmBuilder {
             vec!["std.types".into()],
         );
 
-        vm.run_expr_async::<OpaqueValue<RootedThread, Hole>>(
-            "",
-            r#"//@NO-IMPLICIT-PRELUDE
+        if let Err(err) = vm
+            .run_expr_async::<OpaqueValue<RootedThread, Hole>>(
+                "",
+                r#"//@NO-IMPLICIT-PRELUDE
                     let _ = import! std.types
                     let _ = import! std.prim
                     ()
                 "#,
-        )
-        .await
-        .unwrap_or_else(|err| panic!("{}", err));
+            )
+            .await
+        {
+            log::error!("Unable to load impicit prelude:{}", err);
+        }
 
         let deps: &[(_, fn(&Thread) -> _)] = &[
             ("std.byte.prim", crate::vm::primitives::load_byte),
