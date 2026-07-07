@@ -17,6 +17,7 @@ jobs:
       RUST_BACKTRACE: 1
       # RUSTC_WRAPPER: sccache
       SCCACHE_CACHE_SIZE: 500M
+      RUST_VERSION: ${{ matrix.rust }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v7

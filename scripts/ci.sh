@@ -18,16 +18,13 @@ declare -a PROJECTS=(
 )
 
 if [ -z $NO_NORMAL_TEST ]; then
-    cargo test --features "test" --all "$@"
-    cargo test --features "test" --all --bins "$@"
-    cargo test --features "test" --all --examples "$@"
-    cargo test --features "test" --all --benches "$@"
-    cargo test --features "test" -p gluon_parser --benches "$@"
+    cargo test --all-features --all --all-targets "$@"
+    cargo test --all-features --all --doc "$@"
     echo "" | cargo run --features "test" --example 24
     cargo run --features "test" --example marshalling
 
-    echo "TRAVIS_RUST_VERSION=$TRAVIS_RUST_VERSION"
-    (echo $TRAVIS_RUST_VERSION | grep nightly) && cargo test --features "test nightly" -p gluon --test compiletest "$@"
+    echo "RUST_VERSION=$RUST_VERSION"
+    (echo $RUST_VERSION | grep nightly) && cargo test --features "test nightly" -p gluon --test compiletest "$@"
 
     # Check each crate individually so that features from one do not affect another which would break publish
     for PROJECT in "${PROJECTS[@]}"
