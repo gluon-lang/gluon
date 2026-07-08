@@ -768,6 +768,14 @@ where
     }
 }
 
+pub fn complete<'a, 'ast>(
+    source_span: Span<BytePos>,
+    expr: &'a SpannedExpr<'ast, Symbol>,
+    pos: BytePos,
+) -> Result<Found<'a, 'ast>, ()> {
+    complete_at((), source_span, expr, pos)
+}
+
 fn complete_at<'a, 'ast, F>(
     on_found: F,
     source_span: Span<BytePos>,
