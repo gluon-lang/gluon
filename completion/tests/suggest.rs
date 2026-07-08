@@ -22,7 +22,7 @@ use crate::completion::{Suggestion, SuggestionQuery};
 
 #[allow(unused)]
 mod support;
-use crate::support::{MockEnv, loc};
+use crate::support::{MockEnv, find_comment_pos, intern, loc};
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     suggest_query(&SuggestionQuery::new(), s, pos)
@@ -30,49 +30,68 @@ fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
 
 fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
+    env.suggest_query(query, s, pos)
+}
 
-    struct ReplaceImport;
+impl MockEnv {
+    fn suggest_query(
+        &self,
+        query: &SuggestionQuery,
+        s: &str,
+        pos: BytePos,
+    ) -> Result<Vec<Suggestion>, ()> {
+        struct ReplaceImport;
 
-    impl<'a> MutVisitor<'a, '_> for ReplaceImport {
-        type Ident = Symbol;
+        impl<'a> MutVisitor<'a, '_> for ReplaceImport {
+            type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<'_, Symbol>) {
-            let replacement = match expr.value {
-                Expr::App {
-                    ref func, ref args, ..
-                } => match func.value {
-                    Expr::Ident(ref id) if id.name.declared_name() == "import!" => {
-                        let mut path = "@".to_string();
-                        expr_to_path(&args[0], &mut path).unwrap();
-                        Some(Expr::Ident(TypedIdent {
-                            name: Symbol::from(path),
-                            typ: Type::hole(),
-                        }))
-                    }
+            fn visit_expr(&mut self, expr: &mut SpannedExpr<'_, Symbol>) {
+                let replacement = match expr.value {
+                    Expr::App {
+                        ref func, ref args, ..
+                    } => match func.value {
+                        Expr::Ident(ref id) if id.name.declared_name() == "import!" => {
+                            let mut path = "@".to_string();
+                            expr_to_path(&args[0], &mut path).unwrap();
+                            Some(Expr::Ident(TypedIdent {
+                                name: Symbol::from(path),
+                                typ: Type::hole(),
+                            }))
+                        }
+                        _ => None,
+                    },
                     _ => None,
-                },
-                _ => None,
-            };
-            match replacement {
-                Some(replacement) => expr.value = replacement,
-                None => walk_mut_expr(self, expr),
+                };
+                match replacement {
+                    Some(replacement) => expr.value = replacement,
+                    None => walk_mut_expr(self, expr),
+                }
             }
         }
+
+        let (mut expr, _result) = support::typecheck_partial_expr(s);
+        let expr = expr.expr_mut();
+
+        ReplaceImport.visit_expr(expr);
+
+        let mut vec = query.suggest(self, expr.span, &expr, pos);
+        vec.sort_by(|l, r| l.name.cmp(&r.name));
+        Ok(vec)
     }
 
-    let (mut expr, _result) = support::typecheck_partial_expr(s);
-    let expr = expr.expr_mut();
-
-    ReplaceImport.visit_expr(expr);
-
-    let mut vec = query.suggest(&env, expr.span, &expr, pos);
-    vec.sort_by(|l, r| l.name.cmp(&r.name));
-    Ok(vec)
+    fn suggest_query2(
+        &self,
+        new: &completion::SuggestionQuery,
+        arg: &str,
+    ) -> Result<Vec<Suggestion>, ()> {
+        self.suggest_query(new, arg, find_comment_pos(arg))
+    }
 }
 
 fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
     suggest(s, loc(s, row, column))
 }
+
 fn suggest_query_loc(
     query: &SuggestionQuery,
     s: &str,
@@ -833,4 +852,35 @@ let abc = 1
     let expected = Ok(vec!["Test".into(), "abc".into()]);
 
     assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_extra_globals() {
+    let _ = env_logger::try_init();
+
+    let mut env = MockEnv::new();
+    env.additional_symbols.insert(
+        intern("Test1"),
+        Type::builtin(base::types::BuiltinType::Int),
+    );
+    env.additional_symbols.insert(
+        intern("Testa"),
+        Type::builtin(base::types::BuiltinType::Int),
+    );
+    env.additional_symbols
+        .insert(intern("Tes"), Type::builtin(base::types::BuiltinType::Int));
+
+    let result = env.suggest_query2(
+        &SuggestionQuery::new(),
+        r#"
+Test
+// ^
+"#,
+    );
+    let expected = Ok(vec!["Test1".into(), "Testa".into()]);
+
+    assert_eq!(
+        result.map(|v| v.into_iter().map(|s| s.name).collect::<Vec<_>>()),
+        expected
+    );
 }

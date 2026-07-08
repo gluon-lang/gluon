@@ -15,13 +15,18 @@ struct REPL {
 
 impl REPL {
     fn new() -> REPL {
-        let repl = REPL::new_().unwrap_or_else(|err| panic!("{}", err));
+        let repl = REPL::new_(false).unwrap_or_else(|err| panic!("{}", err));
+        repl
+    }
+
+    fn new_completion() -> REPL {
+        let repl = REPL::new_(true).unwrap_or_else(|err| panic!("{}", err));
         repl
     }
 
     /// Defines the command, timeout, and prompt settings.
     /// Wraps a rexpect::session::PtySession. expecting the prompt after launch.
-    fn new_() -> Result<REPL> {
+    fn new_(auto_complete: bool) -> Result<REPL> {
         let _ = env_logger::try_init();
 
         let timeout: u64 = 5_000;
@@ -29,15 +34,12 @@ impl REPL {
 
         let mut command = Command::new("../target/debug/gluon");
         command
-            .args(&[
-                "-i",
-                "--color",
-                "never",
-                "--prompt",
-                prompt,
-                "--no-auto-complete",
-            ])
+            .args(&["-i", "--color", "never", "--prompt", prompt])
             .env("GLUON_PATH", "..");
+
+        if !auto_complete {
+            command.arg("--no-auto-complete");
+        }
         let mut session = spawn_with_options(
             command,
             Options::new()
@@ -72,6 +74,14 @@ impl REPL {
             .exp_string(self.prompt)
             .context("Expect prompt")?;
         Ok(())
+    }
+
+    #[track_caller]
+    fn test_completion(&mut self, prefix: &str, expect: &str) {
+        self.session.send(prefix).unwrap();
+        self.session.send("\t").unwrap();
+        self.session.flush().unwrap();
+        self.session.exp_string(expect).unwrap();
     }
 
     fn quit(&mut self) {
@@ -189,4 +199,16 @@ fn assert() {
 
     repl.test("let { assert } = import! std.test", None);
     repl.test("assert False", None);
+}
+
+#[test]
+fn completion() {
+    let mut repl = REPL::new_completion();
+
+    repl.test("let abc = 1", None);
+    repl.test_completion("a", "abc");
+    repl.session.send_line("let abc2 = 1").unwrap();
+    repl.session.send_line("let acc = 1").unwrap();
+    repl.test_completion("ab", "abc");
+    repl.test_completion("", "abc2");
 }

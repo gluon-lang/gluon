@@ -1630,6 +1630,7 @@ dependencies = [
  "gluon_base",
  "gluon_check",
  "gluon_codegen",
+ "gluon_completion",
  "gluon_parser",
  "itertools 0.15.0",
  "lalrpop",

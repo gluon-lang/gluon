@@ -1,6 +1,8 @@
 #![allow(unused)]
 
-use std::{fmt, iter::FromIterator};
+use std::{collections::BTreeMap, fmt, iter::FromIterator};
+
+use completion::CompletionEnv;
 
 use crate::base::{
     ast::RootExpr,
@@ -30,6 +32,15 @@ mod check_support;
 
 pub use self::check_support::*;
 
+pub fn find_comment_pos(s: &str) -> BytePos {
+    let marker = s.find("// ^").expect("Position marker") + "// ".len();
+    let previous_line_end = s[..marker].rfind('\n').expect("Previous line");
+    let previous_line_start = s[..previous_line_end].rfind('\n').expect("Previous line");
+    let pos = previous_line_start + (marker - previous_line_end);
+
+    BytePos::from(pos as u32 + 1)
+}
+
 pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
     source::FileMap::new("test".into(), src.to_string())
         .byte_index((row as u32).into(), (column as u32).into())
@@ -55,6 +66,7 @@ pub fn parse_new(s: &str) -> Result<RootExpr<Symbol>, (Option<RootExpr<Symbol>>,
 pub struct MockEnv {
     bool: Alias<Symbol, ArcType>,
     int: ArcType,
+    pub additional_symbols: BTreeMap<Symbol, ArcType>,
 }
 
 impl MockEnv {
@@ -68,6 +80,7 @@ impl MockEnv {
         MockEnv {
             bool: Alias::new(bool_sym, Vec::new(), bool_ty),
             int: Type::int(),
+            additional_symbols: BTreeMap::new(),
         }
     }
 }
@@ -97,6 +110,14 @@ impl TypeEnv for MockEnv {
         match id.definition_name() {
             "Bool" => Some(self.bool.clone()),
             _ => None,
+        }
+    }
+}
+
+impl CompletionEnv for MockEnv {
+    fn list_types(&self, consume: &mut dyn FnMut(&Symbol, &Self::Type)) {
+        for (symbol, typ) in &self.additional_symbols {
+            consume(symbol, typ);
         }
     }
 }

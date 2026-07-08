@@ -297,6 +297,7 @@ pub trait VmEnv:
     OptimizeEnv + CompilerEnv<Type = ArcType> + MetadataEnv + PrimitiveEnv + Trace
 {
     fn get_global(&self, name: &str) -> Option<RootedGlobal>;
+    fn list_vm_types(&self, consume: &mut dyn FnMut(&Symbol, &ArcType));
 }
 
 pub struct VmEnvInstance<'a> {
@@ -308,6 +309,13 @@ pub struct VmEnvInstance<'a> {
 
 unsafe impl Trace for VmEnvInstance<'_> {
     impl_trace_fields! { self, gc; vm_envs }
+}
+
+#[cfg(feature = "gluon_completion")]
+impl gluon_completion::CompletionEnv for VmEnvInstance<'_> {
+    fn list_types(&self, consume: &mut dyn FnMut(&Symbol, &Self::Type)) {
+        self.list_vm_types(consume);
+    }
 }
 
 impl<'a> OptimizeEnv for VmEnvInstance<'a> {
@@ -390,6 +398,12 @@ impl<'a> VmEnv for VmEnvInstance<'a> {
             .iter()
             .filter_map(|env| env.get_global(name))
             .next()
+    }
+
+    fn list_vm_types(&self, consume: &mut dyn FnMut(&Symbol, &ArcType)) {
+        for env in &self.vm_envs {
+            env.list_vm_types(consume);
+        }
     }
 }
 
