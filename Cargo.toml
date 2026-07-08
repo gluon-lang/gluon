@@ -1,6 +1,6 @@
 [package]
 name = "gluon"
-version = "0.18.2"                             # GLUON
+version = "0.18.3"                             # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 keywords = ["script", "scripting", "language"]
 build = "build.rs"
@@ -24,13 +24,13 @@ name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.18.2" }                                                        # GLUON
-gluon_check = { path = "check", version = "0.18.2" }                                                      # GLUON
-gluon_parser = { path = "parser", version = "0.18.2" }                                                    # GLUON
-gluon_codegen = { path = "codegen", version = "0.18.2" }                                                  # GLUON
-gluon_vm = { path = "vm", version = "0.18.2", default-features = false }                                  # GLUON
-gluon_format = { path = "format", version = "0.18.2", default-features = false }                          # GLUON
-gluon_completion = { path = "completion", version = "0.18.2", default-features = false, optional = true } # GLUON
+gluon_base = { path = "base", version = "0.18.3" }                                                        # GLUON
+gluon_check = { path = "check", version = "0.18.3" }                                                      # GLUON
+gluon_parser = { path = "parser", version = "0.18.3" }                                                    # GLUON
+gluon_codegen = { path = "codegen", version = "0.18.3" }                                                  # GLUON
+gluon_vm = { path = "vm", version = "0.18.3", default-features = false }                                  # GLUON
+gluon_format = { path = "format", version = "0.18.3", default-features = false }                          # GLUON
+gluon_completion = { path = "completion", version = "0.18.3", default-features = false, optional = true } # GLUON
 
 async-trait = "0.1.73"
 log = "0.4.20"
@@ -79,7 +79,7 @@ rand = { version = "0.10", optional = true }
 rand_xorshift = { version = "0.5", optional = true }
 
 [build-dependencies]
-gluon_base = { path = "base", version = "0.18.2" } # GLUON
+gluon_base = { path = "base", version = "0.18.3" } # GLUON
 
 itertools.workspace = true
 little-skeptic = { version = "0.15.2", optional = true }
@@ -108,8 +108,8 @@ bincode = "2.0.0"
 
 pulldown-cmark = "0.13.4"
 
-gluon_completion = { path = "completion", version = "0.18.2" } # GLUON
-gluon_codegen = { path = "codegen", version = "0.18.2" }       # GLUON
+gluon_completion = { path = "completion", version = "0.18.3" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.18.3" }       # GLUON
 
 [workspace.dependencies]
 env_logger = "0.11"

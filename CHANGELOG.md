@@ -1,3 +1,19 @@
+## [0.18.3](https://github.com/gluon-lang/gluon/compare/v0.18.2..0.18.3) - 2026-07-08
+
+### Bug Fixes
+
+- Save repl history on CTRL-D exit - ([1d43305](https://github.com/gluon-lang/gluon/commit/1d43305f9fad314735198b3639c8eb15be2abb8c)) - Markus Westerlind
+
+### Features
+
+- Complete local variables in the repl - ([4e56db5](https://github.com/gluon-lang/gluon/commit/4e56db518698f66f5d3648f1a43ec8e6f3da56dc)) - Markus Westerlind
+- Expose fn complete - ([3ea633c](https://github.com/gluon-lang/gluon/commit/3ea633cdbe6d8bc2436d931c1e0a2ee3efb5b335)) - Markus Westerlind
+- Add a release workflow - ([07d4c6f](https://github.com/gluon-lang/gluon/commit/07d4c6f4f3799afd599489460c9a19adc18fdaaa)) - Markus Westerlind
+
+### Performance
+
+- Simplify or remove locks in the http module - ([181986d](https://github.com/gluon-lang/gluon/commit/181986d3622ac03620e101e4adf40e2429b0f94c)) - Markus Westerlind
+
 <a name="v0.18.2"></a>
 ## v0.18.2 (2023-09-19)
 

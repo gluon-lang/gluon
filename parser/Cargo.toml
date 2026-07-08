@@ -1,6 +1,6 @@
 [package]
 name = "gluon_parser"
-version = "0.18.2"                        # GLUON
+version = "0.18.3"                        # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 edition = "2024"
 
@@ -20,7 +20,7 @@ itertools.workspace = true
 quick-error = "2.0.1"
 lalrpop-util.workspace = true
 log = "0.4.20"
-gluon_base = { path = "../base", version = "0.18.2" } # GLUON
+gluon_base = { path = "../base", version = "0.18.3" } # GLUON
 ordered-float.workspace = true
 codespan.workspace = true
 codespan-reporting.workspace = true

@@ -1335,7 +1335,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "gluon"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1422,7 +1422,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_base"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "anymap",
  "bitflags 1.3.2",
@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_c-api"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "futures 0.3.32",
  "gluon",
@@ -1461,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_check"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "codespan",
  "codespan-reporting",
@@ -1486,7 +1486,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_codegen"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "env_logger 0.11.11",
  "gluon",
@@ -1500,7 +1500,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_completion"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "codespan",
  "collect-mac",
@@ -1517,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_doc"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "anyhow",
  "cargo-deadlinks",
@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_format"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "codespan",
  "difference",
@@ -1563,7 +1563,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_parser"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "codespan",
  "codespan-reporting",
@@ -1583,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_repl"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "ansi_term",
  "anyhow",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "gluon_vm"
-version = "0.18.2"
+version = "0.18.3"
 dependencies = [
  "async-trait",
  "bitflags 1.3.2",
