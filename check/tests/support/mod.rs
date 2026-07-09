@@ -475,10 +475,10 @@ macro_rules! assert_err {
                     $crate::support::Error::Parser(ref err) => panic!("{}", err),
                     $crate::support::Error::Check(err) => err.into_errors(),
                 };
-                let mut iter = (&errors).into_iter();
+                let mut iter = errors.iter();
                 $(
                 match iter.next() {
-                    Some(&crate::base::pos::Spanned { value: crate::base::error::Help { error: $id, .. }, .. }) => (),
+                    Some(crate::base::pos::Spanned { value: crate::base::error::Help { error: $id, .. }, .. }) => (),
                     _ => {
                         if $text.is_empty() {
                             assert!(
@@ -498,7 +498,8 @@ macro_rules! assert_err {
                     }
                 }
                 )+
-                assert!(iter.count() == 0, "Found more errors than expected\n{}", errors);
+                let remaining: crate::base::error::Errors<_> = iter.cloned().collect();
+                assert!(remaining.is_empty(), "Found more errors than expected\n{}", crate::support::in_file_error($text, remaining));
             }
         }
     }}

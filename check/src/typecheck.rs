@@ -654,6 +654,9 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             }
             Err(err) => {
                 returned_type = ModType::wobbly(self.subs.error());
+                if let Some(exp) = expected_type {
+                    self.unify_span(expr.span, &exp.concrete, returned_type.concrete.clone());
+                }
                 self.errors.push(Spanned {
                     span: expr_check_span(expr),
                     value: err.into(),
@@ -1268,7 +1271,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 ModType::wobbly(
                     typ.as_ref()
                         .map(|typ| self.translate_arc_type(typ))
-                        .unwrap_or_else(|| self.subs.new_var()),
+                        .unwrap_or_else(|| self.subs.error()),
                 ),
                 Vec::new(),
             )),
@@ -1672,37 +1675,41 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                     let name = name.value.clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
-                    let field_type = record_match_type
-                        .type_field_iter()
-                        .find(|field| field.name.name_eq(&name));
+                    let field_type = match *record_match_type {
+                        // Don't cascade into more errors if the type we are matching is already one
+                        Type::Error => None,
+                        _ => record_match_type
+                            .type_field_iter()
+                            .find(|field| field.name.name_eq(&name))
+                            .or_else(|| {
+                                self.error(
+                                    span,
+                                    TypeError::UndefinedField(
+                                        match_type.concrete.clone(),
+                                        name.clone(),
+                                    ),
+                                );
+                                None
+                            }),
+                    };
 
-                    let alias;
-                    let alias = match field_type {
+                    match field_type {
                         Some(field_type) => {
                             if let Some(meta) = self.implicit_resolver.metadata.remove(&name) {
                                 self.implicit_resolver
                                     .metadata
                                     .insert(field_type.typ.name.clone(), meta);
                             }
-                            &field_type.typ
+                            self.stack_type(name, &field_type.typ);
                         }
                         None => {
-                            self.error(
-                                span,
-                                TypeError::UndefinedField(
-                                    match_type.concrete.clone(),
-                                    name.clone(),
-                                ),
-                            );
                             // We still define the type so that any uses later on in the program
                             // won't error on UndefinedType
                             let hole = self.subs.error();
-                            alias = self.new_alias(name.clone(), Vec::new(), hole);
-                            &alias
+                            let alias = self.new_alias(name.clone(), Vec::new(), hole);
+                            self.stack_type(name, &alias);
                         }
-                    };
-
-                    self.stack_type(name, &alias);
+                    }
                 }
 
                 if !missing_fields_from_match_type.is_empty() {
@@ -1930,7 +1937,6 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
             }
         }
 
-        let mut types = Vec::new();
         for (i, bind) in bindings.iter_mut().enumerate() {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
@@ -2002,8 +2008,6 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 self.typecheck_let_pattern(&mut bind.name, resolved_type.clone());
                 debug!("Generalized to {}", bind.resolved_type);
                 self.finish_pattern(level, &mut bind.name, &resolved_type);
-            } else {
-                types.push(typ);
             }
         }
 
