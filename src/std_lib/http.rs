@@ -1,4 +1,6 @@
-use crate::real_std::{fmt, fs, net::SocketAddr, path::PathBuf, pin::Pin, sync::Arc};
+use tokio::net::TcpListener;
+
+use crate::real_std::{fmt, net::SocketAddr, path::PathBuf, pin::Pin, sync::Arc};
 
 use {
     collect_mac::collect,
@@ -202,99 +204,87 @@ fn listen(
     settings: Settings,
     WithVM { vm, value }: WithVM<OpaqueValue<RootedThread, EffectHandler<Response>>>,
 ) -> impl Future<Output = IO<()>> + Send + 'static {
-    let vm = vm.root_thread();
-    listen_(settings, vm, value).map(IO::from)
+    let thread = match vm.new_thread() {
+        Ok(thread) => thread,
+        Err(err) => return async { IO::from(Err(err)) }.left_future(),
+    };
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
+
+    let handler = Handler::new(&thread, value);
+
+    async move {
+        if let Some(cert_path) = &settings.tls_cert {
+            #[cfg(feature = "web-tls")]
+            return listen_https(cert_path, addr, handler).await;
+            #[cfg(not(feature = "web-tls"))]
+            return Err(vm::Error::Message(format!(
+                "TLS support is not enabled, but a certificate was provided: {}",
+                cert_path.display()
+            )));
+        } else {
+            listen_http(addr, handler).await
+        }
+    }
+    .map(IO::from)
+    .right_future()
 }
 
 type RequestBody = Incoming;
 type ResponseHttpBody = BoxBody<Bytes, ::std::convert::Infallible>;
 
-async fn listen_(
-    settings: Settings,
-    thread: RootedThread,
-    handler: OpaqueValue<RootedThread, EffectHandler<Response>>,
+#[cfg(feature = "web-tls")]
+async fn listen_https(
+    cert_path: &::std::path::Path,
+    addr: SocketAddr,
+    handler: Handler,
 ) -> vm::Result<()> {
-    let thread = match thread.new_thread() {
-        Ok(thread) => thread,
-        Err(err) => return Err(err),
-    };
+    let identity = tokio::fs::read(cert_path).await.map_err(|err| {
+        vm::Error::Message(format!(
+            "Unable to open certificate `{}`: {}",
+            cert_path.display(),
+            err
+        ))
+    })?;
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
-
-    let listener = Handler::new(&thread, handler);
-
-    if let Some(cert_path) = &settings.tls_cert {
-        let identity = fs::read(cert_path).map_err(|err| {
-            vm::Error::Message(format!(
-                "Unable to open certificate `{}`: {}",
-                cert_path.display(),
-                err
-            ))
-        })?;
-
-        let identity = native_tls::Identity::from_pkcs12(&identity, "")
-            .map_err(|err| vm::Error::Message(err.to_string()))?;
-        let acceptor = tokio_native_tls::TlsAcceptor::from(
-            native_tls::TlsAcceptor::new(identity)
-                .map_err(|err| vm::Error::Message(err.to_string()))?,
-        );
-
-        let tcp_listener = tokio::net::TcpListener::bind(&addr)
-            .map_err(|err| vm::Error::Message(err.to_string()))
-            .await?;
-        let incoming = tokio_stream::wrappers::TcpListenerStream::new(tcp_listener)
-            .err_into()
-            .and_then(|stream| {
-                acceptor.accept(stream).map_err(|err| {
-                    info!("Unable to accept TLS connection: {}", err);
-                    Box::new(err) as Box<dyn ::std::error::Error + Send + Sync>
-                })
-            });
-
-        tokio::pin!(incoming);
-        loop {
-            let stream = match incoming.next().await {
-                Some(Ok(stream)) => stream,
-                Some(Err(err)) => {
-                    info!("Error accepting TLS connection: {}", err);
-                    continue;
-                }
-                None => break,
-            };
-
-            let io = TokioIo::new(stream);
-            let listener = listener.clone();
-            tokio::spawn(async move {
-                let service = service_fn(move |request: hyper::Request<RequestBody>| {
-                    let mut listener = listener.clone();
-                    async move {
-                        Ok::<_, ::std::convert::Infallible>(match request.into_parts() {
-                            (parts, body) => match listener
-                                .handle(parts.method, parts.uri, body.into_data_stream())
-                                .await
-                            {
-                                Ok(response) => response,
-                                Err(err) => {
-                                    info!("{}", err);
-                                    internal_error_response()
-                                }
-                            },
-                        })
-                    }
-                });
-                if let Err(err) = ServerBuilder::new(TokioExecutor::new())
-                    .serve_connection(io, service)
-                    .await
-                {
-                    info!("Server error: {}", err);
-                }
-            });
-        }
-
-        return Ok(());
-    }
+    let identity = native_tls::Identity::from_pkcs12(&identity, "")
+        .map_err(|err| vm::Error::Message(err.to_string()))?;
+    let acceptor = tokio_native_tls::TlsAcceptor::from(
+        native_tls::TlsAcceptor::new(identity)
+            .map_err(|err| vm::Error::Message(err.to_string()))?,
+    );
 
     let tcp_listener = tokio::net::TcpListener::bind(&addr)
+        .map_err(|err| vm::Error::Message(err.to_string()))
+        .await?;
+    let incoming = tokio_stream::wrappers::TcpListenerStream::new(tcp_listener)
+        .err_into()
+        .and_then(|stream| {
+            acceptor.accept(stream).map_err(|err| {
+                info!("Unable to accept TLS connection: {}", err);
+                Box::new(err) as Box<dyn ::std::error::Error + Send + Sync>
+            })
+        });
+
+    tokio::pin!(incoming);
+    loop {
+        let stream = match incoming.next().await {
+            Some(Ok(stream)) => stream,
+            Some(Err(err)) => {
+                info!("Error accepting TLS connection: {}", err);
+                continue;
+            }
+            None => break,
+        };
+
+        accept_stream(handler.clone(), stream);
+    }
+
+    Ok(())
+}
+
+async fn listen_http(addr: SocketAddr, handler: Handler) -> vm::Result<()> {
+    let tcp_listener = TcpListener::bind(&addr)
         .map_err(|err| vm::Error::Message(err.to_string()))
         .await?;
 
@@ -303,34 +293,41 @@ async fn listen_(
             .accept()
             .map_err(|err| vm::Error::Message(err.to_string()))
             .await?;
-        let io = TokioIo::new(stream);
-        let listener = listener.clone();
-        tokio::spawn(async move {
-            let service = service_fn(move |request: hyper::Request<RequestBody>| {
-                let mut listener = listener.clone();
-                async move {
-                    Ok::<_, ::std::convert::Infallible>(match request.into_parts() {
-                        (parts, body) => match listener
-                            .handle(parts.method, parts.uri, body.into_data_stream())
-                            .await
-                        {
-                            Ok(response) => response,
-                            Err(err) => {
-                                info!("{}", err);
-                                internal_error_response()
-                            }
-                        },
-                    })
-                }
-            });
-            if let Err(err) = ServerBuilder::new(TokioExecutor::new())
-                .serve_connection(io, service)
-                .await
-            {
-                info!("Server error: {}", err);
+
+        accept_stream(handler.clone(), stream);
+    }
+}
+
+fn accept_stream(
+    handler: Handler,
+    stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+) {
+    let io = TokioIo::new(stream);
+    tokio::spawn(async move {
+        let service = service_fn(move |request: hyper::Request<RequestBody>| {
+            let mut handler = handler.clone();
+            async move {
+                Ok::<_, ::std::convert::Infallible>(match request.into_parts() {
+                    (parts, body) => match handler
+                        .handle(parts.method, parts.uri, body.into_data_stream())
+                        .await
+                    {
+                        Ok(response) => response,
+                        Err(err) => {
+                            info!("{}", err);
+                            internal_error_response()
+                        }
+                    },
+                })
             }
         });
-    }
+        if let Err(err) = ServerBuilder::new(TokioExecutor::new())
+            .serve_connection(io, service)
+            .await
+        {
+            info!("Server error: {}", err);
+        }
+    });
 }
 
 type ListenFn = fn(OpaqueValue<RootedThread, EffectHandler<Response>>, HttpState) -> IO<Response>;

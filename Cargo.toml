@@ -140,12 +140,11 @@ web = [
     "http-body-util",
     "http",
     "tower-service",
-    "native-tls",
     "tokio/net",
     "tokio-stream",
-    "tokio-native-tls",
     "pin-project-lite",
 ]
+web-tls = ["tokio/fs", "native-tls", "tokio-native-tls"]
 
 gluon_completion = ["dep:gluon_completion", "gluon_vm/gluon_completion"]
 
