@@ -124,9 +124,9 @@ lalrpop-util = "0.23.1"
 
 
 [features]
-default = ["async", "regex", "random"]
-async = ["tokio"]
-random = ["rand", "rand_xorshift"]
+default = ["async", "dep:regex", "random"]
+async = ["dep:tokio"]
+random = ["dep:rand", "dep:rand_xorshift"]
 serialization = [
     "serde",
     "serde_state",
@@ -135,24 +135,29 @@ serialization = [
 ]
 web = [
     "async",
-    "hyper",
-    "hyper-util",
-    "http-body-util",
-    "http",
-    "tower-service",
-    "native-tls",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:http-body-util",
+    "dep:http",
+    "dep:tower-service",
     "tokio/net",
-    "tokio-stream",
-    "tokio-native-tls",
-    "pin-project-lite",
+    "dep:tokio-stream",
+    "dep:pin-project-lite",
 ]
+web-tls = ["tokio/fs", "dep:native-tls", "dep:tokio-native-tls"]
 
 gluon_completion = ["dep:gluon_completion", "gluon_vm/gluon_completion"]
 
 docs_rs = ["serialization"]
 
-test = ["serialization", "little-skeptic", "http", "web", "gluon_vm/test"]
-nightly = ["compiletest_rs", "gluon_base/nightly"]
+test = [
+    "serialization",
+    "dep:little-skeptic",
+    "dep:http",
+    "web",
+    "gluon_vm/test",
+]
+nightly = ["dep:compiletest_rs", "gluon_base/nightly"]
 test_nightly = ["test", "nightly"]
 
 [[bench]]
