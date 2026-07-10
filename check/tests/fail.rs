@@ -782,3 +782,13 @@ Cons "" Nil
     "#,
 Unification { .. }
 }
+
+test_check_err! {
+    missing_type_do_not_cascade,
+    r#"
+let { Test } = x
+"" 
+
+    "#,
+UndefinedVariable { .. }
+}

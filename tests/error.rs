@@ -138,3 +138,25 @@ fn module_imports_provide_a_type_despite_internal_errors() {
     "#]]
     .assert_eq(&result.unwrap_err().to_string());
 }
+
+#[test]
+fn missing_module_import_does_not_cascade() {
+    let _ = ::env_logger::try_init();
+    let vm = support::make_vm();
+
+    let result = vm.run_expr::<f64>(
+        "test2",
+        r#"
+        let { Test } = import! test
+        1.0
+        "#,
+    );
+    expect![[r#"
+        error: Could not find module 'test'. Searched `.`, `..`.
+          ┌─ test2:2:24
+          │
+        2 │         let { Test } = import! test
+          │                        ^^^^^^^^^^^^
+
+    "#]].assert_eq(&result.unwrap_err().to_string());
+}
