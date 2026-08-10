@@ -11,13 +11,16 @@ use crate::support::*;
 use gluon::{
     Error, ThreadExt,
     base::{pos::BytePos, source::Source, types::Type},
-    vm,
+    import::add_extern_module,
+    record, vm,
     vm::{
+        ExternModule,
         api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef},
         channel::Sender,
         thread::Thread,
     },
 };
+use gluon_codegen::{Getable, Pushable, VmType};
 
 test_expr! { pass_function_value,
 r"
@@ -1102,4 +1105,42 @@ let f a =
     g a <| f a
 { f }
 "
+}
+
+#[test]
+fn issue_901() {
+    let _ = ::env_logger::try_init();
+
+    #[derive(Clone, Debug, VmType, Pushable, Getable)]
+    enum E1 {
+        S1(S),
+    }
+
+    #[derive(Clone, Debug, VmType, Pushable, Getable)]
+    struct S {
+        e: E2,
+    }
+
+    #[derive(Clone, Debug, VmType, Pushable, Getable)]
+    enum E2 {
+        Num(i32),
+    }
+
+    let text = r"
+let { E1, S, E2 } = import! test
+let e1 = S1 { e = Num 3 }
+()
+";
+    let vm = make_vm();
+    add_extern_module(&vm, "test", |vm| {
+        ExternModule::new(
+            vm,
+            record! {
+                type E1 => E1,
+                type S => S,
+                type E2 => E2,
+            },
+        )
+    });
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
 }
