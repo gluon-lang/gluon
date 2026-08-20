@@ -47,6 +47,7 @@ pub mod compiler_pipeline;
 #[macro_use]
 pub mod import;
 pub mod lift_io;
+pub mod lens;
 #[doc(hidden)]
 pub mod query;
 pub mod std_lib;
@@ -959,6 +960,8 @@ impl VmBuilder {
             }
 
             macros.insert(String::from("lift_io"), lift_io::LiftIo);
+
+            macros.insert(String::from("lens"), lens::DeriveLens);
         }
 
         add_extern_module_with_deps(
