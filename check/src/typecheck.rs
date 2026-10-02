@@ -44,6 +44,7 @@ use self::{
 pub use self::error::{Help, HelpError, SpannedTypeError, TypeError};
 
 mod error;
+mod exhaustiveness;
 mod generalize;
 mod mod_type;
 
@@ -397,6 +398,8 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 | DuplicateField(_)
                 | UndefinedRecord { .. }
                 | EmptyCase
+                | NonExhaustiveMatch(_)
+                | UnreachableMatchArm
                 | KindError(_)
                 | RecursionCheck(_)
                 | Message(_) => (),
@@ -812,6 +815,7 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
                 Ok((new_type, Vec::new()))
             }
             Expr::Match(ref mut expr, ref mut alts) => {
+                let match_span = expr.span;
                 let mut scrutinee_type = self.infer_expr(&mut **expr);
                 let modifier = scrutinee_type.modifier;
                 let expected_type = expected_type.take().map(|t| t.to_owned());
@@ -890,6 +894,16 @@ impl<'a, 'ast> Typecheck<'a, 'ast> {
 
                     expr_type = Some(alt_type);
                 }
+
+                let analysis =
+                    exhaustiveness::analyse(self, &original_scrutinee_type.concrete, alts);
+                if !analysis.missing.is_empty() {
+                    self.error(match_span, TypeError::NonExhaustiveMatch(analysis.missing));
+                }
+                for span in analysis.unreachable {
+                    self.error(span, TypeError::UnreachableMatchArm);
+                }
+
                 expr_type
                     .ok_or(TypeError::EmptyCase)
                     .map(|typ| (typ, Vec::new()))

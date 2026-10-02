@@ -1,6 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
 //! Implementation of the `Lift` effect
-let { error } = import! std.prim
 let { Eff, inject_rest } = import! std.effect
 let { wrap } = import! std.applicative
 let { Monad, flat_map } = import! std.monad
@@ -28,7 +27,6 @@ let run_lift eff : [Monad m] -> Eff [| lift : Lift m |] a -> m a =
             | Lift m ->
                 do a = m
                 loop (f a)
-            | _ -> error "Impossible: Lift should always be the only remaining variant"
     loop eff
 
 {

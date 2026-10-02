@@ -1158,12 +1158,14 @@ let viewl xs : FingerTree e -> View e =
     match xs with
     | Empty -> Nil
     | Single x -> View x Empty
+    | Deep (Two _ _) _ _ -> Nil
     | Deep (One a) deeper suffix ->
         match viewl deeper with
         | View (Node2 b c) rest -> View a (Deep (Two b c) rest suffix)
         | Nil ->
             match suffix with
             | One w -> View a (Single w)
+            | Two _ _ -> Nil
 in
 
 viewl

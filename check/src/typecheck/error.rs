@@ -53,6 +53,12 @@ pub enum TypeError<I, T> {
     },
     /// Found a case expression without any alternatives
     EmptyCase,
+    /// A `match` expression does not cover every value of the matched type. Contains a
+    /// rendering of the patterns that are not matched by any alternative
+    NonExhaustiveMatch(Vec<String>),
+    /// An alternative of a `match` expression can never be reached as the alternatives before it
+    /// already match every value it could match
+    UnreachableMatchArm,
     Message(String),
     UnableToResolveImplicit(implicits::Error<T>),
     TypeConstructorReturnsWrongType {
@@ -223,6 +229,15 @@ where
                 Ok(())
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
+            NonExhaustiveMatch(missing) => write!(
+                f,
+                "Non-exhaustive pattern match. The following values are not covered: {}",
+                missing.join(", ")
+            ),
+            UnreachableMatchArm => write!(
+                f,
+                "Unreachable pattern. This alternative is already covered by earlier alternatives"
+            ),
             Message(msg) => write!(f, "{}", msg),
             UnableToResolveImplicit(err) => write!(f, "{}", err),
             TypeConstructorReturnsWrongType { expected, actual } => write!(

@@ -169,6 +169,7 @@ let eval_lisp expr : Expr -> Eff (LispEffect r) Expr =
     | Int _ -> wrap expr
     | Float _ -> wrap expr
     | Function _ -> wrap expr
+    | Primitive _ -> wrap expr
     | List list ->
         match list with
         | Cons x xs ->

@@ -32,9 +32,10 @@ match { x = 1 } with
 fn match_different_alt_types() {
     let _ = env_logger::try_init();
     let text = r#"
-match () with
-| () -> 1
-| () -> ""
+type AltKind = | AltA | AltB
+match AltA with
+| AltA -> 1
+| AltB -> ""
 "#;
     let result = support::typecheck(text);
 
@@ -45,10 +46,11 @@ match () with
 fn match_different_alt_types_expected() {
     let _ = env_logger::try_init();
     let text = r#"
+type AltKind = | AltA | AltB
 let x : _ =
-    match () with
-    | () -> 1
-    | () -> ""
+    match AltA with
+    | AltA -> 1
+    | AltB -> ""
 ()
 "#;
     let result = support::typecheck(text);

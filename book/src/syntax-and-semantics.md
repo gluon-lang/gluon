@@ -216,6 +216,15 @@ match { x = Some (Some 123) } with
 | { x = None } -> -1
 ```
 
+The compiler checks that the alternatives of a `match` cover every value of the matched type and rejects the expression if they do not. A wildcard (`_`) or a plain variable pattern matches any remaining value. Alternatives that can never be reached because the alternatives before them already match every value they could match are rejected as well. Literal patterns only ever match a single value, so a `match` on numbers, characters or strings needs a final wildcard or variable alternative.
+
+```f#,ignore
+// Rejected: `Some None` is not covered
+match None with
+| Some (Some x) -> x
+| None -> 0
+```
+
 `let` bindings can also match and unpack on data but only with irrefutable patterns. In other words, only with patterns which cannot fail.
 
 ```f#,ignore
