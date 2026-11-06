@@ -1680,7 +1680,7 @@ macro_rules! define_tuple {
                 #[allow(unused_assignments)]
                 let field_names = {
                     let mut i = 0;
-                    [$(thread.global_env().intern(&format!("_{}", { let _ = $id; let x = i; i += 1; x }))?),*]
+                    [$(thread.global_env().intern(&format!("_{}", { #[cfg(false)] { $id } let x = i; i += 1; x }))?),*]
                 };
                 context.context().push_new_record(len, &field_names)?;
                 Ok(())
